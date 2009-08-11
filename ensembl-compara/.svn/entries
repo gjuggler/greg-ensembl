@@ -1,37 +1,0 @@
-9
-
-dir
-341
-https://svn.ebi.ac.uk/greg/ensembl_src/ensembl-compara
-https://svn.ebi.ac.uk/greg
-
-
-
-2009-07-02T13:03:15.485197Z
-308
-greg
-
-
-svn:special svn:externals svn:needs-lock
-
-
-
-
-
-
-
-
-
-
-
-8d6ea459-7b57-0410-81e1-f51f679c399d
-
-sql
-dir
-
-scripts
-dir
-
-modules
-dir
-
