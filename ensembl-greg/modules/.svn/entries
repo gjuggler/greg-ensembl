@@ -1,44 +1,0 @@
-9
-
-dir
-343
-https://svn.ebi.ac.uk/greg/ensembl_src/ensembl-greg/modules
-https://svn.ebi.ac.uk/greg
-
-
-
-2009-08-05T13:29:57.771061Z
-343
-greg
-
-
-svn:special svn:externals svn:needs-lock
-
-
-
-
-
-
-
-
-
-
-
-8d6ea459-7b57-0410-81e1-f51f679c399d
-
-
-
-
-
-
-0
-
-Treefam
-dir
-
-Carp
-dir
-
-Bio
-dir
-
