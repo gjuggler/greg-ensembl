@@ -1,0 +1,17 @@
+K 25
+svn:wc:ra_dav:version-url
+V 47
+/greg/!svn/ver/328/ensembl_src/ensembl-greg/sql
+END
+hive-basic-tables.sql
+K 25
+svn:wc:ra_dav:version-url
+V 69
+/greg/!svn/ver/328/ensembl_src/ensembl-greg/sql/hive-basic-tables.sql
+END
+compara-basic-tables.sql
+K 25
+svn:wc:ra_dav:version-url
+V 72
+/greg/!svn/ver/328/ensembl_src/ensembl-greg/sql/compara-basic-tables.sql
+END

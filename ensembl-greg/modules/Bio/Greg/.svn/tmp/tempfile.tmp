@@ -1,0 +1,217 @@
+package Bio::Greg::EslrUtils;
+
+use strict;
+
+sub defaultMysqlURL {
+  my $class = shift;
+
+  if ($ENV{'USER'} =~ /gj1/) {
+    return 'mysql://ensadmin:ensembl@ensdb-2-12:5106/gj1_compara_53';
+    # return 'mysql://ensadmin:ensembl@compara2:5316/avilella_compara_homology_53';
+  } else {
+    return 'mysql://ensadmin:ensembl@127.0.0.1:5425/gj1_compara_53';
+  }
+}
+
+sub loadConfiguration {
+  my $class = shift;
+  my $params = shift;
+  my $file = shift;
+
+  my $obj = {};
+
+  foreach my $key (keys %{$params}) {
+    $obj->{$key} = $params->{$key};
+  }
+
+  open(IN,$file);
+  my @lines = <IN>;
+  foreach my $line (@lines) {
+    next if $line =~ /^#/;
+    
+    $line =~ /^(.*?):(.*)/;
+    my $key = $1;
+    my $val = $2;
+    $key =~ s/^\s*//g;
+    $val =~ s/^\s*//g;
+#    $val =~ s/'/"/g;
+    $obj->{$key} = $val;
+  }
+  close(IN,$file);
+
+  return $obj;
+}
+
+
+sub mapSitewiseToGenome {
+  my $class = shift;
+  my $tree = shift;
+  my $taxon_id = shift;
+  my $pos_value = shift; # Hashref where key=position, value=value.
+
+  my $sa = $tree->get_SimpleAlign;
+  my $aln_len = $sa->length;
+
+  my @leaves = $tree->leaves;
+  my @genomic_coords = ();
+  foreach my $leaf (@leaves) {
+    next unless ($leaf->taxon_id == $taxon_id);
+    eval {
+      my ($seq) = $sa->each_seq_with_id($leaf->stable_id);
+      my $seq_str = $seq->seq;
+
+      my $tscr = $leaf->get_Transcript;
+      print STDERR $tscr->stable_id."\n";
+      $tscr = $tscr->transform("chromosome");
+      next unless (defined $tscr);
+      my $chr = "chr".$tscr->slice->seq_region_name;
+
+      foreach my $i (1..$aln_len) {
+        my $char = substr($seq_str,$i-1,1);
+        
+        my $loc = $seq->location_from_column($i);
+        next if (!defined $loc || $loc->location_type() eq 'IN-BETWEEN');
+        
+        #next if ($char eq '-');
+        my @gc_arr = $tscr->pep2genomic($loc->start,$loc->end);
+        my $gc = $gc_arr[0];
+        next unless ($gc && $gc->isa("Bio::EnsEMBL::Mapper::Coordinate"));
+
+        my $strand = "+";
+        $strand = "-" if ($gc->strand == -1);
+
+        my $value = -1;
+        $value = $pos_value->{$i} if (exists $pos_value->{$i});
+        next if ($value == -1);
+
+        my $start = $gc->start;
+        my $end = $gc->end;
+
+        push (@genomic_coords, {
+          chr => $chr,
+          start => $start,
+          end => $end,
+          value => $value,
+          aln_position => $i,
+          char => $char,
+          stable_id => $leaf->stable_id,
+          node_id => $tree->node_id,
+          member_id => $leaf->dbID,
+          strand => $strand
+        });
+      }
+    };
+    warn() if $@;
+  }
+  return \@genomic_coords;
+}
+
+
+sub collectGeneTags {
+  my $class = shift;
+  my $tree = shift;
+
+  my $hash;
+
+  sub mysql_getval {
+    my $cmd = shift;
+    my $dbc = $tree->adaptor->dbc;
+    my $sth = $dbc->prepare($cmd);
+    $sth->execute();
+    my $val = @{$sth->fetchrow_arrayref()}[0];
+    $val = 'NA' unless (defined $val);
+    return $val;
+  }
+
+  sub avg_sitewise {
+    my $value = shift;
+    my $node_id = shift;
+    my $table = shift;
+    my $parameter_set_id = shift;
+
+    my $cmd = qq^SELECT avg($value) FROM $table 
+      WHERE node_id=$node_id AND ncod >= 4 AND type != 'random' AND omega_upper > omega
+      AND parameter_set_id=$parameter_set_id
+      ^;
+    return sprintf("%.4f",mysql_getval($cmd));
+  }
+
+  sub total_distance {
+    my $tree = shift;
+    my $dist = 0;
+    map {$dist += $_->distance_to_parent} $tree->nodes;
+    return $dist;
+  }
+
+  sub num_pscs {
+    my ($node_id,$table,$pset) = @_;
+    return mysql_getval(qq^ SELECT count(*) FROM $table sa
+			WHERE sa.node_id=$node_id AND sa.parameter_set_id=$pset
+			AND sa.omega_upper > sa.omega AND sa.type != 'random' AND
+			sa.type IN ("positive4","positive3") AND
+			sa.ncod >= 4;
+			^);
+  }
+  
+  my $node_id = $tree->node_id;
+
+  $hash->{'leaf_count'} = scalar($tree->leaves);
+  $hash->{'node_count'} = scalar($tree->nodes);
+  $hash->{'gappines'} = mysql_getval("SELECT gappiness($node_id)");
+  $hash->{'duplications'} = mysql_getval("SELECT num_dups_under_node($node_id)");
+  $hash->{'duplication_fraction'} = mysql_getval("SELECT num_dups_under_node($node_id)/node_count($node_id)");
+  my @hum_gen = grep {$_->taxon_id==9606} $tree->leaves;
+  $hash->{'human_genes'} = scalar(@hum_gen);
+  $hash->{'ensp'} = $hum_gen[0]->stable_id if ($hum_gen[0]);
+
+  my $bak = "bak_sitewise_aln";
+  my $sw = "sitewise_aln";
+  $hash->{'vert_lrt'} = avg_sitewise("lrt_stat",$node_id,$sw,14);
+  $hash->{'vert_omega'} = avg_sitewise("omega",$node_id,$sw,14);
+  $hash->{'primate_omega'} = avg_sitewise("omega",$node_id,$bak,15);
+  $hash->{'laur_omega'} = avg_sitewise("omega",$node_id,$bak,16);
+  $hash->{'glires_omega'} = avg_sitewise("omega",$node_id,$bak,17);
+  
+  $hash->{'vert_pscs'} = num_pscs($node_id,$sw,14);
+  $hash->{'primate_pscs'} = num_pscs($node_id,$bak,15);
+  $hash->{'laur_pscs'} = num_pscs($node_id,$bak,16);
+  $hash->{'glires_pscs'} = num_pscs($node_id,$bak,17);
+
+  $hash->{'tree_length_max'} = sprintf "%.3f", $tree->max_distance;
+  $hash->{'tree_length_total'} = sprintf "%.3f", total_distance($tree);
+
+  my $seq_len=0;
+  map {$seq_len += $_->seq_length} $tree->leaves;
+  $hash->{'avg_seq_length'} = sprintf "%.3f", $seq_len / scalar($tree->leaves);
+  $hash->{'aln_length'} = sprintf "%.3f", $tree->get_tagvalue('aln_length');
+  $hash->{'aln_percent_identity'} = sprintf "%.3f",$tree->get_tagvalue('aln_percent_identity');
+
+  my $hash2;
+  map {$hash2->{'eslr_'.$_} = $hash->{$_}} keys %{$hash};
+
+  my @sorted_keys = sort keys %{$hash2};
+  my @sorted_vals = map {"  ".$_ . "=>".$hash2->{$_}} @sorted_keys;
+  my $val_string = join("\n",@sorted_vals);
+  print "Tags: {\n". $val_string."\n}\n";
+
+  return $hash2;
+}
+
+
+
+sub get_short_name_for_parameter_set {
+  my $class = shift;
+  my $parameter_set_id = shift;
+
+  my $id = $parameter_set_id;
+  my $str = "";
+  $str = "vertebrates" if ($id == 14);
+  $str = "primates" if ($id == 15);
+  $str = "laurasiatheria" if ($id == 16);
+  $str = "glires" if ($id == 17);
+  $str = "no-2x" if ($id == 12);
+  $str = "duplications" if ($id == 101);
+  return ucfirst($str);
+}
+
+1;

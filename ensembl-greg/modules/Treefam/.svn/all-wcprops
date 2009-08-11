@@ -1,0 +1,59 @@
+K 25
+svn:wc:ra_dav:version-url
+V 59
+/greg/!svn/ver/282/ensembl_src/ensembl-greg/modules/Treefam
+END
+Config.pm
+K 25
+svn:wc:ra_dav:version-url
+V 69
+/greg/!svn/ver/282/ensembl_src/ensembl-greg/modules/Treefam/Config.pm
+END
+DBConnection.pm
+K 25
+svn:wc:ra_dav:version-url
+V 75
+/greg/!svn/ver/282/ensembl_src/ensembl-greg/modules/Treefam/DBConnection.pm
+END
+Node.pm
+K 25
+svn:wc:ra_dav:version-url
+V 67
+/greg/!svn/ver/282/ensembl_src/ensembl-greg/modules/Treefam/Node.pm
+END
+GeneHandle.pm
+K 25
+svn:wc:ra_dav:version-url
+V 73
+/greg/!svn/ver/282/ensembl_src/ensembl-greg/modules/Treefam/GeneHandle.pm
+END
+TreeHandle.pm
+K 25
+svn:wc:ra_dav:version-url
+V 73
+/greg/!svn/ver/282/ensembl_src/ensembl-greg/modules/Treefam/TreeHandle.pm
+END
+FamilyHandle.pm
+K 25
+svn:wc:ra_dav:version-url
+V 75
+/greg/!svn/ver/282/ensembl_src/ensembl-greg/modules/Treefam/FamilyHandle.pm
+END
+Gene.pm
+K 25
+svn:wc:ra_dav:version-url
+V 67
+/greg/!svn/ver/282/ensembl_src/ensembl-greg/modules/Treefam/Gene.pm
+END
+Tree.pm
+K 25
+svn:wc:ra_dav:version-url
+V 67
+/greg/!svn/ver/282/ensembl_src/ensembl-greg/modules/Treefam/Tree.pm
+END
+Family.pm
+K 25
+svn:wc:ra_dav:version-url
+V 69
+/greg/!svn/ver/282/ensembl_src/ensembl-greg/modules/Treefam/Family.pm
+END
