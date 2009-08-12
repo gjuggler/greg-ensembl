@@ -23,6 +23,7 @@ sub plotTreeWithOmegas {
     exon_cased => 0,
     node_id => '',
     subtrees => '',
+    cleanup_temp => 1
   };
   $params = Bio::EnsEMBL::Compara::ComparaUtils->replace_params($defaults,$params);
 
@@ -191,9 +192,60 @@ sub plotTreeWithOmegas {
     height = max(1,aln1\$num_seqs / 10);
     width = min(48,aln1\$length/10);
 
-    mult = 72 / width;
+    mult = 50 / width;
     width = width*mult;
     height = height*mult;
+
+
+dpar = par(no.readonly=T)
+
+#par(cex=1/width);
+#par(ps=width/10);
+
+print(paste("Width:",width," Height:",height));
+pdf(file="${file_out}",width=width,height=height,pointsize=12);
+
+# Use layout to arrange the regions for SLR values, tracks, tree, and alignment.
+num_tracks = 3
+track_heights = c(.5,.1,.1)
+aln_height = 1
+heights=c(track_heights,aln_height)
+tree_width=0.5
+aln_width=1
+pad_width = aln_width/10
+widths=c(tree_width,aln_width,pad_width)
+
+# Plotting order: aln, tree, track 1,2,3...n
+num_rows = num_tracks+1
+num_cols = 3
+numbers = c()
+for (i in 1:num_tracks) {
+  numbers = c(numbers,3,i+3,0)
+}
+numbers = c(numbers,2,1,0)
+
+layout(matrix(numbers,nrow=num_rows,ncol=num_cols,byrow=T),heights=heights,widths=widths)
+#layout.show(num_tracks+3)
+par(xaxs='i',mai=rep(0,4))
+source("aln_tools/aln.tools.R")
+source("aln_tools/slr.tools.R")
+source("aln_tools/plot.phylo.greg.R")
+source("aln_tools/phylo.tools.R")
+aln = read.aln(files[1])
+tree = read.tree(trees[1])
+slr = read.slr(slrs[1])
+a = plot.aln(aln,overlay=F,axes=F,draw.chars=F)
+xl = tree_length(tree)
+plot.phylo.greg2(tree,y.lim=a\$ylim,x.lim=c(-1,xl*1.1),show.tip.label=T)
+axis.phylo(tree,side=3)
+plot(c(1),type='n',axes=F)
+# Now plot the tracks.
+plot.slr.blocks(slr,xlim=a\$xlim,log=T)
+axis(side=2)
+plot.slr.types(slr,xlim=a\$xlim)
+plot.aln.bars(aln)
+dev.off()
+q();
 
     rowHeight = height/aln1\$num_seqs
     cex = rowHeight*5/10;
@@ -302,8 +354,10 @@ sub plotTreeWithOmegas {
     $rc = system("/software/bin/R-2.9.0 --vanilla < $temp >/dev/null");
   }
 
-  use File::Path qw(rmtree);
-  rmtree($dir);
+  if ($params->{'cleanup_temp'}) {
+    use File::Path qw(rmtree);
+    rmtree($dir);
+  }
 
 }
 
