@@ -1,0 +1,66 @@
+
+Row and/or column partition is empty. All the data will be used by default.
+Row and/or column partition is empty. All the data will be used by default.
+S000000002 has 0 parameters - branch length not assigned
+S000000005 has 0 parameters - branch length not assigned
+Node3 has 0 parameters - branch length not assigned
+S000000003 has 0 parameters - branch length not assigned
+Node2 has 0 parameters - branch length not assigned
+S000000004 has 0 parameters - branch length not assigned
+Node1 has 0 parameters - branch length not assigned
+S000000001 has 0 parameters - branch length not assigned
+Rooted tree. Removing one branch - the left root child has been promoted to be the new root
+Model NucModel assigned to S000000004
+Branch parameter of S000000004 set to :0.3288
+Model NucModel assigned to S000000001
+Branch parameter of S000000001 set to :0.4088
+Model NucModel assigned to Node2
+Branch parameter of Node2 set to :0.071
+Model NucModel assigned to S000000003
+Branch parameter of S000000003 set to :0.0124
+Model NucModel assigned to Node1
+Branch parameter of Node1 set to :0.0213
+Model NucModel assigned to S000000002
+Branch parameter of S000000002 set to :0.0018
+Model NucModel assigned to S000000005
+Branch parameter of S000000005 set to :0.0091
+Model NucModel assigned to Node6
+Branch parameter of Node6 set to :0.0213
+Rooted tree. Removing one branch - the left root child has been promoted to be the new root
+The tips of the tree:givenTree were matched with the species names from the data as follows {3,0,2,1,4}
+
+Pseudo-optimal path's cost 480 vs 612 for 1..k=> a 1.275 x improvement
+
+If using full MST heurisitcs: 456 vs 612 for 1..k=> a 1.34211 x (relative 1.05263 x) improvement with 0 KB memory overhead
+Row and/or column partition is empty. All the data will be used by default.
+Model MGModel assigned to S000000004
+Branch parameter of S000000004 set to :0.3288
+Model MGModel assigned to S000000001
+Branch parameter of S000000001 set to :0.4088
+Model MGModel assigned to Node2
+Branch parameter of Node2 set to :0.071
+Model MGModel assigned to S000000003
+Branch parameter of S000000003 set to :0.0124
+Model MGModel assigned to Node1
+Branch parameter of Node1 set to :0.0213
+Model MGModel assigned to S000000002
+Branch parameter of S000000002 set to :0.0018
+Model MGModel assigned to S000000005
+Branch parameter of S000000005 set to :0.0091
+Model MGModel assigned to Node6
+Branch parameter of Node6 set to :0.0213
+Rooted tree. Removing one branch - the left root child has been promoted to be the new root
+The tips of the tree:codonTree were matched with the species names from the data as follows {3,0,2,1,4}
+
+Pseudo-optimal path's cost 832 vs 1012 for 1..k=> a 1.21635 x improvement
+
+If using full MST heurisitcs: 794 vs 1012 for 1..k=> a 1.27456 x (relative 1.04786 x) improvement with 5 KB memory overhead
+
+ReplicateConstraint generated the following contsraints:
+codonTree.S000000004.synRate:=rConstr*givenTree.S000000004.t__;
+codonTree.S000000001.synRate:=rConstr*givenTree.S000000001.t__;
+codonTree.Node2.synRate:=rConstr*givenTree.Node2.t__;
+codonTree.S000000003.synRate:=rConstr*givenTree.S000000003.t__;
+codonTree.S000000002.synRate:=rConstr*givenTree.S000000002.t__;
+codonTree.S000000005.synRate:=rConstr*givenTree.S000000005.t__;
+codonTree.Node6.synRate:=rConstr*givenTree.Node6.t__;
