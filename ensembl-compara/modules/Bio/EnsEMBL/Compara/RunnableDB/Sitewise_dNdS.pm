@@ -38,11 +38,11 @@ sub fetch_input {
   my( $self) = @_;
   
   # Load up the Compara DBAdaptor.
-  if ($self->dba) {
-    $dba = $self->dba;
-  } else {
+#  if ($self->dba) {
+#    $dba = $self->dba;
+#  } else {
     $dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new(-DBCONN=>$self->db->dbc);
-  }
+#  }
   $pta = $dba->get_ProteinTreeAdaptor;
   
   ### DEFAULT PARAMETERS ###
@@ -129,7 +129,7 @@ sub run {
       }
     }
     
-    $tree->print_tree;
+    #$tree->print_tree;
     #eval {
       $self->run_with_params($new_params,$tree);
       $tree->release_tree;
@@ -143,11 +143,14 @@ sub run_with_params {
   my $tree = shift;
   $self->check_job_fail_options;
 
+  print "Getting alignments...\n";
   my $aa_aln = $tree->get_SimpleAlign();
   my $cdna_aln = $tree->get_SimpleAlign(-cdna => 1);
 
   $input_aa = Bio::EnsEMBL::Compara::ComparaUtils->fetch_masked_alignment($aa_aln,$cdna_aln,$tree,$params,0);
   $input_cdna = Bio::EnsEMBL::Compara::ComparaUtils->fetch_masked_alignment($aa_aln,$cdna_aln,$tree,$params,1);
+
+  exit(0);
 
   #if ($self->input_job->retry_count > 0) {
     #my $arr_ref = Bio::EnsEMBL::Compara::AlignUtils->remove_blank_columns($input_aa);
@@ -156,7 +159,6 @@ sub run_with_params {
     #$aa_map = $arr[1];
     #$input_cdna = Bio::EnsEMBL::Compara::AlignUtils->remove_blank_columns_in_threes($input_cdna);
   #}
-
 
   Bio::EnsEMBL::Compara::AlignUtils->pretty_print($input_aa,{length => 150});
   Bio::EnsEMBL::Compara::AlignUtils->pretty_print($input_cdna,{length => 150});
@@ -255,7 +257,7 @@ sub run_sitewise_dNdS
     my $quiet = '';
     $quiet = ' 2>/dev/null' unless ($self->debug);
 
-    print "RETRY COUNT: ".$self->input_job->retry_count."\n";
+    #print "RETRY COUNT: ".$self->input_job->retry_count."\n";
     #my $prefix = "";
     #if ($self->input_job->retry_count > 0) {
     my $prefix= "export MALLOC_CHECK_=1;";
@@ -423,7 +425,7 @@ sub check_job_fail_options
 {
   my $self = shift;
 
-  print "RETRY COUNT: ".$self->input_job->retry_count."\n";
+  #print "Checking retry count: ".$self->input_job->retry_count."\n";
   if ($self->input_job->retry_count > 3) {
     $self->fail_job("Job failed >3 times!");
   }

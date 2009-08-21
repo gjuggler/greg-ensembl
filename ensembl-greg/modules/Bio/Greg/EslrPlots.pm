@@ -210,7 +210,7 @@ num_tracks = 3
 track_heights = c(.5,.1,.1)
 aln_height = 1
 heights=c(track_heights,aln_height)
-tree_width=0.5
+tree_width=0.2
 aln_width=1
 pad_width = aln_width/10
 widths=c(tree_width,aln_width,pad_width)
@@ -236,7 +236,7 @@ tree = read.tree(trees[1])
 slr = read.slr(slrs[1])
 a = plot.aln(aln,overlay=F,axes=F,draw.chars=F)
 xl = tree_length(tree)
-plot.phylo.greg2(tree,y.lim=a\$ylim,x.lim=c(-1,xl*1.1),show.tip.label=T)
+plot.phylo.greg2(tree,y.lim=a\$ylim,x.lim=c(xl-4,xl*1.1),show.tip.label=T)
 axis.phylo(tree,side=3)
 plot(c(1),type='n',axes=F)
 # Now plot the tracks.
@@ -246,95 +246,6 @@ plot.slr.types(slr,xlim=a\$xlim)
 plot.aln.bars(aln)
 dev.off()
 q();
-
-    rowHeight = height/aln1\$num_seqs
-    cex = rowHeight*5/10;
-    
-    print(paste("Width:",width," Height:",height));
-
-    pdf(file="${file_out}",width=width,height=height);
-
-    omd = par("omd");
-    pad = 0.01;
-    alignment_height = 0.3;
-
-    fit_to_track = function(
-	track_index,  # 1-based index.
-	num_tracks,   # total # of tracks.
-	height=1,     # height multiplier.
-	padding=0.1,
-        xlim=c(0,0.9)
-	) {
-	# Find the appropriate lower and upper bounds for this track.
-	track_height = 1/num_tracks;
-	# My actual height is decreased by the padding.
-	my_height = track_height - 2*(track_height*padding);
-
-	# Decrease height again by the height multiplier.
-	if (height < 1) my_height = track_height * height;
-
-	# Center the track in the "div" if the given height is less than the div height.
-	track_center_padding = (track_height - my_height) / 2;
-
-	lower_bound = (track_index-1)*(track_height);
-	upper_bound = track_index*(track_height);
-	low_y = lower_bound + track_center_padding;
-	hi_y = upper_bound - track_center_padding;
-
-	par(fig=c(xlim[1],xlim[2],low_y,hi_y),new=TRUE);
-    }
-
-    max_num_seqs = aln1\$num_seqs;
-
-    tree = aln1\$tree;
-    sprintf("Tree length: %f",sum(tree\$edge.length))
-
-    tree_width = 100;
-
-    par(new=FALSE);
-    plot.new();
-
-    # Scale bars.
-    par(mar=c(0,0,0,0));
-    fit_to_track(2,3,padding=0);
-    plot.window(xlim=c(0+0.5-tree_width,aln1\$length+0.5),ylim=c(-1,1));
-    barH = .15
-    bigBars = seq(from=1,to=aln1\$length,by=50);
-    littleBars = seq(from=1,to=aln1\$length,by=10);
-    segments(x0=littleBars,y0=-barH/2,x1=littleBars,y1=barH/2,lwd=4,col='gray');
-    segments(x0=bigBars,y0=-barH,x1=bigBars,y1=barH,lwd=4,col='black');
-
-    
-    bigText = as.character(bigBars);
-    text(x=bigBars,y=0,labels=bigText,cex=2,pos=4);
-
-    # Alignment.
-    fit_to_track(1,2,padding=0.05);
-    plot.aln(aln1,square=FALSE,overlay=FALSE,draw.chars=TRUE,char.col='white',tree.width=tree_width);
-
-    # Omegas.
-    par(mar=c(0,0,0,0));
-    fit_to_track(2,2,padding=0.05);
-    plot.new();
-    plot.window(xlim=c(0+0.5-tree_width,aln1\$length+0.5),ylim=c(0,7));
-    plot.slr.blocks(aln1\$omegas,overlay=TRUE,block.xlim=c(.2,0.8),color.lrt=TRUE);
-
-    fit_to_track(1,1,padding=0.05,xlim=c(0,1));
-    plot.new();
-#    plot.window(xlim=c(0,1),ylim=c(0,1));
-
-    leg.txt = c("2X missing sequence","Alignment quality filtered","Sequence quality filtered");
-    leg.col = c("black","#808080","#C0C0C0");
-    legend('bottomright',legend=leg.txt,fill=leg.col,cex=5,bg='white');
-    leg.txt = c("Positively selected site","Neutral site","Negatively selected site");
-    leg.col = c("red","gray","blue");
-    legend('topright',legend=leg.txt,fill=leg.col,cex=5,bg='white');
-
-    par(family="mono");
-    text(x=0.9,y=0.3,adj=c(0,0),labels=$url,cex=2);
-    text(x=0.91,y=0.5,adj=c(0,0.5),labels=$spf,cex=3);
-
-    dev.off();
 };
 
   my $temp = "$dir/rcmd.txt";

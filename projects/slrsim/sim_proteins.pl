@@ -10,7 +10,7 @@ my $cmd = qq^
 #!/usr/bin/env Rscript
 library(R.oo)
 library(ape)
-  system("make cat");
+#system("make cat");
 source("./FullSource.R");
 ####################################################
 #
@@ -60,7 +60,7 @@ ins\$insertHook<-function(seq){
 }
 
 # Attach the indel processes to root sequence:
-seq\$processes<-list(list(p,ins,del));
+seq\$processes<-list(list(p));
 
 # Create the simulation object:
 sim<-PhyloSim(

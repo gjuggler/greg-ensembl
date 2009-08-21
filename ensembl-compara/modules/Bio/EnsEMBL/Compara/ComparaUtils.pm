@@ -210,9 +210,12 @@ sub fetch_masked_alignment
     alignment_score_filtering => 0,
     alignment_score_threshold => 'auto',
 
+    prank_filtering => 1,
+
     sequence_quality_mask_character => 'X',
     alignment_score_mask_character => 'X',
     alignment_quality_mask_character => 'X',
+    prank_mask_character => 'X',
     cdna => $cdna_option
   };
   $params = $class->replace_params($default_params,$params);
@@ -304,6 +307,11 @@ sub fetch_masked_alignment
   if ($params->{'alignment_quality_filtering'}) {
     print " -> Masking alignment with TrimAl\n";
     $aln = $class->mask_aln_by_alignment_quality($tree,$aln,$aa_aln,$params);
+  }
+
+  if ($params->{'prank_filtering'}) {
+    print " -> Masking alignment with Prank\n";
+    $aln = $ALN->prank_filter($aln,$tree,$params);
   }
 
   $aln = $ALN->sort_by_tree($aln,$tree);

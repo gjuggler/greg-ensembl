@@ -280,6 +280,25 @@ sub mask_columns {
   return $aln;
 }
 
+sub prank_filter {
+  my $class = shift;
+  my $aln = shift;
+  my $tree = shift;
+  my $params = shift;
+
+  my $dir = "/tmp/prank_temp";
+
+  my $aln_f = $dir."/aln.fasta";
+  my $tree_f = $dir."/tree.fasta";
+
+  # Output tree and alignment.
+  $class->to_file($aln,$aln_f);
+  Bio::EnsEMBL::Compara::TreeUtils->to_file($tree,$tree_f);
+
+
+  #rmtree([$dir]);
+}
+
 sub gblocks_filter {
   my $class = shift;
   my $aln = shift;

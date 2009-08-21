@@ -1,2 +1,27 @@
 ### 2009-08-11 ###
 Started project.
+
+### 2009-08-19 ###
+
+Thinking of which sets of simulations to run.
+
+Trees:
+1) Vertebrates - typical Ensembl-like tree
+ - ~50 species
+ - branch length: XYZ
+2) Eutherian - typical Ensembl-like tree, with only eutherian mammals
+ - ~29 species
+ - branch length: XYZ
+3) Primate - primate sub-tree, ~8 species, short branch length
+4) B-globin - 18-taxa tree from Anisimova study
+5) Artificial - 6-taxon artificial tree from Anisimova, Massingham
+
+Omega distributions:
+1) Lognormal: randomly drawn from a lognormal (meanlog=-4.079, sdlog=2.863)
+2) Gamma: randomly drawn from a gamma (shape=0.271, rate=1.203)
+
+Indel processes:
+1) None.
+2) Low frequency, random
+3) Hi frequency, random
+4) Hi frequency, correlated with omegas.
