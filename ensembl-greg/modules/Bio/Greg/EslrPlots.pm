@@ -44,7 +44,6 @@ sub plotTreeWithOmegas {
   # Prune the tree.
   $params->{'node_id'} = $tree_in->node_id if (defined $tree_in);
 
-
   my @subtrees = ();
 #  if ($params->{'subtrees'}) {
 #    foreach my $st (@{$params->{'subtrees'}}) {

@@ -376,14 +376,22 @@ sub run_r {
 sub get_r_values {
   my $class = shift;
   my $rcmd = shift;
+  my $temp_dir = shift;
 
-  my $temp_dir = "/tmp/eslr_rcmd";
-  use File::Path;
-  mkpath($temp_dir);
+  if (!$temp_dir) {
+    $temp_dir = "/tmp/eslr_rcmd";
+    use File::Path;
+    mkpath($temp_dir);
+  }
 
-  my $temp_in = $temp_dir . "/temp_in.txt";
-  my $temp_out = $temp_dir . "/temp_out.txt";
+  use Digest::MD5 qw(md5_hex);
+  my $digest = md5_hex($rcmd . rand());
+  $digest = substr($digest,0,10);
 
+  my $temp_in = $temp_dir . "/temp_in_".$digest.".txt";
+  my $temp_out = $temp_dir . "/temp_out".$digest.".txt";
+
+  print "TEMP IN: $temp_in\n";
   open(OUT,">$temp_in");
   print OUT $rcmd."\n";
   close(OUT);
@@ -391,18 +399,37 @@ sub get_r_values {
 # cmd to run: /software/R-2.7.1/bin/R CMD BATCH $filename
   my $rc = system("/ebi/research/software/Linux_x86_64/bin/R-2.7.0 --slave --vanilla < $temp_in > $temp_out");
   #my $rc = system("/software/R-2.7.1/bin/R --vanilla --slave < $temp_in ");
-  die "R returned an error!" if ($rc);
   
   open(IN,"$temp_out");
   my @lines = <IN>;
   map {chomp} @lines; 
   close(IN);
+
+  if ($rc) {
+    print join("\n",@lines);
+    die "R returned an error!";
+  }
   
   unlink($temp_in);
   unlink($temp_out);
-  unlink($temp_dir);
+  #unlink($temp_dir);
 
   return @lines;
+}
+
+sub mysql_array {
+  my $class = shift;
+  my $dbc = shift;
+  my $cmd = shift;
+
+  my $sth = $dbc->prepare($cmd);
+  $sth->execute();
+
+  my $array_ref = $sth->fetchall_arrayref([0]);
+  $sth->finish;
+  my @vals = @{$array_ref};
+  @vals = map {@{$_}[0]} @vals;  # Some weird mappings to unpack the numbers from the arrayrefs.
+  return @vals;
 }
 
 sub get_short_name_for_parameter_set {
