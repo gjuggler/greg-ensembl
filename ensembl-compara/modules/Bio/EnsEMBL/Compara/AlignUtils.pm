@@ -2,6 +2,7 @@ package Bio::EnsEMBL::Compara::AlignUtils;
 
 use Bio::AlignIO;
 use Bio::EnsEMBL::Compara::LocalMember;
+use File::Path;
 
 #
 # A grab bag of useful methods for tree manipulations.
@@ -74,7 +75,7 @@ sub get_nongaps_at_column {
   foreach my $seq ($aln->each_seq) {
     my $residue = $seq->subseq($pos,$pos);
     #print $residue;
-    $nongap_count++ if ($residue !~ /[-nx]/i);
+    $nongap_count++ if ($residue !~ /[-x]/i);
   }
   return $nongap_count;
 }
@@ -286,17 +287,115 @@ sub prank_filter {
   my $tree = shift;
   my $params = shift;
 
-  my $dir = "/tmp/prank_temp";
+  return $aln;
 
+  my $mask_char = $params->{'prank_mask_character'};
+
+  my $dir = "/tmp/prank_temp";
+  mkpath([$dir]);
   my $aln_f = $dir."/aln.fasta";
-  my $tree_f = $dir."/tree.fasta";
+  my $tree_f = $dir."/tree.nh";
+  my $out_f = $dir."/aln_filtered";
+  my $xml_f = $out_f.".0.xml";
 
   # Output tree and alignment.
   $class->to_file($aln,$aln_f);
   Bio::EnsEMBL::Compara::TreeUtils->to_file($tree,$tree_f);
 
+  my $cmd = qq^prank_latest -d=$aln_f -t=$tree_f -e -o=$out_f^;
 
+  use XML::LibXML;
+  use Bio::Greg::Node;
+
+  # Grab information from Prank's XML output.
+  my $parser = XML::LibXML->new();
+  $tree = $parser->parse_file($xml_f);
+  my $root = $tree->getDocumentElement;
+
+  my $newick = ${$root->getElementsByTagName('newick')}[0]->getFirstChild->getData;
+  #print $newick."\n";
+  my $rootNode = Bio::Greg::Node->new();
+  $rootNode = $rootNode->parseTree($newick);
+
+  my %nameToId;
+  my %idToName;
+  my %seqsByName;
+  foreach my $lid (@{$root->getElementsByTagName('leaf')}) {
+    $nameToId{$lid->getAttribute('name')} = $lid->getAttribute('id');
+    $idToName{$lid->getAttribute('id')} = $lid->getAttribute('name');
+    my $seq = $lid->findvalue('sequence');
+    $seq =~ s/\s//g;
+    $seqsByName{$lid->getAttribute('name')} = $seq;
+  }
+  my %postprob;
+  foreach my $nid (@{$root->getElementsByTagName('node')}) {
+    my $node = $nid->getAttribute('id');
+    foreach my $pid (@{$nid->getElementsByTagName('probability')}) {
+      my $prob = $pid->getAttribute('id');
+      my $data = $pid->getFirstChild->getData;
+      $data =~ s/\s//g;
+      $postprob{$node}{$prob} = $data;
+    }
+  }
+  my %nameToState;
+  foreach my $sid (${$root->getElementsByTagName('model')}[0]->getElementsByTagName('probability')) {
+    $nameToState{$sid->getAttribute('name')} = $sid->getAttribute('id');
+  }
+
+  # Go through the nodes, filtering at XYZ posterior probability.
+  my @nodes = $rootNode->nodes();
+  foreach my $node (@nodes) {
+    next if ($node->isLeaf);
+    my @score = split(/,/,$postprob{$node->name}{$nameToState{'postprob'}});
+
+    my $filter_sites = {};
+    for (my $i=0; $i < scalar(@score); $i++) {
+      $filter_sites->{$i+1} = 1 if ($score[$i] > -1 && $score[$i] < 95);
+      #print $score[$i]." ";
+    }
+    my @nms = $node->leafNames;
+    @nms = map {$idToName{$_}} @nms;
+    #print "@nms\n";
+
+    # For each internal node-site below the threshold, mask out that site in all enclosed leaves.
+    foreach my $name (@nms) {
+      $aln = $class->filter_sites($aln,$name,$filter_sites,$mask_char);
+    }
+  }
+
+  $class->pretty_print($aln);
+
+  #my $rc = system($cmd);
+  #die("Prank error!") if ($rc);
+
+  # GJ TODO
+
+  return $aln;
   #rmtree([$dir]);
+}
+
+sub filter_sites {
+  my $class = shift;
+  my $aln = shift;
+  my $seq_name = shift;
+  my $sites_ref = shift;
+  my $mask_char = shift;
+
+  my @sites = keys %{$sites_ref};
+
+  foreach my $seq ($aln->each_seq) {
+    my $label = $seq->display_id;
+    if ($label eq $seq_name) {
+      # We're at the right sequences now. Filter out the sites!
+      my $seq_str = $seq->seq;
+      foreach my $site (@sites) {
+        substr($seq_str,$site-1,1) = $mask_char unless (substr($seq_str,$site-1,1) eq '-');
+        $seq->seq($seq_str);
+      }
+      last;
+    }
+  }
+  return $aln;
 }
 
 sub gblocks_filter {

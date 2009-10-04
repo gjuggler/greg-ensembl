@@ -203,11 +203,11 @@ sub scale {
   my $tree = shift;
   my $scale = shift;
 
-  # Create a copy of the tree.
-  my $newick = $class->to_newick($tree);
-  $tree = $class->to_treeI($newick);
-
   if ($tree->isa("Bio::Tree::TreeI")) {
+    # Create a copy of the tree.
+    my $newick = $class->to_newick($tree);
+    $tree = $class->to_treeI($newick);
+
     for my $node ($tree->get_nodes) {
       my $bl = $node->branch_length;
       $bl = 0 unless (defined $bl);
@@ -223,7 +223,17 @@ sub scale {
   return $tree;
 }
 
-# Scales a tree to a certain total length.
+sub scale_max_to {
+  my $class = shift;
+  my $tree = shift;
+  my $new_max = shift;
+
+  my $max_dist = $tree->max_distance;
+  my $scale_factor = $new_max / $max_dist;
+  return $class->scale($tree,$scale_factor);
+}
+
+# Scales a tree to a certain total branch length.
 # NOTE: Tree is modified in-place!
 # @created GJ 2009-01-09
 sub scale_to {
@@ -236,10 +246,37 @@ sub scale_to {
     my $total_dist = $class->max_distance($tree);
     $scale_factor = $new_total / $total_dist;
   } elsif ($tree->isa("Bio::EnsEMBL::Compara::NestedSet")) {
-    my $total_dist = $tree->max_distance;
+#    my $total_dist = $tree->max_distance;
+#    my $total_dist = $class->max_distance_unrooted($tree);
+    my $total_dist = $class->total_distance($tree);
     $scale_factor = $new_total / $total_dist;
   }
   return $class->scale($tree,$scale_factor);
+}
+
+sub total_distance {
+  my $class = shift;
+  my $tree = shift;
+
+  my $sum = 0;
+  foreach my $n ($tree->nodes) {
+    $sum += $n->distance_to_parent;
+  }
+  return $sum;
+}
+
+sub max_distance_unrooted {
+  my $class = shift;
+  my $tree = shift;
+
+  my $max_dist = 0;
+  foreach my $a ($tree->leaves) {
+    foreach my $b( $tree->leaves) {
+      my $sum = $a->distance_to_node($b);
+      $max_dist = $sum if ($sum > $max_dist);
+    }
+  }
+  return $max_dist;
 }
 
 # Returns the maximum root-to-tip distance for a Bio::Tree:TreeI object.

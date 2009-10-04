@@ -60,38 +60,49 @@ sub store_SimpleAlign_into_table {
     my $name =  $node->stable_id;
 
     if (defined $aa_aln) {
-      my $seq_obj = $aa_aln->get_seq_with_id($name);
+      #print "membr: ".$node->member_id."\n";
+      #print "seq id: ".$node->sequence_id."\n";
+      $pta->dbc->do("UPDATE member set sequence_id=NULL where member_id=".$node->member_id.";");
+      #if ($node->sequence_id) {
+      #  $pta->dbc->do("DELETE FROM sequence WHERE sequence_id=".$node->sequence_id.";");
+      #}
+      my $seq_obj = $ALN->get_seq_with_id($aa_aln,$name);
       if (!defined $seq_obj) {
-	#warn("No sequence with ID $name found in the alignment!") ;
+	warn("No sequence with ID $name found in the alignment!") ;
 	next;
       }
-      my $aa_seq = $seq_obj->seq;
-      
+      my $aa_seq = $seq_obj->seq;      
       my $cigar_line = $class->cigar_line($aa_seq);
       $node->cigar_line($cigar_line);
-      #print $node->cigar_line."\n";
-      
       $aa_seq =~ s/-//g;
       $node->sequence($aa_seq);
-      $node->sequence_id(0);
     }
     if (defined $cdna_aln) {
-      my $cdna_seq = $cdna_aln->get_seq_with_id($name)->seq;
-      
+      #print "CDNA ID:".$node->cdna_sequence_id."\n";
+        $pta->dbc->do("UPDATE member set cdna_sequence_id=NULL where member_id=".$node->member_id.";");
+      #if ($node->cdna_sequence_id) {
+      #  my $cmd = "DELETE FROM sequence WHERE sequence_id=".$node->cdna_sequence_id.";";
+      #  $pta->dbc->do($cmd);
+      #}
+      my $cdna_seq = $ALN->get_seq_with_id($cdna_aln,$name)->seq;
       bless($node,"Bio::EnsEMBL::Compara::LocalMember");
-
       $cdna_seq =~ s/-//g;
       $node->cdna_sequence($cdna_seq);
-      $node->cdna_sequence_id(0);
     }
 
-    #print $node->sequence()."\n";
-    #print $node->cdna_sequence()."\n";
+    $node->sequence_id(0);
+    $node->cdna_sequence_id(0);
 
     # Call the ProteinTreeAdaptor method to do the actual database dirty work.
     $pta->store($node);
     $mba->store($node);
   }
+
+  # Clean up 'hanging' sequences not referenced by any member:
+  $pta->dbc->do(qq^delete s.* FROM sequence s LEFT JOIN member m
+    ON (m.sequence_id=s.sequence_id OR m.cdna_sequence_id=s.sequence_id) 
+    WHERE (m.sequence_id IS NULL OR m.cdna_sequence_id IS NULL);
+    ^);
 }
 
 
@@ -202,15 +213,14 @@ sub fetch_masked_alignment
   $aln = $aa_aln if (!$cdna_option);
 
   my $default_params = {
-    sequence_quality_filtering => 1,
+    sequence_quality_filtering => 0,
     sequence_quality_threshold => 2,
-
-    alignment_quality_filtering => 1,
 
     alignment_score_filtering => 0,
     alignment_score_threshold => 'auto',
-
-    prank_filtering => 1,
+    
+    trimal_filtering => 0,
+    prank_filtering => 0,
 
     sequence_quality_mask_character => 'X',
     alignment_score_mask_character => 'X',
@@ -298,13 +308,13 @@ sub fetch_masked_alignment
   #
   if ($params->{'sequence_quality_filtering'}) {
     printf " -> Masking sequences at quality threshold: %d\n",$params->{'sequence_quality_threshold'};
-    $aln = $class->mask_aln_by_sequence_quality($tree,$aln,$params);
+    #$aln = $class->mask_aln_by_sequence_quality($tree,$aln,$params);
   }
 
   #
   # ALIGNMENT QUALITY MASKING
   #
-  if ($params->{'alignment_quality_filtering'}) {
+  if ($params->{'trimal_filtering'}) {
     print " -> Masking alignment with TrimAl\n";
     $aln = $class->mask_aln_by_alignment_quality($tree,$aln,$aa_aln,$params);
   }
@@ -333,7 +343,7 @@ sub mask_aln_by_alignment_quality {
   Bio::EnsEMBL::Compara::AlignUtils->to_file($aa_aln,$aln_f);
   
   # Build a command for TrimAl.
-  my $cmd = "trimal -in $aln_f -out $aln_f -colnumbering -cons 30 -gt 0.33 -gw 3";
+  my $cmd = "trimal -in $aln_f -out $aln_f -colnumbering -cons 30 -gt 0.5 -gw 3";
   my $output = `$cmd`;
   #print "OUTPUT:". $output."\n";
   
@@ -717,6 +727,13 @@ sub get_tree_for_comparative_analysis {
   $node_id = $params->{'protein_tree_id'} unless (defined $node_id);
   die ("Need a node ID for fetching a tree!") unless ($node_id);
   my $pta = $dba->get_ProteinTreeAdaptor;
+
+  # GJ 2009-09-18
+  if ($params->{'input_table'}) {
+    $pta->protein_tree_member($params->{'input_table'});
+    $pta->protein_tree_score($params->{'input_table'}.'_score');
+  }
+
   my $tree = $pta->fetch_node_by_node_id($node_id);
 
   my $keep_species = $params->{'keep_species'};
@@ -1162,7 +1179,7 @@ sub hash_print {
   my $hashref = shift;
 
   print "{\n";
-  foreach my $key (keys %{$hashref}) {
+  foreach my $key (sort keys %{$hashref}) {
     printf("    %-40.40s => %-40.40s\n",$key,$hashref->{$key});
   }
   print "}\n";

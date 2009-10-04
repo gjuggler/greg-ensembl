@@ -67,7 +67,7 @@ use Bio::EnsEMBL::Compara::DBSQL::DBAdaptor;
 use Bio::EnsEMBL::Compara::DBSQL::PeptideAlignFeatureAdaptor;
 use Bio::EnsEMBL::Compara::Member;
 use Bio::EnsEMBL::Compara::ComparaUtils;
-use Time::HiRes qw(time gettimeofday tv_interval sleep);
+#use Time::HiRes qw(time gettimeofday tv_interval sleep);
 use POSIX qw(ceil floor);
 
 use Bio::EnsEMBL::Hive;
@@ -111,7 +111,8 @@ sub fetch_input {
 	output_table           => 'protein_tree_member',
 	method                 => 'cmcoffee',
 	max_gene_count         => 10000,
-	use_exon_boundaries    => 0
+	use_exon_boundaries    => 0,
+        executable             => ''
 	};  
     
     #########################
@@ -275,6 +276,7 @@ sub align_with_mcoffee
     $tree_temp =~ s/\/\//\//g;  # converts any // in path to /
     
     my $mcoffee_executable;
+    $mcoffee_executable = $params->{'executable'};
     unless (-e $mcoffee_executable) {
 	print "Using default T-Coffee executable!\n";
 	$mcoffee_executable = "/nfs/users/nfs_g/gj1/bin/t_coffee";

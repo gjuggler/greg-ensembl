@@ -1,7 +1,7 @@
 package Bio::EnsEMBL::Compara::RunnableDB::Sitewise_dNdS;
 
 use strict;
-use Time::HiRes qw(time gettimeofday tv_interval sleep);
+#use Time::HiRes qw(time gettimeofday tv_interval sleep);
 use Cwd;
 use Bio::AlignIO;
 
@@ -150,8 +150,6 @@ sub run_with_params {
   $input_aa = Bio::EnsEMBL::Compara::ComparaUtils->fetch_masked_alignment($aa_aln,$cdna_aln,$tree,$params,0);
   $input_cdna = Bio::EnsEMBL::Compara::ComparaUtils->fetch_masked_alignment($aa_aln,$cdna_aln,$tree,$params,1);
 
-  exit(0);
-
   #if ($self->input_job->retry_count > 0) {
     #my $arr_ref = Bio::EnsEMBL::Compara::AlignUtils->remove_blank_columns($input_aa);
     #my @arr = @{$arr_ref};
@@ -194,6 +192,7 @@ sub run_sitewise_dNdS
 #  $slrexe = "/nfs/users/nfs_g/gj1/bin/Slr2" if (! -e $slrexe);
 #  $slrexe = "/nfs/users/nfs_g/gj1/bin/Slr_Linux_static" if (! -e $slrexe);
   $slrexe = "/nfs/users/nfs_g/gj1/build_scratch/slr/bin/Slr";
+  $slrexe = "/homes/greg/bin/Slr" if (! -e $slrexe);
 
   throw("can't find an slr executable to run\n") if (!-e $slrexe);
 
@@ -271,7 +270,7 @@ sub run_sitewise_dNdS
     #$dba->dbc->disconnect_when_inactive(0);
     $error_string = (join('',@output));
 
-    #print $error_string."\n";
+    print $error_string."\n";
 
     # GJ 2009-02-22: Updated and fleshed out the saturated tree handling.
     if ( (grep { /is saturated/ } @output)) {
@@ -304,10 +303,10 @@ sub run_sitewise_dNdS
       if ($outline =~ /lnL = (\S+)/) {
 	$results->{"lnL"} = $1;
       }
-      if ($outline =~ /kappa = (\S+)/) {
+      if ($outline =~ /kappa = (\S+)/i) {
 	$results->{'kappa'} = $1;
       }
-      if ($outline =~ /omega = (\S+)/) {
+      if ($outline =~ /omega = (\S+)/i) {
 	$results->{'omega'} = $1;
       }
     }
@@ -357,7 +356,7 @@ sub run_sitewise_dNdS
       $type = '';
       $note = '';
       chomp $_;
-      print $_."\n";
+#      print $_."\n";
       if ( /^\#/ ) {
 	next;
       }
@@ -546,6 +545,10 @@ sub store_sitewise_dNdS
   $tree_node_id = $tree->subroot->node_id if (defined $tree->subroot);
   my $node_id = $tree->node_id;
 
+  $tree->store_tag("slr_kappa",$results->{'kappa'});
+  $tree->store_tag("slr_omega",$results->{'omega'});
+  $tree->store_tag("slr_lnL",$results->{'lnL'});
+
   foreach my $site (@{$results->{'sites'}}) {
     sleep(0.08);
 
@@ -559,7 +562,7 @@ sub store_sitewise_dNdS
     if (defined $aa_map) {
       $mapped_site = $aa_map->{$site};
       if (defined $mapped_site) {
-	print "Returned column: $site   mapped: $mapped_site\n";
+#	print "Returned column: $site   mapped: $mapped_site\n";
 	$original_site = $site;
 	$site = $mapped_site;
       }
@@ -572,9 +575,10 @@ sub store_sitewise_dNdS
     my $nongaps = Bio::EnsEMBL::Compara::AlignUtils->get_nongaps_at_column($input_aa,$original_site);
     next if ($nongaps == 0);
 
-    printf("Site: %s  nongaps: %d  omegas: %3f (%3f - %3f)  note: %s \n",$site,$nongaps,$omega,$lower,$upper,$note);
+#    printf("Site: %s  nongaps: %d  omegas: %3f (%3f - %3f)  note: %s \n",$site,$nongaps,$omega,$lower,$upper,$note);
 
     my $table = 'sitewise_aln';
+    $table = $params->{'output_table'} if ($params->{'output_table'});
 
     my $parameter_set_id = 0;
     if (defined($params->{'parameter_set_id'})) {

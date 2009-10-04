@@ -812,6 +812,9 @@ sub store {
     . "not a $member");
   }
 
+   $self->dbc->do("LOCK TABLES member WRITE, sequence WRITE");
+   #$self->dbc->do("LOCK TABLES sequence WRITE");
+
 #  $member->source_id($self->store_source($member->source_name));
 
   if ($member->member_id == 0 and $member->dbID == 0) {
@@ -860,12 +863,14 @@ sub store {
   # Store the sequence and cdna sequence.
   #
   if(defined($member->sequence) && $member->sequence_id == 0) {
+
       # We've got a new sequence on our hands, so insert it!
       $member->sequence_id($self->db->get_SequenceAdaptor->store($member->sequence));
 
       my $sth3 = $self->prepare("UPDATE member SET sequence_id=? WHERE member_id=?");
       $sth3->execute($member->sequence_id, $member->dbID);
       $sth3->finish;
+
   }
 
   if ($member->isa("Bio::EnsEMBL::Compara::LocalMember")) {
@@ -878,6 +883,7 @@ sub store {
       }
   }
 
+  $self->dbc->do("UNLOCK TABLES");
   return $member->dbID;
 }
 
