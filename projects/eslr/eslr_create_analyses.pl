@@ -39,6 +39,8 @@ one_time_use();
 #protein_features();
 #duplications();
 
+output_trees();
+
 #connect_analysis("NodeSets","SequenceQuality",1);
 #connect_analysis("Align","SequenceQuality",1);
 #connect_analysis("SequenceQuality","Omegas",1);
@@ -351,6 +353,10 @@ SELECT ptn.node_id FROM node_set_member nsm, protein_tree_node ptn
   _add_parameter_set($params);
   _add_nodes_to_analysis($analysis_id,$params,\@ids);
 
+}
+
+sub output_trees {
+  my $analysis_id=
 }
 
 

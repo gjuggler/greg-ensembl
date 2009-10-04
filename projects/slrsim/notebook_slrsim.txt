@@ -25,3 +25,43 @@ Indel processes:
 2) Low frequency, random
 3) Hi frequency, random
 4) Hi frequency, correlated with omegas.
+
+### 2009-10-02 ###
+
+Meeting with Nick. Main points covered:
+
+1) Keep the simulations simple.
+
+TREES:
+ - 6-taxon tree from Anisimova and Yang studies
+ - ENCODE species tree
+ - Vary total branch length to match up with Anisimova studies
+
+ALIGNMENT SIM:
+ - 1:1 in/del ratio
+ - 1:10 indel/subst. ratio
+ - Very short exponential distribution. Mostly 3, some 6, a few 9-base indels.
+
+OMEGA SIM:
+ - M3,M7 and M8 parameters to match Anisimova studies (at least to start with)
+
+ALIGNERS:
+ - ClustalW
+ - MCoffee
+ - Prank (codon? back-tx protein?)
+
+FILTERING STEPS:
+ - Gblocks
+ - TrimAl
+ - Prank post-filtering
+
+2) For the analysis, use one reference sequence (for Encode tree, try 2: human and one with a longer preceding branch)
+and look at the amount of false positives & negatives
+
+3) Discussed some things about the splitting up / modeling of genes with and without pos-sel.
+
+One option would be to try and infer the parameters for a combination of two distributions. Either:
+ - Two lognormal/gamma/whatever distributions, one with cutoff below 1 and one allowing sites above 1.
+ - One M7 distribution, one M8 distribution
+
+

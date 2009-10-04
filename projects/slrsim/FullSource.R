@@ -1,16 +1,55 @@
-##
-##	Class: Alphabet
-##	Descriprion: 
-##	
-##	
-##	
-##	
-##	
-##	
 ##	
 ## Copyright 2009 Botond Sipos	
-## See the file ../COPYING for licensing issues.	
-##	
+## See the package description for licensing information.	
+##
+##########################################################################/** 
+#
+# @RdocClass Alphabet
+# 
+# @title "The Alphabet class"
+# 
+# \description{ 
+#		Class representing an alphabet (a set of symbols).		
+#		@classhierarchy
+#	
+# }
+#	
+# @synopsis
+#	
+# \arguments{
+# 	\item{symbols}{A character vector containing the symbols.}
+# 	\item{type}{An identifier for the Alphabet object.}
+#	}
+# 
+# \section{Fields and Methods}{ 
+#		@allmethods 
+# }
+# 
+# \examples{ 
+#		# create an alphabet object
+#		a<-Alphabet(type="Binary",symbols=c("0","1"));
+#		# print summary
+#		summary(a);
+#		# change the identifier
+#		a$type<-"Nucleotide";
+#		# change the symbol set
+#		a$symbols<-c("A","T","G","C");
+#		# print summary again
+#		summary(a);
+#		# clone the alphabet object
+#		b<-clone(a);
+#		# test the equality of the symbol sets
+#		a == b;
+# }
+# 
+# @author
+#
+#
+# \seealso{ 
+# 	Site, Process, Event
+# }
+# 
+#*/###########################################################################
 setConstructorS3(
 	"Alphabet", 
 	function(
@@ -127,6 +166,41 @@ setMethodS3(
 ##	
 ## Method: checkConsistency
 ##	
+###########################################################################/**
+#
+# @RdocMethod	checkConsistency
+# 
+# @title "Checks the consistency of Alphabet objects"
+# 
+# \description{ 
+#		@get "title".
+# } 
+# 
+# @synopsis 
+# 
+# \value{ 
+#		Returns an invisible TRUE if no inconsistencies found, throws an error otherwise. 
+# } 
+# 
+# \examples{
+#		# create an alphabet object
+#		a<-Alphabet(symbols=c(0,1));
+#		# check consistency
+#		print(checkConsistency(a));
+#		# mess up with the internals
+#		a$.symbols[1]<-"BAD";
+#		# NOT run: cosistency check now will throw an error
+#		\dontrun{ print(checkConsistency(a)); }
+#
+# } 
+# 
+# @author 
+# 
+# \seealso{ 
+# 	@seeclass 
+# } 
+# 
+#*/###########################################################################
 setMethodS3(
 	"checkConsistency", 
 	class="Alphabet", 
@@ -191,7 +265,6 @@ setMethodS3(
 			throw("Alphabet object compared to something else!");
 		}
 		# Check ANY flag:
-		# FIXME - this is not elegant!
 		if(!is.null(this$.any.flag) | !is.null(that$.any.flag)) { return(TRUE) }
 		# then check by value:
 		setequal(this$.symbols,that$.symbols);	
@@ -453,7 +526,7 @@ setMethodS3(
 		}
 			
 	},
-	private=FALSE,
+	private=TRUE,
 	protected=FALSE,
 	overwrite=FALSE,
 	conflict="warning",
@@ -468,7 +541,6 @@ setMethodS3(
 	class="Alphabet", 
 	function(
 		this,
-		value,
 		...
 	){
 		
@@ -476,7 +548,7 @@ setMethodS3(
 		else {return(invisible(FALSE))}
 			
 	},
-	private=FALSE,
+	private=TRUE,
 	protected=FALSE,
 	overwrite=FALSE,
 	conflict="warning",
@@ -612,18 +684,9 @@ setMethodS3(
 
 
 
-##
-##	Class: AlphabetsList
-##	Descriprion: 
-##	
-##	
-##	
-##	
-##	
-##	
 ##	
 ## Copyright 2009 Botond Sipos	
-## See the file ../COPYING for licensing issues.	
+## See the package description for licensing information.	
 ##	
 setConstructorS3(
 	"AlphabetsList",
@@ -813,18 +876,9 @@ setMethodS3(
 	validators=getOption("R.methodsS3:validators:setMethodS3")
 );
 
-##
-##	Class: Amino acid model constructors.
-##	Descriprion: 
-##	
-##	
-##	
-##	
-##	
-##	
 ##	
 ## Copyright 2009 Botond Sipos	
-## See the file ../COPYING for licensing issues.	
+## See the package description for licensing information.	
 ##	
 
 setMethodS3(
@@ -840,6 +894,12 @@ setMethodS3(
 
 		PAMLDIR<-"PAMLdat";
 		RDATDIR<-"RData";
+
+		# Use the package data directory if loaded:
+		if(length(intersect(search(),c("package:phylosim"))) == 1){
+			RDATDIR<-paste(.path.package("phylosim"),"/data/",sep="");
+			PAMLDIR<-RDATDIR;
+		}
 		
 		rdname<-paste(RDATDIR,"/",name,".Rdgz",sep="");
 
@@ -1118,18 +1178,9 @@ setConstructorS3(
 
 
 
-##
-##	Class: AminoAcidSubst
-##	Descriprion: 
-##	
-##	
-##	
-##	
-##	
-##	
 ##	
 ## Copyright 2009 Botond Sipos	
-## See the file ../COPYING for licensing issues.	
+## See the package description for licensing information.	
 ##	
 setConstructorS3(
   "AminoAcidSubst",
@@ -1543,18 +1594,9 @@ setMethodS3(
 );
 
 				
-##
-##	Class: BinarySubst
-##	Descriprion: 
-##	
-##	
-##	
-##	
-##	
-##	
 ##	
 ## Copyright 2009 Botond Sipos	
-## See the file ../COPYING for licensing issues.	
+## See the package description for licensing information.	
 ##	
 setConstructorS3(
   "BinarySubst",
@@ -1631,18 +1673,9 @@ setMethodS3(
 );
 
 
-##
-##	Class: CodonAlphabet
-##	Descriprion: 
-##	
-##	
-##	
-##	
-##	
-##	
 ##	
 ## Copyright 2009 Botond Sipos	
-## See the file ../COPYING for licensing issues.	
+## See the package description for licensing information.	
 ##	
 
 ##
@@ -6120,7 +6153,8 @@ CODON.TABLES<-list(
 	this<-extend(this,
 		"CodonAlphabet",
 		.table.id=table.id,
-		.trans.table=CODON.TABLES[[table.id]]$trans
+		.trans.table=CODON.TABLES[[table.id]]$trans,
+		.is.codon.alphabet=TRUE
 		);
 
 		return(this);
@@ -6420,7 +6454,7 @@ setMethodS3(
     ...
   ){
 
-		# FIXME
+		NextMethod();
 
   },
   private=FALSE,
@@ -6485,7 +6519,9 @@ setMethodS3(
   ){
 
     if(!is.PSRoot(this)) {return(FALSE)}
-    if ( inherits(this, "CodonAlphabet")) {
+		else if(!is.null(this$.is.codon.alphabet)){return(TRUE)}
+    else if ( inherits(this, "CodonAlphabet")) {
+			this$.is.codon.alphabet<-TRUE;
       return(TRUE);
     } else {
       return(FALSE)
@@ -6499,19 +6535,9 @@ setMethodS3(
   validators=getOption("R.methodsS3:validators:setMethodS3")
 );
 
-
-##
-##	Class: *
-##	Descriprion: 
-##	
-##	
-##	
-##	
-##	
-##	
 ##	
 ## Copyright 2009 Botond Sipos	
-## See the file ../COPYING for licensing issues.	
+## See the package description for licensing information.	
 ##	
 
 ##
@@ -6742,7 +6768,7 @@ setMethodS3(
 		# This method is almost an exact duplicate of the getEventsAtSite.GeneralSubstitution,
 		# with the exception of the portions dealing with the omega site-process specific parameters.
 		# Duplicating the method is not too elegant, but this way we can avoid the additonal method calls
-		# sloving down the simualtion.
+		# sloving down the simulation.
 
 	 if(missing(target.site)) {
       throw("No target site provided!\n");
@@ -7177,6 +7203,47 @@ setMethodS3(
   conflict="warning",
   validators=getOption("R.methodsS3:validators:setMethodS3")
 );
+
+##  
+## Method: omegaHist
+##  
+setMethodS3(
+  "omegaHist",
+  class="CodonSequence",
+  function(
+    this,
+		process,
+		breaks,
+		index,
+    ...
+  ){
+
+		if(missing(process)){
+      throw("No process given!\n");
+    }
+    else if(!is.NY98(process)){
+      throw("The specified process is not a NY98 codon substitution process!\n");
+    }
+
+		if(missing(index)){
+			index<-seq(along=this$.sites);
+		}
+
+		if(missing(breaks)){
+			hist(getOmegas(this,process,index));
+		}
+		else {
+			hist(getOmegas(this,process,index),breaks=breaks);
+		}
+
+  },
+  private=FALSE,
+  protected=FALSE,
+  overwrite=FALSE,
+  conflict="warning",
+  validators=getOption("R.methodsS3:validators:setMethodS3")
+);
+
 ##  
 ## Method: setOmegas
 ##  
@@ -7213,6 +7280,7 @@ setMethodS3(
       }
 
       setParameterAtSites(this, process=process, id="omega",value=value,index=index);
+			return(invisible(TRUE));
 
     }
 
@@ -7223,18 +7291,1102 @@ setMethodS3(
   conflict="warning",
   validators=getOption("R.methodsS3:validators:setMethodS3")
 );
+
+##  
+## Method: omegaVarM0 - one ratio
+##  
+setMethodS3(
+  "omegaVarM0",
+  class="CodonSequence",
+  function(
+    this,
+		process,
+    omega,
+		index,
+    ...
+  ){
+
+  if(missing(process)){
+      throw("No process specified!\n");
+    }
+    if(!is.NY98(process)){
+      throw("The sepcified process is not a NY98 codon substitution process!\n");
+    }
+    else if(missing(omega)){
+      throw("No new omega value specified!\n");
+    }
+    else if((!is.numeric(omega))| (length(omega) != 1)){
+      throw("The new value must be a numeric vector of length 1!\n");
+    }
+		else if(omega < 0){
+			throw("The omega parameter must be greater than zero!\n");
+		}
+    else {
+
+      if(missing(index)){
+        index<-seq(along=this$.sites);
+      }
+      else {
+        index<-.checkIndexSanity(this, index);
+      }
+
+      setParameterAtSites(this, process=process, id="omega",value=omega,index=index);
+			return(invisible(TRUE));
+
+    }
+
+  },
+  private=FALSE,
+  protected=FALSE,
+  overwrite=FALSE,
+  conflict="warning",
+  validators=getOption("R.methodsS3:validators:setMethodS3")
+);
+
 ##
-##	Class: *
-##	Descriprion: 
-##	
-##	
-##	
-##	
-##	
-##	
+## The omegaVarMx methods mostly follow: Yang, Z., Nielsen, R., Goldman, N., Pedersen Krabbe, A-M.
+## 2000. Codon-Substitution Models for Heterogeneous Selection Pressure at Amino Acid Sites.
+## Genetics 155:431-449.
+##
+
+##  
+## Method: omegaVarM1 - neutral
+##  
+setMethodS3(
+  "omegaVarM1",
+  class="CodonSequence",
+  function(
+    this,
+		process,
+    p0,
+		index,
+    ...
+  ){
+
+  if(missing(process)){
+      throw("No process specified!\n");
+    }
+    if(!is.NY98(process)){
+      throw("The sepcified process is not a NY98 codon substitution process!\n");
+    }
+    else if(missing(p0)){
+      throw("No p0 value specified!\n");
+    }
+    else if((!is.numeric(p0))| (length(p0) != 1)){
+      throw("The new value must be a numeric vector of length 1!\n");
+    }
+		else if(p0 < 0 | p0 > 1){
+			throw("The p0 parameter must be in the [0,1] interval!\n");
+		}
+    else {
+
+      if(missing(index)){
+        index<-seq(along=this$.sites);
+      }
+      else {
+        index<-.checkIndexSanity(this, index);
+      }
+
+			for(site in this$.sites[index]){
+				setParameterAtSite(this=process,site=site, id="omega", value=sample(c(0,1), size=1, replace=FALSE, prob=c(p0,(1-p0))));	
+			}
+			return(invisible(TRUE));
+
+    }
+
+  },
+  private=FALSE,
+  protected=FALSE,
+  overwrite=FALSE,
+  conflict="warning",
+  validators=getOption("R.methodsS3:validators:setMethodS3")
+);
+
+##  
+## Method: omegaVarM2 - selection
+##  
+setMethodS3(
+  "omegaVarM2",
+  class="CodonSequence",
+  function(
+    this,
+		process,
+    p0,
+		p1,
+		omega,
+		index,
+    ...
+  ){
+
+  if(missing(process)){
+      throw("No process specified!\n");
+    }
+    if(!is.NY98(process)){
+      throw("The sepcified process is not a NY98 codon substitution process!\n");
+    }
+    else if(missing(p0)){
+      throw("No p0 value specified!\n");
+    }
+    else if((!is.numeric(p0))| (length(p0) != 1)){
+      throw("The p0 value must be a numeric vector of length 1!\n");
+    }
+		else if(p0 < 0 | p0 > 1){
+			throw("The p0 parameter must be in the [0,1] interval!\n");
+		}
+    else if(missing(p1)){
+      throw("No p1 value specified!\n");
+    }
+    else if((!is.numeric(p1))| (length(p1) != 1)){
+      throw("The p1 value must be a numeric vector of length 1!\n");
+    }
+		else if(p1 < 0 | p1 > 1){
+			throw("The p1 parameter must be in the [0,1] interval!\n");
+		}
+    else if(missing(omega)){
+      throw("No omega value specified!\n");
+    }
+    else if((!is.numeric(omega))| (length(omega) != 1)){
+      throw("The omega value must be a numeric vector of length 1!\n");
+    }
+		else if(omega < 0){
+			throw("The omega parameter must be greater than zero!\n");
+		}
+    else {
+
+      if(missing(index)){
+        index<-seq(along=this$.sites);
+      }
+      else {
+        index<-.checkIndexSanity(this, index);
+      }
+
+			for(site in this$.sites[index]){
+				setParameterAtSite(this=process,site=site, id="omega", value=sample(c(0,1,omega), size=1, replace=FALSE, prob=c(p0,p1,(1-p0-p1))));	
+			}
+			return(invisible(TRUE));
+
+    }
+
+  },
+  private=FALSE,
+  protected=FALSE,
+  overwrite=FALSE,
+  conflict="warning",
+  validators=getOption("R.methodsS3:validators:setMethodS3")
+);
+
+##  
+## Method: omegaVarM3 - discrete
+##  
+setMethodS3(
+  "omegaVarM3",
+  class="CodonSequence",
+  function(
+    this,
+		process,
+		omegas,
+		probs,
+		index,
+    ...
+  ){
+
+  if(missing(process)){
+      throw("No process specified!\n");
+    }
+    if(!is.NY98(process)){
+      throw("The sepcified process is not a NY98 codon substitution process!\n");
+    }
+    else if(missing(omegas)){
+      throw("No omega values specified!\n");
+    }
+    else if((!is.numeric(omegas))){
+      throw("The omegas must be numeric!\n");
+    }
+		else if(any(omegas < 0)){
+			throw("The omegas must be greater than zero!\n");
+		}
+		else if(missing(probs)){
+			throw("No probabilities specified!\n");
+		}
+		else if(!is.numeric(probs)){
+			throw("The omegas must be greater than zero!\n");
+		}
+		else if(length(omegas) != length(probs)){
+			throw("The length of the \"omegas\" and \"probs\" vector must be the same!\n");
+		}
+		else if(!PSRoot$all.equal(sum(probs),1.0)){
+			probs<-(probs/sum(probs));
+			warning("The provided probabilities were scaked in order to sum to one!\n");
+		}
+
+    if(missing(index)){
+    index<-seq(along=this$.sites);
+    }
+    else {
+      index<-.checkIndexSanity(this, index);
+    }
+
+		for(site in this$.sites[index]){
+			setParameterAtSite(this=process,site=site, id="omega", value=sample(omegas, size=1, replace=FALSE, prob=probs));	
+		}
+		return(invisible(TRUE));
+
+
+  },
+  private=FALSE,
+  protected=FALSE,
+  overwrite=FALSE,
+  conflict="warning",
+  validators=getOption("R.methodsS3:validators:setMethodS3")
+);
+
+##  
+## Method: omegaVarM4 - freqs
+##  
+setMethodS3(
+  "omegaVarM4",
+  class="CodonSequence",
+  function(
+    this,
+		process,
+		probs,
+		index,
+    ...
+  ){
+
+  if(missing(process)){
+      throw("No process specified!\n");
+    }
+    if(!is.NY98(process)){
+      throw("The sepcified process is not a NY98 codon substitution process!\n");
+    }
+		else if(missing(probs)){
+			throw("No probabilities specified!\n");
+		}
+		else if(!is.numeric(probs)){
+			throw("The omegas must be greater than zero!\n");
+		}
+		else if( length(probs) != 5){
+			throw("The length of the \"probs\" vector must be 5!\n");
+		}
+		else if(!PSRoot$all.equal(sum(probs),1.0)){
+			probs<-(probs/sum(probs));
+			warning("The provided probabilities were scaked in order to sum to one!\n");
+		}
+
+    if(missing(index)){
+    index<-seq(along=this$.sites);
+    }
+    else {
+      index<-.checkIndexSanity(this, index);
+    }
+
+		omegas<-c(0,(1/3),(2/3),1,3);
+		for(site in this$.sites[index]){
+			setParameterAtSite(this=process,site=site, id="omega", value=sample(omegas, size=1, replace=FALSE, prob=probs));	
+		}
+		return(invisible(TRUE));
+
+
+  },
+  private=FALSE,
+  protected=FALSE,
+  overwrite=FALSE,
+  conflict="warning",
+  validators=getOption("R.methodsS3:validators:setMethodS3")
+);
+
+##  
+## Method: omegaVarM5 - gamma
+##  
+setMethodS3(
+  "omegaVarM5",
+  class="CodonSequence",
+  function(
+    this,
+		process,
+		alpha,
+		beta,
+		index,
+    ...
+  ){
+
+  if(missing(process)){
+      throw("No process specified!\n");
+    }
+    if(!is.NY98(process)){
+      throw("The sepcified process is not a NY98 codon substitution process!\n");
+    }
+    else if(missing(alpha)){
+      throw("No alpha (shape) value specified!\n");
+    }
+    else if((!is.numeric(alpha)) | (length(alpha) != 1)){
+      throw("The alpha (shape) parameter must be a numeric vector of length 1!\n");
+    }
+		else if(alpha < 0){
+			throw("The alpha (shape) must be greater than zero!\n");
+		}
+    else if(missing(beta)){
+      throw("No beta (scale) value specified!\n");
+    }
+    else if((!is.numeric(beta)) | (length(beta) != 1)){
+      throw("The beta (scale) parameter must be a numeric vector of length 1!\n");
+    }
+		else if(beta <= 0){
+			throw("The beta (scale) must be strictly positive!\n");
+		}
+
+    if(missing(index)){
+    index<-seq(along=this$.sites);
+    }
+    else {
+      index<-.checkIndexSanity(this, index);
+    }
+
+		for(site in this$.sites[index]){
+			setParameterAtSite(this=process,site=site, id="omega", value=rgamma(1,shape=alpha,scale=beta));	
+		}
+		return(invisible(TRUE));
+
+
+  },
+  private=FALSE,
+  protected=FALSE,
+  overwrite=FALSE,
+  conflict="warning",
+  validators=getOption("R.methodsS3:validators:setMethodS3")
+);
+
+##  
+## Method: omegaVarM6 - 2gamma
+##  
+setMethodS3(
+  "omegaVarM6",
+  class="CodonSequence",
+  function(
+    this,
+		process,
+		p0,
+		alpha0,
+		beta0,
+		alpha1,
+		beta1,
+		index,
+    ...
+  ){
+
+  if(missing(process)){
+      throw("No process specified!\n");
+    }
+    if(!is.NY98(process)){
+      throw("The sepcified process is not a NY98 codon substitution process!\n");
+    }
+    else if(missing(p0)){
+      throw("No p0 value specified!\n");
+    }
+    else if((!is.numeric(p0)) | (length(p0) != 1)){
+      throw("The p0 parameter must be a numeric vector of length 1!\n");
+    }
+		else if( (p0 < 0) | (p0 > 1)){
+			throw("p0 must be in the [0,1] interval!\n");
+		}
+    else if(missing(alpha0)){
+      throw("No alpha0 (shape0) value specified!\n");
+    }
+    else if((!is.numeric(alpha0)) | (length(alpha0) != 1)){
+      throw("The alpha0 (shape0) parameter must be a numeric vector of length 1!\n");
+    }
+		else if(alpha0 < 0){
+			throw("The alpha0 (shape0) must be greater than zero!\n");
+		}
+    else if(missing(beta0)){
+      throw("No beta0 (scale0) value specified!\n");
+    }
+    else if((!is.numeric(beta0)) | (length(beta0) != 1)){
+      throw("The beta0 (scale0) parameter must be a numeric vector of length 1!\n");
+    }
+		else if(beta0 <= 0){
+			throw("The beta0 (scale0) must be strictly positive!\n");
+		}
+    else if(missing(alpha1)){
+      throw("No alpha1 (shape1) value specified!\n");
+    }
+    else if((!is.numeric(alpha1)) | (length(alpha1) != 1)){
+      throw("The alpha1 (shape1) parameter must be a numeric vector of length 1!\n");
+    }
+		else if(alpha1 < 0){
+			throw("The alpha1 (shape1) must be greater than zero!\n");
+		}
+    else if(missing(beta1)){
+      throw("No beta1 (scale1) value specified!\n");
+    }
+    else if((!is.numeric(beta1)) | (length(beta1) != 1)){
+      throw("The beta1 (scale1) parameter must be a numeric vector of length 1!\n");
+    }
+		else if(beta1 <= 0){
+			throw("The beta1 (scale1) must be strictly positive!\n");
+		}
+
+
+    if(missing(index)){
+    index<-seq(along=this$.sites);
+    }
+    else {
+      index<-.checkIndexSanity(this, index);
+    }
+
+		for(site in this$.sites[index]){
+			setParameterAtSite(this=process,site=site, id="omega", value=sample(c(rgamma(1,shape=alpha0,scale=beta0),rgamma(1,shape=alpha1,scale=beta1)),size=1,replace=FALSE,prob=c(p0,(1-p0)) ));	
+		}
+		return(invisible(TRUE));
+
+
+  },
+  private=FALSE,
+  protected=FALSE,
+  overwrite=FALSE,
+  conflict="warning",
+  validators=getOption("R.methodsS3:validators:setMethodS3")
+);
+
+##  
+## Method: omegaVarM7 - beta
+##  
+setMethodS3(
+  "omegaVarM7",
+  class="CodonSequence",
+  function(
+    this,
+		process,
+		p,
+		q,
+		index,
+    ...
+  ){
+
+  if(missing(process)){
+      throw("No process specified!\n");
+    }
+    if(!is.NY98(process)){
+      throw("The sepcified process is not a NY98 codon substitution process!\n");
+    }
+    else if(missing(p)){
+      throw("No p value specified!\n");
+    }
+    else if((!is.numeric(p)) | (length(p) != 1)){
+      throw("The p parameter must be a numeric vector of length 1!\n");
+    }
+		else if(p < 0){
+			throw("The p parameter must be greater than zero!\n");
+		}
+    else if(missing(q)){
+      throw("No q value specified!\n");
+    }
+    else if((!is.numeric(q)) | (length(q) != 1)){
+      throw("The q parameter must be a numeric vector of length 1!\n");
+    }
+		else if(q < 0){
+			throw("The q parameter must be positive!\n");
+		}
+
+    if(missing(index)){
+    index<-seq(along=this$.sites);
+    }
+    else {
+      index<-.checkIndexSanity(this, index);
+    }
+
+		for(site in this$.sites[index]){
+			setParameterAtSite(this=process,site=site, id="omega", value=rbeta(1,shape1=p,shape2=q));	
+		}
+		return(invisible(TRUE));
+
+
+  },
+  private=FALSE,
+  protected=FALSE,
+  overwrite=FALSE,
+  conflict="warning",
+  validators=getOption("R.methodsS3:validators:setMethodS3")
+);
+
+##  
+## Method: omegaVarM8 - beta&omega
+##  
+setMethodS3(
+  "omegaVarM8",
+  class="CodonSequence",
+  function(
+    this,
+		process,
+		p0,
+		p,
+		q,
+		omega,
+		index,
+    ...
+  ){
+
+  if(missing(process)){
+      throw("No process specified!\n");
+    }
+    if(!is.NY98(process)){
+      throw("The sepcified process is not a NY98 codon substitution process!\n");
+    }
+    else if(missing(p0)){
+      throw("No p0 value specified!\n");
+    }
+    else if((!is.numeric(p0)) | (length(p0) != 1)){
+      throw("The p0 parameter must be a numeric vector of length 1!\n");
+    }
+		else if( (p0 < 0) | (p0 > 1)){
+			throw("The p0 parameter must be from the [0,1] interval!\n");
+		}
+    else if(missing(p)){
+      throw("No p value specified!\n");
+    }
+    else if((!is.numeric(p)) | (length(p) != 1)){
+      throw("The p parameter must be a numeric vector of length 1!\n");
+    }
+		else if(p < 0){
+			throw("The p parameter must be greater than zero!\n");
+		}
+    else if(missing(q)){
+      throw("No q value specified!\n");
+    }
+    else if((!is.numeric(q)) | (length(q) != 1)){
+      throw("The q parameter must be a numeric vector of length 1!\n");
+    }
+		else if(q < 0){
+			throw("The q parameter must be positive!\n");
+		}
+    else if(missing(omega)){
+      throw("No omega value specified!\n");
+    }
+    else if((!is.numeric(omega)) | (length(omega) != 1)){
+      throw("The omega parameter must be a numeric vector of length 1!\n");
+    }
+		else if(omega < 0){
+			throw("The omega parameter must be positive!\n");
+		}
+
+    if(missing(index)){
+    index<-seq(along=this$.sites);
+    }
+    else {
+      index<-.checkIndexSanity(this, index);
+    }
+
+		for(site in this$.sites[index]){
+			setParameterAtSite(this=process,site=site, id="omega", value=sample(c(rbeta(1,shape1=p,shape2=q),omega),size=1,replace=FALSE,prob=(c(p0,(1-p0)))));	
+		}
+		return(invisible(TRUE));
+
+
+  },
+  private=FALSE,
+  protected=FALSE,
+  overwrite=FALSE,
+  conflict="warning",
+  validators=getOption("R.methodsS3:validators:setMethodS3")
+);
+
+##  
+## Method: omegaVarM9 - beta&gamma
+##  
+setMethodS3(
+  "omegaVarM9",
+  class="CodonSequence",
+  function(
+    this,
+		process,
+		p0,
+		p,
+		q,
+		alpha,
+		beta,
+		index,
+    ...
+  ){
+
+  if(missing(process)){
+      throw("No process specified!\n");
+    }
+    if(!is.NY98(process)){
+      throw("The sepcified process is not a NY98 codon substitution process!\n");
+    }
+    else if(missing(p0)){
+      throw("No p0 value specified!\n");
+    }
+    else if((!is.numeric(p0)) | (length(p0) != 1)){
+      throw("The p0 parameter must be a numeric vector of length 1!\n");
+    }
+		else if( (p0 < 0) | (p0 > 1)){
+			throw("p0 must be in the [0,1] interval!\n");
+		}
+    else if(missing(p)){
+      throw("No p value specified!\n");
+    }
+    else if((!is.numeric(p)) | (length(p) != 1)){
+      throw("The p parameter must be a numeric vector of length 1!\n");
+    }
+		else if(p < 0){
+			throw("The p must be greater than zero!\n");
+		}
+    else if(missing(q)){
+      throw("No q value specified!\n");
+    }
+    else if((!is.numeric(q)) | (length(q) != 1)){
+      throw("The q parameter must be a numeric vector of length 1!\n");
+    }
+		else if(q < 0){
+			throw("The q must be greater than zero!\n");
+		}
+    else if(missing(alpha)){
+      throw("No alpha (shape) value specified!\n");
+    }
+    else if((!is.numeric(alpha)) | (length(alpha) != 1)){
+      throw("The alpha (shape) parameter must be a numeric vector of length 1!\n");
+    }
+		else if(alpha < 0){
+			throw("The alpha (shape) must be greater than zero!\n");
+		}
+    else if(missing(beta)){
+      throw("No beta (scale) value specified!\n");
+    }
+    else if((!is.numeric(beta)) | (length(beta) != 1)){
+      throw("The beta (scale) parameter must be a numeric vector of length 1!\n");
+    }
+		else if(beta <= 0){
+			throw("The beta (scale) must be strictly positive!\n");
+		}
+
+
+    if(missing(index)){
+    index<-seq(along=this$.sites);
+    }
+    else {
+      index<-.checkIndexSanity(this, index);
+    }
+
+		for(site in this$.sites[index]){
+			setParameterAtSite(this=process,site=site, id="omega", value=sample(c(rbeta(1,shape1=p,shape2=q),rgamma(1,shape=alpha,scale=beta)),size=1,replace=FALSE,prob=c(p0,(1-p0)) ));	
+		}
+		return(invisible(TRUE));
+
+
+  },
+  private=FALSE,
+  protected=FALSE,
+  overwrite=FALSE,
+  conflict="warning",
+  validators=getOption("R.methodsS3:validators:setMethodS3")
+);
+
+##  
+## Method: omegaVarM10 - beta&gamma+1
+##  
+setMethodS3(
+  "omegaVarM10",
+  class="CodonSequence",
+  function(
+    this,
+		process,
+		p0,
+		p,
+		q,
+		alpha,
+		beta,
+		index,
+    ...
+  ){
+
+  if(missing(process)){
+      throw("No process specified!\n");
+    }
+    if(!is.NY98(process)){
+      throw("The sepcified process is not a NY98 codon substitution process!\n");
+    }
+    else if(missing(p0)){
+      throw("No p0 value specified!\n");
+    }
+    else if((!is.numeric(p0)) | (length(p0) != 1)){
+      throw("The p0 parameter must be a numeric vector of length 1!\n");
+    }
+		else if( (p0 < 0) | (p0 > 1)){
+			throw("p0 must be in the [0,1] interval!\n");
+		}
+    else if(missing(p)){
+      throw("No p value specified!\n");
+    }
+    else if((!is.numeric(p)) | (length(p) != 1)){
+      throw("The p parameter must be a numeric vector of length 1!\n");
+    }
+		else if(p < 0){
+			throw("The p must be greater than zero!\n");
+		}
+    else if(missing(q)){
+      throw("No q value specified!\n");
+    }
+    else if((!is.numeric(q)) | (length(q) != 1)){
+      throw("The q parameter must be a numeric vector of length 1!\n");
+    }
+		else if(q < 0){
+			throw("The q must be greater than zero!\n");
+		}
+    else if(missing(alpha)){
+      throw("No alpha (shape) value specified!\n");
+    }
+    else if((!is.numeric(alpha)) | (length(alpha) != 1)){
+      throw("The alpha (shape) parameter must be a numeric vector of length 1!\n");
+    }
+		else if(alpha < 0){
+			throw("The alpha (shape) must be greater than zero!\n");
+		}
+    else if(missing(beta)){
+      throw("No beta (scale) value specified!\n");
+    }
+    else if((!is.numeric(beta)) | (length(beta) != 1)){
+      throw("The beta (scale) parameter must be a numeric vector of length 1!\n");
+    }
+		else if(beta <= 0){
+			throw("The beta (scale) must be strictly positive!\n");
+		}
+
+
+    if(missing(index)){
+    index<-seq(along=this$.sites);
+    }
+    else {
+      index<-.checkIndexSanity(this, index);
+    }
+	
+		# It's not too elegant to fork the whole method for just shifting the gamma with 1...
+		for(site in this$.sites[index]){
+			setParameterAtSite(this=process,site=site, id="omega", value=sample(c(rbeta(1,shape1=p,shape2=q),(1 + rgamma(1,shape=alpha,scale=beta)) ),size=1,replace=FALSE,prob=c(p0,(1-p0)) ));	
+		}
+		return(invisible(TRUE));
+
+
+  },
+  private=FALSE,
+  protected=FALSE,
+  overwrite=FALSE,
+  conflict="warning",
+  validators=getOption("R.methodsS3:validators:setMethodS3")
+);
+
+##  
+## Method: omegaVarM11 - beta&normal>1
+##  
+setMethodS3(
+  "omegaVarM11",
+  class="CodonSequence",
+  function(
+    this,
+		process,
+		p0,
+		p,
+		q,
+		mean,
+		sd,
+		index,
+    ...
+  ){
+
+  if(missing(process)){
+      throw("No process specified!\n");
+    }
+    if(!is.NY98(process)){
+      throw("The sepcified process is not a NY98 codon substitution process!\n");
+    }
+    else if(missing(p0)){
+      throw("No p0 value specified!\n");
+    }
+    else if((!is.numeric(p0)) | (length(p0) != 1)){
+      throw("The p0 parameter must be a numeric vector of length 1!\n");
+    }
+		else if( (p0 < 0) | (p0 > 1)){
+			throw("p0 must be in the [0,1] interval!\n");
+		}
+    else if(missing(p)){
+      throw("No p value specified!\n");
+    }
+    else if((!is.numeric(p)) | (length(p) != 1)){
+      throw("The p parameter must be a numeric vector of length 1!\n");
+    }
+		else if(p < 0){
+			throw("The p must be greater than zero!\n");
+		}
+    else if(missing(q)){
+      throw("No q value specified!\n");
+    }
+    else if((!is.numeric(q)) | (length(q) != 1)){
+      throw("The q parameter must be a numeric vector of length 1!\n");
+    }
+		else if(q < 0){
+			throw("The q must be greater than zero!\n");
+		}
+    else if(missing(mean)){
+      throw("No mean specified!\n");
+    }
+    else if((!is.numeric(mean)) | (length(mean) != 1)){
+      throw("The mean parameter must be a numeric vector of length 1!\n");
+    }
+    else if(missing(sd)){
+      throw("No sd value specified!\n");
+    }
+    else if((!is.numeric(sd)) | (length(sd) != 1)){
+      throw("The sd parameter must be a numeric vector of length 1!\n");
+    }
+		else if( sd < 0){
+      throw("The sd parameter must be positive!\n");
+		}
+
+    if(missing(index)){
+    index<-seq(along=this$.sites);
+    }
+    else {
+      index<-.checkIndexSanity(this, index);
+    }
+
+		rnorm.gt.1<-function(mean=NA,sd=NA){
+			# FIXME - This is probably the most primitive way to truncate the distribution!
+			tmp<-rnorm(1,mean=mean,sd=sd);
+			while( tmp <= 1){
+				tmp<-rnorm(1,mean=mean,sd=sd);
+			};
+			return(tmp);
+		}
+
+		for(site in this$.sites[index]){
+			setParameterAtSite(this=process,site=site, id="omega", value=sample(c(rbeta(1,shape1=p,shape2=q), (rnorm.gt.1(mean=mean,sd=sd))),size=1,replace=FALSE,prob=c(p0,(1-p0)) ));	
+		}
+		return(invisible(TRUE));
+
+
+  },
+  private=FALSE,
+  protected=FALSE,
+  overwrite=FALSE,
+  conflict="warning",
+  validators=getOption("R.methodsS3:validators:setMethodS3")
+);
+
+##  
+## Method: omegaVarM12 - 0&2normal>0
+##  
+setMethodS3(
+  "omegaVarM12",
+  class="CodonSequence",
+  function(
+    this,
+		process,
+		p0,
+		p1,
+		sd1,
+		mean2,
+		sd2,
+		index,
+    ...
+  ){
+
+  if(missing(process)){
+      throw("No process specified!\n");
+    }
+    if(!is.NY98(process)){
+      throw("The sepcified process is not a NY98 codon substitution process!\n");
+    }
+    else if(missing(p0)){
+      throw("No p0 value specified!\n");
+    }
+    else if((!is.numeric(p0)) | (length(p0) != 1)){
+      throw("The p0 parameter must be a numeric vector of length 1!\n");
+    }
+		else if( (p0 < 0) | (p0 > 1)){
+			throw("p0 must be in the [0,1] interval!\n");
+		}
+    else if(missing(p1)){
+      throw("No p1 value specified!\n");
+    }
+    else if((!is.numeric(p1)) | (length(p1) != 1)){
+      throw("The p1 parameter must be a numeric vector of length 1!\n");
+    }
+		else if( (p1 < 0) | (p1 > 1)){
+			throw("p1 must be in the [0,1] interval!\n");
+		}
+    else if(missing(sd1)){
+      throw("No sd1 value specified!\n");
+    }
+    else if((!is.numeric(sd1)) | (length(sd1) != 1)){
+      throw("The sd1 parameter must be a numeric vector of length 1!\n");
+    }
+		else if( sd1 < 0){
+      throw("The sd1 parameter must be positive!\n");
+		}
+    else if(missing(mean2)){
+      throw("No mean2 specified!\n");
+    }
+    else if((!is.numeric(mean2)) | (length(mean2) != 1)){
+      throw("The mean2 parameter must be a numeric vector of length 1!\n");
+    }
+    else if(missing(sd2)){
+      throw("No sd2 value specified!\n");
+    }
+    else if((!is.numeric(sd2)) | (length(sd2) != 1)){
+      throw("The sd2 parameter must be a numeric vector of length 1!\n");
+    }
+		else if( sd2 < 0){
+      throw("The sd2 parameter must be positive!\n");
+		}
+
+    if(missing(index)){
+    index<-seq(along=this$.sites);
+    }
+    else {
+      index<-.checkIndexSanity(this, index);
+    }
+
+		rnorm.gt.0<-function(mean=NA,sd=NA){
+			# FIXME - This is probably the most primitive way to truncate the distribution!
+			tmp<-rnorm(1,mean=mean,sd=sd);
+			while( tmp <= 0){
+				tmp<-rnorm(1,mean=mean,sd=sd);
+			};
+			return(tmp);
+		}
+
+		for(site in this$.sites[index]){
+			setParameterAtSite(this=process,site=site, id="omega", value=sample( 
+				c(0,rnorm.gt.0(mean=1,sd=sd1),rnorm.gt.0(mean=mean2,sd=sd2)),
+				size=1,
+				replace=FALSE,
+				prob=c(p0,((1-p0)*p1),((1-p0)*(1-p1)))
+			));	
+		}
+		return(invisible(TRUE));
+
+  },
+  private=FALSE,
+  protected=FALSE,
+  overwrite=FALSE,
+  conflict="warning",
+  validators=getOption("R.methodsS3:validators:setMethodS3")
+);
+
+##  
+## Method: omegaVarM13 - 3normal>0
+##  
+setMethodS3(
+  "omegaVarM13",
+  class="CodonSequence",
+  function(
+    this,
+		process,
+		p0,
+		p1,
+		sd0,
+		sd1,
+		mean2,
+		sd2,
+		index,
+    ...
+  ){
+
+  if(missing(process)){
+      throw("No process specified!\n");
+    }
+    if(!is.NY98(process)){
+      throw("The sepcified process is not a NY98 codon substitution process!\n");
+    }
+    else if(missing(p0)){
+      throw("No p0 value specified!\n");
+    }
+    else if((!is.numeric(p0)) | (length(p0) != 1)){
+      throw("The p0 parameter must be a numeric vector of length 1!\n");
+    }
+		else if( (p0 < 0) | (p0 > 1)){
+			throw("p0 must be in the [0,1] interval!\n");
+		}
+    else if(missing(p1)){
+      throw("No p1 value specified!\n");
+    }
+    else if((!is.numeric(p1)) | (length(p1) != 1)){
+      throw("The p1 parameter must be a numeric vector of length 1!\n");
+    }
+		else if( (p1 < 0) | (p1 > 1)){
+			throw("p1 must be in the [0,1] interval!\n");
+		}
+    else if(missing(sd0)){
+      throw("No sd0 value specified!\n");
+    }
+    else if((!is.numeric(sd0)) | (length(sd0) != 1)){
+      throw("The sd0 parameter must be a numeric vector of length 1!\n");
+    }
+		else if( sd0 < 0){
+      throw("The sd0 parameter must be positive!\n");
+		}
+    else if(missing(sd1)){
+      throw("No sd1 value specified!\n");
+    }
+    else if((!is.numeric(sd1)) | (length(sd1) != 1)){
+      throw("The sd1 parameter must be a numeric vector of length 1!\n");
+    }
+		else if( sd1 < 0){
+      throw("The sd1 parameter must be positive!\n");
+		}
+    else if(missing(mean2)){
+      throw("No mean2 specified!\n");
+    }
+    else if((!is.numeric(mean2)) | (length(mean2) != 1)){
+      throw("The mean2 parameter must be a numeric vector of length 1!\n");
+    }
+    else if(missing(sd2)){
+      throw("No sd2 value specified!\n");
+    }
+    else if((!is.numeric(sd2)) | (length(sd2) != 1)){
+      throw("The sd2 parameter must be a numeric vector of length 1!\n");
+    }
+		else if( sd2 < 0){
+      throw("The sd2 parameter must be positive!\n");
+		}
+
+    if(missing(index)){
+    index<-seq(along=this$.sites);
+    }
+    else {
+      index<-.checkIndexSanity(this, index);
+    }
+
+		rnorm.gt.0<-function(mean=NA,sd=NA){
+			# FIXME - This is probably the most primitive way to truncate the distribution!
+			tmp<-rnorm(1,mean=mean,sd=sd);
+			while( tmp <= 0){
+				tmp<-rnorm(1,mean=mean,sd=sd);
+			};
+			return(tmp);
+		}
+
+		for(site in this$.sites[index]){
+			setParameterAtSite(this=process,site=site, id="omega", value=sample( 
+				c(rnorm.gt.0(mean=0,sd=sd0),rnorm.gt.0(mean=1,sd=sd1),rnorm.gt.0(mean=mean2,sd=sd2)),
+				size=1,
+				replace=FALSE,
+				prob=c(p0,((1-p0)*p1),((1-p0)*(1-p1)))
+			));	
+		}
+		return(invisible(TRUE));
+
+  },
+  private=FALSE,
+  protected=FALSE,
+  overwrite=FALSE,
+  conflict="warning",
+  validators=getOption("R.methodsS3:validators:setMethodS3")
+);
 ##	
 ## Copyright 2009 Botond Sipos	
-## See the file ../COPYING for licensing issues.	
+## See the package description for licensing information.	
 ##	
 
 ##
@@ -7377,18 +8529,9 @@ setMethodS3(
   validators=getOption("R.methodsS3:validators:setMethodS3")
 );
 
-##
-##	Class: DsiscreteDeletor
-##	Descriprion: 
-##	
-##	
-##	
-##	
-##	
-##	
 ##	
 ## Copyright 2009 Botond Sipos	
-## See the file ../COPYING for licensing issues.	
+## See the package description for licensing information.	
 ##	
 setConstructorS3(
   "ContinousDeletor",
@@ -7682,18 +8825,9 @@ setMethodS3(
   validators=getOption("R.methodsS3:validators:setMethodS3")
 );
 
-##
-##	Class: DsiscreteInsertor
-##	Descriprion: 
-##	
-##	
-##	
-##	
-##	
-##	
 ##	
 ## Copyright 2009 Botond Sipos	
-## See the file ../COPYING for licensing issues.	
+## See the package description for licensing information.	
 ##	
 setConstructorS3(
   "ContinousInsertor",
@@ -7986,18 +9120,9 @@ setMethodS3(
   validators=getOption("R.methodsS3:validators:setMethodS3")
 );
 
-##
-##	Class: DsiscreteDeletor
-##	Descriprion: 
-##	
-##	
-##	
-##	
-##	
-##	
 ##	
 ## Copyright 2009 Botond Sipos	
-## See the file ../COPYING for licensing issues.	
+## See the package description for licensing information.	
 ##	
 setConstructorS3(
   "DiscreteDeletor",
@@ -8288,18 +9413,9 @@ setMethodS3(
 	validators=getOption("R.methodsS3:validators:setMethodS3")
 );
 
-##
-##	Class: DsiscreteInsertor
-##	Descriprion: 
-##	
-##	
-##	
-##	
-##	
-##	
 ##	
 ## Copyright 2009 Botond Sipos	
-## See the file ../COPYING for licensing issues.	
+## See the package description for licensing information.	
 ##	
 setConstructorS3(
   "DiscreteInsertor",
@@ -8592,18 +9708,9 @@ setMethodS3(
   validators=getOption("R.methodsS3:validators:setMethodS3")
 );
 
-##
-##	Class: Event
-##	Descriprion: 
-##	
-##	
-##	
-##	
-##	
-##	
 ##	
 ## Copyright 2009 Botond Sipos	
-## See the file ../COPYING for licensing issues.	
+## See the package description for licensing information.	
 ##	
 setConstructorS3(
 	"Event",
@@ -9332,18 +10439,9 @@ setMethodS3(
 	validators=getOption("R.methodsS3:validators:setMethodS3")
 );
 
-##
-##	Class: PhyloSim
-##	Descriprion: 
-##	
-##	
-##	
-##	
-##	
-##	
 ##	
 ## Copyright 2009 Botond Sipos	
-## See the file ../COPYING for licensing issues.	
+## See the package description for licensing information.	
 ##	
 
 ##
@@ -9511,120 +10609,156 @@ setMethodS3(
 
 
 
-##
-##	Class: FieldDeletor
-##	Descriprion: 
-##	
-##	
-##	
-##	
-##	
-##	
 ##	
 ## Copyright 2009 Botond Sipos	
-## See the file ../COPYING for licensing issues.	
+## See the package description for licensing information.	
 ##	
 setConstructorS3(
   "FieldDeletor",
   function( 
 		name="Anonymous",
 		type="geometric",
+		length.param.1=NA,	# mostly "Lambda"
+		length.param.2=NA,	# 
+		tolerance.margin=0,	# minimum tolerance value used for scaling.
 		... 
-		)	{
+	)	{
 
-		# Creating a GeneralDeletor Process.
-		this<-GeneralDeletor(
-			...
-		);
+			ALLOWED.TYPES=c("geometric","poisson","logarithmic","neg.binomial","compoisson");	# supported types
 
-		# Extending as FieldDeletor:
-    this<-extend(
-      this,
-      "FieldDeletor",
-			.type=type,
-			.q.max=NA
-    );
+			# Creating a GeneralDeletor Process.
+			this<-GeneralDeletor(
+				...
+			);
 
-		# Using virtual field to clear Id cache:
-		this$name<-name;
+			# Check if the specified type is valid:
+			if(length(intersect(ALLOWED.TYPES,type)) != 1){
+				throw("The specified field model type is invalid!\n");
+			}
 
-		# Set the function proposing deletion lengths:
+			# Load the compoisson package if the type is Conway-Maxwell Poisson:
+			if(type == "compoisson"){
+				if(!require(compoisson)){
+					throw("The compoisson package cannot be loaded, so cannot use the Conway-Maxwell Poisson density for sampling deletion lengths!\n");
+				}
+			}
 
-	  this$proposeBy<-function(process,seq,pos){
+			# Extending as FieldDeletor:
+    	this<-extend(
+      	this,
+      	"FieldDeletor",
+				.type=type,									# field model flavour
+				.tolerance.margin=NA,				# minimum tolerance used for scaling
+				.tolerance.max=NA,					# maximum tolerance obseved at first call of getEventAtSites
+				.d=NA,											# is max(.tolerance.max, .tolerance.margin)
+				.field.scaling.factor=NA,		# the precalculated scaling factor
+				.length.param.1=NA,					# mostly "Lambda"
+				.length.param.2=NA,					# 
+				.ALLOWED.TYPES=ALLOWED.TYPES# supported types
+    	);
 
-					# Get all deletion tolerance parameters for this process:					
-					deletion.tolerance<-c();
+			# Set length parameter 1 if not missing:
+			if(!missing(length.param.1)){
+				this$lengthParam1<-length.param.1;
+			}
+		
+			# Set length parameter 2 if not missing:
+			if(!missing(length.param.2)){
+				this$lengthParam2<-length.param.2;
+			}
 
-					for(site in seq$.sites){
-							if(isAttached(site, process)){
-									deletion.tolerance<-c(deletion.tolerance, getParameterAtSite(process, site, id="deletion.tolerance")$value);
-							}
-					} # for site
-					
-					# Calculate the "q vector":
-					q<-exp(-deletion.tolerance);
+			# Set tolerance margin:
+			setToleranceMargin(this, tolerance.margin);
 
-					# Get the maximal q value:
-					q.max<-max(q);
+			# Using virtual field to clear Id cache:
+			this$name<-name;
+
+			# Set the function proposing deletion lengths:
+	  	this$proposeBy<-function(process=NA,seq=NA,pos=NA){
+
+					# Check the length parameters:
+					.checkLengthParams(this);				
+	
+					# Type specific length sampling expressions:
+
+					# Geometric:	
+					if(this$.type == "geometric"){
+						express<-expression( rgeom(1,prob=( 1 - ( this$.length.param.1 * this$.tolerance.max) ) ) );
+					}
 				
-					# Set the actual q.max for this process. acceptyBy will use this:
-					process$.q.max<-q.max;
+					# Poisson+1:	
+					else if(this$.type == "poisson"){
+						express<-expression( 1 + rpois(1,lambda=(this$.length.param.1 * this$.tolerance.max) ) );
+					}
 					
-					# express<-expression(rgeom(1,(1-q.max))+1);
-
-				  # FIXME
-
+					# Negative Binomial + 1:
+					else if(this$.type == "neg.binomial"){
+						express<-expression(1 + rnbinom(1,this$.length.param.2,prob=( 1 - ( this$.length.param.1 * this$.tolerance.max))) );
+					}
+					
+					# Conway-Maxwell Poisson + 1:
+					else if(this$.type == "compoisson"){
+						express<-expression(1 + rcom(1,lambda=( this$.length.param.1 * this$.tolerance.max), nu = this$.length.param.2));
+					}
+					
 					return( round( eval(express) ) );
-					
-
 
 			} # /proposeBy
 		
 			# Set the function performing the accept/reject step:
-			this$acceptBy<-function(process,sequence,range){
+			this$acceptBy<-function(process=NA,sequence=NA,range=NA){
 
-				# Get the actual q.max
-				q.max<-process$.q.max;
-				# And remove from the process object to guard against trouble:
-				process$.q.max<-NA;
+        del.tol<-c();
+        for(site in sequence$.sites[range]){
+            # Reject if the range contains a site which is not attached to 
+            # the process:
+            if(!isAttached(site, process)){
+              return(FALSE);
+            }
+            del.tol<-c(del.tol, getParameterAtSite(process, site, "deletion.tolerance")$value);
+        }
 
-				# Get the deletion tolerance parameters from the proposed range:
-				deletion.tolerance<-c();
-				
-				for(site in seq$.sites[range]){
-
-				if(isAttached(site, process)){
-
-									deletion.tolerance<-c(deletion.tolerance, getParameterAtSite(process, site, id="deletion.tolerance")$value);
-
-							} else {
-
-								# Reject the proposed deletion if that contains sites which are not attached to the process.
-								# This will create an edge effect of course! 
-								return(FALSE);
-
-							}
-					} # for site
-
-				# Get the length of the proposed deletion:				
-				K<-length(deletion.tolerance);
-
-				# Calculate the q.prod:
-				q.prod<-prod(exp(-deletion.tolerance));
-		
-				# Calculate the acceptance probability:
-				accept.prob<-(q.prod/(q.max^K));
+				# Calculate acceptance probability:			
+        accept.prob<-( prod(as.numeric(del.tol)) / this$.d );
 
         # Accept/reject:
-        return ( sample(c(TRUE,FALSE),replace=FALSE,prob=c(accept.prob,(1-accept.prob)),size=1) );
-	
-			} # /acceptBy
-			
+        return( sample(c(TRUE,FALSE),replace=FALSE,prob=c(accept.prob,(1-accept.prob)),size=1) );
+    }
 
     return(this);
 
   },
   enforceRCC=TRUE
+);
+
+##	
+## Method: .checkLengthParams
+##	
+setMethodS3(
+  ".checkLengthParams",
+  class="FieldDeletor",
+  function(
+    this,
+    ...
+  ){
+
+					# Check length parameter 1:
+					if(is.na(this$.length.param.1)){
+						throw("Length parameter 1 is NA! Cannot generate events or propose lengths!\n");
+					}
+					# Check length parameter 2:
+					if(length(intersect(c("neg.binomial","compoisson"),this$.type)) != 0) {
+						if(is.na(this$.length.param.2)){
+							throw("Length parameter 1 is NA! Cannot generate events or propose lengths!\n");
+						}
+					}
+
+  },
+  private=TRUE,
+  protected=FALSE,
+  overwrite=FALSE,
+  conflict="warning",
+  validators=getOption("R.methodsS3:validators:setMethodS3")
 );
 
 ##	
@@ -9644,7 +10778,33 @@ setMethodS3(
       }
 
       may.fail<-function(this) {
-
+				
+				# Check if the type is valid:
+				if(length(intersect(this$.ALLOWED.TYPES, this$.type)) != 1){
+					throw("The specified field model type is invalid!\n");
+				}
+				if((!is.numeric(this$.tolerance.margin) & !is.na(this$.tolerance.margin))){
+					throw("Tolerance margin is invalid!\n");
+				}
+				if((!is.numeric(this$.tolerance.max) & !is.na(this$.tolerance.max))){
+					throw(".tolerance.max is invalid!\n");
+				}
+				if((!is.numeric(this$.d) & !is.na(this$.d))){
+					throw(".d is invalid!\n");
+				} else if(!is.na(this$.tolerance.margin) & !is.na(this$.tolerance.max)) {
+						if(this$.d != max(this$.tolerance.margin, this$.tolerance.max)){
+							throw(".d is inconsistent!\n");
+						}
+				}
+				if((!is.numeric(this$.field.scaling.factor) & !is.na(this$.field.scaling.factor))){
+					throw(".field.scaling.factor is invalid!\n");
+				}
+				if((!is.numeric(this$.length.param.1) & !is.na(this$.length.param.1))){
+					throw("Length parameter 1 is invalid!\n");
+				}
+				if((!is.numeric(this$.length.param.2) & !is.na(this$.length.param.2))){
+					throw("Length parameter 2 is invalid!\n");
+				}
       }
       tryCatch(may.fail(this),finally=this$writeProtected<-wp);
       NextMethod();
@@ -9658,17 +10818,23 @@ setMethodS3(
 );
 
 ##	
-## Method: proposeLength
+## Method: summary.FieldDeletor
 ##	
 setMethodS3(
-  "proposeLength",
+  "summary",
   class="FieldDeletor",
   function(
     this,
     ...
   ){
 
-			throw("Disabled for FieldDeletion processes!\n");
+		.addSummaryNameId(this);
+		this$.summary$"Type"<-this$.type;
+		this$.summary$"Tolerance margin"<-this$.tolerance.margin;
+		this$.summary$"Length parameter 1"<-this$.length.param.1;
+		this$.summary$"Length parameter 2"<-this$.length.param.2;
+		this$.summary$"Scaling factor"<-this$.field.scaling.factor;
+    NextMethod();
 
   },
   private=FALSE,
@@ -9678,6 +10844,76 @@ setMethodS3(
   validators=getOption("R.methodsS3:validators:setMethodS3")
 );
 
+##  
+## Method: getEventsAtSite
+##  
+setMethodS3(
+  "getEventsAtSite",
+  class="FieldDeletor",
+  function(
+    this,
+    target.site,
+    sloppy=TRUE,
+    ...
+  ){
+
+    if(missing(target.site)) {
+      throw("No target site provided!\n");
+    } else if (!sloppy) {
+      if(!is.Site(target.site)) {
+        throw("Target site invalid!\n");
+      }
+      else if(!is.function(this$.propose.by)) {
+        throw("proposeBy is not set, cannot propose deletion!\n");
+      }
+      else if (!is.function(this$.accept.by)){
+        throw("acceptBy is not set, cannot generate deletion event deletion!\n");
+      }
+    } #/!sloppy
+
+     # Complain if sequence has a zero length:
+     if(target.site$.sequence$.length == 0) {
+       throw("Sequence has zero length so there is nothing to delete! How did you get here anyway?\n");
+     }
+
+     # Clone the event template object:
+     deletion.event<-clone(this$.event.template);
+     # Set the target position passed in a temporary field:
+ deletion.event$.position<-target.site$.position;
+     # Set the target site:
+     deletion.event$site<-target.site;
+     # Set the target state (good for consistency):
+     deletion.event$targetState<-getState(target.site);
+     # Set event name:
+     deletion.event$name<-"Deletion";
+     # Set the genrator process:
+     deletion.event$process<-this;
+
+		 # Calculate the field model specific scaling factor if it is not yet calculated:
+		 if(is.na(this$.field.scaling.factor)){
+				this$.field.scaling.factor<-.getScalingFactor(this,process=this,seq=target.site$.sequence);
+		 }
+
+     # Event rate is the product of the general rate, the field model scaling factor and the 
+     # site specific rate multiplier:
+     deletion.event$rate<-(this$rate * (getParameterAtSite(this,target.site,"rate.multiplier")$value) * this$.field.scaling.factor );
+
+     # Set the handler for the deletion event:
+     .setHandler(deletion.event, this$.handler.template);
+
+    # Write protect the event object: 
+    deletion.event$writeProtected<-TRUE;
+
+    # Return the event object in a list:
+    list(deletion.event);
+
+  },
+  private=FALSE,
+  protected=FALSE,
+  overwrite=FALSE,
+  conflict="warning",
+  validators=getOption("R.methodsS3:validators:setMethodS3")
+);
 
 ##	
 ## Method: getType
@@ -9714,6 +10950,263 @@ setMethodS3(
 		throw("The type of the FieldDeletor process cannot be modified. Please set it by the constructor argument.");
 
   },
+  private=TRUE,
+  protected=FALSE,
+  overwrite=FALSE,
+  conflict="warning",
+  validators=getOption("R.methodsS3:validators:setMethodS3")
+);
+
+##	
+## Method: getLengthParam1
+##	
+setMethodS3(
+  "getLengthParam1",
+  class="FieldDeletor",
+  function(
+    this,
+    ...
+  ){
+
+		this$.length.param.1;
+;
+
+  },
+  private=FALSE,
+  protected=FALSE,
+  overwrite=FALSE,
+  conflict="warning",
+  validators=getOption("R.methodsS3:validators:setMethodS3")
+);
+
+##	
+## Method: getLengthParam2
+##	
+setMethodS3(
+  "getLengthParam2",
+  class="FieldDeletor",
+  function(
+    this,
+    ...
+  ){
+
+		this$.length.param.2;
+;
+
+  },
+  private=FALSE,
+  protected=FALSE,
+  overwrite=FALSE,
+  conflict="warning",
+  validators=getOption("R.methodsS3:validators:setMethodS3")
+);
+
+##	
+## Method: setLengthParam1
+##	
+setMethodS3(
+  "setLengthParam1",
+  class="FieldDeletor",
+  function(
+    this,
+		value,
+    ...
+  ){
+
+		if(missing(value)){
+			throw("No new length parameter value specified!\n");
+		}	
+		else if ((!is.numeric(value)) | (length(value) != 1 ) ) {
+			throw("The new value must be a numeric vector of length 1!\n");
+		}
+		else {
+			# First set the scaling factor to NA to force the recalculation:
+			this$.field.scaling.factor<-NA;
+			this$.length.param.1<-value;
+		}
+
+
+  },
+  private=TRUE,
+  protected=FALSE,
+  overwrite=FALSE,
+  conflict="warning",
+  validators=getOption("R.methodsS3:validators:setMethodS3")
+);
+
+##	
+## Method: setLengthParam2
+##	
+setMethodS3(
+  "setLengthParam2",
+  class="FieldDeletor",
+  function(
+    this,
+		value,
+    ...
+  ){
+
+		if(missing(value)){
+			throw("No new length parameter value specified!\n");
+		}	
+		else if ((!is.numeric(value)) | (length(value) != 1 ) ) {
+			throw("The new value must be a numeric vector of length 1!\n");
+		}
+		else {
+			# First set the scaling factor to NA to force the recalculation:
+			this$.field.scaling.factor<-NA;
+			this$.length.param.2<-value;
+		}
+
+
+  },
+  private=TRUE,
+  protected=FALSE,
+  overwrite=FALSE,
+  conflict="warning",
+  validators=getOption("R.methodsS3:validators:setMethodS3")
+);
+
+##	
+## Method: getToleranceMargin
+##	
+setMethodS3(
+  "getToleranceMargin",
+  class="FieldDeletor",
+  function(
+    this,
+    ...
+  ){
+
+		this$.tolerance.margin;
+
+  },
+  private=FALSE,
+  protected=FALSE,
+  overwrite=FALSE,
+  conflict="warning",
+  validators=getOption("R.methodsS3:validators:setMethodS3")
+);
+
+##	
+## Method: setToleranceMargin
+##	
+setMethodS3(
+  "setToleranceMargin",
+  class="FieldDeletor",
+  function(
+    this,
+		value,
+    ...
+  ){
+
+		if(missing(value)){
+			throw("No new length parameter value specified!\n");
+		}	
+		else if ((!is.numeric(value)) | (length(value) != 1 ) ) {
+			throw("The new value must be a numeric vector of length 1!\n");
+		}
+		else {
+			# First set the scaling factor to NA to force the recalculation:
+			this$.field.scaling.factor<-NA;
+			this$.tolerance.margin<-value;
+		}
+
+
+  },
+  private=FALSE,
+  protected=FALSE,
+  overwrite=FALSE,
+  conflict="warning",
+  validators=getOption("R.methodsS3:validators:setMethodS3")
+);
+
+##	
+## Method: .getScalingFactor
+##	
+setMethodS3(
+  ".getScalingFactor",
+  class="FieldDeletor",
+  function(
+    this,
+		process,
+		seq,
+    ...
+  ){
+
+		# Check if the length parameters needed for rate scaling are present:
+		.checkLengthParams(this);				
+
+		if(is.na(this$.tolerance.max)){
+
+			# Get all deletion tolerance parameters for this process:					
+			deletion.tolerance<-c();
+
+			for(site in seq$.sites){
+					if(isAttached(site, process)){
+						deletion.tolerance<-c(deletion.tolerance, getParameterAtSite(process, site, id="deletion.tolerance")$value);
+						}
+					} # for site
+
+			# Get the maximal tolerance value:
+			this$.tolerance.max<-max(deletion.tolerance);
+
+		}
+		
+		d<-max(this$.tolerance.max, this$.tolerance.margin);
+		this$.d<-d;
+
+		# The type specific rate scaling factors:		
+		exp<-expression();
+
+		# Geometric:
+		if(this$.type=="geometric"){
+			exp<-expression(d * (1 - this$.length.param.1) / (1 - (d * this$.length.param.1)) );
+		}
+	
+		# Poisson+1:	
+		else if(this$.type=="poisson"){
+			exp<-expression(d * exp( - ( this$.length.param.1 * (1 - d ) ) ) );
+		}
+
+		# Negative Binomial + 1:
+		else if(this$.type=="neg.binomial"){
+			exp<-expression( d * ( ( (1 - this$.length.param.1) / (1 - (d * this$.length.param.1))) ^ this$.length.param.2) );
+		}
+	
+		# Conway-Maxwell Poisson	+ 1:
+		else if(this$.type=="compoisson"){
+			exp<-expression( d * (com.compute.z(lambda=this$.length.param.1,nu=this$.length.param.2 ) / com.compute.z(lambda=(d * this$.length.param.1),nu=this$.length.param.2 )) );
+		}
+			
+		return(eval(exp));	
+
+  },
+  private=TRUE,
+  protected=FALSE,
+  overwrite=FALSE,
+  conflict="warning",
+  validators=getOption("R.methodsS3:validators:setMethodS3")
+);
+
+##
+## Method: setParameterAtSite.FieldDeletor
+##
+setMethodS3(
+  "setParameterAtSite",
+  class="FieldDeletor",
+  function(
+    this,
+    site,
+    id,
+		value,
+		...
+  ){
+			if(value < 0 | value > 1)	{
+				throw("The field deletion model accepts deletion tolerance only from the [0,1] interval!\n");
+			}
+			NextMethod();
+  },
   private=FALSE,
   protected=FALSE,
   overwrite=FALSE,
@@ -9722,20 +11215,9 @@ setMethodS3(
 );
 
 
-
-
-##
-##	Class: GenarlIn and GeneralDel
-##	Descriprion: 
-##	
-##	
-##	
-##	
-##	
-##	
 ##	
 ## Copyright 2009 Botond Sipos	
-## See the file ../COPYING for licensing issues.	
+## See the package description for licensing information.	
 ##	
 setConstructorS3(
   "GeneralInDel",
@@ -9747,8 +11229,7 @@ setConstructorS3(
 		... 
 		)	{
 
-		any.alphabet<-Alphabet(type="*ANY*");
-		any.alphabet$.any.flag<-TRUE;
+		any.alphabet<-AnyAlphabet();
 		this<-Process(
 			alphabet=any.alphabet
 		);
@@ -10132,8 +11613,8 @@ setConstructorS3(
 
 	###	
 
-	 this$generateBy<-function(process=NA,length=NA){
-
+	 this$generateBy<-function(process=NA,length=NA,target.seq=NA){
+	
 			if(is.na(length) | (length(length) == 0) | length == 0){
 				throw("Invalid insert length!\n");
 			}	
@@ -10201,7 +11682,7 @@ setConstructorS3(
 					window<-window[ window > 0 & window <= sequence$.length];
 				  if(process$.accept.by(process=process,sequence,window)){
 							details$accepted<-TRUE;
-							insert<-generateInsert(process);
+							insert<-generateInsert(process,target.seq=sequence);
 							details$length<-insert$length;
 							# Call the insert hook:
 							if(is.function(this$.insert.hook)){
@@ -10345,7 +11826,7 @@ setMethodS3(
 		 }
 		 insertion.event$rate<-(this$rate * rate.multiplier );
 
-		 # Set the handler for the deletion event:
+		 # Set the handler for the insertion event:
 		 .setHandler(insertion.event, this$.handler.template);
 
 		# Write protect the event object:	
@@ -10372,13 +11853,14 @@ setMethodS3(
 	function(
 		this,
 		length=NA,
+		target.seq=NA,
 		...
 	){
 
 		if(missing(length)){
 			length<-this$.propose.by(process=this);
 		}
-		insert<-this$.generate.by(process=this,length);
+		insert<-this$.generate.by(process=this,length=length,target.seq=target.seq);
 		sampleStates(insert);	
 		return(insert);	
 
@@ -10903,18 +12385,9 @@ setMethodS3(
 
 
 
-##
-##	Class: GenarlIn and GeneralDel
-##	Descriprion: 
-##	
-##	
-##	
-##	
-##	
-##	
 ##	
 ## Copyright 2009 Botond Sipos	
-## See the file ../COPYING for licensing issues.	
+## See the package description for licensing information.	
 ##	
 setConstructorS3(
   "GeneralSubstitution",
@@ -11697,10 +13170,10 @@ setMethodS3(
 			throw("Cannot get rate as the rate matrix is undefined!\n");
 		}
 		else if(!missing(name) & missing(from) & missing(to)){
-			return(getRate(this$.q.matrix, name=name, value=value));
+			return(getRate(this$.q.matrix, name=name));
 		}
 		else if (missing(name) & !missing(from) & !missing(to)){
-			return(getRate(this$.q.matrix, from=from, to=to, value=value));
+			return(getRate(this$.q.matrix, from=from, to=to));
 		}
 
 
@@ -12011,18 +13484,9 @@ setMethodS3(
 
 
 
-##
-##	Class: PhyloSim
-##	Descriprion: logging methods for the PhyloSim class.
-##	
-##	
-##	
-##	
-##	
-##	
 ##	
 ## Copyright 2009 Botond Sipos	
-## See the file ../COPYING for licensing issues.	
+## See the package description for licensing information.	
 ##	
 
 ##	
@@ -12482,18 +13946,9 @@ setMethodS3(
 	conflict="warning",
 	validators=getOption("R.methodsS3:validators:setMethodS3")
 );
-##
-##	Class: NucleotideModels*
-##	Descriprion: 
-##	
-##	
-##	
-##	
-##	
-##	
 ##	
 ## Copyright 2009 Botond Sipos	
-## See the file ../COPYING for licensing issues.	
+## See the package description for licensing information.	
 ##	
 setConstructorS3(
   "UNREST",
@@ -15154,18 +16609,9 @@ setMethodS3(
 );
 
 ######### end of F84 methods ############
-##
-##	Class: PhyloSim
-##	Descriprion: 
-##	
-##	
-##	
-##	
-##	
-##	
 ##	
 ## Copyright 2009 Botond Sipos	
-## See the file ../COPYING for licensing issues.	
+## See the package description for licensing information.	
 ##	
 
 ##
@@ -15672,23 +17118,48 @@ setMethodS3(
   validators=getOption("R.methodsS3:validators:setMethodS3")
 );
 
-
-
-
-
-
 ##
-##	Class: PhyloSim
-##	Descriprion: 
-##	
-##	
-##	
-##	
-##	
-##	
+## Method: scaleTree
+##
+setMethodS3(
+  "scaleTree",
+  class="PhyloSim",
+  function(
+    this,
+		factor,
+    ...
+  ){
+
+		if(missing(factor)){
+			throw("No branch length scaling factor specified!\n");
+		} else if((!is.numeric(factor)) | (length(factor) != 1)){
+			throw("The scaling factor must be a numeric vector of length 1!\n");	
+		} else if(!is.phylo(this$.phylo)){
+			throw("The phylo object is not set or it is invalid!\n");
+		} else {
+
+			this$.phylo$edge.length<-(this$.phylo$edge.length * factor);
+			return(invisible(this));
+		
+		}
+		
+
+  },
+  private=FALSE,
+  protected=FALSE,
+  overwrite=FALSE,
+  conflict="warning",
+  validators=getOption("R.methodsS3:validators:setMethodS3")
+);
+
+
+
+
+
+
 ##	
 ## Copyright 2009 Botond Sipos	
-## See the file ../COPYING for licensing issues.	
+## See the package description for licensing information.	
 ##	
 setConstructorS3(
 "PhyloSim",
@@ -15696,6 +17167,8 @@ setConstructorS3(
 		phylo=NA,
 		root.seq=NA,
 		name=NA,
+		log.file=NA,
+		log.level=-1, # no loggin is performed by default
 		... 
 		)	{
 
@@ -15711,7 +17184,7 @@ setConstructorS3(
 			.alignment=NA,				# the resulting alignment in fasat format.
 			.log.file=NA, 				# the name of the log file.
 			.log.connection=NA,		# connection for the log file.
-			.log.level=-1					# The default log level is -1, so no logging is performed.
+			.log.level=NA					# log level
 		);
 
 		if(!all(is.na(phylo))){
@@ -15726,10 +17199,17 @@ setConstructorS3(
 			this$name<-name;
 		}
 
-		# Setting default log file:
-		tmp<-this$id;
-		tmp<-gsub(":","_",tmp);
-		this$logFile<-paste(tmp,".log",sep="");
+		if(!missing(log.file)){
+			this$logFile<-log.file;
+		} else {	
+			# Setting default log file:
+			tmp<-this$id;
+			tmp<-gsub(":","_",tmp);
+			this$logFile<-paste(tmp,".log",sep="");
+		}
+
+		# Setting log level:
+		this$logLevel<-log.level;
 
 		return(this);
 
@@ -15838,8 +17318,10 @@ setMethodS3(
 		}
 		else {
 
+			.checkTipLabels(value);
 			this$.phylo<-value;
 			this$.phylo<-reorder(this$.phylo, order="cladewise");
+			# Check if the leaf names doesn't conflict with the internal node names:
 			for (i in this$nodes){
 				this$.sequences[[i]]<-NA;
 			}
@@ -15848,6 +17330,35 @@ setMethodS3(
 
 	},
 	private=FALSE,
+	protected=FALSE,
+	overwrite=FALSE,
+	conflict="warning",
+	validators=getOption("R.methodsS3:validators:setMethodS3")
+);
+
+##	
+## Method: setPhylo
+##	
+setMethodS3(
+	".checkTipLabels", 
+	class="phylo", 
+	function(
+		this,
+		...
+	){
+
+		for(label in this$tip.label){
+			if(length(grep("^Node \\d+$",label,perl=TRUE,value=FALSE,extended=TRUE)) > 0){
+					throw("Sorry, but the node labels matching \"Node \\d+\" are reserved for internal nodes! Blaming label: ",label,".\n");	
+			}
+			else if(length(grep("^Root Node \\d+$",label,perl=TRUE,value=FALSE,extended=TRUE)) > 0){
+					throw("Sorry, but the node labels matching \"Root Node \\d+\" are reserved for the root node! Blaming label: ",label,".\n");	
+			}
+			
+		}
+
+	},
+	private=TRUE,
 	protected=FALSE,
 	overwrite=FALSE,
 	conflict="warning",
@@ -16046,6 +17557,7 @@ setMethodS3(
   class="PhyloSim",
   function(
     this,
+		quiet=FALSE,
     ...
   ){
 
@@ -16082,7 +17594,7 @@ setMethodS3(
 			edge.counter<-1;
 			n.edges<-this$nedges;
 			for(edge in 1:n.edges){
-				cat("Simulating edge",edge,"of", n.edges,"\n");
+				if(!quiet){ cat("Simulating edge",edge,"of", n.edges,"\n");}
 				Log(this,paste("Starting to simulate edge",edge,"of",n.edges));	
 				simulateEdge(this,number=edge);
 				edge.counter<-edge.counter+1;
@@ -16092,7 +17604,7 @@ setMethodS3(
 		this$.alignment<-.recoverAlignment(this);
 		# Flush the log connection:
 		if(!is.na(this$.log.connection)){
-				flush(this$.log.connection);
+				close(this$.log.connection);
 		}
 		return(invisible(this));
   },
@@ -16996,19 +18508,27 @@ setMethodS3(
   validators=getOption("R.methodsS3:validators:setMethodS3")
 );
 
-##
-##	Class: *
-##	Descriprion: 
-##	
-##	
-##	
-##	
-##	
-##	
 ##	
 ## Copyright 2009 Botond Sipos	
-## See the file ../COPYING for licensing issues.	
+## See the package description for licensing information.	
 ##	
+
+##
+## AnyAlphabet
+##
+setConstructorS3(
+  "AnyAlphabet",
+  function(... ){
+
+		this<-Alphabet(type="*ANY*",symbols=c());
+		extend(this,
+			"AnyAlphabet",
+			 .any.flag=TRUE
+			);
+
+  },
+  enforceRCC=TRUE
+);
 
 ##
 ## BinaryAlphabet
@@ -17078,18 +18598,9 @@ setConstructorS3(
 );
 
 
-##
-##	Class: *
-##	Descriprion: 
-##	
-##	
-##	
-##	
-##	
-##	
 ##	
 ## Copyright 2009 Botond Sipos	
-## See the file ../COPYING for licensing issues.	
+## See the package description for licensing information.	
 ##	
 
 ##
@@ -17222,18 +18733,9 @@ setConstructorS3(
 );
 
 
-##
-##	Class: ProcessesList
-##	Descriprion: 
-##	
-##	
-##	
-##	
-##	
-##	
 ##	
 ## Copyright 2009 Botond Sipos	
-## See the file ../COPYING for licensing issues.	
+## See the package description for licensing information.	
 ##	
 setConstructorS3(
 	"ProcessesList",
@@ -17422,18 +18924,9 @@ setMethodS3(
 	validators=getOption("R.methodsS3:validators:setMethodS3")
 );
 
-##
-##	Class: Process
-##	Descriprion: 
-##	
-##	
-##	
-##	
-##	
-##	
 ##	
 ## Copyright 2009 Botond Sipos	
-## See the file ../COPYING for licensing issues.	
+## See the package description for licensing information.	
 ##	
 setConstructorS3(
 	"Process",
@@ -18197,18 +19690,40 @@ setMethodS3(
 );
 
 
-##
-##	Class: 
-##	Descriprion: 
-##	
-##	
-##	
-##	
-##	
-##	
 ##	
 ## Copyright 2009 Botond Sipos	
-## See the file ../COPYING for licensing issues.	
+## See the package description for licensing information.	
+##
+##########################################################################/** 
+#
+# @RdocClass PSRoot
+# 
+# @title "The root class for all phylosim objects"
+# 
+# \description{ 
+#		The root class for all phylosim objects containig utility methods. 
+#		@classhierarchy
+# }
+#	
+# @synopsis
+#	
+# \section{Fields and Methods}{ 
+# 	@allmethods
+# }
+# 
+# \examples{ 
+#		obj<-PSRoot();
+#		ll(obj);
+# }
+# 
+# @author
+#
+#
+# \seealso{ 
+# 	Object
+# }
+# 
+#*/###########################################################################
 setConstructorS3(
   "PSRoot",
   function(...){
@@ -18649,7 +20164,6 @@ setMethodS3(
     ...
   ){
 
-		# FIXME - some safe speedup here!	
 		if(!is.object(this)) {return(FALSE)}
 		inherits(this,"PSRoot");
 		
@@ -18731,18 +20245,9 @@ setMethodS3(
 	static=TRUE,
   conflict="warning"
 );
-##
-##	Class: QMatrix
-##	Descriprion: 
-##	
-##	
-##	
-##	
-##	
-##	
 ##	
 ## Copyright 2009 Botond Sipos	
-## See the file ../COPYING for licensing issues.	
+## See the package description for licensing information.	
 ##	
 setConstructorS3(
   "QMatrix",
@@ -19595,7 +21100,7 @@ setMethodS3(
 		...
 	){
 		
-		.virtualAssignmentForbidden(this);
+		virtualAssignmentForbidden(this);
 
 	},
 	private=FALSE,
@@ -19703,7 +21208,7 @@ setMethodS3(
 		...
 	){
 
-		.virtualAssignmentForbidden(this);
+		virtualAssignmentForbidden(this);
 
 	},
 	private=FALSE,
@@ -19746,7 +21251,7 @@ setMethodS3(
 		...
 	){
 
-		.virtualAssignmentForbidden(this);
+		virtualAssignmentForbidden(this);
 
 	},
 	private=FALSE,
@@ -20011,18 +21516,9 @@ setMethodS3(
 );
 
 
-##
-##	Class: Sequence
-##	Descriprion: 
-##	
-##	
-##	
-##	
-##	
-##	
 ##	
 ## Copyright 2009 Botond Sipos	
-## See the file ../COPYING for licensing issues.	
+## See the package description for licensing information.	
 ##	
 
 ##	
@@ -20145,18 +21641,9 @@ setMethodS3(
 	conflict="warning",
 	validators=getOption("R.methodsS3:validators:setMethodS3")
 );
-##
-##	Class: Sequence - indel related methods
-##	Descriprion: 
-##	
-##	
-##	
-##	
-##	
-##	
 ##	
 ## Copyright 2009 Botond Sipos	
-## See the file ../COPYING for licensing issues.	
+## See the package description for licensing information.	
 ##	
 
 ##
@@ -20443,15 +21930,6 @@ setMethodS3(
   conflict="warning",
   validators=getOption("R.methodsS3:validators:setMethodS3")
 );
-##
-##	Class: Sequence
-##	Descriprion: 
-##	
-##	
-##	
-##	
-##	
-##	
 ##	
 ## Copyright 2009 Botond Sipos	
 ## See the file ../COPYING for licensing issues.	
@@ -22581,18 +24059,39 @@ setMethodS3(
 	conflict="warning",
 	validators=getOption("R.methodsS3:validators:setMethodS3")
 );
-##
-##	Methods for Site/Process interactions
-##	Descriprion: 
+
 ##	
+## Method: getSymbolFreqs
 ##	
-##	
-##	
-##	
-##	
+setMethodS3(
+	"getSymbolFreqs", 
+	class="Sequence", 
+	function(
+		this,
+		process,
+		index,
+		...
+	){
+		
+			if(!missing(index)){
+				index<-.checkIndexSanity(this, index);
+			} else {
+				index<-seq(along=this$.sites);
+			}
+
+			prop.table(table(as.character(lapply(this$.sites[index],getState))));
+		
+	},
+	private=FALSE,
+	protected=FALSE,
+	overwrite=FALSE,
+	conflict="warning",
+	validators=getOption("R.methodsS3:validators:setMethodS3")
+);
+
 ##	
 ## Copyright 2009 Botond Sipos	
-## See the file ../COPYING for licensing issues.	
+## See the package description for licensing information.	
 ##	
 
 ##
@@ -23013,7 +24512,7 @@ setMethodS3(
 		} # /for i				
 	
 	
-		lapply(to.detach, function(process) {detachProcessSloppy(this,process)});
+		lapply(to.detach, function(process) {detachProcess(this,process)});
 		lapply(to.attach, function(process) {.attachProcessSloppy(this,process)});
 	
 		invisible(this);
@@ -23024,19 +24523,53 @@ setMethodS3(
   conflict="warning",
   validators=getOption("R.methodsS3:validators:setMethodS3")
   );
-##
-##	Class: Site
-##	Descriprion: 
-##	
-##	
-##	
-##	
-##	
-##	
 ##	
 ## Copyright 2009 Botond Sipos	
-## See the file ../COPYING for licensing issues.	
+## See the package description for licensing information.	
 ##	
+
+##########################################################################/** 
+
+# @RdocClass Site
+# 
+# @title "The Site class"
+# 
+# \description{ 
+#		@classhierarchy
+# 
+#	
+#	
+# }
+#	
+# @synopsis
+#	
+# \arguments{
+# 	\item{state}{}
+# 	\item{alphabet}{}
+# 	\item{ancestral}{}
+# 	\item{processes}{}
+# 	\item{sequence}{}
+#	}
+# 
+# \section{Fields and Methods}{ 
+# 
+# }
+# 
+# \examples{ 
+#		site<-Site();
+#		print(site);
+#		summary(site);
+# }
+# 
+# @author
+#
+#
+# \seealso{ 
+#		Alphabet, Process, Event
+# }
+# 
+#*/###########################################################################
+
 setConstructorS3(
 	"Site",
 	function(
@@ -23731,18 +25264,9 @@ setMethodS3(
 	validators=getOption("R.methodsS3:validators:setMethodS3")
 	);
 
-##
-##	Class: StatesList
-##	Descriprion: 
-##	
-##	
-##	
-##	
-##	
-##	
 ##	
 ## Copyright 2009 Botond Sipos	
-## See the file ../COPYING for licensing issues.	
+## See the package description for licensing information.	
 ##	
 setConstructorS3(
 	"StatesList",

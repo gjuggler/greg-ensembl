@@ -18,49 +18,51 @@ source("./FullSource.R");
 #
 
 # Create the codon substituion process:
-p<-NY98(kappa=4);
+p<-NY98(kappa=2);
 
-# Create a sequence of length 200:
-seq<-CodonSequence(length=200); 
+# Create a sequence:
+seq<-CodonSequence(length=500); 
 
 # Attach substitution process to root sequence:
 attachProcess(seq,p);
 # After attaching the NY98 process we have the M0 (equal omegas) model by default.
 
+omegaVarM7(seq,p,p0=0.5,p=1,q=2,mean=1.5,sd=0.5);
+
 # Set an arbitrary omega pattern:
-setOmegas(seq,p,value=c(0.5,1,2));
+#setOmegas(seq,p,value=c(0.5,1,2));
 # Now this is not the M0 model any more.
 
 # Copy a portion (for insert template):
-ins.template<-copySubSequence(seq,1:10);
+#ins.template<-copySubSequence(seq,1:10);
 
 # Sample the states from the attached substitution process(es):
 sampleStates(seq);
 
 # Create the insertion process:
-ins<-DiscreteInsertor(rate=0.05,sizes=c(1:5),probs=c(1,1,1,1,1));
+#ins<-DiscreteInsertor(rate=0.05,sizes=c(1:5),probs=c(1,1,1,1,1));
 # Create the deletion process:
-del<-DiscreteDeletor(rate=0.05,sizes=c(1:5),probs=c(1,1,1,1,1));
+#del<-DiscreteDeletor(rate=0.05,sizes=c(1:5),probs=c(1,1,1,1,1));
 
 # Set the template sequence for the insertion process:
-ins.template\$processes<-list(list(p,ins,del));
+#ins.template\$processes<-list(list(p,ins,del));
 
 # Unset write protection on insertion process:
-ins\$writeProtected<-FALSE;
+#ins\$writeProtected<-FALSE;
 # Set insert template:
-ins\$templateSeq<-ins.template;
+#ins\$templateSeq<-ins.template;
 
 # Set an insert hook for the insertion process:
-ins\$insertHook<-function(seq){
+#ins\$insertHook<-function(seq){
 
   # For some reason have to specify the full method name here. To be fixed.
-  setOmegas.CodonSequence(seq,p,value=c(0.5,0.6,0.7));
-  return(seq);
+#  setOmegas.CodonSequence(seq,p,value=c(0.5,0.6,0.7));
+#  return(seq);
 
-}
+#}
 
 # Attach the indel processes to root sequence:
-seq\$processes<-list(list(p));
+#seq\$processes<-list(list(p));
 
 # Create the simulation object:
 sim<-PhyloSim(
