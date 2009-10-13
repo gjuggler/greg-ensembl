@@ -92,16 +92,15 @@ sub run {
 sub write_output {
   my $self = shift;
 
-    my $final_cdna = $aln;
-    Bio::EnsEMBL::Compara::AlignUtils->pretty_print($final_cdna,{length => 200});
-    my $final_aa = Bio::EnsEMBL::Compara::AlignUtils->translate($final_cdna);
-    
-    my $out_table = "protein_tree_member";
-    print "STORING ALIGNMENT\n";
-    Bio::EnsEMBL::Compara::ComparaUtils->store_SimpleAlign_into_table($out_table,$tree,$final_aa,$final_cdna);
-
-    print "STORING OMEGAS\n";
-    $self->_store_sitewise_omegas("sitewise_aln",\@sitewise_omegas,$final_aa,$params);
+  my $final_cdna = $aln;
+  Bio::EnsEMBL::Compara::AlignUtils->pretty_print($final_cdna,{length => 200});
+  my $final_aa = Bio::EnsEMBL::Compara::AlignUtils->translate($final_cdna);
+  
+  my $out_table = "protein_tree_member";
+  print "STORING ALIGNMENT\n";
+  Bio::EnsEMBL::Compara::ComparaUtils->store_SimpleAlign_into_table($out_table,$tree,$final_aa,$final_cdna);
+  print "STORING OMEGAS\n";
+  $self->_store_sitewise_omegas("sitewise_aln",\@sitewise_omegas,$final_aa,$params);
 }
 
 sub throw_error {
@@ -176,9 +175,7 @@ sub simulate_alignment_indelible {
 
 [PARTITIONS] partition1
   [tree1 model1 $length]
-
   [EVOLVE] partition1 1 $output_f
-  
   ^;
   print $ctrl_str."\n";
   open(OUT,">$ctrl_f");
@@ -213,7 +210,7 @@ sub simulate_alignment_indelible {
   unlink $output_f;
   chdir($cwd);
 
-  return ($aln);
+  return $aln;
 }
 
 sub simulate_alignment_phylosim {
@@ -283,6 +280,7 @@ sub _store_sitewise_omegas {
 		  $hr->{omega_lower},
 		  $hr->{omega_upper},
 		  $ncod);
+    sleep(0.1);
   }
   $sth->finish();
 }

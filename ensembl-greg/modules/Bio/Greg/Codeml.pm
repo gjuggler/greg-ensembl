@@ -81,7 +81,7 @@ Internal methods are usually preceded with a _
 # Let the code begin...
 
 
-package Bio::Tools::Run::Phylo::PAML::Codeml;
+package Bio::Greg::Codeml;
 use vars qw(@ISA %VALIDVALUES $MINNAMELEN $PROGRAMNAME $PROGRAM);
 use strict;
 use Bio::Root::Root;
@@ -484,12 +484,6 @@ sub prepare{
        print CODEML "$param = $val\n";
    }
    close(CODEML);
-#    my ($rc,$parser) = (1);
-#    {
-#        my $cwd = cwd();
-#        my $exit_status;
-#        chdir($tempdir);
-#    }
    return $tempdir;
 }
 
@@ -510,8 +504,8 @@ sub prepare{
 
 sub run {
    my ($self) = shift;;
-   my $outfile = $self->outfile_name;
    my $tmpdir = $self->prepare(@_);
+   my $outfile = $self->outfile_name;
    
    my ($rc,$parser) = (1);
    {
@@ -551,7 +545,7 @@ sub run {
 	   #
 	   # GJ 2009-01-08 : Parse the supplementary results.
 	   #
-	   open(IN,"$tmpdir/rst");
+           open(IN,"$tmpdir/rst");
 	   my @supps = <IN>;
 	   $self->supplementary_results(\@supps);
 	   close(IN);
@@ -585,8 +579,8 @@ sub main_results {
 sub extract_empirical_bayes {
     my $self = shift;
     my $suppl_arrayref = shift;
-    $suppl_arrayref = $self->supplementary_results() unless (defined $suppl_arrayref);
 
+    $suppl_arrayref = $self->supplementary_results() unless (defined $suppl_arrayref);
     my @suppl = @{$suppl_arrayref};
 
     # Naive:
@@ -595,54 +589,70 @@ sub extract_empirical_bayes {
     # Bayesian:
     #Bayes Empirical Bayes (BEB) probabilities for 11 classes (class)& postmean_w
     # 1 M   0.03403 0.08222 0.10935 0.11735 0.11455 0.10627 0.09566 0.08451 0.07399 0.07080 0.11128 ( 4)  0.745 +-  1.067
- 
     # NOTE FROM PAML DOCUMENTATION, p.29: "We suggest that you ignore the NEB output and use the BEB results only."
 
-    my $within_naive_section = 0;
-    my $within_bayes_section = 0;
+    my $has_bayes_section = 0;
     my $naive_results;
     my $bayes_results;
     my $bayes_se;
+    my $pos_sites;
+
     foreach my $line (@suppl) {
-	chomp($line);
-	next if (length($line) == 0);
-
-	print $line . "\n";
-
-	if ($line =~ /Naive Empirical Bayes/i) {
-	    $within_naive_section = 1;
-	} elsif ($line =~ /Bayes Empirical Bayes/i) {
-	    $within_naive_section = 0;
-	    $within_bayes_section = 1;
-	}
-
-	next if ($line =~ /amino acids/i); # Skip lines like: (amino acids refer to 1st sequence: ENSDARP00000087283)
-	next if ($line =~ /prob/i);
-	next if ($line =~ /lnL/i);
-
-	if ($within_naive_section) {
-	    next if ($line =~ /positively selected sites/i);
-	    my @bits = split(/\s+/,$line);
-	    
-	    my $pos = $bits[1];
-	    my $omega = pop @bits;
-
-	    $naive_results->{$pos} = $omega;
-	} elsif ($within_bayes_section) {
-	    last if ($line =~ /positively selected sites/i);
-
-	    my @bits = split(/\s+/,$line);
-	    
-	    my $pos = $bits[1];
-	    my $se = pop @bits;
-	    my $ignore_me = pop @bits;
-	    my $omega = pop @bits;
-
-	    $bayes_results->{$pos} = $omega;
-	    $bayes_se->{$pos} = $se;
-	}
+#      chomp($line);
+#      next if (length($line) ==0);
+      $has_bayes_section = 1 if ($line =~ m/Bayes Empirical Bayes/i);
     }
-    return ($naive_results,$bayes_results,$bayes_se);
+    
+    #print "Has bayes: $has_bayes_section\n";
+    my $started_bayes = 0;
+    my $started_pos_sel_sites = 0;
+    foreach my $line (@suppl) {
+      chomp($line);
+      next if (length($line) == 0);      
+      next if ($line =~ /amino acids/i); # Skip lines like: (amino acids refer to 1st sequence: ENSDARP00000087283)
+#      next if ($line =~ /prob/i);
+#      next if ($line =~ /lnL/i);
+
+      $started_bayes = 1 if ($line =~ m/Bayes Empirical Bayes/i);
+      $started_pos_sel_sites = 1 if ($line =~ m/positively selected sites/i && !$has_bayes_section);
+      $started_pos_sel_sites = 1 if ($line =~ m/positively selected sites/i && $has_bayes_section && $started_bayes);
+      
+      if (!$has_bayes_section && !$started_pos_sel_sites) {
+        my @bits = split(/\s+/,$line);
+        my $pos = $bits[1];
+        my $omega = pop @bits;
+        
+        $naive_results->{$pos} = $omega;
+      }
+
+      if ($has_bayes_section && $started_bayes && !$started_pos_sel_sites) {
+        
+        my @bits = split(/\s+/,$line);
+        my $pos = $bits[1];
+        my $se = pop @bits;
+        my $ignore_me = pop @bits;
+        my $omega = pop @bits;
+        
+        $bayes_results->{$pos} = $omega;
+        $bayes_se->{$pos} = $se;
+      }
+
+      if ($started_pos_sel_sites) {
+        next if ($line =~ m/positively/i);
+        next if ($line =~ m/Prob(w>1)/i);
+        last if ($line =~ m/lnL/i);
+        last if ($line =~ m/reconstruction/i);
+
+        my @bits = split(/\s+/,$line);
+        #Positively selected sites
+        #     7 T      0.705         3.979 +- 3.258
+        #    41 S      0.830         4.654 +- 3.213
+        shift @bits;
+        my $site = shift @bits;
+        $pos_sites->{$site} = 1;
+      }
+    }
+    return ($naive_results,$bayes_results,$bayes_se,$pos_sites);
 }
 
 
@@ -733,7 +743,7 @@ sub NSsites_ratio_test {
     my $codon_aln = shift;
     my $model_a = shift;
     my $model_b = shift;
-
+    
     # Model A should be a model nested within B, i.e. A=m2 b=m3, A=m7 b=m8
     $model_a = 7 unless (defined $model_a);
     $model_b = 8 unless (defined $model_b);

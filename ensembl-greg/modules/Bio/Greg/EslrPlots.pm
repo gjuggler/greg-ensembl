@@ -6,6 +6,281 @@ use Bio::EnsEMBL::Compara::ComparaUtils;
 use Bio::EnsEMBL::Compara::AlignUtils; 
 use Bio::EnsEMBL::Compara::TreeUtils;
 
+sub plotTrees {
+  my $class = shift;
+  my $file_out = shift;
+  my $params = shift;
+  my $tree_in = shift;
+
+  my @node_ids = @{$params->{'node_ids'}};
+
+  my $height = $params->{'height'} || 30;
+  my $width = $params->{'width'} || 20;
+
+  my $n = scalar(@node_ids);
+
+  my $r_start = qq{
+library(ape);
+source("aln_tools/aln.tools.R");
+source("aln_tools/slr.tools.R");
+source("aln_tools/phylo.tools.R");
+source("aln_tools/plot.phylo.greg.R");
+
+width = $width;
+height = $height;
+
+mult = 50 / width;
+width = width*mult;
+height = height*mult;
+
+dpar = par(no.readonly=T)
+print(paste("Width:",width," Height:",height));
+pdf(file="${file_out}",width=$width,height=$height,pointsize=12);
+
+par(mfrow=c($n,1));
+
+};
+
+  my $r_end = qq{
+dev.off();
+q();
+};
+
+  my @cmds;
+  foreach my $node_id (@node_ids) {
+    $params->{'node_id'} = $node_id;
+    push @cmds,$class->plotTree($file_out,$params,$tree_in,1);
+  }
+
+  my $full_cmd = $r_start . join("\n",@cmds) . $r_end;
+
+  my $dir = "/tmp/eslrplots";
+  mkpath([$dir]);
+  my $temp = "$dir/rcmd.txt";
+  open(OUT,">$temp");
+  print OUT $full_cmd."\n";
+  close(OUT);
+  
+  # Create the PDF, then use ImageMagick to create a PNG and thumbnail.
+  # cmd to run: /software/R-2.7.1/bin/R CMD BATCH $filename
+  my $rc = 0;
+  my $nullify = "";
+  if ($params->{'quiet'}) {
+    $nullify = ">/dev/null";
+  }
+  if ($ENV{USER} =~ /greg/) {
+    $rc = system("R --vanilla < $temp $nullify");
+    #$rc = system("/ebi/research/software/Linux_x86_64/bin/R-2.7.0 --vanilla < $temp");
+  } else {
+    $rc = system("/software/bin/R-2.9.0 --vanilla < $temp $nullify");
+  }
+  
+  if ($params->{'cleanup_temp'}) {
+    use File::Path qw(rmtree);
+    rmtree($dir);
+  }  
+}
+
+sub plotTree {
+  my $class = shift;
+  my $file_out = shift;
+  my $params = shift;
+  my $tree_in = shift;
+  my $return_mid_cmd = shift;
+
+  my $dba;
+  if (!$tree_in) {
+    $dba = $params->{'dba'};
+  }
+
+  my $defaults = {
+    max_tree_length => 0,
+    alignment_quality_mask_character => 'O',    # Goes to dark gray.
+    sequence_quality_mask_character => 'B',      # Goes to lighter gray.
+    gblocks_mask_character => 'U',
+    subtree_mask_character => 'Z',
+    remove_subtree => 0,
+    remove_blank_columns => 1,
+    output_gene_info => 0,
+    sitewise_table => 'sitewise_aln',
+    exon_cased => 0,
+    node_id => '',
+    subtrees => '',
+    cleanup_temp => 1
+  };
+  $params = Bio::EnsEMBL::Compara::ComparaUtils->replace_params($defaults,$params);
+
+  my $param_set = $params->{'parameter_set'};
+  if ($param_set) {
+    print "Loading parameters from param_set $param_set...\n";
+    my $param_set_params = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_param_set($dba->dbc,$param_set);
+    $params = Bio::EnsEMBL::Compara::ComparaUtils->replace_params($params,$param_set_params);
+  }
+  
+  # Prune the tree.
+  $params->{'node_id'} = $tree_in->node_id if (defined $tree_in);
+  my $node_id = $params->{'node_id'};
+
+  # Define paths.
+  my $dir = "/tmp/eslrplots";
+  mkpath([$dir]);
+  my $tree_f = "$dir/tree_${node_id}.nh";
+  my $aln_f = "$dir/aln_${node_id}.fasta";
+
+  my $url = "";
+  my $spf = "";
+  my $skip_output = 0;
+  unless ($skip_output) {
+    my ($tree,$sa) = Bio::EnsEMBL::Compara::ComparaUtils->get_tree_and_alignment($dba,$params);
+
+    Bio::EnsEMBL::Compara::AlignUtils->pretty_print($sa,{length=>200});
+    
+    # Output the alignment.
+    #my $sa = $tree->get_SimpleAlign;
+    my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
+    #$sa = Bio::EnsEMBL::Compara::ComparaUtils->fetch_masked_alignment($sa,$tree,$params);
+    
+    my $old_to_new;
+    if ($params->{'remove_blank_columns'}) {
+      my ($flat_aln,$new_to_old,$o_t_n) = @{Bio::EnsEMBL::Compara::AlignUtils->remove_blank_columns($sa)};
+      $sa = $flat_aln;
+      $old_to_new = $o_t_n;
+    }
+
+    open(OUT,">$aln_f");
+    foreach my $seq ($sa->each_seq) {
+      print OUT ">".$seq->id."\n";
+      print OUT $seq->seq."\n";
+    }
+    close(OUT);
+    
+    # Output the tree.
+    open(OUT,">$tree_f");
+    my $tree2 = $tree->copy;
+    $tree2 = $tree2->minimize_tree;
+    print OUT $tree2->newick_format()."\n";
+    print $tree2->newick_format()."\n";
+
+    close(OUT);
+  }
+
+  my $max_tree_length = $params->{'max_tree_length'};
+
+  my $out_cmd = qq^
+    pdf(file="$file_out",width=width*10,height=height*10);
+  ^;
+  $out_cmd = qq^
+    png(file="$file_out",width=width*10*72,height=height*10*72);
+  ^ if ($file_out =~ /\.png/i);
+
+  my $aln_file_list = "c(" . join(", ",("\"$aln_f\"")) . ")";
+  my $tree_file_list = "c(" . join(", ",("\"$tree_f\"")) . ")";
+  
+  my $r_start = qq{
+library(ape);
+source("aln_tools/aln.tools.R");
+source("aln_tools/slr.tools.R");
+source("aln_tools/phylo.tools.R");
+source("aln_tools/plot.phylo.greg.R");
+
+print("$aln_f");
+aln = read.aln("$aln_f");
+aln\$tree = read.tree("$tree_f");
+
+height = max(1,aln\$num_seqs / 10);
+width = min(48,aln\$length/10);
+
+mult = 50 / width;
+width = width*mult;
+height = height*mult;
+
+dpar = par(no.readonly=T)
+print(paste("Width:",width," Height:",height));
+pdf(file="${file_out}",width=width,height=height,pointsize=12);
+};
+
+  my $r_mid = qq{
+# Use layout to arrange the regions for SLR values, tracks, tree, and alignment.
+aln = read.aln("$aln_f");
+aln\$tree = read.tree("$tree_f");
+
+num_tracks = 1
+track_heights = c(.2)
+aln_height = 1
+heights=c(track_heights,aln_height)
+tree_width=0.2
+aln_width=1
+pad_width = 1/50
+widths=c(tree_width,aln_width,pad_width)
+
+# Plotting order: aln, tree, track 1,2,3...n
+num_rows = num_tracks+1
+num_cols = 3
+numbers = c()
+for (i in 1:num_tracks) {
+  numbers = c(numbers,3,i+3,0)
+}
+numbers = c(numbers,2,1,0)
+print(numbers)
+layout(matrix(numbers,nrow=num_rows,ncol=num_cols,byrow=T),heights=heights,widths=widths)
+par(xaxs='i',mai=rep(0,4))
+
+tree = aln\$tree
+a = plot.aln(aln,overlay=F,axes=F,draw.chars=F,plot.tree=F)
+
+xl = tree_length(tree);
+if ($max_tree_length > 0) {
+  low.lim = -$max_tree_length;
+  hi.lim = xl*1.1;
+} else {
+  low.lim = -xl;
+  hi.lim = xl*1.1;
+}
+plot.phylo.greg2(tree,y.lim=a\$ylim,x.lim=c(low.lim,hi.lim),show.tip.label=T)
+axis.phylo(tree,side=3)
+plot(c(1),type='n',axes=F) # The blank upper-left hand corner.
+
+# Now plot the tracks.
+plot.aln.bars(aln)
+
+};
+
+  my $r_end = qq{
+dev.off()
+q();
+};
+
+  if ($return_mid_cmd) {
+    return $r_mid;
+  }
+
+  my $rcmd = "$r_start \n $r_mid \n $r_end \n";
+
+  my $temp = "$dir/rcmd.txt";
+  open(OUT,">$temp");
+  print OUT $rcmd."\n";
+  close(OUT);
+  
+  # Create the PDF, then use ImageMagick to create a PNG and thumbnail.
+  # cmd to run: /software/R-2.7.1/bin/R CMD BATCH $filename
+  my $rc = 0;
+  my $nullify = "";
+  if ($params->{'quiet'}) {
+    $nullify = ">/dev/null";
+  }
+  if ($ENV{USER} =~ /greg/) {
+    $rc = system("R --vanilla < $temp $nullify");
+    #$rc = system("/ebi/research/software/Linux_x86_64/bin/R-2.7.0 --vanilla < $temp");
+  } else {
+    $rc = system("/software/bin/R-2.9.0 --vanilla < $temp $nullify");
+  }
+
+  if ($params->{'cleanup_temp'}) {
+    use File::Path qw(rmtree);
+    rmtree($dir);
+  }
+}
+
 sub plotTreeWithOmegas {
   my $class = shift;
   my $file_out = shift;
@@ -61,13 +336,9 @@ sub plotTreeWithOmegas {
   my $spf = "";
   unless ($skip_output) {
     my ($tree,$sa) = Bio::EnsEMBL::Compara::ComparaUtils->get_tree_and_alignment($dba,$params);
-    print "TREE: ".$tree->node_id."\n";
-    #$tree = Bio::EnsEMBL::Compara::ComparaUtils->get_tree_for_comparative_analysis($dba,$params);
     
     # Output the alignment.
-    #my $sa = $tree->get_SimpleAlign;
     my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
-    #$sa = Bio::EnsEMBL::Compara::ComparaUtils->fetch_masked_alignment($sa,$tree,$params);
     
     my $old_to_new;
     if ($params->{'remove_blank_columns'}) {

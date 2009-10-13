@@ -135,6 +135,7 @@ sub from_file {
   close(IN);
   my $newick = join("",@lines);
   
+  use Bio::EnsEMBL::Compara::Graph::NewickParser;
   return Bio::EnsEMBL::Compara::Graph::NewickParser::parse_newick_into_tree($newick);  
 }
 
@@ -342,8 +343,13 @@ sub to_file {
   my $class = shift;
   my $tree = shift;
   my $out_file = shift;
+  my $params = shift;
 
   my $newick = $class->to_newick($tree);
+  if ($params->{'node_ids'}) {
+    $newick = $tree->newick_format('int_node_id');
+  }
+
   open(OUT,">".$out_file);
   print OUT $newick;
   print $newick."\n";

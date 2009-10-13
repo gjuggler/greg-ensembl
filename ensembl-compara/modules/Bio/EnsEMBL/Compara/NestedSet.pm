@@ -373,6 +373,8 @@ sub sorted_children {
             $a->get_child_count <=> $b->get_child_count         
                      ||
             $a->distance_to_parent <=> $b->distance_to_parent
+            ||
+            $a->node_id <=> $b->node_id # GJ 2009-10-09
           }  @{$self->children;};
   return \@sortedkids;
 }

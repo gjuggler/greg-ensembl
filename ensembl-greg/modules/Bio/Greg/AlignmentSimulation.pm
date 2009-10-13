@@ -110,7 +110,6 @@ sub run {
 
 sub write_output {
   my $self = shift;
-
   my $final_aa = $final_cdna->translate();
 
   Bio::EnsEMBL::Compara::AlignUtils->pretty_print($final_aa);

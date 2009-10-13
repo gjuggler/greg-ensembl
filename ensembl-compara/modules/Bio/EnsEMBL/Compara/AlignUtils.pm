@@ -243,7 +243,14 @@ sub sort_by_tree {
   } else {
     # If we're given an object hashref, we assume it's a TreeI object.
     if ($tree->isa('Bio::EnsEMBL::Compara::ProteinTree')) {
-      $tree = $TREE->to_treeI($tree);
+      #$tree = $TREE->to_treeI($tree);
+      my $new_aln = $aln->new;
+      foreach my $leaf ($tree->leaves) {
+        my $name = $leaf->stable_id;
+        my $seq = $class->get_seq_with_id($aln,$name);
+        $new_aln->add_seq($seq);
+      }
+      return $new_aln;
     } elsif (! $tree->isa('Bio::Tree::TreeI')) {
       # Try converting ProteinTree to TreeI.
       warn "sort_by_tree: given a hashref that is not a TreeI object!\n";
@@ -287,33 +294,52 @@ sub prank_filter {
   my $tree = shift;
   my $params = shift;
 
-  return $aln;
+  my $threshold = $params->{'prank_filtering_threshold'} || 5;
+  my $char = $params->{'prank_mask_character'} || 'X';
 
+  my ($scores,$blocks) = $class->get_prank_filter_matrices($aln,$tree,$params);
+  my $filtered_aln = $class->mask_below_score($aln,$threshold,$scores,$char);
+
+  return $filtered_aln;
+}
+
+sub get_prank_filter_matrices {
+  my $class = shift;
+  my $aln = shift;
+  my $tree = shift;
+  my $params = shift;
+
+  my $dna_aln = $tree->get_SimpleAlign(-cdna => 1);
+
+  my $node_id = $tree->node_id;
   my $mask_char = $params->{'prank_mask_character'};
 
   my $dir = "/tmp/prank_temp";
   mkpath([$dir]);
-  my $aln_f = $dir."/aln.fasta";
-  my $tree_f = $dir."/tree.nh";
-  my $out_f = $dir."/aln_filtered";
+  my $aln_f = $dir."/aln_${node_id}.fasta";
+  my $tree_f = $dir."/tree_${node_id}.nh";
+  my $out_f = $dir."/aln_filtered_${node_id}";
   my $xml_f = $out_f.".0.xml";
 
   # Output tree and alignment.
   $class->to_file($aln,$aln_f);
   Bio::EnsEMBL::Compara::TreeUtils->to_file($tree,$tree_f);
 
-  my $cmd = qq^prank_latest -d=$aln_f -t=$tree_f -e -o=$out_f^;
+  my $cmd = qq^prank_fix -d=$aln_f -t=$tree_f -e -o=$out_f^;
+#  if (!-e $xml_f) {
+    system($cmd);
+#  }
 
   use XML::LibXML;
   use Bio::Greg::Node;
 
   # Grab information from Prank's XML output.
   my $parser = XML::LibXML->new();
-  $tree = $parser->parse_file($xml_f);
-  my $root = $tree->getDocumentElement;
+  $xml_tree = $parser->parse_file($xml_f);
+  my $root = $xml_tree->getDocumentElement;
 
   my $newick = ${$root->getElementsByTagName('newick')}[0]->getFirstChild->getData;
-  #print $newick."\n";
+  print $newick."\n";
   my $rootNode = Bio::Greg::Node->new();
   $rootNode = $rootNode->parseTree($newick);
 
@@ -321,7 +347,8 @@ sub prank_filter {
   my %idToName;
   my %seqsByName;
   foreach my $lid (@{$root->getElementsByTagName('leaf')}) {
-    $nameToId{$lid->getAttribute('name')} = $lid->getAttribute('id');
+    my $tree_name = $lid->getAttribute('id');
+    $nameToId{$lid->getAttribute('name')} = 
     $idToName{$lid->getAttribute('id')} = $lid->getAttribute('name');
     my $seq = $lid->findvalue('sequence');
     $seq =~ s/\s//g;
@@ -342,36 +369,109 @@ sub prank_filter {
     $nameToState{$sid->getAttribute('name')} = $sid->getAttribute('id');
   }
 
-  # Go through the nodes, filtering at XYZ posterior probability.
+  # Create a stored 'leaf name string' for each XML node.
+  my $leaf_names_to_xml;
   my @nodes = $rootNode->nodes();
   foreach my $node (@nodes) {
     next if ($node->isLeaf);
-    my @score = split(/,/,$postprob{$node->name}{$nameToState{'postprob'}});
-
-    my $filter_sites = {};
-    for (my $i=0; $i < scalar(@score); $i++) {
-      $filter_sites->{$i+1} = 1 if ($score[$i] > -1 && $score[$i] < 95);
-      #print $score[$i]." ";
-    }
     my @nms = $node->leafNames;
     @nms = map {$idToName{$_}} @nms;
-    #print "@nms\n";
-
-    # For each internal node-site below the threshold, mask out that site in all enclosed leaves.
-    foreach my $name (@nms) {
-      $aln = $class->filter_sites($aln,$name,$filter_sites,$mask_char);
-    }
+    @nms = sort @nms;
+    my $leaf_names = join(" ",@nms);
+    $leaf_names_to_xml->{$leaf_names} = $node->name;
   }
 
-  $class->pretty_print($aln);
+  my $leaf_names_to_node;
+  my $node_to_xml;
+  foreach my $node ($tree->nodes) {
+    next if ($node->is_leaf);
 
-  #my $rc = system($cmd);
-  #die("Prank error!") if ($rc);
+    my @nms = map {$_->name} $node->leaves;
+    @nms = sort @nms;
+    my $leaf_names = join(" ",@nms);
+    $leaf_names_to_node->{$leaf_names} = $node->name;
+    if ($leaf_names_to_xml->{$leaf_names}) {
+      $node_to_xml->{$node} = $leaf_names_to_xml->{$leaf_names};
+    }
+  }
+  
+  my %pp_hash;
+  my @nodes = $rootNode->nodes();
+  foreach my $node (@nodes) {
+    next if ($node->isLeaf);
+    
+    my @score = split(/,/,$postprob{$node->name}{$nameToState{'postprob'}});
+    $pp_hash->{$node->name} = ();
+    for (my $i=0; $i < scalar(@score); $i++) {
+      $pp_hash->{$node->name}[$i] = $score[$i];
+    }
+  }
+  
+  my $leaf_scores;
+  foreach my $leaf ($tree->leaves) {
+    my $total_dist = $leaf->distance_to_root;
+    my $aln_len = $aln->length;
+    
+    my $aln_string = $leaf->alignment_string;
+    my @aln_arr = split("",$aln_string);
 
-  # GJ TODO
+    sub get_other_child {
+      my $parent = shift;
+      my $node = shift;
 
-  return $aln;
-  #rmtree([$dir]);
+      foreach my $child (@{$parent->children}) {
+        return $child if ($node != $child);
+      }
+      return undef;
+    }
+
+    my @scores;
+    my $score_string = "";
+    for (my $i=0; $i < $aln_len; $i++) {
+      if ($aln_arr[$i] eq '-') {
+        $score_string .= '-';
+        next;
+      }
+
+      my $total_prob = 0;
+      my $node = $leaf;
+      while (my $parent = $node->parent) {
+        my $bl = $node->distance_to_parent;
+        my $xml_node = $node_to_xml->{$parent};
+        my $post_prob = $pp_hash->{$xml_node}[$i];
+        if ($post_prob != -1) {
+          # We've got nucleotides aligned here. Sum up according to our rules.
+          
+          # Find the fraction of branch length encompassed by our node and the
+          # other node being aligned. If we have more branch length, adjust the weights.
+          my $total_bl = Bio::EnsEMBL::Compara::TreeUtils->total_distance($node);
+          my $other_node = get_other_child($parent,$node);
+          my $other_total_bl = Bio::EnsEMBL::Compara::TreeUtils->total_distance($other_node);
+          
+          my $bl_fraction = $other_total_bl / $total_bl;
+          $bl_fraction = 1 if ($bl_fraction > 1);
+
+          # Add a value proportional to post_prob, bl, and 'balance' fraction.
+          $total_prob += $post_prob/100 * ($bl / $total_dist) * $bl_fraction;
+          # Add a value to make up for a 'balance' fraction less than 1.
+          $total_prob += 1 * ($bl / $total_dist) * (1 - $bl_fraction);
+
+          #$total_prob += $post_prob/100 * ($bl / $total_dist);
+        } else {
+          # If the alignment has a gap in the other node, don't penalize it.
+          $total_prob += 100/100 * ($bl / $total_dist);
+        }
+        $node = $parent;
+      }
+      my $score = $total_prob*10 - 1;
+      $score = 0 if ($score < 0);
+      $score_string .= sprintf("%1d",$score);
+    }
+    print $score_string."\n";
+    print $aln_string."\n";
+    $leaf_scores->{$leaf->name} = $score_string;
+  }
+  return ($leaf_scores,[]);
 }
 
 sub filter_sites {
@@ -501,8 +601,9 @@ sub mask_below_score {
     $alphabet = $seq->alphabet;
 
     my $label = $seq->display_id;
-    #print $label."\n";
+#    print $label."\n";
     my $score_string = $score_hashref->{$label};
+#    print $score_string."\n";
     $score_string =~ s/[^\d-]/9/g;   # Convert non-digits and non-dashes into 9s.
     # (The above is necessary because t_coffee leaves leftover letters in the sequence score strings)
     $score_string =~ s/[-]/9/g;   # Convert dashes to 9s, because we will never mask those out.

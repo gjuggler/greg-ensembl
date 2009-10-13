@@ -99,10 +99,10 @@ sub store_SimpleAlign_into_table {
   }
 
   # Clean up 'hanging' sequences not referenced by any member:
-  $pta->dbc->do(qq^delete s.* FROM sequence s LEFT JOIN member m
-    ON (m.sequence_id=s.sequence_id OR m.cdna_sequence_id=s.sequence_id) 
-    WHERE (m.sequence_id IS NULL OR m.cdna_sequence_id IS NULL);
-    ^);
+#  $pta->dbc->do(qq^delete s.* FROM sequence s LEFT JOIN member m
+#    ON (m.sequence_id=s.sequence_id OR m.cdna_sequence_id=s.sequence_id) 
+#    WHERE (m.sequence_id IS NULL OR m.cdna_sequence_id IS NULL);
+#    ^);
 }
 
 
@@ -201,7 +201,7 @@ sub fetch_masked_alignment
   my $params = shift;
   my $cdna_option = shift;
 
-  print "$tree\n";
+#  print "$tree\n";
   my $dbc = $tree->adaptor->dbc;
   my $ps_params = $class->load_params_from_param_set($dbc,$params->{'parameter_set_id'});
   $params = $class->replace_params($params,$ps_params);
@@ -215,17 +215,17 @@ sub fetch_masked_alignment
   my $default_params = {
     sequence_quality_filtering => 0,
     sequence_quality_threshold => 2,
+    sequence_quality_mask_character => 'X',
 
     alignment_score_filtering => 0,
     alignment_score_threshold => 'auto',
+    alignment_score_table => 'protein_tree_member_score',
+    alignment_score_mask_character => 'X',
     
     trimal_filtering => 0,
-    prank_filtering => 0,
+    trimal_filtering_params => '',
+    trimal_mask_character => 'X',
 
-    sequence_quality_mask_character => 'X',
-    alignment_score_mask_character => 'X',
-    alignment_quality_mask_character => 'X',
-    prank_mask_character => 'X',
     cdna => $cdna_option
   };
   $params = $class->replace_params($default_params,$params);
@@ -241,7 +241,8 @@ sub fetch_masked_alignment
       # Grab the score line for each leaf node.
       my $id = $leaf->stable_id; # Must be stable_id to match the aln object.
       my $member_id = $leaf->member_id;
-      my $cmd = "SELECT cigar_line FROM protein_tree_member_score where member_id=$member_id;";
+      my $table = $params->{'alignment_score_table'};
+      my $cmd = "SELECT cigar_line FROM $table where member_id=$member_id;";
       my $sth = $pta->prepare($cmd);
       $sth->execute();
       my $data = $sth->fetchrow_hashref();
@@ -274,32 +275,39 @@ sub fetch_masked_alignment
     }
 
     # Find a reasonable threshold based on the average scores in the alignment.
-    my %id_to_avg;
-    my $score_sum = 0;
-    my $score_residues = 0;
-    foreach my $key (keys %{$hash_ref}) {
-      my $cigar = $hash_ref->{$key};
-      $cigar =~ s/\D//g;
-      my @chars = split(//,$cigar);
-      my $nchars = scalar @chars ;
-      last if ($nchars == 0); 	# Early exit if we don't have any chars
-      my $sum = 0;
-      map {$score_sum += $_; $sum += $_} @chars;
-      
-      $score_residues += $nchars;
-      my $avg = $sum / $nchars;
-      $id_to_avg{$key} = $avg;
-    }
-    my $threshold = 6;
-    my $total_avg = 0;
-    if (!$use_alignment_scores) {
+    my $threshold_param = $params->{'alignment_score_threshold'};
+    
+    my $threshold;
+    if ($threshold_param eq 'auto') {
+      my %id_to_avg;
+      my $score_sum = 0;
+      my $score_residues = 0;
+      foreach my $key (keys %{$hash_ref}) {
+        my $cigar = $hash_ref->{$key};
+        $cigar =~ s/\D//g;
+        my @chars = split(//,$cigar);
+        my $nchars = scalar @chars ;
+        last if ($nchars == 0); 	# Early exit if we don't have any chars
+        my $sum = 0;
+        map {$score_sum += $_; $sum += $_} @chars;
+        
+        $score_residues += $nchars;
+        my $avg = $sum / $nchars;
+        $id_to_avg{$key} = $avg;
+      }
       $threshold = 6;
-    } elsif ($score_residues != 0) {
-      $total_avg = $score_sum / $score_residues;
-      $threshold = int($total_avg - 1.5);   # takes the integer value of the average, and subtracts 2.
-      $threshold = 3 if ($threshold < 3);   # Minimum threshold of 3 seems OK.
+      my $total_avg = 0;
+      if (!$use_alignment_scores) {
+        $threshold = 6;
+      } elsif ($score_residues != 0) {
+        $total_avg = $score_sum / $score_residues;
+        $threshold = int($total_avg - 1.5);   # takes the integer value of the average, and subtracts 2.
+        $threshold = 3 if ($threshold < 3);   # Minimum threshold of 3 seems OK.
+      }
+    } else {
+      $threshold = $params->{'alignment_score_threshold'};
     }
-    printf " -> Masking alignment at threshold: %d (avg score: %.3f)\n",$threshold,$total_avg;
+    printf " -> Filtering table: %s  threshold: %d  avg: %.3f)\n",$table,$threshold,$total_avg;
     $aln = $ALN->mask_below_score($aln,$threshold,$hash_ref,$params->{'alignment_score_mask_character'});
   }
 
@@ -311,64 +319,7 @@ sub fetch_masked_alignment
     #$aln = $class->mask_aln_by_sequence_quality($tree,$aln,$params);
   }
 
-  #
-  # ALIGNMENT QUALITY MASKING
-  #
-  if ($params->{'trimal_filtering'}) {
-    print " -> Masking alignment with TrimAl\n";
-    $aln = $class->mask_aln_by_alignment_quality($tree,$aln,$aa_aln,$params);
-  }
-
-  if ($params->{'prank_filtering'}) {
-    print " -> Masking alignment with Prank\n";
-    $aln = $ALN->prank_filter($aln,$tree,$params);
-  }
-
   $aln = $ALN->sort_by_tree($aln,$tree);
-  return $aln;
-}
-
-# IMPORTANT: Always give the amino acid alignment
-sub mask_aln_by_alignment_quality {
-  my $class = shift;
-  my $tree = shift;
-  my $aln = shift;
-  my $aa_aln = shift;
-  my $params = shift;
-
-  # Write temporary alignment.
-  my $dir = '/tmp/eslr_temp';
-  mkpath([$dir]);
-  my $aln_f = $dir."/aln.fa";
-  Bio::EnsEMBL::Compara::AlignUtils->to_file($aa_aln,$aln_f);
-  
-  # Build a command for TrimAl.
-  my $cmd = "trimal -in $aln_f -out $aln_f -colnumbering -cons 30 -gt 0.5 -gw 3";
-  my $output = `$cmd`;
-  #print "OUTPUT:". $output."\n";
-  
-  chomp $output;
-  my @cons_cols = split(/[,]/,$output);
-  #print join(",",@cons_cols)."\n";
-
-  if ($params->{'cdna'}) {
-    # use the $aa_aln for getting the columns, and multiply by 3.
-    my @cdna_cons_cols;
-    foreach my $i (@cons_cols) {
-      my $cdna_i=int($i)*3;
-      push @cdna_cons_cols,($cdna_i);
-      push @cdna_cons_cols,($cdna_i+1);
-      push @cdna_cons_cols,($cdna_i+2);
-    }
-    #print "@cons_cols\n";
-    #print "@cdna_cons_cols\n";
-    $aln = Bio::EnsEMBL::Compara::AlignUtils->mask_columns($aln,\@cdna_cons_cols,$params->{'alignment_quality_mask_character'});
-  } else {
-    $aln = Bio::EnsEMBL::Compara::AlignUtils->mask_columns($aln,\@cons_cols,$params->{'alignment_quality_mask_character'});
-  }
-
-  #Bio::EnsEMBL::Compara::AlignUtils->pretty_print($aln,{length=>200});
-  rmtree($dir);
   return $aln;
 }
 
@@ -703,6 +654,8 @@ sub get_tree_and_alignment {
       $ALN->mask_seq_from_aln($sa,$seq->id,$params,$params->{subtree_mask_character});
     }
   }
+
+  $sa = $ALN->sort_by_tree($sa,$tree);
 
   return ($tree,$sa);
 }

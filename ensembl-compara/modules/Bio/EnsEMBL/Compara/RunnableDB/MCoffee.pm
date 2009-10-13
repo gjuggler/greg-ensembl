@@ -149,13 +149,13 @@ sub fetch_input {
 	}
       }
       # Auto-switch to fmcoffee on single failure.
-      if ($self->input_job->retry_count >= 1) {
-	$params->{'method'} = 'fmcoffee';
-      }
+#      if ($self->input_job->retry_count >= 1) {
+#	$params->{'method'} = 'fmcoffee';
+#      }
       # Auto-switch to muscle on a second failure.
-      if ($self->input_job->retry_count >= 2) {
-	$params->{'method'} = 'muscle';
-      }
+#      if ($self->input_job->retry_count >= 2) {
+#	$params->{'method'} = 'muscle';
+#      }
     }
     print "MCoffee alignment method: ".$params->{'method'}."\n";
     $tags->{'aln_method'} = $params->{'method'};
@@ -296,8 +296,9 @@ sub align_with_mcoffee
     $method = "cmcoffee" unless (defined $method);
     if ($method eq 'cmcoffee' || $method eq 'mcoffee') {
 	
-	# CMCoffee, slow, comprehensive multiple alignments.
-	$method_string .= "mafftgins_msa, muscle_msa, kalign_msa, probcons_msa"; #, t_coffee_msa";
+      # CMCoffee, slow, comprehensive multiple alignments.
+      $method_string .= "mafftgins_msa, muscle_msa, kalign_msa, probcons_msa"; #, t_coffee_msa";
+      #$method_string .= "mafftgins_msa";
     } elsif ($method eq 'fmcoffee') {
 	
 	# FMCoffee, fast but accurate alignments.
@@ -337,13 +338,13 @@ sub align_with_mcoffee
     $cmd .= " -parameters=$paramsfile";
     
     # Output some environment variables for tcoffee
+#    $tmp = substr($tmp,0,-1);
     my $prefix = "export HOME_4_TCOFFEE=\"$tmp\";";
     $prefix .= "export DIR_4_TCOFFEE=\"$tmp\";";
     $prefix .= "export TMP_4_TCOFFEE=\"$tmp\";";
     $prefix .= "export CACHE_4_TCOFFEE=\"$tmp\";";
     $prefix .= "export NO_ERROR_REPORT_4_TCOFFEE=1;";
     $prefix .= "export MAFFT_BINARIES=/nfs/users/nfs_g/gj1/bin/mafft-bins/binaries;";  # GJ 2008-11-04. What a hack!
-    #print $prefix.$cmd."\n" if ($self->debug);
     
     # Run the command.
     $dba->dbc->disconnect_when_inactive(1) if ($dba);
@@ -351,8 +352,9 @@ sub align_with_mcoffee
     $dba->dbc->disconnect_when_inactive(0) if ($dba);
     
     unless($rc == 0) {
-	$self->DESTROY;
+#	$self->DESTROY;
 	print "MCoffee error!\n";
+        die;
 	#throw("MCoffee job, error running executable: $\n");
     }
 

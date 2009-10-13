@@ -11,6 +11,8 @@ use Bio::EnsEMBL::Compara::NestedSet;
 use Bio::EnsEMBL::Hive;
 use Bio::EnsEMBL::Hive::Process;
 
+use Bio::Greg::Codeml;
+
 our @ISA = qw(Bio::EnsEMBL::Hive::Process);
 
 #
@@ -51,8 +53,8 @@ sub fetch_input {
     output_table           => 'sitewise_aln',
     parameter_set_id       => 1,
 
-    alignment_quality_filtering => 1,
-    sequence_quality_filtering => 1,
+    alignment_quality_filtering => 0,
+    sequence_quality_filtering => 0,
 
     parameter_sets         => '1',
 
@@ -62,10 +64,17 @@ sub fetch_input {
     codonf                 => 0,                    # Options: 0, 1, 2 (default 0)
     freqtype               => 0,                    # Options: 0, 1, 2 (default 0)
 
+    # PAML Parameters
+    model                  => 'M3',                 # Used for Bayes Empirical Bayes sitewise analysis.
+    model_b                => 'M7',                 # Used for the likelihood ratio tests.
+
     # Actions
-    action                 => 'sitewise',           # Which action to perform.
-                                                    # 'sitewise' - Infer sitewise omega values
-                                                    # 'reoptimise' - Reoptimise branch lengths using codon model
+    action                 => 'slr',                # Which action to perform.
+                                                    # 'slr' - SLR sitewise omegas.
+                                                    # 'paml' - PAML sitewise omegas.
+                                                    # 'slr_reoptimise' - reoptimise with SLR
+                                                    # 'paml_reoptimise' - reoptimise with PAML
+                                                    # 'paml_lrt' - likelihood ratio test with PAML
     };
   
   # For aminof, codonf, and freqtype, see the SLR readme.txt for more info.
@@ -117,10 +126,8 @@ sub run {
     # Think of reasons why we want to fail the job.
     my @leaves = $tree->leaves;
     if (scalar(@leaves) <= 3) {
-      #$self->fail_job("Tree contains <= 3 leaves -- that's way too small for sitewise analysis!");
       next;
     } elsif (scalar(@leaves) > 300) {
-      #$self->fail_job("Tree contains more than 300 leaves -- that's too big!!");
       next;
     }
     foreach my $leaf (@leaves) {
@@ -129,7 +136,6 @@ sub run {
       }
     }
     
-    #$tree->print_tree;
     #eval {
       $self->run_with_params($new_params,$tree);
       $tree->release_tree;
@@ -150,23 +156,13 @@ sub run_with_params {
   $input_aa = Bio::EnsEMBL::Compara::ComparaUtils->fetch_masked_alignment($aa_aln,$cdna_aln,$tree,$params,0);
   $input_cdna = Bio::EnsEMBL::Compara::ComparaUtils->fetch_masked_alignment($aa_aln,$cdna_aln,$tree,$params,1);
 
-  #if ($self->input_job->retry_count > 0) {
-    #my $arr_ref = Bio::EnsEMBL::Compara::AlignUtils->remove_blank_columns($input_aa);
-    #my @arr = @{$arr_ref};
-    #$input_aa = $arr[0];
-    #$aa_map = $arr[1];
-    #$input_cdna = Bio::EnsEMBL::Compara::AlignUtils->remove_blank_columns_in_threes($input_cdna);
-  #}
-
   Bio::EnsEMBL::Compara::AlignUtils->pretty_print($input_aa,{length => 150});
   Bio::EnsEMBL::Compara::AlignUtils->pretty_print($input_cdna,{length => 150});
 
-  if ($params->{'action'} eq 'gblocks') {
-    my $blocks = $self->run_gblocks($tree,$input_aa,$params);
-    $self->store_gblocks($tree,$input_aa,$blocks);
-  } else {
-    my $results = $self->run_sitewise_dNdS($tree,$input_cdna,$params);
-    $self->store_sitewise_dNdS($results,$tree,$params);
+  if ($params->{'action'} =~ m/slr/i) {
+    $self->run_sitewise_dNdS($tree,$input_cdna,$params);
+  } elsif ($params->{'action'} =~ m/paml/i) {
+    $self->run_paml($tree,$input_cdna,$params);
   }
 }
 
@@ -182,7 +178,6 @@ sub run_sitewise_dNdS
   # LOAD VARIABLES FROM PARAMS.
   my $slrexe = $params->{'slr_executable'};
   my $gencode = $params->{'gencode'};
-#  my $saturated = $params->{'saturate_ds'};
   my $aminof = $params->{'aminof'};
   my $codonf = $params->{'codonf'};
   my $freqtype = $params->{'freqtype'};
@@ -232,11 +227,10 @@ sub run_sitewise_dNdS
   print SLR "treefile\: tree\n";
   my $outfile = "slr.res";
   print SLR "outfile\: $outfile\n";
-#  print SLR "saturated\: $saturated\n";
   print SLR "gencode\: $gencode\n";
   print SLR "aminof\: $aminof\n";
   print SLR "codonf\: $codonf\n";
-  print SLR "skipsitewise\: 1\n" if ($params->{'action'} eq 'reoptimise');
+  print SLR "skipsitewise\: 1\n" if ($params->{'action'} =~ m/reoptimise/i);
   print SLR "freqtype\: $freqtype\n";
   print SLR "seed\: 1\n";
   close(SLR);
@@ -318,7 +312,7 @@ sub run_sitewise_dNdS
     }
 
     # Reoptimise action.
-    if ($params->{'action'} eq 'reoptimise') {
+    if ($params->{'action'} =~ m/reoptimise/i) {
       my $next_line_is_it = 0;
       foreach my $outline (@output) {
 	if ($next_line_is_it) {
@@ -411,9 +405,119 @@ sub run_sitewise_dNdS
   }
   
   $results->{'rc'} = $rc;
-  return $results;
+
+  # Store the results in the database.
+  $tree->store_tag("slr_kappa",$results->{'kappa'});
+  $tree->store_tag("slr_omega",$results->{'omega'});
+  $tree->store_tag("slr_lnL",$results->{'lnL'});
+  $self->store_sitewise($results,$tree,$params);
 }
 
+
+sub run_paml {
+  my $self = shift;
+  my $tree = shift;
+  my $input_cdna = shift;
+  my $params = shift;
+
+  print $tree->newick_format()."\n";
+
+  my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
+  $treeI->get_root_node->branch_length(0);
+
+  if ($params->{'action'} =~ m/reoptimize/i) {
+    # Not sure if this works. GJ 2009-10-09
+    ### Reoptimize branch lengths.
+    print $tree->newick_format."\n";
+    my $new_treeI = Bio::Greg::Codeml->get_m0_tree($treeI,$input_cdna);
+    my $new_pt = Bio::EnsEMBL::Compara::TreeUtils->from_treeI($new_treeI);
+    print $new_pt->newick_format."\n";
+
+    # Store new branch lengths back in the original protein_tree_node table.
+    foreach my $leaf ($tree->leaves) {
+      my $new_leaf = $new_pt->find_leaf_by_name($leaf->name);
+      $leaf->distance_to_parent($new_leaf->distance_to_parent);
+      $leaf->store;
+      print "  -> Branch lengths updated!\n";
+    }
+    return;
+  } elsif ($params->{'action'} =~ m/lrt/i) {
+
+    ### Perform a likelihood ratio test between two models.
+    my $model_a = $params->{'model'};
+    my $model_b = $params->{'model_b'};
+    
+    $model_a =~ s/m//i;
+    $model_b =~ s/m//i;
+
+    my ($twice_lnL,$codeml_a,$codeml_b) = Bio::Greg::Codeml->NSsites_ratio_test($treeI,$input_cdna,$model_a,$model_b);
+    my $test_label = sprintf("PAML LRT M%s-M%s",$model_a,$model_b);
+    my $tags;
+    $tags->{$test_label} = $twice_lnL;
+    Bio::EnsEMBL::Compara::ComparaUtils->store_tags($tree,$tags);
+    return;
+
+  } else {
+    ### Perform a BEB sitewise analysis of omegas.
+
+    # Should we be scaling the tree? Dunno. GJ 2009-10-09
+    #Bio::EnsEMBL::Compara::TreeUtils->scale($treeI,3);
+    
+    my $model = $params->{'model'};
+    $model =~ s/m//i;
+    my $codeml_params = {
+      NSsites => $model,
+      ncatG => 4
+    };
+    my $codeml = Bio::Greg::Codeml->new( -params => $codeml_params,
+                                         -alignment => $input_cdna, 
+                                         -tree => $treeI);
+    #$codeml->save_tempfiles(1);
+    $codeml->run();
+
+    # Use this block for testing the parsing.
+    #open(IN,"/tmp/cIIZtxAvlt_codeml/rst");
+    #my @supps = <IN>;
+    #close(IN);
+    #my ($naive,$bayes,$se,$pos) = $codeml->extract_empirical_bayes(\@supps);
+
+    my ($naive,$bayes,$se,$pos) = $codeml->extract_empirical_bayes();
+    my $paml_results = $naive;
+    $paml_results = $bayes if ($bayes);
+    
+    my $results;
+    my @slr_style_sites;
+    foreach my $site (1 .. $input_cdna->length/3) {
+      my $omega = $paml_results->{$site};
+      my $se = $se->{$site};
+
+      next if (!defined $omega);
+      my $lower = $omega - $se;
+      $lower = 0 if ($lower < 0);
+      my $upper = $omega + $se;
+
+      my $result = '';
+      $result = 'positive4' if ($pos->{$site});
+      
+      # Just for reference: slr style output.
+      # Site  Neutral  Optimal   Omega    lower    upper LRT_Stat    Pval     Adj.Pval    Q-value Result Note
+      # 1     4.77     3.44   0.0000   0.0000   1.4655   2.6626 1.0273e-01 8.6803e-01 1.7835e-02  --     Constant;
+      # 0     1        2      3        4        5        6      7          8          9           10     11
+
+      my @slr_style = ('') x 11;
+      $slr_style[0] = $site;
+      $slr_style[3] = $omega;
+      $slr_style[4] = $lower;
+      $slr_style[5] = $upper;
+      $slr_style[10] = $result;
+      
+      push @slr_style_sites, \@slr_style;
+    }
+    $results->{'sites'} = \@slr_style_sites;
+
+    $self->store_sitewise($results,$tree,$params);
+  }
+}
 
 sub write_output {
   my $self = shift;
@@ -446,96 +550,7 @@ sub fail_job {
   }
 }
 
-sub run_gblocks
-{
-  my $self = shift;
-  my $tree = shift;
-  my $aln  = shift;
-  my $params = shift;
-
-  my $defaults = {
-    t    => 'p',        # Type of sequence (p=protein,c=codon,d=dna)
-    b3   => '5000',       # Max # of contiguous nonconserved positions
-    b4   => '3',        # Minimum length of a block
-    b5   => 'a',        # Allow gap positions (n=none, h=with half,a=all)
-  };
-  my $use_params = Bio::EnsEMBL::Compara::ComparaUtils->replace_params($defaults,$params);
-
-  printf("Sitewise_dNdS::run_gblocks\n") if($self->debug);
-
-  my $aln_length = $aln->length;
-  my $tmpdir = $self->worker_temp_directory;
-  my $filename = "$tmpdir". "gblocks_aln.fasta";
-  my $tmpfile = Bio::AlignIO->new
-    (-file => ">$filename",
-     -format => 'fasta');
-  $tmpfile->write_aln($aln);
-  $tmpfile->close;
-
-  my @leaves = $tree->leaves;
-  my $num_leaves = scalar(@leaves);
-  my $min_leaves_gblocks = int(($num_leaves+1)/2 + 0.5);
-  #Example command: Gblocks 2138.fasta -t=p -b2=20 -b3=50 -b4=3 -b5=a -p=s
-  my $cmd = sprintf("Gblocks %s -t=%s -b1=%s -b2=%s -b3=%s -b4=%s -b5=%s -p=s\n",
-		    $filename,
-		    $use_params->{'t'},
-		    $min_leaves_gblocks,
-		    $min_leaves_gblocks,
-		    $use_params->{'b3'},
-		    $use_params->{'b4'},
-		    $use_params->{'b5'});
-  print "GBLOCKS: $cmd\n";
-  my $ret = system("$cmd");
-  open FLANKS, "$filename-gb.txts" or die "$!\n";
-  my $segments_string;
-  while (<FLANKS>) {
-    chomp $_;
-    next unless ($_ =~ /Flanks:/);
-    $segments_string = $_;
-    last;
-  }
-  close FLANKS;
-  $segments_string =~ s/Flanks\: //g;
-  $segments_string =~ s/\s+$//g;
-
-  print $segments_string . "\n";
-  return $segments_string;
-}
-
-
-sub store_gblocks {
-  my $self = shift;
-  my $tree = shift;
-  my $aln = shift;
-  my $blocks_str = shift;
-
-  $_ = $blocks_str;
-  my @bs = /\[(.+?)\]/g;
-
-  my $sth = $tree->adaptor->prepare
-    ("REPLACE INTO gblocks_aln
-                           (parameter_set_id,
-                            aln_start,
-                            aln_end,
-                            node_id
-                            ) VALUES (?,?,?,?)"
-     );
-
-  my %sites;
-  foreach my $b (@bs) {
-    my ($start,$end) = split(" ",$b);
-      $sth->execute($params->{'parameter_set_id'},
-		    $start,
-		    $end,
-		    $tree->node_id
-		    );
-      sleep(0.05);
-  }
-  $sth->finish();
-}
-
-sub store_sitewise_dNdS
-{
+sub store_sitewise {
   my $self = shift;
   my $results = shift;
   my $tree = shift;
@@ -545,10 +560,12 @@ sub store_sitewise_dNdS
   $tree_node_id = $tree->subroot->node_id if (defined $tree->subroot);
   my $node_id = $tree->node_id;
 
-  $tree->store_tag("slr_kappa",$results->{'kappa'});
-  $tree->store_tag("slr_omega",$results->{'omega'});
-  $tree->store_tag("slr_lnL",$results->{'lnL'});
-
+  my $table = 'sitewise_aln';
+  $table = $params->{'output_table'} if ($params->{'output_table'});
+  
+  my $parameter_set_id = 0;
+  $parameter_set_id = $params->{'parameter_set_id'} if (defined($params->{'parameter_set_id'}));
+  
   foreach my $site (@{$results->{'sites'}}) {
     sleep(0.08);
 
@@ -562,7 +579,6 @@ sub store_sitewise_dNdS
     if (defined $aa_map) {
       $mapped_site = $aa_map->{$site};
       if (defined $mapped_site) {
-#	print "Returned column: $site   mapped: $mapped_site\n";
 	$original_site = $site;
 	$site = $mapped_site;
       }
@@ -575,15 +591,7 @@ sub store_sitewise_dNdS
     my $nongaps = Bio::EnsEMBL::Compara::AlignUtils->get_nongaps_at_column($input_aa,$original_site);
     next if ($nongaps == 0);
 
-#    printf("Site: %s  nongaps: %d  omegas: %3f (%3f - %3f)  note: %s \n",$site,$nongaps,$omega,$lower,$upper,$note);
-
-    my $table = 'sitewise_aln';
-    $table = $params->{'output_table'} if ($params->{'output_table'});
-
-    my $parameter_set_id = 0;
-    if (defined($params->{'parameter_set_id'})) {
-      $parameter_set_id = $params->{'parameter_set_id'};
-    }
+    printf("Site: %s  nongaps: %d  omegas: %3f (%3f - %3f) type: %s note: %s \n",$site,$nongaps,$omega,$lower,$upper,$type,$note);
 
     my $sth = $tree->adaptor->prepare
       ("REPLACE INTO $table

@@ -859,11 +859,12 @@ sub store {
       $member->adaptor($self);
   }
 
+  $self->dbc->do("UNLOCK TABLES");
+#  $self->dbc->do("LOCK TABLE sequence WRITE");
   #
   # Store the sequence and cdna sequence.
   #
   if(defined($member->sequence) && $member->sequence_id == 0) {
-
       # We've got a new sequence on our hands, so insert it!
       $member->sequence_id($self->db->get_SequenceAdaptor->store($member->sequence));
 
@@ -883,7 +884,7 @@ sub store {
       }
   }
 
-  $self->dbc->do("UNLOCK TABLES");
+#  $self->dbc->do("UNLOCK TABLES");
   return $member->dbID;
 }
 
