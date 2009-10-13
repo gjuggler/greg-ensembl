@@ -46,52 +46,71 @@ sub replace {
 sub create_simsets {
   my $base_p = {
     simulation_program => 'indelible',
-    simulation_replicates => 1,
+    simulation_replicates => 20,
     tree_file => 'artificial.nh',
     tree_length => 1,
     seq_length => 400,
 #    meanlog => -4.079,
 #    sdlog => 1.23,
-    ins_rate => 0.015,
-    del_rate => 0.015,
-    omega_distribution => 'M3'
+    ins_rate => 0.05,
+    del_rate => 0.05,
+    omega_distribution => 'M3',
+    p0 => 0.386,
+    p1 => 0.535,
+    p2 => 0.079,
+    w0 => 0.018,
+    w1 => 0.304,
+    w2 => 1.691,
   };
   
   my $i=1;
   my $base_length = 1;
   my $s_params;
 
-  foreach my $j (0.1,0.5,1.1,5,11) {
+  foreach my $j (0.1,1,5,10,20) {
+#  foreach my $j (10) {
     $s_params = {
-      p0 => 0.386,
-      p1 => 0.535,
-      p2 => 0.079,
-      w0 => 0.018,
-      w1 => 0.304,
       w2 => 1.691,
       tree_file => 'artificial.nh',
       tree_length => $base_length * $j
     };
-    $params->{'simset_artificial'.$i++} = replace($base_p,$s_params);
+    $params->{sprintf 'simset_artificial_%02d',$i++} = replace($base_p,$s_params);
   }
 
-#  foreach my $j (0.1,0.5,1.1,5,11) {
-#    $s_params = {
-#      tree_file => 'encode.nh',
-#      tree_length => $base_length * $j
-#    };
-#    $params->{'simset_encode'.$i++} = replace($base_p,$s_params);
-#  }
+  $i=1;
+  foreach my $j (0.1,1,5,10,20) {
+#  foreach my $j (10) {
+    $s_params = {
+      w2 => 4.739,
+      tree_file => 'artificial.nh',
+      tree_length => $base_length * $j
+    };
+    $params->{sprintf 'simset_artificial_strong_%02d',$i++} = replace($base_p,$s_params);
+  }
 
-  
-#  foreach my $k (0,0.01,0.015,0.02,0.05,0.1,0.15,0.2) {
-#    $s_params = {
-#      tree_length => $base_length,
-#      ins_rate => $k,
-#      del_rate => $k
-#    };
-#    $params->{'simset_indel'.$i++} = replace($base_p,$s_params);
-#  }
+  $i=1;
+  $base_length = 1;
+  foreach my $j (1,5,10,20,50,100,200) {
+#  foreach my $j (10) {
+    $s_params = {
+      w2 => 1.691,
+      tree_file => '2xmammals.nh',
+      tree_length => $base_length * $j
+    };
+#    $params->{sprintf 'simset_2xmammal_%02d',$i++} = replace($base_p,$s_params);
+  }
+
+  $i=1;
+  $base_length = 1;
+  foreach my $j (1,5,10,20,50,100,200) {
+    $s_params = {
+      w2 => 4.739,
+      tree_file => '2xmammals.nh',
+      tree_length => $base_length * $j
+    };
+#    $params->{sprintf 'simset_2xmammal_strong_%02d',$i++} = replace($base_p,$s_params);
+  }
+
 }
 
 create_simsets();

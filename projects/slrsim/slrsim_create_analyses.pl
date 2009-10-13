@@ -28,12 +28,15 @@ my $LIMIT='';
 my $SKIP_ADDING_JOBS=0;
 
 create_tables();
+
 simulate_alignments();
 align_sequences();
+alignment_scores();
 calculate_omegas();
 
 connect_analysis("PhyloSim","Align",1);
-connect_analysis("Align","Omegas",1);
+connect_analysis("Align","AlignScores",1);
+connect_analysis("AlignScores","Omegas",1);
 
 sub create_tables {
   $dbc->do("CREATE TABLE IF NOT EXISTS aln_mcoffee LIKE protein_tree_member");
@@ -45,6 +48,13 @@ sub create_tables {
 
 sub simulate_alignments {
   my $analysis_id=1;
+
+  if ($clean) {
+    # Delete all trees and reset the counter.
+#    $dba->dbc->do("truncate table member;");
+#    $dba->dbc->do("truncate table sequence;");
+  }
+
   my $logic_name = "PhyloSim";
   my $module = "Bio::Greg::PhyloSim";
   my $params = {
@@ -59,6 +69,7 @@ sub simulate_alignments {
 }
 
 sub align_sequences {
+  my $analysis_id=2;
   my $tree_table = "aln_mcoffee";
   if ($clean) {
     # Delete all trees and reset the counter.
@@ -66,7 +77,6 @@ sub align_sequences {
     $dba->dbc->do("truncate table ${tree_table}_score;");
   }
 
-  my $analysis_id=2;
   my $logic_name = "Align";
   my $module = "Bio::EnsEMBL::Compara::RunnableDB::MCoffee";
   my $params = {
@@ -77,36 +87,116 @@ sub align_sequences {
   _create_analysis($analysis_id,$logic_name,$module,$params,30,1);
 }
 
-sub calculate_omegas {
+sub alignment_scores {
   my $analysis_id=3;
+  my $scores_table = "aln_mcoffee";
+  if ($clean) {
+    # Delete all trees and reset the counter.
+    eval {
+      $dba->dbc->do("truncate table protein_tree_member_score;");
+      $dba->dbc->do("truncate table aln_mcoffee_score;");
+      $dba->dbc->do("truncate table aln_mcoffee_prank;");
+      $dba->dbc->do("truncate table aln_mcoffee_trimal;");
+      $dba->dbc->do("truncate table aln_mcoffee_gblocks;");
+    };
+  }
+
+  my $logic_name = "AlignScores";
+  my $module = "Bio::EnsEMBL::Compara::RunnableDB::AlignmentScores";
+  my $params = {
+    input_table => 'aln_mcoffee',
+    action => 'gblocks prank trimal'
+  };
+  _create_analysis($analysis_id,$logic_name,$module,$params,30,1);
+}
+
+sub calculate_omegas {
+  my $analysis_id=4;
   my $logic_name = "Omegas";
   my $module = "Bio::EnsEMBL::Compara::RunnableDB::Sitewise_dNdS";
   my $params = {
-    parameter_sets => "1,2,3",
+    parameter_sets => "2,3,4,5,6,7,8,9",
   };
   _create_analysis($analysis_id,$logic_name,$module,$params,30,1);
 
   $params = {
     parameter_set_id => 1,
+    name => "SLR True Alignment",
     input_table => 'protein_tree_member',
     output_table => 'omega_tr'
   };
   _add_parameter_set($params);
-
-   $params = {
-    parameter_set_id => 2,
+  
+  my $bp = {
     input_table => 'aln_mcoffee',
     output_table => 'omega_mc'
   };
-  _add_parameter_set($params);
+  
+  $params = {
+    parameter_set_id => 2,
+    name => "SLR (no filter)"
+  };
+  _add_parameter_set(_combine_hashes($bp,$params));
 
   $params = {
     parameter_set_id => 3,
-    trimal_filtering => 1,
-    input_table => 'aln_mcoffee',
-    output_table => 'omega_mc'
+    name => "SLR (trimAl filter)",
+    alignment_score_filtering => 1,
+    alignment_score_table => 'aln_mcoffee_trimal',
+    alignment_score_threshold => 5,
   };
-  _add_parameter_set($params);
+  _add_parameter_set(_combine_hashes($bp,$params));
+
+  $params = {
+    parameter_set_id => 4,
+    name => "SLR (Gblocks filter)",
+    alignment_score_filtering => 1,
+    alignment_score_table => 'aln_mcoffee_gblocks',
+    alignment_score_threshold => 5,
+  };
+  _add_parameter_set(_combine_hashes($bp,$params));
+
+  $params = {
+    parameter_set_id => 5,
+    name => "SLR (Prank filter)",
+    alignment_score_filtering => 1,
+    alignment_score_table => 'aln_mcoffee_prank',
+    alignment_score_threshold => 5,
+  };
+  _add_parameter_set(_combine_hashes($bp,$params));
+
+  $params = {
+    parameter_set_id => 6,
+    name => "SLR (MCoffee filter)",
+    alignment_score_filtering => 1,
+    alignment_score_table => 'aln_mcoffee_score',
+    alignment_score_threshold => 5,
+  };
+  _add_parameter_set(_combine_hashes($bp,$params));
+
+  $params = {
+    parameter_set_id => 7,
+    name => "PAML M8",
+    action => 'paml',
+    model => 'M8'
+  };
+  _add_parameter_set(_combine_hashes($bp,$params));
+
+  $params = {
+    parameter_set_id => 8,
+    name => "PAML M2",
+    action => 'paml',
+    model => 'M2'
+  };
+  _add_parameter_set(_combine_hashes($bp,$params));
+
+  $params = {
+    parameter_set_id => 9,
+    action => 'paml_lrt',
+    model => 'M7',
+    model_b => 'M8'
+  };
+  _add_parameter_set(_combine_hashes($bp,$params));
   
 }
 
@@ -127,9 +217,9 @@ sub _add_parameter_set {
   my $params = shift;
   my $parameter_set_id = $params->{'parameter_set_id'};
   
-  if (exists $params->{'parameter_set_name'} ) {
-    my $parameter_set_name = $params->{'parameter_set_name'};
-    delete $params->{'parameter_set_name'};
+  if (exists $params->{'name'} ) {
+    my $parameter_set_name = $params->{'name'};
+    delete $params->{'name'};
     my $name_cmd = "REPLACE INTO parameter_set VALUES ('$parameter_set_id','name',\"$parameter_set_name\");";
     $dbc->do($name_cmd);
   }

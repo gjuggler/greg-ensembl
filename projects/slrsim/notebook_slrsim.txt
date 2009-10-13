@@ -65,3 +65,113 @@ One option would be to try and infer the parameters for a combination of two dis
  - One M7 distribution, one M8 distribution
 
 
+### 2009-10-12 ###
+First results from a full run of the Slrsim analysis:
+
+simset_artificial_01    SLR (no filter) 0.397   0.211   0.000   0.000
+simset_artificial_01    SLR (trimAl filter)     0.397   0.211   0.000   0.000
+simset_artificial_01    SLR (Gblocks filter)    0.397   0.211   0.000   0.000
+simset_artificial_01    SLR (Prank filter)      0.397   0.211   0.000   0.000
+simset_artificial_01    SLR (MCoffee filter)    0.398   0.211   0.000   0.000
+simset_artificial_01    PAML M8 0.399   0.207   1.000   0.900
+simset_artificial_01    PAML M2 0.398   0.204   1.000   0.900
+simset_artificial_02    SLR (no filter) 0.406   0.686   0.000   0.000
+simset_artificial_02    SLR (trimAl filter)     0.407   0.688   0.000   0.000
+simset_artificial_02    SLR (Gblocks filter)    0.405   0.684   0.000   0.000
+simset_artificial_02    SLR (Prank filter)      0.414   0.688   0.000   0.000
+simset_artificial_02    SLR (MCoffee filter)    0.413   0.686   0.000   0.000
+simset_artificial_02    PAML M8 0.496   0.506   1.000   1.000
+simset_artificial_02    PAML M2 0.465   0.572   1.000   0.950
+simset_artificial_03    SLR (no filter) 0.309   0.582   0.000   0.000
+simset_artificial_03    SLR (trimAl filter)     0.315   0.585   0.000   0.000
+simset_artificial_03    SLR (Gblocks filter)    0.310   0.579   0.000   0.000
+simset_artificial_03    SLR (Prank filter)      0.334   0.582   0.000   0.000
+simset_artificial_03    SLR (MCoffee filter)    0.331   0.592   0.000   0.000
+simset_artificial_03    PAML M8 0.334   0.466   1.000   1.000
+simset_artificial_03    PAML M2 0.276   0.626   1.000   0.650
+simset_artificial_04    SLR (no filter) 0.144   0.319   0.000   0.000
+simset_artificial_04    SLR (trimAl filter)     0.148   0.317   0.000   0.000
+simset_artificial_04    SLR (Gblocks filter)    0.142   0.309   0.000   0.000
+simset_artificial_04    SLR (Prank filter)      0.158   0.287   0.000   0.000
+simset_artificial_04    SLR (MCoffee filter)    0.163   0.332   0.000   0.000
+simset_artificial_04    PAML M8 0.143   0.345   1.000   0.250
+simset_artificial_04    PAML M2 0.128   0.480   1.000   0.050
+simset_artificial_05    SLR (no filter) 0.079   0.182   0.000   0.000
+simset_artificial_05    SLR (trimAl filter)     0.083   0.192   0.000   0.000
+simset_artificial_05    SLR (Gblocks filter)    0.078   0.184   0.000   0.000
+simset_artificial_05    SLR (Prank filter)      0.082   0.186   0.000   0.000
+simset_artificial_05    SLR (MCoffee filter)    0.109   0.288   0.000   0.000
+simset_artificial_05    PAML M8 0.079   0.300   1.000   0.100
+simset_artificial_05    PAML M2 0.075   0.429   1.000   0.150
+simset_artificial_strong_01     SLR (no filter) 0.607   0.367   1.000   0.200
+simset_artificial_strong_01     SLR (trimAl filter)     0.607   0.367   1.000   0.200
+simset_artificial_strong_01     SLR (Gblocks filter)    0.607   0.367   1.000   0.200
+simset_artificial_strong_01     SLR (Prank filter)      0.607   0.367   1.000   0.200
+simset_artificial_strong_01     SLR (MCoffee filter)    0.607   0.367   1.000   0.200
+simset_artificial_strong_01     PAML M8 0.607   0.367   1.000   0.950
+simset_artificial_strong_01     PAML M2 0.607   0.367   1.000   0.950
+simset_artificial_strong_02     SLR (no filter) 0.411   0.919   1.000   0.900
+simset_artificial_strong_02     SLR (trimAl filter)     0.411   0.921   1.000   0.900
+simset_artificial_strong_02     SLR (Gblocks filter)    0.410   0.918   1.000   0.900
+simset_artificial_strong_02     SLR (Prank filter)      0.415   0.914   1.000   0.850
+simset_artificial_strong_02     SLR (MCoffee filter)    0.417   0.919   1.000   0.900
+simset_artificial_strong_02     PAML M8 0.544   0.852   1.000   1.000
+simset_artificial_strong_02     PAML M2 0.523   0.858   1.000   1.000
+simset_artificial_strong_03     SLR (no filter) 0.393   0.768   0.000   0.000
+simset_artificial_strong_03     SLR (trimAl filter)     0.400   0.773   0.000   0.000
+simset_artificial_strong_03     SLR (Gblocks filter)    0.397   0.767   0.000   0.000
+simset_artificial_strong_03     SLR (Prank filter)      0.422   0.781   0.000   0.000
+simset_artificial_strong_03     SLR (MCoffee filter)    0.402   0.770   0.000   0.000
+simset_artificial_strong_03     PAML M8 0.392   0.697   1.000   1.000
+simset_artificial_strong_03     PAML M2 0.318   0.773   1.000   1.000
+simset_artificial_strong_04     SLR (no filter) 0.182   0.425   0.000   0.000
+simset_artificial_strong_04     SLR (trimAl filter)     0.182   0.415   0.000   0.000
+simset_artificial_strong_04     SLR (Gblocks filter)    0.180   0.423   0.000   0.000
+simset_artificial_strong_04     SLR (Prank filter)      0.228   0.423   0.000   0.000
+simset_artificial_strong_04     SLR (MCoffee filter)    0.188   0.442   0.000   0.000
+simset_artificial_strong_04     PAML M8 0.162   0.479   1.000   0.700
+simset_artificial_strong_04     PAML M2 0.147   0.562   1.000   0.450
+simset_artificial_strong_05     SLR (no filter) 0.075   0.166   0.000   0.000
+simset_artificial_strong_05     SLR (trimAl filter)     0.078   0.168   0.000   0.000
+simset_artificial_strong_05     SLR (Gblocks filter)    0.075   0.169   0.000   0.000
+simset_artificial_strong_05     SLR (Prank filter)      0.107   0.206   0.000   0.000
+simset_artificial_strong_05     SLR (MCoffee filter)    0.081   0.203   0.000   0.000
+simset_artificial_strong_05     PAML M8 0.082   0.297   1.000   0.050
+simset_artificial_strong_05     PAML M2 0.083   0.495   1.000   0.300
+
+### 2009-10-13 ###
+
+Thinking about doing some simulations to evaluate the clade-specific 2xmammals
+results we found. Here are some basic stats on the trees seen in each clade:
+
+VERTEBRATES
+Sequences:
+   Min. 1st Qu.  Median    Mean 3rd Qu.    Max.
+   4.00   24.00   28.00   33.06   30.00  184.00
+Branch lengths:
+   Min. 1st Qu.  Median    Mean 3rd Qu.    Max.
+  0.000   1.657   2.147   3.481   3.101 536.000
+
+PRIMATES
+Sequences:
+   Min. 1st Qu.  Median    Mean 3rd Qu.    Max.    NA's
+  1.000   5.000   6.000   7.755   7.000  99.000   1.000
+Branch lengths:
+    Min. 1st Qu.  Median    Mean 3rd Qu.    Max.    NA's
+ 0.0000  0.2395  0.3512  0.8233  0.6247 74.1100  1.0000
+
+LAURASIATHERIA
+Sequences:
+   Min. 1st Qu.  Median    Mean 3rd Qu.    Max.    NA's
+   1.00    8.00   10.00   10.96   10.00   89.00    1.00
+Branch lengths:
+    Min.  1st Qu.   Median     Mean  3rd Qu.     Max.     NA's
+  0.0000   0.5698   0.7762   1.3280   1.1790 102.2000   1.0000  
+
+GLIRES
+Sequences:
+   Min. 1st Qu.  Median    Mean 3rd Qu.    Max.    NA's
+  1.000   6.000   7.000   8.354   7.000 100.000   1.000
+Branch lengths:
+     Min.  1st Qu.   Median     Mean  3rd Qu.     Max.     NA's
+  0.0000   0.5531   0.7351   1.3230   1.1130 275.6000   1.0000
