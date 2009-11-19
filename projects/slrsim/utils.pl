@@ -138,16 +138,73 @@ sub plot_sweep {
 
 sub prune {
   # Prunes everything outside of the species listed.
+
+  my $build_to_common = {
+    hg18 => "human",
+    panTro2 => "chimp",
+    rheMac2 => "rhesus",
+    tarSyr1 => "tarsier",
+    micMur1 => "mouse_lemur",
+    otoGar1 => "bushbaby",
+    tupBel1 => "treeshrew",
+    mm9 => "mouse",
+    rn4 => "rat",
+    dipOrd1 => "kangaroo_rat",
+    cavPor3 => "guinea_pig",
+    speTri1 => "squirrel",
+    oryCun1 => "rabbit",
+    ochPri2 => "pika",
+    vicPac1 => "alpaca",
+    turTru1 => "dolphin",
+    bosTau4 => "cow",
+    equCab2 => "horse",
+    felCat3 => "cat",
+    canFam2 => "dog",
+    myoLuc1 => "microbat",
+    pteVamp1 => "megabat",
+    eriEur1 => "hedgehog",
+    sorAra1 => "shrew",
+    loxAfr2 => "elephant",
+    proCap1 => "hyrax",
+    echTel1 => "tenrec",
+    dasNov2 => "armadillo",
+    choHof1 => "sloth",
+    monDom4 => "opossum",
+    ornAna1 => "platypus",
+    galGal3 => "chicken",
+    taeGut1 => "zebrafinch",
+    anoCar1 => "lizard",
+    xenTro2 => "x_tropicalis",
+    tetNig1 => "tetraodon",
+    fr2 => "fugu",
+    gasAcu1 => "stickleback",
+    oryLat2 => "medaka",
+    danRer5 => "zebrafish",
+  };
+  my $special_sets = {
+    mammals => qq^alpaca armadillo bushbaby cat chimp cow dog dolphin elephant guinea_pig hedgehog horse human kangaroo_rat megabat
+microbat monodelphis mouse mouse_lemur pika platypus rabbit rat rhesus rock_hyrax shrew sloth squirrel tarsier tenrec treeshrew^,
+    primates => "bushbaby chimp human mouse_lemur rhesus tarsier",
+    laurasiatheria => "alpaca cat cow dog dolphin hedgehog horse human megabat microbat shrew",
+    glires => "mouse rat squirrel kangaroo_rat guinea_pig rabbit pika"
+  };
+
   $input = shift @ARGV if (!$input);
   my $tree = Bio::EnsEMBL::Compara::TreeUtils->from_file($input);
-  my @keepers = @ARGV;
+  map {$_->name($build_to_common->{$_->name}) if ($build_to_common->{$_->name});} $tree->leaves; # Translate leaf names.
+
+  my $keeper_s = join(" ",@ARGV);
+  $keeper_s = $special_sets->{$keeper_s} if ($special_sets->{$keeper_s});
+  
+  my @keepers = split(" ",$keeper_s);
   my $keep_hash;
   map {$keep_hash->{$_} = 1} @keepers;
   foreach my $leaf ($tree->leaves) {
     if (!exists $keep_hash->{$leaf->name}) {
       Bio::EnsEMBL::Compara::TreeUtils->delete_lineage($tree,$leaf);
-      $tree->minimize_tree;
     }
   }
+
+  $tree = $tree->minimize_tree;
   print Bio::EnsEMBL::Compara::TreeUtils->to_newick($tree)."\n";
 }

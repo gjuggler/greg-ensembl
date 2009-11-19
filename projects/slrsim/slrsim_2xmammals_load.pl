@@ -18,9 +18,7 @@ GetOptions('url=s' => \$url,
 	   'config=s' => \$config,
 	   'clean' => \$clean
 	   );
-
-#$url = 'mysql://ensadmin:ensembl@ensdb-2-12:5106/gj1_slrsim' if (!$url);
-$url = 'mysql://greg:TMOqp3now@mysql-greg.ebi.ac.uk:4134/gj1_slrsim_1';
+$url = 'mysql://greg:TMOqp3now@mysql-greg.ebi.ac.uk:4134/gj1_slrsim_2xmammals';
 
 my ($mysql_args,$database,$project_base) = undef;
 $mysql_args = Bio::Greg::ComparaLite::HiveUtils->hive_url_to_mysql_args($url);
@@ -37,23 +35,15 @@ my $params = {
   'tree_dir' => 'trees',
 };
 
-sub replace {
-  my $p_one = shift;
-  my $p_two = shift;
-  return Bio::EnsEMBL::Compara::ComparaUtils->replace_params($p_one,$p_two);
-}
 
 create_simsets();
 
 sub create_simsets {
   my $base_p = {
     simulation_program => 'indelible',
-    simulation_replicates => 50,
-    tree_file => 'artificial.nh',
+    simulation_replicates => 100,
     tree_length => 1,
     seq_length => 400,
-#    meanlog => -4.079,
-#    sdlog => 1.23,
     ins_rate => 0.05,
     del_rate => 0.05,
     omega_distribution => 'M3',
@@ -69,63 +59,56 @@ sub create_simsets {
   my $base_length = 1;
   my $s_params;
 
-  foreach my $j (0.1,1,5,10,20) {
-#  foreach my $j (10) {
-    $s_params = {
-      w2 => 1.691,
-      tree_file => 'artificial.nh',
-      tree_length => $base_length * $j
-    };
-    $params->{sprintf 'simset_art_%02d',$i++} = replace($base_p,$s_params);
-  }
+  $s_params = {
+    w2 => 3,
+    tree_file => '2x_nox.nh',
+    tree_length => 0.787
+  };
+  $params->{sprintf 'simset_nox'} = replace($base_p,$s_params);
 
-  $i=1;
-  foreach my $j (0.1,1,5,10,20) {
-#  foreach my $j (10) {
-    $s_params = {
-      w2 => 4.739,
-      tree_file => 'artificial.nh',
-      tree_length => $base_length * $j
-    };
-    $params->{sprintf 'simset_art_strong_%02d',$i++} = replace($base_p,$s_params);
-  }
+  $s_params = {
+    w2 => 3,
+    tree_file => '2x_v.nh',
+    tree_length => 2.15
+  };
+  $params->{sprintf 'simset_v'} = replace($base_p,$s_params);
 
-  $i=1;
-  $base_length = 1;
-  foreach my $j (1,5,10,20,50,100,200) {
-#  foreach my $j (10) {
-    $s_params = {
-      w2 => 1.691,
-      tree_file => '2xmammals.nh',
-      tree_length => $base_length * $j
-    };
-    $params->{sprintf 'simset_2x_%02d',$i++} = replace($base_p,$s_params);
-  }
+  $s_params = {
+    w2 => 3,
+    tree_file => '2x_p.nh',
+    tree_length => 0.351
+  };
+  $params->{sprintf 'simset_p'} = replace($base_p,$s_params);
 
-  $i=1;
-  $base_length = 1;
-  foreach my $j (1,5,10,20,50,100,200) {
-    $s_params = {
-      w2 => 4.739,
-      tree_file => '2xmammals.nh',
-      tree_length => $base_length * $j
-    };
-    $params->{sprintf 'simset_2x_strong_%02d',$i++} = replace($base_p,$s_params);
-  }
+  $s_params = {
+    w2 => 3,
+    tree_file => '2x_g.nh',
+    tree_length => 0.735
+  };
+  $params->{sprintf 'simset_g'} = replace($base_p,$s_params);
 
+  $s_params = {
+    w2 => 3,
+    tree_file => '2x_l.nh',
+    tree_length => 0.776
+  };
+  $params->{sprintf 'simset_l'} = replace($base_p,$s_params);
+
+  
 }
-
   
 my $tree_table = "protein_tree";
 if ($clean) {
   # Delete all trees and reset the counter.
-  $dba->dbc->do("truncate table  ${tree_table}_member;");
+  $dba->dbc->do("truncate table ${tree_table}_member;");
   $dba->dbc->do("truncate table ${tree_table}_node;");
   $dba->dbc->do("truncate table  ${tree_table}_tag;");
   $dba->dbc->do("truncate table member;");
   $dba->dbc->do("truncate table sequence;");
   $dba->dbc->do("truncate table sitewise_aln;");
+  $dba->dbc->do("create table if not exists omega_tr like sitewise_aln;");
   $dba->dbc->do("truncate table omega_tr;");
+  $dba->dbc->do("create table if not exists omega_mc like sitewise_aln;");
   $dba->dbc->do("truncate table omega_mc;");
 }
 
@@ -148,12 +131,12 @@ foreach my $sim_set (@simulation_sets) {
   foreach my $sim_rep (1 .. $replicates) {
     print "$file $sim_set $sim_rep\n";
     my $node = Bio::EnsEMBL::Compara::TreeUtils->from_newick($newick_str);
+    print $node->newick_format()."\n";
     my $bl = Bio::EnsEMBL::Compara::TreeUtils->total_distance($node);
     my $n = scalar $node->leaves;
-    print "$bl $n \n";
     if ($tree_length) {
       $node = Bio::EnsEMBL::Compara::TreeUtils->scale_to($node,$tree_length);
-      print "Tree length: $tree_length\n";
+      print "  $bl -> $tree_length\n";
     }
     #print "Rescaled: ". Bio::EnsEMBL::Compara::TreeUtils->to_newick($node)."\n";
     
@@ -178,4 +161,10 @@ foreach my $sim_set (@simulation_sets) {
 
 foreach my $node (@{$pta->fetch_all_roots}) {
   print $node->get_tagvalue("input_file")."\t".$node->node_id."\t" . scalar(@{$node->get_all_leaves}) . "\n";
+}
+
+sub replace {
+  my $p_one = shift;
+  my $p_two = shift;
+  return Bio::EnsEMBL::Compara::ComparaUtils->replace_params($p_one,$p_two);
 }

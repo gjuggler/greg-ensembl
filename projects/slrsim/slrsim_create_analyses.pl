@@ -11,13 +11,14 @@ use Bio::Greg::EslrUtils;
 use File::Path;
 use File::Basename;
 
-my ($clean) = undef;
-GetOptions('clean' => \$clean
+my ($clean,$url) = undef;
+GetOptions('clean' => \$clean,
+           'url=s' => \$url
 	   );
 
 Bio::EnsEMBL::Registry->no_version_check(1);
 
-my $url = 'mysql://greg:TMOqp3now@mysql-greg.ebi.ac.uk:4134/gj1_slrsim_1';
+$url = 'mysql://greg:TMOqp3now@mysql-greg.ebi.ac.uk:4134/gj1_slrsim_1' if (!$url);
 my $dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new(-url => $url);
 my $dbc = $dba->dbc;
 my $dbh = $dbc->db_handle;
@@ -93,6 +94,11 @@ sub alignment_scores {
   if ($clean) {
     # Delete all trees and reset the counter.
     eval {
+      $dba->dbc->do("create table if not exists aln_mcoffee_score LIKE protein_tree_member_score;");
+      $dba->dbc->do("create table if not exists aln_mcoffee_prank LIKE protein_tree_member_score;");
+      $dba->dbc->do("create table if not exists aln_mcoffee_trimal LIKE protein_tree_member_score;");
+      $dba->dbc->do("create table if not exists aln_mcoffee_gblocks LIKE protein_tree_member_score;");
+
       $dba->dbc->do("truncate table protein_tree_member_score;");
       $dba->dbc->do("truncate table aln_mcoffee_score;");
       $dba->dbc->do("truncate table aln_mcoffee_prank;");
@@ -115,7 +121,8 @@ sub calculate_omegas {
   my $logic_name = "Omegas";
   my $module = "Bio::EnsEMBL::Compara::RunnableDB::Sitewise_dNdS";
   my $params = {
-    parameter_sets => "2,3,4,5,6,7,8,9",
+#    parameter_sets => "2,3,4,5,6,7,8,9",
+    parameter_sets => "2,5,6"
   };
   _create_analysis($analysis_id,$logic_name,$module,$params,30,1);
 

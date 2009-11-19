@@ -287,6 +287,9 @@ sub plotTreeWithOmegas {
   my $params = shift;
   my $tree_in = shift;
 
+  my $skip_output = 0;
+  my $dba = $tree_in->adaptor->db;
+
   my $defaults = {
     alignment_quality_mask_character => 'O',    # Goes to dark gray.
     sequence_quality_mask_character => 'B',      # Goes to lighter gray.
@@ -300,10 +303,10 @@ sub plotTreeWithOmegas {
     subtrees => '',
     cleanup_temp => 1
   };
-  $params = Bio::EnsEMBL::Compara::ComparaUtils->replace_params($defaults,$params);
+  $params = Bio::EnsEMBL::Compara::ComparaUtils->replace_params($defaults,$params);  
+  my $param_set_params = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_param_set($dba->dbc,$params->{'parameter_set_id'});
+  $params = Bio::EnsEMBL::Compara::ComparaUtils->replace_params($params,$param_set_params);
 
-  my $skip_output = 0;
-  my $dba = $tree_in->adaptor->db;
 
   # Define paths.
   my $dir = "/tmp/eslrplots";
@@ -366,15 +369,15 @@ sub plotTreeWithOmegas {
     my $gene_obj = {};
     if (scalar @human_leaves > 0) {
       my $leaf = $human_leaves[0];
-      my $gene = $leaf->get_Gene;
-      my $tscript = $leaf->get_Transcript;
-      my $tslation = $leaf->get_Translation;
+      #my $gene = $leaf->get_Gene;
+      #my $tscript = $leaf->get_Transcript;
+      #my $tslation = $leaf->get_Translation;
       
       $gene_obj->{'Species'} = $leaf->taxon->genus."_".$leaf->taxon->species;
-      $gene_obj->{'Ensembl Gene'} = $gene->stable_id;
-      $gene_obj->{'Ensembl Peptide'} = $tslation->stable_id;
-      $gene_obj->{'Gene Name'} = $gene->external_name || $gene->description;
-      $url = "\"http://www.ensembl.org/Homo_sapiens/Gene/Compara_Tree?g=".$gene->stable_id."\"";
+      #$gene_obj->{'Ensembl Gene'} = $gene->stable_id;
+      #$gene_obj->{'Ensembl Peptide'} = $tslation->stable_id;
+      #$gene_obj->{'Gene Name'} = $gene->external_name || $gene->description;
+      #$url = "\"http://www.ensembl.org/Homo_sapiens/Gene/Compara_Tree?g=".$gene->stable_id."\"";
     }
     my $f = "";
     map {$f .= "%-20s: %s\\n"} keys(%{$gene_obj});
@@ -459,8 +462,10 @@ sub plotTreeWithOmegas {
 
     aln1 = alns[[1]];
 
-    height = max(1,aln1\$num_seqs / 10);
-    width = min(48,aln1\$length/10);
+    height = 5;
+    width = 25;
+    #height = max(1,aln1\$num_seqs / 10);
+    #width = min(24,aln1\$length/10);
 
     mult = 50 / width;
     width = width*mult;
@@ -473,12 +478,14 @@ dpar = par(no.readonly=T)
 #par(ps=width/10);
 
 print(paste("Width:",width," Height:",height));
-pdf(file="${file_out}",width=width,height=height,pointsize=12);
+#library(Cairo);
+#Cairo(file="${file_out}",width=width,height=height,type="svg",units="in");
+pdf(file="${file_out}",width=width,height=height);
 
 # Use layout to arrange the regions for SLR values, tracks, tree, and alignment.
-num_tracks = 3
-track_heights = c(.5,.1,.1)
+track_heights = c(1,.1,.1,.1)
 aln_height = 1
+num_tracks = length(track_heights)
 heights=c(track_heights,aln_height)
 tree_width=0.2
 aln_width=1
@@ -504,15 +511,23 @@ source("aln_tools/phylo.tools.R")
 aln = read.aln(files[1])
 tree = read.tree(trees[1])
 slr = read.slr(slrs[1])
+
+# Plot aln.
 a = plot.aln(aln,overlay=F,axes=F,draw.chars=F)
+
+# Plot tree.
 xl = tree_length(tree)
-plot.phylo.greg2(tree,y.lim=a\$ylim,x.lim=c(xl-4,xl*1.1),show.tip.label=T)
+plot.phylo.greg2(tree,y.lim=a\$ylim,x.lim=c(xl-2,xl*1.1),show.tip.label=T,edge.width=2)
 axis.phylo(tree,side=3)
-plot(c(1),type='n',axes=F)
-# Now plot the tracks.
+plot(c(1),type='n',axes=F,lwd=4)
+
+# Plot SLR.
 plot.slr.blocks(slr,xlim=a\$xlim,log=T)
 axis(side=2)
-plot.slr.types(slr,xlim=a\$xlim)
+
+# Plot tracks.
+plot.slr.type(slr,xlim=a\$xlim,type='positive')
+plot.slr.type(slr,xlim=a\$xlim,type='negative')
 plot.aln.bars(aln)
 dev.off()
 q();

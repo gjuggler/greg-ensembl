@@ -83,7 +83,7 @@ sub treeI_from_newick {
   
   # Load the tree using TreeIO.
   open(my $fake_fh, "+<", \$newick);
-  my $treein = new Bio::TreeIO(-fh => $fake_fh, -format => 'nhx');
+  my $treein = new Bio::TreeIO(-fh => $fake_fh, -format => 'newick');
   my $treeI = $treein->next_tree;
   $treein->close();
 

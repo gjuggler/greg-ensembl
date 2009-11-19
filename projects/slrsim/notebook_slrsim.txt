@@ -175,3 +175,249 @@ Sequences:
 Branch lengths:
      Min.  1st Qu.   Median     Mean  3rd Qu.     Max.     NA's
   0.0000   0.5531   0.7351   1.3230   1.1130 275.6000   1.0000
+
+
+
+### 2009-10-14 ###
+
+OK, some crap from the 2xmammals project. Venn diagram of p-g-l:
+> source("../figures/sites_stats.R")
+> table(patterns)
+patterns
+    000     001     010     011     100     101     110     111
+8713407   10380   28877    1171   39519     957    2641     310
+
+
+### 2009-10-16 ###
+
+Some more e-slr stuff:
+
+Grabbing proteins with given GO annotation AND pos-sel:
+
+mysql> select m.stable_id, sitewise_node_for_peptide(m.stable_id,1) AS node_id,psc_count(sitewise_node_for_peptide(m.stable_id,1),1) from gj1_compara_53.go_terms go, member m where go.go_term="GO:0004930" AND m.stable_id=go.stable_id limit 50;
++-----------------+---------+-------------------------------------------------------+
+| stable_id       | node_id | psc_count(sitewise_node_for_peptide(m.stable_id,1),1) |
++-----------------+---------+-------------------------------------------------------+
+| ENSP00000383558 | 1983730 |                                                  NULL |
+| ENSP00000384236 | 2140117 |                                                  NULL |
+| ENSP00000318077 | 2085004 |                                                  NULL |
+| ENSP00000382718 | 2085156 |                                                  NULL |
+| ENSP00000256906 | 1801559 |                                                     1 |
+| ENSP00000299766 | 2084859 |                                                  NULL |
+| ENSP00000299727 |    NULL |                                                  NULL |
+| ENSP00000365529 | 1464187 |                                                  NULL |
+| ENSP00000363826 | 1925421 |                                                  NULL |
+| ENSP00000379066 | 1950293 |                                                  NULL |
+| ENSP00000362403 | 2096490 |                                                  NULL |
+| ENSP00000277942 | 2098315 |                                                  NULL |
+| ENSP00000350823 |    NULL |                                                  NULL |
+| ENSP00000337949 | 1959302 |                                                     1 |
+| ENSP00000360538 |  310614 |                                                     3 |
+| ENSP00000342828 | 1995159 |                                                  NULL |
+| ENSP00000280155 | 1959813 |                                                  NULL |
+| ENSP00000239032 |    NULL |                                                  NULL |
+| ENSP00000284674 |  313436 |                                                  NULL |
+| ENSP00000357566 |    NULL |                                                  NULL |
+| ENSP00000368766 | 2166277 |                                                  NULL |
+| ENSP00000217270 | 2097347 |                                                  NULL |
+| ENSP00000360442 | 2084778 |                                                  NULL |
+| ENSP00000321482 | 1801636 |                                                  NULL |
+| ENSP00000359532 | 1823717 |                                                  NULL |
+| ENSP00000336764 | 2116848 |                                                  NULL |
+| ENSP00000307831 | 1951003 |                                                     5 |
+| ENSP00000378195 |    NULL |                                                  NULL |
+| ENSP00000303775 | 2097347 |                                                  NULL |
+| ENSP00000303522 | 2096268 |                                                  NULL |
+| ENSP00000258456 | 1038009 |                                                  NULL |
+| ENSP00000019103 | 1983393 |                                                     2 |
+| ENSP00000272644 | 2165562 |                                                  NULL |
+| ENSP00000327417 | 1823767 |                                                  NULL |
+| ENSP00000376177 | 1775366 |                                                  NULL |
+| ENSP00000286201 | 1971510 |                                                  NULL |
+| ENSP00000384345 | 1803757 |                                                  NULL |
+| ENSP00000354607 | 1925421 |                                                  NULL |
+| ENSP00000272847 |    NULL |                                                  NULL |
+| ENSP00000233714 |    NULL |                                                  NULL |
+| ENSP00000319635 | 2090248 |                                                     7 |
+| ENSP00000295683 | 2090248 |                                                     7 |
+| ENSP00000375894 |    NULL |                                                  NULL |
+| ENSP00000258400 | 2167251 |                                                  NULL |
+| ENSP00000305877 | 1989210 |                                                  NULL |
+| ENSP00000272928 | 2089237 |                                                  NULL |
+| ENSP00000322731 |    NULL |                                                  NULL |
+| ENSP00000372750 | 1828527 |                                                  NULL |
+| ENSP00000299092 |  310858 |                                                  NULL |
+| ENSP00000366233 | 1162488 |                                                  NULL |
++-----------------+---------+-------------------------------------------------------+
+50 rows in set (56.32 sec)
+
+### 2009-10-22 ###
+
+ENSP00000367036
+ v_bl_total: 2.4485
+ v_omega: 0.1661
+ v_duplications: 4
+
+ENSP00000387007
+ v_bl_total: 2.733
+ v_omega: 0.181
+ v_duplications: 4
+
+
+
+
+
+Top PFam domains for MAMMALS:
+
+> pf_omega[1:10,]
+          id         x  len
+1753 PF04101 1.7588902  143
+1569 PF03516 1.4943694  625
+1217 PF02389 1.1369532  109
+2756 PF08065 1.1030686 1798
+2082 PF05177 1.0379248  105
+1891 PF04667 0.8845912  194
+844  PF01415 0.8767811  143
+2275 PF05837 0.8481068  236
+2166 PF05461 0.8314603  312
+1582 PF03546 0.8075519  891
+                                                           desc
+1753            Glycosyltransferase family 28 C-terminal domain
+1569                                                  Filaggrin
+1217                                     Cornifin (SPRR) family
+2756                                      K167R (NUC007) repeat
+2082                                                RCSD region
+1891 cAMP-regulated phosphoprotein/endosulfine conserved region
+844                                      Interleukin 7/9 family
+2275                              Centromere protein H (CENP-H)
+2166                                           Apolipoprotein L
+1582                  Treacher Collins syndrome protein Treacle
+> pf_psc[1:10,]
+          id          x len                                            desc
+1217 PF02389 0.13761468 109                          Cornifin (SPRR) family
+2166 PF05461 0.13461538 312                                Apolipoprotein L
+2269 PF05825 0.11304348 115                Beta-microseminoprotein (PSP-94)
+215  PF00277 0.10576923 104                         Serum amyloid A protein
+1753 PF04101 0.09090909 143 Glycosyltransferase family 28 C-terminal domain
+2275 PF05837 0.08898305 236                   Centromere protein H (CENP-H)
+844  PF01415 0.08391608 143                          Interleukin 7/9 family
+1142 PF02189 0.07766990 103  Immunoreceptor tyrosine-based activation motif
+2971 PF08698 0.07692308 143                        Fcf2 pre-rRNA processing
+1569 PF03516 0.07360000 625                                       Filaggrin
+
+
+Top Pfam domains for PRIMATES:
+
+> pfam = read.table("~/scratch/pfam_dump_primates.txt",sep="\t",header=T)
+> source("../figures/domain_stats.R")
+> pf_omega[1:10,]
+          id         x len                                        desc
+2003 PF05825 1.5338188 101            Beta-microseminoprotein (PSP-94)
+1894 PF05283 1.2649627 134 Multi-glycosylated core protein 24 (MGC-24)
+117  PF00143 1.2471774 168                Interferon alpha/beta domain
+2091 PF06413 1.2173957 184                                     Neugrin
+1998 PF05808 1.0880539 128                                  Podoplanin
+1523 PF03909 1.0831839 118                                  BSD domain
+2142 PF06657 1.0038294 143       Protein of unknown function (DUF1167)
+601  PF01012 0.9927869 145       Electron transfer flavoprotein domain
+870  PF01608 0.9908195 195                               I/LWEQ domain
+1878 PF05217 0.9571611 373                                STOP protein
+> pf_psc[1:10,]
+          id          x len                                             desc
+684  PF01187 0.10000000 110     Macrophage migration inhibitory factor (MIF)
+584  PF00969 0.07586207 145 Class II histocompatibility antigen, beta domain
+2091 PF06413 0.07065217 184                                          Neugrin
+2003 PF05825 0.06930693 101                 Beta-microseminoprotein (PSP-94)
+1925 PF05461 0.06291391 302                                 Apolipoprotein L
+2333 PF07798 0.05303030 132            Protein of unknown function (DUF1640)
+643  PF01101 0.05223881 134                                  HMG14 and HMG17
+2142 PF06657 0.04895105 143            Protein of unknown function (DUF1167)
+2111 PF06469 0.04629630 108             Domain of Unknown Function (DUF1088)
+870  PF01608 0.04615385 195                                    I/LWEQ domain
+>
+
+
+### 2009-10-24 ###
+
+Results from latest 2xmammals slrsim:
+
+Trees used:
+
+/homes/greg/lib/greg-ensembl/projects/slrsim> cat trees/2x*.nh
+(((((mouse:0.0885,rat:0.0984):0.2387,kangaroo_rat:0.2460):0.0191,guinea_pig:0.2583):0.0045,squirrel:0.1593):0.0278,(rabbit:0.1283,pika:0.2252):0.1166):0.0000;
+((((((cat:0.1070,dog:0.1106):0.0530,horse:0.1192):0.0032,microbat:0.1959):0.0027,((dolphin:0.0704,cow:0.1350):0.0261,alpaca:0.1216):0.0430):0.0108,(hedgehog:0.2626,shrew:0.3373):0.0560):0.0218,human:0.1618):0.0000;
+(((((((((((((hg18:0.00659,panTro2:0.006793):0.024233,rheMac2:0.036038):0.080973,tarSyr1:0.152072):0.00932,
+(micMur1:0.098594,otoGar1:0.142851):0.037203):0.014626,tupBel1:0.213792):0.004018,(((((mm9:0.088538,rn4:0.098448):0.238705,
+dipOrd1:0.245983):0.019141,cavPor3:0.258272):0.004484,speTri1:0.159299):0.027759,(oryCun1:0.128319,
+ochPri2:0.225163):0.116605):0.012862):0.022049,(((vicPac1:0.121589,(turTru1:0.070426,bosTau4:0.135002):0.026127):0.043044,
+((equCab2:0.11925,(felCat3:0.107011,canFam2:0.11064):0.053016):0.003236,(myoLuc1:0.161841,
+pteVam1:0.125293):0.034041):0.002688):0.010775,(eriEur1:0.262614,sorAra1:0.337284):0.055988):0.021846):0.021671,
+(((loxAfr2:0.091358,proCap1:0.176847):0.028163,echTel1:0.288029):0.054761,(dasNov2:0.125986,
+choHof1:0.102698):0.056662):0.006566):0.243334,monDom4:0.422151):0.066461,ornAna1:0.611258):0.121162,
+((galGal3:0.193851,taeGut1:0.184242):0.265172,anoCar1:0.676886):0.21931):0.199779,xenTro2:1.529998):0.477495,
+(((tetNig1:0.235166,fr2:0.234242):0.240762,(gasAcu1:0.362135,oryLat2:0.635647):0.084103):0.489291,danRer5:1.249372):0.384745):0.0;
+((((mouse:0.0885,rat:0.0984):0.2578,guinea_pig:0.2583):0.0451,((human:0.0066,chimp:0.0068):0.0242,rhesus:0.0360):0.1089):0.0220,((horse:0.1192,dog:0.1637):0.0059,cow:0.2042):0.0326):0.0000;
+((((human:0.0066,chimp:0.0068):0.0242,rhesus:0.0360):0.0810,tarsier:0.1521):0.0093,(mouse_lemur:0.0986,bushbaby:0.1429):0.0372);
+((((elephant:0.1195,tenrec:0.2880):0.0548,(sloth:0.1027,armadillo:0.1260):0.0567):0.0066,((((((cat:0.1070,dog:0.1106):0.0530,horse:0.1192):0.0032,microbat:0.1959):0.0027,((dolphin:0.0704,cow:0.1350):0.0261,alpaca:0.1216):0.0430):0.0108,(hedgehog:0.2626,shrew:0.3373):0.0560):0.0218,((((((human:0.0066,chimp:0.0068):0.0242,rhesus:0.0360):0.0810,tarsier:0.1521):0.0093,(mouse_lemur:0.0986,bushbaby:0.1429):0.0372):0.0146,treeshrew:0.2138):0.0040,(((((mouse:0.0885,rat:0.0984):0.2387,kangaroo_rat:0.2460):0.0191,guinea_pig:0.2583):0.0045,squirrel:0.1593):0.0278,(rabbit:0.1283,pika:0.2252):0.1166):0.0129):0.0220):0.0217):0.3098,platypus:0.6113):0.0000;
+
+Simulation parameters:
+  my $base_p = {
+    simulation_program => 'indelible',
+    simulation_replicates => 100,
+    tree_length => 1,
+    seq_length => 400,
+    ins_rate => 0.05,
+    del_rate => 0.05,
+    omega_distribution => 'M3',
+    p0 => 0.386,
+    p1 => 0.535,
+    p2 => 0.079,
+    w0 => 0.018,
+    w1 => 0.304,
+    w2 => 1.691,
+  };
+
+
+/homes/greg/lib/greg-ensembl/projects/slrsim> perl slrsim_analyze_results.pl -url mysql://greg:TMOqp3now@mysql-greg.ebi.ac.uk:4134/gj1_slrsim_2xmammals
+sim_set name    reps    tree_length     s_acc   s_pow   g_acc   g_pow
+simset_g        SLR (no filter) 100     0.735   0.912   0.289   1.000   0.384
+simset_g        SLR (Prank filter)      100     0.735   0.931   0.291   1.000   0.394
+simset_g        SLR (MCoffee filter)    100     0.735   0.926   0.291   1.000   0.364
+simset_l        SLR (no filter) 100     0.775999999999999       0.935   0.300   1.000   0.394
+simset_l        SLR (Prank filter)      100     0.775999999999999       0.961   0.304   1.000   0.384
+simset_l        SLR (MCoffee filter)    100     0.775999999999999       0.943   0.301   1.000   0.374
+simset_nox      SLR (no filter) 100     0.787   0.914   0.302   1.000   0.439
+simset_nox      SLR (Prank filter)      100     0.787   0.941   0.302   1.000   0.439
+simset_nox      SLR (MCoffee filter)    100     0.787   0.934   0.304   1.000   0.459
+simset_p        SLR (no filter) 100     0.351   0.829   0.181   1.000   0.182
+simset_p        SLR (Prank filter)      100     0.351   0.879   0.183   1.000   0.182
+simset_p        SLR (MCoffee filter)    100     0.351   0.851   0.185   1.000   0.182
+simset_v        SLR (no filter) 100     2.15    0.959   0.600   1.000   0.929
+simset_v        SLR (Prank filter)      100     2.15    0.968   0.604   1.000   0.929
+simset_v        SLR (MCoffee filter)    100     2.15    0.971   0.608   1.000   0.939
+
+
+
+Venn diagram of site-wise hi and lows. Using omega_lower > 1 and omega_upper < 1:
+
+> nrow(sites)
+[1] 8590181
+> as.data.frame(hi_venn_counts)
+      p     g     l   pg  pl   gl pgl
+1 39519 28877 10380 2641 957 1171 310
+> as.data.frame(lo_venn_counts)
+      p       g       l     pg     pl      gl    pgl
+1 69803 1033698 1073700 113165 102104 2796274 774424
+
+
+Now, filter sites for sites where nothing is NA:
+
+> nrow(sites)
+[1] 4808900
+> source("../figures/sites_stats.R")
+> as.data.frame(hi_venn_counts)
+      p     g    l   pg  pl  gl pgl
+1 18946 12882 5906 1318 568 776 253
+> as.data.frame(lo_venn_counts)
+      p      g      l    pg    pl      gl    pgl
+1 28751 495734 649611 53849 56672 1802254 677607

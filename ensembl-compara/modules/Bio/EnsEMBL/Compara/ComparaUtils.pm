@@ -314,14 +314,68 @@ sub fetch_masked_alignment
   #
   # SEQUENCE QUALITY MASKING
   #
+  if ($params->{'trimal_filtering'}) {
+    printf " -> Masking sequences with trimal!\n";
+    $aln = $class->mask_aln_by_trimal($tree,$aln,$aa_aln,$params);
+  }
+
+  #
+  # SEQUENCE QUALITY MASKING
+  #
   if ($params->{'sequence_quality_filtering'}) {
     printf " -> Masking sequences at quality threshold: %d\n",$params->{'sequence_quality_threshold'};
-    #$aln = $class->mask_aln_by_sequence_quality($tree,$aln,$params);
+    $aln = $class->mask_aln_by_sequence_quality($tree,$aln,$params);
   }
 
   $aln = $ALN->sort_by_tree($aln,$tree);
   return $aln;
 }
+
+# IMPORTANT: Always give the amino acid alignment
+sub mask_aln_by_trimal {
+  my $class = shift;
+  my $tree = shift;
+  my $aln = shift;
+  my $aa_aln = shift;
+  my $params = shift;
+
+  # Write temporary alignment.
+  my $dir = '/tmp/eslr_temp';
+  mkpath([$dir]);
+  my $node_id = $tree->node_id;
+  my $aln_f = $dir."/aln{$node_id}.fa";
+  Bio::EnsEMBL::Compara::AlignUtils->to_file($aa_aln,$aln_f);
+
+  # Build a command for TrimAl.
+  my $cmd = "trimal -in $aln_f -out $aln_f -colnumbering -cons 30 -gt 0.33 -gw 3";
+  my $output = `$cmd`;
+  print "OUTPUT:". $output."\n";
+
+  chomp $output;
+  my @cons_cols = split(/[\s,]+/,$output);
+  print "@cons_cols\n";
+
+  if ($params->{'cdna'}) {
+    # use the $aa_aln for getting the columns, and multiply by 3.
+    my @cdna_cons_cols;
+    foreach my $i (@cons_cols) {
+      my $cdna_i=int($i)*3;
+      push @cdna_cons_cols,($cdna_i);
+      push @cdna_cons_cols,($cdna_i+1);
+      push @cdna_cons_cols,($cdna_i+2);
+    }
+    #print "@cons_cols\n";
+    #print "@cdna_cons_cols\n";
+    $aln = Bio::EnsEMBL::Compara::AlignUtils->mask_columns($aln,\@cdna_cons_cols,$params->{'trimal_mask_character'});
+  } else {
+    $aln = Bio::EnsEMBL::Compara::AlignUtils->mask_columns($aln,\@cons_cols,$params->{'trimal_mask_character'});
+  }
+
+  #Bio::EnsEMBL::Compara::AlignUtils->pretty_print($aln,{length=>200});
+  rmtree($dir);
+  return $aln;
+}
+
 
 sub mask_aln_by_sequence_quality {
   my $class = shift;

@@ -18,7 +18,7 @@ my ($url,$clean) = undef;
 GetOptions('url=s' => \$url,
 	   'clean' => \$clean
 	   );
-$url = 'mysql://greg:TMOqp3now@mysql-greg.ebi.ac.uk:4134/gj1_slrsim_1';
+$url = 'mysql://greg:TMOqp3now@mysql-greg.ebi.ac.uk:4134/gj1_slrsim_1' if (!$url);
 
 my ($mysql_args,$database,$project_base) = undef;
 $mysql_args = Bio::Greg::ComparaLite::HiveUtils->hive_url_to_mysql_args($url);
@@ -36,6 +36,7 @@ my $pta = $dba->get_ProteinTreeAdaptor();
 my $GENE_HAS = 'gene_has';
 my $GENE_INFER = 'gene_infer';
 my $GENE_INFER_WEAK = 'gene_infer_weak';
+my $TREE_LENGTH = 'tree_length';
 my $G_PP = 'gene_++';
 my $G_PN = 'gene_+-';
 my $G_NP = 'gene_-+';
@@ -50,12 +51,20 @@ my $cmd = qq^SELECT distinct value FROM protein_tree_tag where tag="sim_set"^;
 my @sim_sets = Bio::Greg::EslrUtils->mysql_array($dbc,$cmd);
 @sim_sets = sort @sim_sets;
 
-my @parameter_sets = (2,3,4,5,6,7,8);
+my @parameter_sets = (2,5,6);
 #print "@sim_sets\n";
+my $i=0;
+
+my $sth1 = $dbh->prepare("SELECT omega FROM sitewise_aln WHERE node_id=? AND aln_position=?;");
+my $sth2 = $dbh->prepare("SELECT omega,type,note FROM omega_mc WHERE node_id=? AND aln_position=? AND parameter_set_id=?;");
+
 foreach my $sim_set (@sim_sets) {
   my @node_ids = Bio::Greg::EslrUtils->mysql_array($dbc,"SELECT distinct node_id FROM protein_tree_tag WHERE tag='sim_set' AND value='$sim_set';");
+  $sim_set =~ s/sim_set_//;
+  $sim_set =~ s/_[0-9]+//;
   
   foreach my $parameter_set (@parameter_sets) {
+    $i++;
     my $cmd = qq^SELECT parameter_value FROM parameter_set where parameter_set_id=$parameter_set AND parameter_name='name'^;
     my @arr = Bio::Greg::EslrUtils->mysql_array($dbc,$cmd);
     my $name = $arr[0];
@@ -69,6 +78,8 @@ foreach my $sim_set (@sim_sets) {
     my $g_pn = 0;
     my $g_np = 0;
     my $g_nn = 0;
+    my $n_nodes = scalar(@node_ids);
+    my $tree_length;
     foreach my $node_id (@node_ids) {
       my $stats = get_stats_for_node($node_id,$parameter_set);
       $g_pp += $stats->{$G_PP};
@@ -80,6 +91,8 @@ foreach my $sim_set (@sim_sets) {
       $s_pn += $stats->{$PN};
       $s_np += $stats->{$NP};
       $s_nn += $stats->{$NN};
+      
+      $tree_length = $stats->{$TREE_LENGTH};
     }
     
     my $n = scalar(@node_ids);
@@ -98,12 +111,27 @@ foreach my $sim_set (@sim_sets) {
     my @values = ($s_acc,$s_pow,$g_acc,$g_pow);
     my @value_s = map {sprintf("%.3f",$_)} @values;
     print join("\t",(
+                 "sim_set",
+                 "name",
+                 "reps",
+                 "tree_length",
+                 "s_acc",
+                 "s_pow",
+                 "g_acc",
+                 "g_pow"
+               ))."\n" if ($i==1);
+    print join("\t",(
                   $sim_set,
                  $name,
+                 $n_nodes,
+                 $tree_length,
                  @value_s
                 ))."\n";
   }
 }
+
+$sth1->finish;
+$sth2->finish;
 
 sub get_stats_for_node {
   my $node_id = shift;
@@ -111,9 +139,10 @@ sub get_stats_for_node {
   
   my $sa_true;
   my $sa_aln;
+  my $tree;
   eval {
     $pta->protein_tree_member("protein_tree_member");
-    my $tree = $pta->fetch_node_by_node_id($node_id);
+    $tree = $pta->fetch_node_by_node_id($node_id);
     $sa_true = $tree->get_SimpleAlign();
     #Bio::EnsEMBL::Compara::AlignUtils->pretty_print($sa_true,{length => 200});
     
@@ -123,9 +152,13 @@ sub get_stats_for_node {
     #Bio::EnsEMBL::Compara::AlignUtils->pretty_print($sa_aln,{length => 200});
   };
   my @seqs = $sa_true->each_seq;
-  my $seq = $seqs[0];
+#  my @seq_f = grep {$_->id eq 'human'} @seqs;
+#  my $seq = $seq_f[0];
+#  $seq = $seqs[0] if (!$seq);
+  my $seq= $seqs[0];
   my $name = $seq->id;
   my $str = $seq->seq;
+#  print $name."\n";
   my $nogaps = $str;
   $nogaps =~ s/-//g;
 
@@ -144,34 +177,51 @@ sub get_stats_for_node {
 
   return $stats if (!$sa_true || !$sa_aln);
 
+
   for (my $i=1; $i <= length($nogaps); $i++) {
     my $true_col = $sa_true->column_from_residue_number($name,$i);
     my $aln_col = $sa_aln->column_from_residue_number($name,$i);
 
-    my $cmd = qq^SELECT omega FROM sitewise_aln WHERE node_id=$node_id AND aln_position=$true_col;^;
-    my @arr = $dbh->selectrow_array($cmd);
+    #my $cmd = qq^SELECT omega FROM sitewise_aln WHERE node_id=$node_id AND aln_position=$true_col;^;
+    $sth1->execute($node_id,$true_col);
+    my @arr = $sth1->fetchrow_array();
     my $omg = $arr[0];
     $stats->{$GENE_HAS} = 1 if ($omg > 1);
 
     # Get the inferred omega for the same site in the same protein.
-    @arr = $dbh->selectrow_array(qq^SELECT omega,type,note FROM omega_mc WHERE node_id=$node_id AND aln_position=$aln_col AND parameter_set_id=$parameter_set_id;^);
-    my ($omg2,$type2,$note2) = @arr;
-    if (scalar(@arr) != 0) {
+    #@arr = $dbh->selectrow_array(qq^SELECT omega,type,note FROM omega_mc WHERE node_id=$node_id AND aln_position=$aln_col AND parameter_set_id=$parameter_set_id;^);
+    $sth2->execute($node_id,$aln_col,$parameter_set_id);
+    my @arr2 = $sth2->fetchrow_array();
+    my ($omg2,$type2,$note2) = @arr2;
+    if (scalar(@arr2) != 0) {
 #      $stats->{$GENE_INFER_WEAK} = 1 if ($type2 =~ m/positive[1234]/);
       $stats->{$GENE_INFER} = 1 if ($type2 =~ m/positive[34]/);
       
       # Compare to this site's true omega.
-      $stats->{$PP}++ if ($omg > 1 && $omg2 > 1);
-      $stats->{$PN}++ if ($omg > 1 && $omg2 <= 1);
-      $stats->{$NP}++ if ($omg <= 1 && $omg2 > 1);
-      $stats->{$NN}++ if ($omg <= 1 && $omg2 <= 1);
+      my $method = 'confident';
+      if ($method eq 'estimate') {
+        $stats->{$PP}++ if ($omg > 1 && $omg2 > 1);
+        $stats->{$PN}++ if ($omg > 1 && $omg2 <= 1);
+        $stats->{$NP}++ if ($omg <= 1 && $omg2 > 1);
+        $stats->{$NN}++ if ($omg <= 1 && $omg2 <= 1);
+      } elsif ($method eq 'confident') {
+        $stats->{$PP}++ if ($omg > 1 && $type2 =~ m/positive[1234]/);
+        $stats->{$PN}++ if ($omg > 1 && $type2 !~ m/positive[1234]/); 
+        $stats->{$NP}++ if ($omg <= 1 && $type2 =~ m/positive[1234]/);
+        $stats->{$NN}++ if ($omg <= 1 && $type2 !~ m/positive[1234]/);
+      }
     }
   }
+
+#  $sth1->finish;
+#  $sth2->finish;
 
   $stats->{$G_PP} = 1 if ($stats->{$GENE_HAS} && $stats->{$GENE_INFER});
   $stats->{$G_PN} = 1 if ($stats->{$GENE_HAS} && !$stats->{$GENE_INFER});
   $stats->{$G_NP} = 1 if (!$stats->{$GENE_HAS} && $stats->{$GENE_INFER});
   $stats->{$G_NN} = 1 if (!$stats->{$GENE_HAS} && !$stats->{$GENE_INFER});
+
+  $stats->{$TREE_LENGTH} = Bio::EnsEMBL::Compara::TreeUtils->total_distance($tree);
 
   return $stats;
 }
