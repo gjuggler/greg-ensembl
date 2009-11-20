@@ -105,6 +105,9 @@ sub run {
   print "Adding superfamily subtrees...\n";
   $self->add_all_subtrees_to_hash($tree,\%node_set_hash,8,"superfamily");
 
+  print "Adding Tim superfamily subtrees...\n";
+  $self->add_all_subtrees_to_hash($tree,\%node_set_hash,9,"superfamily_tim",\&is_tree_tim_worthy);
+
   my $sql = "INSERT IGNORE INTO node_set (node_set_id,name,allows_overlap) values (?,?,?)";
   my $sth = $dba->dbc->prepare($sql);
   $sth->execute(1,"Human Gene Subtrees",0);
@@ -115,6 +118,7 @@ sub run {
   $sth->execute(6,"Med Subtrees",0);
   $sth->execute(7,"Large Subtrees",0);
   $sth->execute(8,"Superfamily Subtrees",0);
+  $sth->execute(9,"Tim Subtrees",0);
   $sth->finish;
 }
 
@@ -129,6 +133,7 @@ sub add_all_subtrees_to_hash {
   $ref = \&is_tree_med if ($size eq "med");
   $ref = \&is_tree_large if ($size eq "large");
   $ref = \&does_parent_have_superfamily_children if ($size eq "superfamily");
+  $ref = \&does_parent_have_tim_children if ($size eq 'superfamily_tim');
   my @root_node_ids = $self->get_smallest_subtrees_from_node($tree,$ref);
   
   $hash->{$node_set_id} = \@root_node_ids;
@@ -240,7 +245,7 @@ sub isa_human_gene_subtree {
 sub isa_balanced_good_duplication {
   my $node = shift;
 
-  return 1 if (is_balanced_dup_node($node,4));
+  return 1 if (is_balanced_dup_node($node,6));
   return 0;
 }
 
@@ -288,11 +293,20 @@ sub is_tree_large {
 
 sub does_parent_have_superfamily_children {
   my $node = shift;
+  return generic_parent_has_good_children($node,\&does_tree_have_superfamily_coverage);
+}
+
+sub does_parent_have_tim_children {
+  my $node = shift;
+  return generic_parent_has_good_children($node,\&does_tree_have_tim_family_coverage);
+}
+
+sub generic_parent_has_good_children {
+  my $node = shift;
+  my $inclusion_function = shift;
 
   # 1. check that this tree has superfamily coverage.
-
   # 2. check that our sister node has superfamily coverage.
-
   # 3. if (1) and (2) are met, return true.
 
   my $tree = $node;
@@ -301,7 +315,7 @@ sub does_parent_have_superfamily_children {
   #print $parent->node_id."\n";
   #print length(@parents_children)."\n";
   if ($parent->node_id == 1) {
-    return does_tree_have_superfamily_coverage($node);
+    return $inclusion_function->($node);
   }
 
   my $sister;
@@ -309,7 +323,7 @@ sub does_parent_have_superfamily_children {
     $sister = $ch if ($ch->node_id != $tree->node_id);
   }
   
-  if (does_tree_have_superfamily_coverage($node) && does_tree_have_superfamily_coverage($sister)) {
+  if ($inclusion_function->($node) && $inclusion_function->($sister)) {
     return 1;
   }
   return 0;
@@ -346,6 +360,52 @@ sub does_tree_have_superfamily_coverage {
   return 1 if ($num_mamm_fams >= 2 && $num_outgroups >= 1);
   return 0;
 }
+
+sub does_tree_have_tim_family_coverage {
+  my $tree = shift;
+
+  # 1. require 2 of 4 mammalian families to be represented (Laurasiatheria, Primates, Glires, Afrotheria)
+
+  my %mamm_hash = ('314145' => 'Laurasiatheria',
+		   '9443' => 'Primates',
+		   '314147' => 'Glires',
+		   '311790' => 'Afrotheria');
+  my %fams_found;
+
+  my @nodes = $tree->nodes;
+  foreach my $node (@nodes) {
+    my $tax_id = $node->taxon_id;
+    $fams_found{$tax_id}=1 if (exists $mamm_hash{$tax_id});
+  }
+
+  my $num_mamm_fams = scalar(keys %fams_found);
+
+  #printf "Node ID: %d  Mammal coverage: %d/%d\n",$tree->node_id,$num_mamm_fams,4;
+  return 1 if ($num_mamm_fams >= 2);
+  return 0;
+}
+
+sub is_tree_tim_worthy {
+  my $tree = shift;
+  my $node_id = shift;
+  
+  my $subtree = $tree->find_node_by_node_id($node_id);
+
+  my @nodes = $subtree->nodes;
+  my @leaves = $subtree->leaves;
+
+  return 0 if (scalar(@leaves) < 8);
+  
+  my $dup_count = 0;
+  foreach my $node (@nodes) {
+    $dup_count++ if (is_duplication($node));
+    return 0 if (is_duplication($node) && scalar($node->leaves) > 2);
+  }
+#  $subtree->print_tree;
+  return 1 if ($dup_count <= 4);
+  return 0;
+}
+
 
 sub is_balanced_dup_node {
   my $node = shift;
@@ -394,18 +454,28 @@ sub write_output {
     foreach my $id (@ids) {
       print "  -> Inserting node set member $key -> $id\n";
       $sth->execute($key,$id);
-      sleep(0.3);
+      sleep(0.1);
       my $tree = $pta->fetch_node_by_node_id($id);
       if ($params->{'debug'}) {
 	foreach my $leaf ($tree->leaves) {
-	  print $leaf->stable_id."\n";
-	  print $leaf->gene->external_name."\n";
+	  if ($leaf->taxon_id == 9606) {
+	    print "  ".$leaf->stable_id."\n";
+	    #print "  -> ".$leaf->gene->external_name."\n";
+	  }
 	}
       }
 
       if ($key == $params->{'flow_node_set'}) {
 	my $output_id = Bio::EnsEMBL::Compara::ComparaUtils->hash_to_string({node_id => $id});
-	$self->dataflow_output_id($output_id);
+	$self->dataflow_output_id($output_id,1);
+	print "  -> Flowing node $output_id\n";
+	if ($params->{'flow_parent_and_children'}) {
+	  foreach my $child (@{$tree->children}) {
+	    my $output_id = Bio::EnsEMBL::Compara::ComparaUtils->hash_to_string({node_id => $child->node_id});
+	    $self->dataflow_output_id($output_id,1);
+	    print "  -> Flowing child $output_id\n";
+	  }
+	}
       }
     }
     $sth->finish;
@@ -418,7 +488,5 @@ sub DESTROY {
     $tree = undef;
     $self->SUPER::DESTROY if $self->can("SUPER::DESTROY");
 }
-
-
 
 1;

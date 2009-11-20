@@ -110,14 +110,53 @@ sub mapSitewiseToGenome {
   return \@genomic_coords;
 }
 
+sub collectDuplicationTags {
+  my $class = shift;
+  my $tree = shift;
+  my $params = shift;
+
+  my $taxon_name = $tree->get_tagvalue('taxon_name');
+  my $taxon_id = $tree->get_tagvalue('taxon_id');
+
+  my $sth = $tree->adaptor->prepare("SELECT name FROM ncbi_taxa_name WHERE taxon_id=$taxon_id AND name_class='ensembl timetree mya';");
+  $sth->execute;
+  my $taxon_mya = $sth->fetchrow_array();
+
+  my $total_bl = sprintf "%.3f", total_distance($tree);
+  my $max_bl = sprintf "%.3f", $tree->max_distance;
+
+  # Collect chromosome on human gene.
+  my $hum_chr = '';
+  my @hum_genes = grep {$_->taxon_id == 9606} $tree->leaves;
+  if (scalar(@hum_genes) > 0) {
+    my $hum_gene = $hum_genes[0];
+    my $gene = $hum_gene->get_Gene;
+    $hum_chr = $gene->slice->seq_region_name;
+  }
+
+  my $tags = {
+    taxon_name => $taxon_name,
+    taxon_id => $taxon_id,
+    taxon_mya => $taxon_mya,
+    bl_total => $total_bl,
+    bl_max => $max_bl,
+    human_chr => $hum_chr
+  };
+  my $prefix = 'dupldiv';
+  my $mapped_tags;
+  map {$mapped_tags->{$prefix.'_'.$_} = $tags->{$_}} keys %{$tags};
+  return $mapped_tags;
+}
 
 sub collectGeneTags {
   my $class = shift;
-  my $tree = shift;
+  our $tree = shift;
+  our $params = shift;
 
   $tree->re_root;
-
   my $hash;
+
+  print "Node ID: ".$tree->node_id."\n";
 
   sub mysql_getval {
     my $cmd = shift;
@@ -127,6 +166,92 @@ sub collectGeneTags {
     my $val = @{$sth->fetchrow_arrayref()}[0];
     $val = 'NA' unless (defined $val);
     return $val;
+  }
+
+  sub mysql_array {
+    my $cmd = shift;
+    my $dbc = shift;
+    my $sth = $dbc->prepare($cmd);
+    $sth->execute;
+    my $array_ref = $sth->fetchall_arrayref([0]);
+    my @vals = @{$array_ref};
+    @vals = map {@{$_}[0]} @vals;  # Some weird mappings to unpack the numbers from the arrayrefs.
+    $sth->finish;
+    return @vals;
+  }
+
+  sub psc_hash {
+    my $tree = shift;
+    my $table = shift;
+    my $pset = shift;
+    my $weak = shift;
+
+    my $psc_str = qq^("positive3","positive4")^;
+    $psc_str = qq^("positive1","positive2","positive3","positive4")^ if ($weak);
+    
+
+    my $node_id = $tree->node_id;
+    my $cmd = qq^SELECT aln_position FROM $table sa WHERE node_id=$node_id AND parameter_set_id=$pset
+      AND omega_upper > omega AND type != 'random'
+      AND ncod >= 4 AND type IN $psc_str;^;
+    my @vals = mysql_array($cmd,$tree->adaptor->dbc);
+    my $return_hash;
+    map {$return_hash->{$_} = 1} @vals;
+    return $return_hash;
+  }
+
+  sub psc_clusters {
+    my $tree = shift;
+    my $sa = shift;
+    my $table = shift;
+    my $pset = shift;
+    my $weak = shift;
+    my $dbl = shift;
+
+    my $hash = psc_hash($tree,$table,$pset,$weak);
+    return 0 unless ($hash);
+    my @pscs = keys %{$hash};
+    @pscs = sort {$a <=> $b} @pscs;
+ #   print "@pscs\n";
+    my $len = $sa->length;
+    my @sites = (0) x $len;
+    
+    my $width = $len / 10;
+    $width = 5 if ($width < 5);
+    $width = 50 if ($width > 50);
+
+    for (my $i=0; $i < scalar(@pscs); $i++) {
+      my $psc = $pscs[$i];
+      my $lo = $psc - $width;
+      my $hi = $psc + $width;
+      $lo = 1 if ($lo < 1);
+      $hi = $len if ($hi > $len);
+
+      if (!$dbl) {
+	my $len = ($hi-$lo);
+	splice(@sites,$psc,$len,(1)x$len);
+      } else {
+	if ($i > 0 && $pscs[$i-1] >= $lo) {
+	  my $len = $psc-$pscs[$i-1];
+	  splice(@sites,$pscs[$i-1],$len,(1)x$len);
+	}
+	if ($i < scalar(@pscs)-1 && $pscs[$i+1] <= $hi) {
+	  my $len = $pscs[$i+1] - $psc;
+	  splice(@sites,$psc,$len,(1)x$len);
+	}
+      }
+    }
+
+    my $str = join("",@sites);
+#    print $str."\n";
+
+    my @toks = split(/0+/,$str);
+    my $num_clusters = 0;
+    foreach my $tok (@toks) {
+      $num_clusters++ if (length($tok) > 0);
+    }
+#    print "COUNT: $num_clusters\n";
+    return $num_clusters;
   }
 
   sub avg_sitewise {
@@ -151,6 +276,17 @@ sub collectGeneTags {
 			sa.ncod >= 4;
 			^);
   }
+
+  sub weak_pscs {
+    my ($node_id,$table,$pset) = @_;
+    return mysql_getval(qq^ SELECT count(*) FROM $table sa
+			WHERE sa.node_id=$node_id AND sa.parameter_set_id=$pset
+			AND sa.omega_upper > sa.omega AND sa.type != 'random' AND
+			sa.type IN ("positive1","positive2","positive3","positive4") AND
+			sa.ncod >= 4;
+			^);
+  }
+  
   
   sub gc_content {
     my $tr = shift;
@@ -170,6 +306,7 @@ sub collectGeneTags {
   }
   
   my $node_id = $tree->node_id;
+  my $sw = "sitewise_aln";
 
   $hash->{'leaf_count'} = scalar($tree->leaves);
   $hash->{'node_count'} = scalar($tree->nodes);
@@ -179,83 +316,55 @@ sub collectGeneTags {
   my @hum_gen = grep {$_->taxon_id==9606} $tree->leaves;
   $hash->{'human_genes'} = scalar(@hum_gen);
   $hash->{'ensp'} = $hum_gen[0]->stable_id if ($hum_gen[0]);
-
-  my $sw = "sitewise_aln";
-  $hash->{'v_lrt'} = avg_sitewise("lrt_stat",$node_id,$sw,1);
-  $hash->{'v_omega'} = avg_sitewise("omega",$node_id,$sw,1);
-  $hash->{'no2x_omega'} = avg_sitewise("omega",$node_id,$sw,2);
-  $hash->{'only2x_omega'} = avg_sitewise("omega",$node_id,$sw,3);
-  $hash->{'no_seq_f_omega'} = avg_sitewise("omega",$node_id,$sw,4);
-  $hash->{'no_aln_f_omega'} = avg_sitewise("omega",$node_id,$sw,5);
-  $hash->{'no_f_omega'} = avg_sitewise("omega",$node_id,$sw,6);
-  $hash->{'p_omega'} = avg_sitewise("omega",$node_id,$sw,7);
-  $hash->{'g_omega'} = avg_sitewise("omega",$node_id,$sw,8);
-  $hash->{'l_omega'} = avg_sitewise("omega",$node_id,$sw,9);
-
-  $hash->{'v_pscs'} = num_pscs($node_id,$sw,1);
-  $hash->{'p_pscs'} = num_pscs($node_id,$sw,7);
-  $hash->{'g_pscs'} = num_pscs($node_id,$sw,8);
-  $hash->{'l_pscs'} = num_pscs($node_id,$sw,9);
-  $hash->{'no2x_pscs'} = num_pscs($node_id,$sw,2);
-  $hash->{'only2x_pscs'} = num_pscs($node_id,$sw,3);
-
-  
-
-  # Collect total branch lengths of taxonomically-defined subtrees:
-  my $v = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_param_set($tree->adaptor->dbc,1);
-  print Bio::EnsEMBL::Compara::ComparaUtils->hash_to_string($v)."\n";
-  my $no2 = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_param_set($tree->adaptor->dbc,2);
-  my $only2 = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_param_set($tree->adaptor->dbc,3);
-  my $p = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_param_set($tree->adaptor->dbc,7);
-  my $g = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_param_set($tree->adaptor->dbc,8);
-  my $l = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_param_set($tree->adaptor->dbc,9);
-
-  $hash->{'v_bl_total'} = subtree_total($tree,$v);
-  $hash->{'p_bl_total'} = subtree_total($tree,$p);
-  $hash->{'l_bl_total'} = subtree_total($tree,$l);
-  $hash->{'g_bl_total'} = subtree_total($tree,$g);
-  $hash->{'v_bl_max'} = subtree_max($tree,$v);
-  $hash->{'p_bl_max'} = subtree_max($tree,$p);
-  $hash->{'l_bl_max'} = subtree_max($tree,$l);
-  $hash->{'g_bl_max'} = subtree_max($tree,$g);
-  $hash->{'v_bl_avg'} = subtree_avg($tree,$v);
-  $hash->{'p_bl_avg'} = subtree_avg($tree,$p);
-  $hash->{'l_bl_avg'} = subtree_avg($tree,$l);
-  $hash->{'g_bl_avg'} = subtree_avg($tree,$g);
-  $hash->{'v_leaves'} = subtree_leaves($tree,$v);
-  $hash->{'g_leaves'} = subtree_leaves($tree,$p);
-  $hash->{'l_leaves'} = subtree_leaves($tree,$l);
-  $hash->{'g_leaves'} = subtree_leaves($tree,$g);
-  eval {
-    $hash->{'no2x_leaves'} = subtree_leaves($tree,$no2);
-    $hash->{'only2x_leaves'} = subtree_leaves($tree,$only2);
-    $hash->{'no2x_bl_total'} = subtree_total($tree,$no2);
-    $hash->{'no2x_bl_avg'} = subtree_avg($tree,$no2);
-    $hash->{'only2x_bl_total'} = subtree_total($tree,$only2);
-    $hash->{'only2x_bl_avg'} = subtree_avg($tree,$only2);
-  };
-  if (@$) {
-    $hash->{'no2x_bl_total'} = '';
-    $hash->{'no2x_bl_avg'} = '';
-    $hash->{'only2x_bl_total'} = '';
-    $hash->{'only2x_bl_avg'} = '';
-  }
   $hash->{'tree_length_total'} = sprintf "%.3f", total_distance($tree);
   $hash->{'tree_length_max'} = sprintf "%.3f", max_distance($tree);
   $hash->{'tree_length_avg'} = sprintf "%.3f", avg_distance($tree);
-  
   $hash->{'avg_gc'} = gc_content($tree);
-
+  # Alignment stats.
+  my $sa = $tree->get_SimpleAlign;
+  $hash->{'aln_length'} = sprintf "%d", $sa->length;
+  $hash->{'aln_percent_identity'} = sprintf "%.3f", $sa->percentage_identity;
+  # Avg seq length.
   my $seq_len=0;
   map {$seq_len += $_->seq_length} $tree->leaves;
   $hash->{'avg_seq_length'} = sprintf "%.3f", $seq_len / scalar($tree->leaves);
 
-  my $sa = $tree->get_SimpleAlign;
-  $hash->{'aln_length'} = sprintf "%d", $sa->length;
-  $hash->{'aln_percent_identity'} = sprintf "%.3f", $sa->percentage_identity;
+  my $map = {
+    v => 1,
+    no2x => 2,
+    only2x => 3,
+    no_seq_f => 4,
+    no_aln_f => 5,
+    no_f => 6,
+    p => 7,
+    g => 8,
+    l => 9
+    };
+
+  foreach my $cl (('v','p','g','l','no2x','only2x')) {
+    my $num = $map->{$cl};
+    $hash->{$cl.'_lrt'} = avg_sitewise("lrt_stat",$node_id,$sw,$num);
+    $hash->{$cl.'_omega'} = avg_sitewise("omega",$node_id,$sw,$num);
+    $hash->{$cl.'_pscs'} = num_pscs($node_id,$sw,$num);
+    $hash->{$cl.'_weak_pscs'} = weak_pscs($node_id,$sw,$num);
+
+    $hash->{$cl.'_num_clusters'} = psc_clusters($tree,$sa,$sw,$num,0,0);
+    $hash->{$cl.'_num_clusters_dbl'} = psc_clusters($tree,$sa,$sw,$num,0,1);
+#    $hash->{$cl.'_num_weak_clusters'} = psc_clusters($tree,$sa,$sw,$num,1);
+
+    my $param_set = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_param_set($tree->adaptor->dbc,$num);
+    $hash->{$cl.'_bl_total'} = '';
+    eval {
+      $hash->{$cl.'_bl_total'} = subtree_total($tree,$param_set);
+    };
+    $hash->{$cl.'_leaves'} = subtree_leaves($tree,$param_set);
+  }
+
+  my $prefix = "eslr";
+  $prefix = $params->{'tag_prefix'} if ($params->{'tag_prefix'});
 
   my $hash2;
-  map {$hash2->{'eslr_'.$_} = $hash->{$_}} keys %{$hash};
+  map {$hash2->{$prefix.'_'.$_} = $hash->{$_}} keys %{$hash};
 
   my @sorted_keys = sort keys %{$hash2};
   my @sorted_vals = map {"  ".$_ . "=>".$hash2->{$_}} @sorted_keys;
@@ -264,6 +373,7 @@ sub collectGeneTags {
 
   return $hash2;
 }
+
 
 sub avg_distance {
   my $tree = shift;

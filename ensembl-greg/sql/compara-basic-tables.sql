@@ -117,7 +117,7 @@ CREATE TABLE IF NOT EXISTS member (
   cdna_sequence_id            int(10) unsigned,
   gene_member_id              int(10) unsigned, # FK member.member_id
   description                 text DEFAULT NULL,
-  chr_name                    char(40),
+  chr_name                    varchar(40),
   chr_start                   int(10),
   chr_end                     int(10),
   chr_strand                  tinyint(1) NOT NULL,
@@ -222,6 +222,25 @@ CREATE TABLE IF NOT EXISTS protein_tree_tag (
   KEY (tag)
 ) COLLATE=latin1_swedish_ci;
 
+CREATE TABLE IF NOT EXISTS `parameter_set` (
+  `parameter_set_id` tinyint unsigned NOT NULL AUTO_INCREMENT,
+  `parameter_name` varchar(40) DEFAULT NULL,
+  `parameter_value` mediumtext,
+  PRIMARY KEY (parameter_set_id),
+  UNIQUE (parameter_set_id,parameter_name)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
+
+#CREATE TABLE IF NOT EXISTS parameter_set_member (
+#  parameter_set_member_id int(10) unsigned NOT NULL AUTO_INCREMENT,
+#  parameter_set_id int(10) unsigned NOT NULL,
+#  node_id int(10) unsigned NOT NULL,
+#  parameter_string MEDIUMTEXT NOT NULL,
+#  PRIMARY KEY (parameter_set_member_id),
+#  UNIQUE KEY parameter_set_node_id (parameter_set_id,node_id)
+#) ENGINE=InnoDB;
+
+
 # Table sitewise_aln
 # This table stores the values of calculating the sitewise dN/dS ratio
 #  on node_ids (subtrees) for the GeneTrees. A subtree can also be the
@@ -244,24 +263,26 @@ CREATE TABLE IF NOT EXISTS protein_tree_tag (
 #  negative4,negative3,negative2,negative1,
 #  constant,all_gaps,single_character,synonymous,default)
 
-CREATE TABLE IF NOT EXISTS `sitewise_aln` (
-  `sitewise_id` int(10) unsigned NOT NULL AUTO_INCREMENT,
-  `parameter_set_id` int(10) unsigned NOT NULL,
-  `aln_position` int(10) unsigned NOT NULL,
-  `node_id` int(10) unsigned NOT NULL,
-  `tree_node_id` int(10) unsigned NOT NULL,
+CREATE TABLE IF NOT EXISTS `sitewise_omega` (
+  `node_id` int unsigned NOT NULL,
+  `parameter_set_id` tinyint unsigned NOT NULL,
+  `aln_position` mediumint unsigned NOT NULL,
+
+  `aln_position_fraction` float(10,5) DEFAULT NULL,
+  `ncod` smallint unsigned NOT NULL,
+
   `omega` float(10,5) DEFAULT NULL,
   `omega_lower` float(10,5) DEFAULT NULL,
   `omega_upper` float(10,5) DEFAULT NULL,
   `lrt_stat` float(10,5) DEFAULT NULL,
-  `ncod` int(10) NOT NULL DEFAULT '0',
-  `max_ds_branch` float(10,5) DEFAULT NULL,
   `type` enum('negative1','negative2','negative3','negative4','positive1','positive2','positive3','positive4') DEFAULT NULL,
   `note` enum('all_gaps','constant','synonymous','single_char','random') DEFAULT NULL,
-  PRIMARY KEY (`sitewise_id`,`parameter_set_id`,`ncod`),
-  UNIQUE KEY `aln_position_node_id_param` (`aln_position`,`node_id`,`ncod`,`parameter_set_id`),
-  KEY `tree_node_id` (`tree_node_id`),
-  KEY `node_id` (`node_id`)
+
+  FOREIGN KEY (node_id) REFERENCES protein_tree_node(node_id),
+  FOREIGN KEY (parameter_set_id) REFERENCES parameter_set(parameter_set_id),
+
+  UNIQUE (node_id,parameter_set_id,aln_position),
+  KEY(ncod)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1 
   /*!50100 
 	PARTITION BY KEY (parameter_set_id) 
@@ -269,55 +290,60 @@ CREATE TABLE IF NOT EXISTS `sitewise_aln` (
   */
 ;
 
-CREATE TABLE IF NOT EXISTS gblocks_aln (
-  gblocks_aln_id int(10) unsigned NOT NULL AUTO_INCREMENT,
-  parameter_set_id int(10) unsigned NOT NULL,
-  node_id int(10) unsigned NOT NULL,
-  aln_start int(10) unsigned NOT NULL,
-  aln_end int(10) unsigned NOT NULL,
-  PRIMARY KEY (gblocks_aln_id,parameter_set_id,node_id),
-  UNIQUE KEY `start_end_node_id_param` (aln_start,aln_end,node_id,parameter_set_id),
-  KEY node_id (node_id)
-) ENGINE=InnoDB;
 
+CREATE TABLE IF NOT EXISTS `sitewise_pfam` (
+  `node_id` int unsigned NOT NULL,
+  `parameter_set_id` tinyint unsigned NOT NULL,
+  `aln_position` mediumint unsigned NOT NULL,
+  `pfam_id` char(12) NOT NULL DEFAULT '',
 
-CREATE TABLE IF NOT EXISTS `parameter_set` (
-  `parameter_set_id` int(10) unsigned NOT NULL AUTO_INCREMENT,
-  `parameter_name` varchar(40) DEFAULT NULL,
-  `parameter_value` mediumtext,
-  UNIQUE KEY `parameter_set_parameter` (`parameter_set_id`,`parameter_name`),
-  KEY `parameter_set_id` (`parameter_set_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+  `pf_position` mediumint unsigned NOT NULL,
+  `score` float(10,5) DEFAULT NULL,
 
-CREATE TABLE IF NOT EXISTS node_set (
-  node_set_id int(10) unsigned NOT NULL AUTO_INCREMENT,
-  name varchar(40) NOT NULL DEFAULT '',
-  allows_overlap int(10) unsigned NOT NULL DEFAULT 0,
-  PRIMARY KEY (node_set_id),
-  KEY node_set_name (name)
-) ENGINE=InnoDB;
+  FOREIGN KEY (node_id) REFERENCES protein_tree_node(node_id),
+  FOREIGN KEY (parameter_set_id) REFERENCES parameter_set(parameter_set_id),
 
-CREATE TABLE IF NOT EXISTS node_set_member (
-  node_set_member_id int(10) unsigned NOT NULL AUTO_INCREMENT,
-  node_set_id int(10) unsigned NOT NULL,
-  node_id int(10),
-  FOREIGN KEY (node_set_id) REFERENCES node_set(node_set_id),
-  PRIMARY KEY (node_set_member_id),
-  UNIQUE KEY node_set_node_id (node_set_id,node_id)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+  UNIQUE (node_id,parameter_set_id,aln_position,pfam_id),
+  KEY `pfam_id` (`pfam_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1 
+;
+
+CREATE table if not exists sitewise_tag (
+  node_id int unsigned NOT NULL,
+  parameter_set_id tinyint unsigned NOT NULL,
+  aln_position mediumint unsigned NOT NULL,
+  tag varchar(16) NOT NULL default '',
+  
+  value varchar(16) default NULL,
+  source varchar(32) default NULL,
+
+  FOREIGN KEY (node_id) REFERENCES protein_tree_node(node_id),
+  FOREIGN KEY (parameter_set_id) REFERENCES parameter_set(parameter_set_id),
+
+  UNIQUE (node_id,parameter_set_id,aln_position,tag),
+  KEY (source)
+) ENGINE=InnoDB
+  /*!50100
+     PARTITION BY KEY (source)
+     PARTITIONS 5
+  */
+;
 
 CREATE TABLE IF NOT EXISTS sitewise_genome (
-  sitewise_genome_id int(10) unsigned NOT NULL AUTO_INCREMENT,
-  node_id                     int(10) unsigned NOT NULL,
-  aln_position                int(10) unsigned NOT NULL,
-  member_id                   int(10) unsigned NOT NULL,
+  node_id                     int unsigned NOT NULL,
+  parameter_set_id            tinyint unsigned NOT NULL,
+  aln_position                mediumint unsigned NOT NULL,
+  member_id                   int unsigned NOT NULL,
   chr_name                    char(10) NOT NULL,
-  chr_start                   int(10) unsigned NOT NULL,
-  chr_end                     int(10) unsigned NOT NULL,
-  residue                     char(1) NOT NULL,
-  PRIMARY KEY (sitewise_genome_id,node_id,aln_position,chr_name),
-  key chr_name (chr_name),
-  UNIQUE KEY node_aln_member (node_id,aln_position,member_id,chr_name)
+  chr_start                   int unsigned NOT NULL,
+  chr_end                     int unsigned NOT NULL,
+
+  FOREIGN KEY (node_id) REFERENCES protein_tree_node(node_id),
+  FOREIGN KEY (member_id) REFERENCES member(member_id),
+  FOREIGN KEY (parameter_set_id) REFERENCES parameter_set(parameter_set_id),
+
+  UNIQUE (node_id,parameter_set_id,aln_position,member_id),
+  key (chr_name)
 ) ENGINE=InnoDB
   /*!50100 
 	PARTITION BY KEY (chr_name)
@@ -325,41 +351,27 @@ CREATE TABLE IF NOT EXISTS sitewise_genome (
   */
 ;
 
-CREATE table if not exists aln_tag (
-  node_id int(10) unsigned NOT NULL,
-  aln_position int(10) unsigned NOT NULL,
-  member_id int(10) unsigned NOT NULL,
-  stable_id varchar(20) default NULL,
-  source varchar(20) default NULL,
-  tag varchar(16) NOT NULL default '',
-  value varchar(16) default NULL,
-  feature_position int(10) unsigned default NULL,
-  KEY node_id (node_id),
-  KEY tag (tag),
-#  FOREIGN KEY (node_id, aln_position) REFERENCES sitewise_aln(node_id, aln_position),
-  UNIQUE tag_aln_id (node_id,aln_position,tag)
-) ENGINE=InnoDB
-  /*!50100
-     PARTITION BY KEY (tag)
-     PARTITIONS 5
-  */
-;
-
-
-CREATE TABLE IF NOT EXISTS parameter_set_member (
-  parameter_set_member_id int(10) unsigned NOT NULL AUTO_INCREMENT,
-  parameter_set_id int(10) unsigned NOT NULL,
-  node_id int(10) unsigned NOT NULL,
-  parameter_string MEDIUMTEXT NOT NULL,
-  PRIMARY KEY (parameter_set_member_id),
-  UNIQUE KEY parameter_set_node_id (parameter_set_id,node_id)
+CREATE TABLE IF NOT EXISTS node_set (
+  node_set_id tinyint unsigned NOT NULL AUTO_INCREMENT,
+  name varchar(40) NOT NULL DEFAULT '',
+  allows_overlap tinyint unsigned NOT NULL DEFAULT 0,
+  PRIMARY KEY (node_set_id),
+  UNIQUE (node_set_id,name)
 ) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS node_set_member (
+  node_set_id tinyint unsigned NOT NULL,
+  node_id int unsigned NOT NULL,
+
+  FOREIGN KEY (node_set_id) REFERENCES node_set(node_set_id),
+  UNIQUE (node_set_id,node_id)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
 
 CREATE TABLE IF NOT EXISTS go_terms (
-  go_term_id int(10) unsigned NOT NULL AUTO_INCREMENT,
-  `node_id` int(10) unsigned default 0,
-  `member_id` int(10) unsigned NOT NULL default 0,
+  go_term_id int unsigned NOT NULL AUTO_INCREMENT,
+  `node_id` int unsigned default 0,
+  `member_id` int unsigned NOT NULL default 0,
   `stable_id` varchar(40) default NULL,
   `go_term` varchar(20) default NULL,
   PRIMARY KEY (go_term_id),
@@ -370,8 +382,9 @@ CREATE TABLE IF NOT EXISTS go_terms (
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
 
-# Auto add schema version to database
-REPLACE INTO meta (meta_key, meta_value) VALUES ("schema_version", "50");
+
+# Add schema version to database
+REPLACE INTO meta (meta_key, meta_value) VALUES ("schema_version", "57");
 
 DROP FUNCTION IF EXISTS dubious_dup;
 CREATE FUNCTION dubious_dup (n int(20))
