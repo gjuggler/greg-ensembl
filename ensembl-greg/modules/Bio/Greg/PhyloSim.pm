@@ -68,6 +68,10 @@ sub fetch_input {
   $node_id = $params->{'node_id'} if (!defined $node_id);
   $pta->table_base($params->{'input_table_base'});
   $tree = $pta->fetch_node_by_node_id($node_id);
+  foreach my $leaf ($tree->leaves) {
+    print $leaf."\n";
+    print $leaf->stable_id."\n";
+  }
 
   # Load up tree-wise simulation params.
   my $sp_str = $tree->get_tagvalue('sim_params');
@@ -83,6 +87,7 @@ sub run {
 
   if ($params->{'simulation_program'} eq 'indelible') {
     $aln = $self->simulate_alignment_indelible($tree,$params);
+    print "ALN : $aln\n";
   } elsif ($params=>{'simulation_program'} eq 'phylosim') {
     $aln = $self->simulate_alignment_phylosim($tree,$params);
   }
@@ -100,7 +105,7 @@ sub write_output {
   print "STORING ALIGNMENT\n";
   Bio::EnsEMBL::Compara::ComparaUtils->store_SimpleAlign_into_table($out_table,$tree,$final_aa,$final_cdna);
   print "STORING OMEGAS\n";
-  $self->_store_sitewise_omegas("sitewise_aln",\@sitewise_omegas,$final_aa,$params);
+  $self->_store_sitewise_omegas("sitewise_omega",\@sitewise_omegas,$final_aa,$params);
 }
 
 sub throw_error {
@@ -190,6 +195,8 @@ sub simulate_alignment_indelible {
   my $aln_f = $output_f."_TRUE.fas";
   my $aln = Bio::EnsEMBL::Compara::AlignUtils->from_file($aln_f);
 
+  print "$output\n";
+
   # Collect the omega values.
   my $rate_f = $output_f."_RATES.txt";
   open(IN,"$rate_f");
@@ -262,7 +269,7 @@ sub _store_sitewise_omegas {
 
   my @blocks = ();
   my $node_id=$tree->node_id;
-  my $parameter_set_id = 0;
+  my $parameter_set_id = 1;
   $parameter_set_id = $params->{'parameter_set_id'} if (defined $params->{'parameter_set_id'});
 
   # Insert new omegas into the node.
