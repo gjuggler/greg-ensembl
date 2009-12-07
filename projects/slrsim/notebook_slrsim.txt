@@ -421,3 +421,10 @@ Now, filter sites for sites where nothing is NA:
 > as.data.frame(lo_venn_counts)
       p      g      l    pg    pl      gl    pgl
 1 28751 495734 649611 53849 56672 1802254 677607
+
+
+
+### 2009-12-03 ###
+
+Mysql job overview: 
+select count(*) AS '#',analysis_id AS analysis,status,retry_count AS retry,analysis_job_id AS id from analysis_job group by analysis_id,status;

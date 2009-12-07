@@ -66,14 +66,14 @@ CREATE TABLE IF NOT EXISTS ncbi_taxa_name (
 
 CREATE TABLE IF NOT EXISTS genome_db (
   genome_db_id                int(10) unsigned NOT NULL auto_increment, # unique internal id
-  taxon_id                    int(10) unsigned DEFAULT '0' NOT NULL, # KF taxon.taxon_id
+  taxon_id                    int(10) unsigned DEFAULT '0', # KF taxon.taxon_id
   name                        varchar(40) DEFAULT '' NOT NULL,
   assembly                    varchar(100) DEFAULT '' NOT NULL,
   assembly_default            tinyint(1) DEFAULT 1,
   genebuild                   varchar(100) DEFAULT '' NOT NULL,
   locator                     varchar(255),
 
-  FOREIGN KEY (taxon_id) REFERENCES ncbi_taxa_node(taxon_id),
+  FOREIGN KEY (taxon_id) REFERENCES ncbi_taxa_node(taxon_id) ON DELETE SET NULL ON UPDATE CASCADE,
 
   PRIMARY KEY (genome_db_id),
   UNIQUE name (name,assembly,genebuild)
@@ -125,8 +125,8 @@ CREATE TABLE IF NOT EXISTS member (
 
   #FOREIGN KEY (taxon_id) REFERENCES ncbi_taxa_node(taxon_id),
   #FOREIGN KEY (genome_db_id) REFERENCES genome_db(genome_db_id),
-  FOREIGN KEY (sequence_id) REFERENCES sequence(sequence_id),
-  FOREIGN KEY (gene_member_id) REFERENCES member(member_id),
+  FOREIGN KEY (sequence_id) REFERENCES sequence(sequence_id) ON DELETE SET NULL ON UPDATE CASCADE,
+  FOREIGN KEY (gene_member_id) REFERENCES member(member_id) ON DELETE SET NULL ON UPDATE CASCADE,
 
   PRIMARY KEY (member_id),
   UNIQUE source_stable_id (stable_id, source_name),
@@ -190,7 +190,7 @@ CREATE TABLE IF NOT EXISTS protein_tree_member (
   cigar_start                 int(10),
   cigar_end                   int(10),
 
-  FOREIGN KEY (node_id) REFERENCES protein_tree_node(node_id),
+  FOREIGN KEY (node_id) REFERENCES protein_tree_node(node_id) ON DELETE CASCADE ON UPDATE CASCADE,
 
   UNIQUE (node_id),
   KEY (member_id)
@@ -215,7 +215,7 @@ CREATE TABLE IF NOT EXISTS protein_tree_tag (
   tag                    varchar(50),
   value                  mediumtext,
 
-  FOREIGN KEY (node_id) REFERENCES protein_tree_node(node_id),
+  FOREIGN KEY (node_id) REFERENCES protein_tree_node(node_id) ON DELETE SET NULL ON UPDATE CASCADE,
 
   UNIQUE tag_node_id (node_id, tag),
   KEY (node_id),
@@ -226,7 +226,7 @@ CREATE TABLE IF NOT EXISTS `parameter_set` (
   `parameter_set_id` tinyint unsigned NOT NULL AUTO_INCREMENT,
   `parameter_name` varchar(40) DEFAULT NULL,
   `parameter_value` mediumtext,
-  PRIMARY KEY (parameter_set_id),
+#  PRIMARY KEY (parameter_set_id),
   UNIQUE (parameter_set_id,parameter_name)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
@@ -278,8 +278,8 @@ CREATE TABLE IF NOT EXISTS `sitewise_omega` (
   `type` enum('negative1','negative2','negative3','negative4','positive1','positive2','positive3','positive4') DEFAULT NULL,
   `note` enum('all_gaps','constant','synonymous','single_char','random') DEFAULT NULL,
 
-  FOREIGN KEY (node_id) REFERENCES protein_tree_node(node_id),
-  FOREIGN KEY (parameter_set_id) REFERENCES parameter_set(parameter_set_id),
+  FOREIGN KEY (node_id) REFERENCES protein_tree_node(node_id) ON DELETE CASCADE ON UPDATE CASCADE,
+  FOREIGN KEY (parameter_set_id) REFERENCES parameter_set(parameter_set_id) ON DELETE CASCADE ON UPDATE CASCADE,
 
   UNIQUE (node_id,parameter_set_id,aln_position),
   KEY(ncod)
@@ -300,8 +300,8 @@ CREATE TABLE IF NOT EXISTS `sitewise_pfam` (
   `pf_position` mediumint unsigned NOT NULL,
   `score` float(10,5) DEFAULT NULL,
 
-  FOREIGN KEY (node_id) REFERENCES protein_tree_node(node_id),
-  FOREIGN KEY (parameter_set_id) REFERENCES parameter_set(parameter_set_id),
+  FOREIGN KEY (node_id) REFERENCES protein_tree_node(node_id) ON DELETE CASCADE ON UPDATE CASCADE,
+  FOREIGN KEY (parameter_set_id) REFERENCES parameter_set(parameter_set_id) ON DELETE CASCADE ON UPDATE CASCADE,
 
   UNIQUE (node_id,parameter_set_id,aln_position,pfam_id),
   KEY `pfam_id` (`pfam_id`)
@@ -317,8 +317,8 @@ CREATE table if not exists sitewise_tag (
   value varchar(16) default NULL,
   source varchar(32) default NULL,
 
-  FOREIGN KEY (node_id) REFERENCES protein_tree_node(node_id),
-  FOREIGN KEY (parameter_set_id) REFERENCES parameter_set(parameter_set_id),
+  FOREIGN KEY (node_id) REFERENCES protein_tree_node(node_id) ON DELETE CASCADE ON UPDATE CASCADE,
+  FOREIGN KEY (parameter_set_id) REFERENCES parameter_set(parameter_set_id) ON DELETE CASCADE ON UPDATE CASCADE,
 
   UNIQUE (node_id,parameter_set_id,aln_position,tag),
   KEY (source)
@@ -338,9 +338,9 @@ CREATE TABLE IF NOT EXISTS sitewise_genome (
   chr_start                   int unsigned NOT NULL,
   chr_end                     int unsigned NOT NULL,
 
-  FOREIGN KEY (node_id) REFERENCES protein_tree_node(node_id),
-  FOREIGN KEY (member_id) REFERENCES member(member_id),
-  FOREIGN KEY (parameter_set_id) REFERENCES parameter_set(parameter_set_id),
+  FOREIGN KEY (node_id) REFERENCES protein_tree_node(node_id) ON DELETE CASCADE ON UPDATE CASCADE,
+  FOREIGN KEY (member_id) REFERENCES member(member_id) ON DELETE CASCADE ON UPDATE CASCADE,
+  FOREIGN KEY (parameter_set_id) REFERENCES parameter_set(parameter_set_id) ON DELETE CASCADE ON UPDATE CASCADE,
 
   UNIQUE (node_id,parameter_set_id,aln_position,member_id),
   key (chr_name)
@@ -363,7 +363,7 @@ CREATE TABLE IF NOT EXISTS node_set_member (
   node_set_id tinyint unsigned NOT NULL,
   node_id int unsigned NOT NULL,
 
-  FOREIGN KEY (node_set_id) REFERENCES node_set(node_set_id),
+  FOREIGN KEY (node_set_id) REFERENCES node_set(node_set_id) ON DELETE CASCADE ON UPDATE CASCADE,
   UNIQUE (node_set_id,node_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 

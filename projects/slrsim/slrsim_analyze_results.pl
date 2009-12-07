@@ -51,11 +51,11 @@ my $cmd = qq^SELECT distinct value FROM protein_tree_tag where tag="sim_set"^;
 my @sim_sets = Bio::Greg::EslrUtils->mysql_array($dbc,$cmd);
 @sim_sets = sort @sim_sets;
 
-my @parameter_sets = (2,5,6);
+my @parameter_sets = (2);
 #print "@sim_sets\n";
 my $i=0;
 
-my $sth1 = $dbh->prepare("SELECT omega FROM sitewise_aln WHERE node_id=? AND aln_position=?;");
+my $sth1 = $dbh->prepare("SELECT omega FROM sitewise_omega WHERE node_id=? AND aln_position=?;");
 my $sth2 = $dbh->prepare("SELECT omega,type,note FROM omega_mc WHERE node_id=? AND aln_position=? AND parameter_set_id=?;");
 
 foreach my $sim_set (@sim_sets) {
@@ -68,6 +68,7 @@ foreach my $sim_set (@sim_sets) {
     my $cmd = qq^SELECT parameter_value FROM parameter_set where parameter_set_id=$parameter_set AND parameter_name='name'^;
     my @arr = Bio::Greg::EslrUtils->mysql_array($dbc,$cmd);
     my $name = $arr[0];
+    $name = $parameter_set if (!$name);
 
     my $s_pp = 0;
     my $s_pn = 0;
@@ -102,12 +103,22 @@ foreach my $sim_set (@sim_sets) {
     my $s_pow = 0;
     $s_acc = $s_pp/($s_pp+$s_np) if ($s_pp + $s_np > 0);
     $s_pow = $s_pp/($s_pp+$s_pn) if ($s_pp + $s_pn > 0);
-#    printf "  SITES Acc:%.3f  Pow:%.3f \n", $s_acc, $s_pow;
+    my $s_spec = $s_nn / ($s_nn+$s_np);
+    my $s_sens = $s_pp / ($s_pp+$s_pn);
+    my $s_prec = $s_pp / ($s_pp+$s_np);
+    my $s_recall = $s_pp / ($s_pp+$s_pn);
+    printf "  SITES Prec:%.3f  Recall:%.3f\n",$s_prec,$s_recall;
+#    printf "tp:%d tn:%d fp:%d fn:%d\n", $s_pp,$s_nn,$s_np,$s_pn;
     my $g_acc = 0;
     my $g_pow = 0;
     $g_acc = $g_pp/($g_pp+$g_np) if ($g_pp + $g_np > 0);
     $g_pow = $g_pp/($g_pp+$g_pn) if ($g_pp + $g_pn > 0);
-#    printf "  GENES Acc:%.3f  Pow:%.3f \n", $g_acc, $g_pow;
+    my $g_spec = $g_nn / ($g_nn+$g_np);
+    my $g_sens = $g_pp / ($g_pp+$g_pn);
+    my $g_prec = $g_pp / ($g_pp+$g_np);
+    my $g_recall = $g_pp / ($g_pp+$g_pn);
+    printf "  GENES Prec:%.3f  Recall:%.3f\n",$g_prec,$g_recall;
+#    printf "tp:%d tn:%d fp:%d fn:%d\n", $g_pp,$g_nn,$g_np,$g_pn;
     my @values = ($s_acc,$s_pow,$g_acc,$g_pow);
     my @value_s = map {sprintf("%.3f",$_)} @values;
     print join("\t",(
@@ -152,6 +163,7 @@ sub get_stats_for_node {
     #Bio::EnsEMBL::Compara::AlignUtils->pretty_print($sa_aln,{length => 200});
   };
   my @seqs = $sa_true->each_seq;
+  @seqs = sort {$a->id cmp $b->id} @seqs;
 #  my @seq_f = grep {$_->id eq 'human'} @seqs;
 #  my $seq = $seq_f[0];
 #  $seq = $seqs[0] if (!$seq);
@@ -177,26 +189,23 @@ sub get_stats_for_node {
 
   return $stats if (!$sa_true || !$sa_aln);
 
-
   for (my $i=1; $i <= length($nogaps); $i++) {
     my $true_col = $sa_true->column_from_residue_number($name,$i);
     my $aln_col = $sa_aln->column_from_residue_number($name,$i);
 
-    #my $cmd = qq^SELECT omega FROM sitewise_aln WHERE node_id=$node_id AND aln_position=$true_col;^;
     $sth1->execute($node_id,$true_col);
     my @arr = $sth1->fetchrow_array();
     my $omg = $arr[0];
     $stats->{$GENE_HAS} = 1 if ($omg > 1);
 
     # Get the inferred omega for the same site in the same protein.
-    #@arr = $dbh->selectrow_array(qq^SELECT omega,type,note FROM omega_mc WHERE node_id=$node_id AND aln_position=$aln_col AND parameter_set_id=$parameter_set_id;^);
     $sth2->execute($node_id,$aln_col,$parameter_set_id);
     my @arr2 = $sth2->fetchrow_array();
     my ($omg2,$type2,$note2) = @arr2;
     if (scalar(@arr2) != 0) {
-#      $stats->{$GENE_INFER_WEAK} = 1 if ($type2 =~ m/positive[1234]/);
+      $stats->{$GENE_INFER_WEAK} = 1 if ($type2 =~ m/positive[1234]/);
       $stats->{$GENE_INFER} = 1 if ($type2 =~ m/positive[34]/);
-      
+
       # Compare to this site's true omega.
       my $method = 'confident';
       if ($method eq 'estimate') {
@@ -210,11 +219,15 @@ sub get_stats_for_node {
         $stats->{$NP}++ if ($omg <= 1 && $type2 =~ m/positive[1234]/);
         $stats->{$NN}++ if ($omg <= 1 && $type2 !~ m/positive[1234]/);
       }
+    } else {
+#      print "No results for column $aln_col!\n";
     }
   }
 
-#  $sth1->finish;
-#  $sth2->finish;
+  $sth1->finish;
+  $sth2->finish;
+
+#  printf "%s, %s %s %s\n",$tree->node_id,$stats->{$GENE_HAS},$stats->{$GENE_INFER},$stats->{$GENE_INFER_WEAK};
 
   $stats->{$G_PP} = 1 if ($stats->{$GENE_HAS} && $stats->{$GENE_INFER});
   $stats->{$G_PN} = 1 if ($stats->{$GENE_HAS} && !$stats->{$GENE_INFER});

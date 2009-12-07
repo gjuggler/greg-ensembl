@@ -18,7 +18,7 @@ GetOptions('clean' => \$clean,
 
 Bio::EnsEMBL::Registry->no_version_check(1);
 
-$url = 'mysql://greg:TMOqp3now@mysql-greg.ebi.ac.uk:4134/gj1_slrsim_1' if (!$url);
+$url = 'mysql://greg:TMOqp3now@mysql-greg.ebi.ac.uk:4134/gj1_slrsim_test' if (!$url);
 my $dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new(-url => $url);
 my $dbc = $dba->dbc;
 my $dbh = $dbc->db_handle;
@@ -28,7 +28,7 @@ my $mba = $dba->get_MemberAdaptor();
 my $LIMIT='';
 my $SKIP_ADDING_JOBS=0;
 
-create_tables();
+clean_tables();
 
 simulate_alignments();
 align_sequences();
@@ -39,22 +39,31 @@ connect_analysis("PhyloSim","Align",1);
 connect_analysis("Align","AlignScores",1);
 connect_analysis("AlignScores","Omegas",1);
 
-sub create_tables {
-  $dbc->do("CREATE TABLE IF NOT EXISTS aln_mcoffee LIKE protein_tree_member");
-  $dbc->do("CREATE TABLE IF NOT EXISTS aln_mcoffee_score LIKE protein_tree_member_score");
-  $dbc->do("CREATE TABLE IF NOT EXISTS omega_tr LIKE sitewise_aln");
-  $dbc->do("CREATE TABLE IF NOT EXISTS omega_mc LIKE sitewise_aln");
-  $dbc->do("TRUNCATE TABLE analysis_job") if ($clean);
+sub clean_tables {
+  if ($clean) {
+
+    $dba->dbc->do("create table if not exists omega_tr LIKE sitewise_omega");
+    $dba->dbc->do("create table if not exists omega_mc LIKE sitewise_omega");
+    $dba->dbc->do("create table if not exists aln_mcoffee LIKE protein_tree_member;");
+    $dba->dbc->do("create table if not exists aln_mcoffee_score LIKE protein_tree_member_score;");
+    $dba->dbc->do("create table if not exists aln_mcoffee_prank LIKE protein_tree_member_score;");
+    $dba->dbc->do("create table if not exists aln_mcoffee_trimal LIKE protein_tree_member_score;");
+    $dba->dbc->do("create table if not exists aln_mcoffee_gblocks LIKE protein_tree_member_score;");
+
+    my @truncate_tables = qw^
+sequence
+aln_mcoffee aln_mcoffee_score aln_mcoffee_prank aln_mcoffee_trimal aln_mcoffee_gblocks
+analysis_job
+sitewise_omega
+parameter_set
+node_set_member node_set
+      ^;
+    map {print "$_\n";$dba->dbc->do("truncate table $_")} @truncate_tables;
+  }
 }
 
 sub simulate_alignments {
   my $analysis_id=1;
-
-  if ($clean) {
-    # Delete all trees and reset the counter.
-#    $dba->dbc->do("truncate table member;");
-#    $dba->dbc->do("truncate table sequence;");
-  }
 
   my $logic_name = "PhyloSim";
   my $module = "Bio::Greg::PhyloSim";
@@ -65,18 +74,11 @@ sub simulate_alignments {
 
   my $cmd = "SELECT node_id FROM protein_tree_node WHERE parent_id=0 AND root_id=0 $LIMIT;";
   my @nodes = _select_node_ids($cmd);
-  $dbc->do("DELETE from analysis_job WHERE analysis_id=$analysis_id;");
   _add_nodes_to_analysis($analysis_id,$params,\@nodes);  
 }
 
 sub align_sequences {
   my $analysis_id=2;
-  my $tree_table = "aln_mcoffee";
-  if ($clean) {
-    # Delete all trees and reset the counter.
-    $dba->dbc->do("truncate table  ${tree_table};");
-    $dba->dbc->do("truncate table ${tree_table}_score;");
-  }
 
   my $logic_name = "Align";
   my $module = "Bio::EnsEMBL::Compara::RunnableDB::MCoffee";
@@ -91,21 +93,6 @@ sub align_sequences {
 sub alignment_scores {
   my $analysis_id=3;
   my $scores_table = "aln_mcoffee";
-  if ($clean) {
-    # Delete all trees and reset the counter.
-    eval {
-      $dba->dbc->do("create table if not exists aln_mcoffee_score LIKE protein_tree_member_score;");
-      $dba->dbc->do("create table if not exists aln_mcoffee_prank LIKE protein_tree_member_score;");
-      $dba->dbc->do("create table if not exists aln_mcoffee_trimal LIKE protein_tree_member_score;");
-      $dba->dbc->do("create table if not exists aln_mcoffee_gblocks LIKE protein_tree_member_score;");
-
-      $dba->dbc->do("truncate table protein_tree_member_score;");
-      $dba->dbc->do("truncate table aln_mcoffee_score;");
-      $dba->dbc->do("truncate table aln_mcoffee_prank;");
-      $dba->dbc->do("truncate table aln_mcoffee_trimal;");
-      $dba->dbc->do("truncate table aln_mcoffee_gblocks;");
-    };
-  }
 
   my $logic_name = "AlignScores";
   my $module = "Bio::EnsEMBL::Compara::RunnableDB::AlignmentScores";
@@ -122,7 +109,7 @@ sub calculate_omegas {
   my $module = "Bio::EnsEMBL::Compara::RunnableDB::Sitewise_dNdS";
   my $params = {
 #    parameter_sets => "2,3,4,5,6,7,8,9",
-    parameter_sets => "2,5,6"
+    parameter_sets => "1,2"
   };
   _create_analysis($analysis_id,$logic_name,$module,$params,30,1);
 
@@ -223,7 +210,6 @@ sub _combine_hashes {
 sub _add_parameter_set {
   my $params = shift;
   my $parameter_set_id = $params->{'parameter_set_id'};
-  
   if (exists $params->{'name'} ) {
     my $parameter_set_name = $params->{'name'};
     delete $params->{'name'};

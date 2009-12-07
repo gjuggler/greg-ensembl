@@ -501,7 +501,7 @@ sub get_r_values {
   my $temp_in = $temp_dir . "/temp_in_".$digest.".txt";
   my $temp_out = $temp_dir . "/temp_out".$digest.".txt";
 
-  print "TEMP IN: $temp_in\n";
+#  print "TEMP IN: $temp_in\n";
   open(OUT,">$temp_in");
   print OUT $rcmd."\n";
   close(OUT);

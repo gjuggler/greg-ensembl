@@ -330,11 +330,18 @@ sub get_prank_filter_matrices {
     system($cmd);
 #  }
 
-  use XML::LibXML;
+  my $module = XML::LibXML;
+  eval "use $module";
   use Bio::Greg::Node;
 
   # Grab information from Prank's XML output.
-  my $parser = XML::LibXML->new();
+  eval {
+    my $parser = XML::LibXML->new();
+  };
+  if ($@) {
+    print "$@\n";
+    return;
+  }
   $xml_tree = $parser->parse_file($xml_f);
   my $root = $xml_tree->getDocumentElement;
 

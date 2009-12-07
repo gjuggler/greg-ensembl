@@ -1,6 +1,6 @@
 library(RMySQL)
 drv <- dbDriver('MySQL')
-con <- dbConnect(drv, host='mysql-greg.ebi.ac.uk', port=4134, user='greg', password='TMOqp3now', dbname='gj1_slrsim_1')
+con <- dbConnect(drv, host='mysql-greg.ebi.ac.uk', port=4134, user='greg', password='TMOqp3now', dbname='slrsim_2xmammals')
 
 get_vector = function(con,query) {
   res = dbSendQuery(con,query)
