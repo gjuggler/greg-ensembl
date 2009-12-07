@@ -20,7 +20,7 @@ GetOptions('url=s' => \$url,
 	   );
 
 #$url = 'mysql://ensadmin:ensembl@ensdb-2-12:5106/gj1_slrsim' if (!$url);
-$url = 'mysql://greg:TMOqp3now@mysql-greg.ebi.ac.uk:4134/gj1_slrsim_1';
+$url = 'mysql://greg:TMOqp3now@mysql-greg.ebi.ac.uk:4134/gj1_slrsim_1' if (!$url);
 
 my ($mysql_args,$database,$project_base) = undef;
 $mysql_args = Bio::Greg::ComparaLite::HiveUtils->hive_url_to_mysql_args($url);
@@ -48,7 +48,7 @@ create_simsets();
 sub create_simsets {
   my $base_p = {
     simulation_program => 'indelible',
-    simulation_replicates => 50,
+    simulation_replicates => 1,
     tree_file => 'artificial.nh',
     tree_length => 1,
     seq_length => 400,
@@ -69,8 +69,8 @@ sub create_simsets {
   my $base_length = 1;
   my $s_params;
 
-  foreach my $j (0.1,1,5,10,20) {
-#  foreach my $j (10) {
+#  foreach my $j (0.1,1,5,10,20) {
+  foreach my $j (10) {
     $s_params = {
       w2 => 1.691,
       tree_file => 'artificial.nh',
@@ -80,8 +80,8 @@ sub create_simsets {
   }
 
   $i=1;
-  foreach my $j (0.1,1,5,10,20) {
-#  foreach my $j (10) {
+#  foreach my $j (0.1,1,5,10,20) {
+  foreach my $j (10) {
     $s_params = {
       w2 => 4.739,
       tree_file => 'artificial.nh',
@@ -92,8 +92,8 @@ sub create_simsets {
 
   $i=1;
   $base_length = 1;
-  foreach my $j (1,5,10,20,50,100,200) {
-#  foreach my $j (10) {
+#  foreach my $j (1,5,10,20,50,100,200) {
+  foreach my $j (10) {
     $s_params = {
       w2 => 1.691,
       tree_file => '2xmammals.nh',
@@ -104,7 +104,8 @@ sub create_simsets {
 
   $i=1;
   $base_length = 1;
-  foreach my $j (1,5,10,20,50,100,200) {
+#  foreach my $j (1,5,10,20,50,100,200) {
+  foreach my $j (10) {
     $s_params = {
       w2 => 4.739,
       tree_file => '2xmammals.nh',
@@ -119,14 +120,14 @@ sub create_simsets {
 my $tree_table = "protein_tree";
 if ($clean) {
   # Delete all trees and reset the counter.
+  $dba->dbc->do("truncate table sitewise_omega;");
+  $dba->dbc->do("truncate table omega_tr;");
+  $dba->dbc->do("truncate table omega_mc;");
   $dba->dbc->do("truncate table  ${tree_table}_member;");
   $dba->dbc->do("truncate table ${tree_table}_node;");
   $dba->dbc->do("truncate table  ${tree_table}_tag;");
   $dba->dbc->do("truncate table member;");
   $dba->dbc->do("truncate table sequence;");
-  $dba->dbc->do("truncate table sitewise_aln;");
-  $dba->dbc->do("truncate table omega_tr;");
-  $dba->dbc->do("truncate table omega_mc;");
 }
 
 # The list of simulation replicates to use. These will be stored as tags in the XYZ_tag table,

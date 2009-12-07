@@ -338,3 +338,15 @@ CREATE TABLE IF NOT EXISTS monitor (
   per_worker            float default NULL,
   analysis              varchar(255) default NULL
 ) ENGINE=InnoDB;
+
+
+DROP PROCEDURE IF EXISTS hive_overview;
+DELIMITER //
+CREATE PROCEDURE hive_overview()
+READS SQL DATA
+BEGIN
+  select analysis_id AS analysis,status,count(*) AS 'cnt',retry_count AS 'retry',analysis_job_id AS ex_id
+  from analysis_job
+  group by analysis_id,status;
+END //
+DELIMITER ;

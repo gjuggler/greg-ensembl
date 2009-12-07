@@ -102,14 +102,14 @@ sub run {
   my $self = shift;
   
   my $node_id = $params->{'node_id'};
-  my $sth = $dba->dbc->prepare("select * from sitewise_aln where node_id=$node_id limit 1;");
-  $sth->execute();
-  if ($sth->fetchrow_arrayref) {
-    #print "HAS SOMETHING ALREADY!\n";
-    #$dont_write_output = 1;
-    $sth->finish;
-    #return undef;
-  }
+  #my $sth = $dba->dbc->prepare("select * from sitewise_aln where node_id=$node_id limit 1;");
+  #$sth->execute();
+  #if ($sth->fetchrow_arrayref) {
+  #  #print "HAS SOMETHING ALREADY!\n";
+  #  #$dont_write_output = 1;
+  #  $sth->finish;
+  #  #return undef;
+  #}
 
   my @param_sets = split(",",$params->{'parameter_sets'});
   delete $params->{'parameter_sets'};
@@ -598,18 +598,16 @@ sub store_sitewise {
                            (parameter_set_id,
                             aln_position,
                             node_id,
-                            tree_node_id,
                             omega,
                             omega_lower,
                             omega_upper,
                             lrt_stat,
                             ncod,
                             type,
-                            note) VALUES (?,?,?,?,?,?,?,?,?,?,?)");
+                            note) VALUES (?,?,?,?,?,?,?,?,?,?)");
     $sth->execute($parameter_set_id,
 		  $site,
 		  $node_id,
-		  $tree_node_id,
 		  $omega,
 		  $lower,
 		  $upper,

@@ -18,7 +18,7 @@ GetOptions('url=s' => \$url,
 	   'config=s' => \$config,
 	   'clean' => \$clean
 	   );
-$url = 'mysql://greg:TMOqp3now@mysql-greg.ebi.ac.uk:4134/gj1_slrsim_2xmammals';
+$url = 'mysql://greg:TMOqp3now@mysql-greg.ebi.ac.uk:4134/slrsim_2xmammals';
 
 my ($mysql_args,$database,$project_base) = undef;
 $mysql_args = Bio::Greg::ComparaLite::HiveUtils->hive_url_to_mysql_args($url);
@@ -44,55 +44,53 @@ sub create_simsets {
     simulation_replicates => 100,
     tree_length => 1,
     seq_length => 400,
-    ins_rate => 0.05,
-    del_rate => 0.05,
-    omega_distribution => 'M3',
-    p0 => 0.386,
-    p1 => 0.535,
-    p2 => 0.079,
-    w0 => 0.018,
-    w1 => 0.304,
-    w2 => 1.691,
+    ins_rate => 0.1,
+    del_rate => 0.1,
+    omega_distribution => 'lognormal',
+    meanlog => 1,
+    sdlog => 1
   };
   
   my $i=1;
   my $base_length = 1;
-  my $s_params;
+  my $s_params = {};
+
+#  $s_params = {
+#    w2 => 3,
+#    tree_file => '2x_nox.nh',
+#    tree_length => 0.787
+#  };
+#  $params->{sprintf 'simset_nox'} = replace($base_p,$s_params);
+
+#  $s_params = {
+#    w2 => 3,
+#    tree_file => '2x_v.nh',
+#    tree_length => 2.15
+#  };
+#  $params->{sprintf 'simset_v'} = replace($base_p,$s_params);
 
   $s_params = {
-    w2 => 3,
-    tree_file => '2x_nox.nh',
-    tree_length => 0.787
-  };
-  $params->{sprintf 'simset_nox'} = replace($base_p,$s_params);
-
-  $s_params = {
-    w2 => 3,
-    tree_file => '2x_v.nh',
-    tree_length => 2.15
-  };
-  $params->{sprintf 'simset_v'} = replace($base_p,$s_params);
-
-  $s_params = {
-    w2 => 3,
+    meanlog => -1.39,  # ~ mean dN/dS of 0.249, from Kosiol et al. 2008
+    sdlog => 0.482,
     tree_file => '2x_p.nh',
     tree_length => 0.351
   };
   $params->{sprintf 'simset_p'} = replace($base_p,$s_params);
 
   $s_params = {
-    w2 => 3,
+    meanlog => -2.11,  # ~ mean dN/dS of 0.121, from Kosiol et al. 2008
+    sdlog => 0.73,
     tree_file => '2x_g.nh',
     tree_length => 0.735
   };
   $params->{sprintf 'simset_g'} = replace($base_p,$s_params);
 
-  $s_params = {
-    w2 => 3,
-    tree_file => '2x_l.nh',
-    tree_length => 0.776
-  };
-  $params->{sprintf 'simset_l'} = replace($base_p,$s_params);
+#  $s_params = {
+#    w2 => 3,
+#    tree_file => '2x_l.nh',
+#    tree_length => 0.776
+#  };
+#  $params->{sprintf 'simset_l'} = replace($base_p,$s_params);
 
   
 }
@@ -100,16 +98,16 @@ sub create_simsets {
 my $tree_table = "protein_tree";
 if ($clean) {
   # Delete all trees and reset the counter.
+  $dba->dbc->do("truncate table sitewise_omega;");
+  $dba->dbc->do("create table if not exists omega_tr like sitewise_omega;");
+  $dba->dbc->do("truncate table omega_tr;");
+  $dba->dbc->do("create table if not exists omega_mc like sitewise_omega;");
+  $dba->dbc->do("truncate table omega_mc;");
   $dba->dbc->do("truncate table ${tree_table}_member;");
   $dba->dbc->do("truncate table ${tree_table}_node;");
   $dba->dbc->do("truncate table  ${tree_table}_tag;");
   $dba->dbc->do("truncate table member;");
   $dba->dbc->do("truncate table sequence;");
-  $dba->dbc->do("truncate table sitewise_aln;");
-  $dba->dbc->do("create table if not exists omega_tr like sitewise_aln;");
-  $dba->dbc->do("truncate table omega_tr;");
-  $dba->dbc->do("create table if not exists omega_mc like sitewise_aln;");
-  $dba->dbc->do("truncate table omega_mc;");
 }
 
 # The list of simulation replicates to use. These will be stored as tags in the XYZ_tag table,

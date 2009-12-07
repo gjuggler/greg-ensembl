@@ -13,7 +13,8 @@ use File::Basename;
 
 Bio::EnsEMBL::Registry->no_version_check(1);
 
-my $url = Bio::Greg::EslrUtils->defaultMysqlURL();
+#my $url = Bio::Greg::EslrUtils->defaultMysqlURL();
+my $url = "mysql://ensadmin:ensembl@compara2:3306/gj1_eslr";
 GetOptions('url=s' => \$url);
 
 my $dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new(-url => $url);
@@ -31,15 +32,15 @@ my $LIMIT = "";
 #my $LIMIT = "limit 10";
 one_time_use();
 
-#node_sets();
-#align();
-#sequence_quality();
-#omegas();
-#mapping();
-#protein_features();
-#duplications();
+node_sets();
+parameter_sets();
+align();
+sequence_quality();
+omegas();
+mapping();
+protein_features();
 
-output_trees();
+#output_trees();
 
 #connect_analysis("NodeSets","SequenceQuality",1);
 #connect_analysis("Align","SequenceQuality",1);
@@ -87,72 +88,7 @@ sub node_sets {
   _add_nodes_to_analysis($analysis_id,$params,\@nodes);  
 }
 
-sub align {
-  my $analysis_id = 102;
-  my $logic_name = "Align";
-  my $module = "Bio::EnsEMBL::Compara::RunnableDB::MCoffee";
-  my $params = {
-    method => 'cmcoffee'
-  };
-
-  _create_analysis($analysis_id,$logic_name,$module,$params,400,1);
-
-  #my $cmd = "SELECT node_id FROM node_set_member where node_set_id=$ns";
-  #my @nodes = _select_node_ids($cmd);
-  #$dbc->do("DELETE from analysis_job WHERE analysis_id=$analysis_id;");
-  #_add_nodes_to_analysis($analysis_id,$params,\@nodes);  
-}
-
-sub sequence_quality {
-  my $analysis_id=103;
-  my $logic_name = "SequenceQuality";
-  my $module = "Bio::Greg::SequenceQualityLoader";
-  my $params = {};
-  
-  _create_analysis($analysis_id,$logic_name,$module,$params,100,1);
-
-  #my $cmd = "SELECT node_id FROM node_set_member where node_set_id=$ns";
-  #my @nodes = _select_node_ids($cmd);
-  #$dbc->do("DELETE from analysis_job WHERE analysis_id=$analysis_id;");
-  #_add_nodes_to_analysis($analysis_id,$params,\@nodes);
-}
-
-sub omegas {
-  my $analysis_id = 105;
-  my $logic_name = "Omegas";
-  my $base_params = {
-    parameter_sets => "1,2,3,4,5,6,7,8,9",
-    sequence_quality_filtering => 1,
-    alignment_quality_filtering => 1,
-    remove_species => join(",",(9600, # orang not allowed.
-				9593, # gorilla not allowed.
-				9258, # platypus -- not allowed, or just ignored?
-				# Outside of theria:
-  			        13616,# opossum
-				9031, # chicken
-				59729,# zebra finch
-				28377,# anole lizard
-				8364, # xenopus
-				69293,# stickleback
-				8090, # medaka
-				99883,# tetraodon
-				31033,# fugu
-				7955, # zebrafish
-				7719, # c. intestinalis
-				51511,# c. savignyi
-				7165, # anopheles
-				7159, # aedes
-				7227, # fruitfly
-				6239, # c. elegans
-				4932  # s. cerevisiae
-				))
-    };
-  _create_analysis($analysis_id,$logic_name,$module,$base_params,400,1);
-
-#  my @ids = ();
-#  my $cmd = "SELECT node_id FROM node_set_member where node_set_id=$ns";
-#  @ids = _select_node_ids($cmd);
-
+sub parameter_sets {
   my $params;
   
   $params = {
@@ -161,7 +97,31 @@ sub omegas {
   };
   $params = _combine_hashes($base_params,$params);
   _add_parameter_set($params);
-#  _add_nodes_to_analysis($analysis_id,$params,\@ids);
+
+  $params = {
+    parameter_set_id => 7,
+    parameter_set_name => "Primates",
+    keep_species => "9606,9598,9544,9478,30611,30608"
+  };
+  $params = _combine_hashes($base_params,$params);
+  _add_parameter_set($params);
+
+  $params = {
+    parameter_set_id => 8,
+    parameter_set_name => "Glires",
+    keep_species => "10090,10116,43179,10020,10141,9986,9978"
+  };
+  $params = _combine_hashes($base_params,$params);
+  _add_parameter_set($params);
+
+
+  $params = {
+    parameter_set_id => 9,
+    parameter_set_name => "Laurasiatheria",
+    keep_species => "9365,42254,9796,59463,132908,30538,9739,9913,9615,9685"
+  };
+  $params = _combine_hashes($base_params,$params);
+  _add_parameter_set($params);
 
   $params = {
     parameter_set_id => 2,
@@ -180,7 +140,6 @@ sub omegas {
   };
   $params = _combine_hashes($base_params,$params);
   _add_parameter_set($params);
-#  _add_nodes_to_analysis($analysis_id,$params,\@ids);
 
   $params = {
     parameter_set_id => 3,
@@ -209,27 +168,6 @@ sub omegas {
   };
   $params = _combine_hashes($base_params,$params);
   _add_parameter_set($params);
-#  _add_nodes_to_analysis($analysis_id,$params,\@ids);
-
-  $params = {
-    parameter_set_id => 4,
-    parameter_set_name => "No Seq Filtering",
-    sequence_quality_filtering => 0,
-    alignment_quality_filtering => 1
-  };
-  $params = _combine_hashes($base_params,$params);
-  _add_parameter_set($params);
-#  _add_nodes_to_analysis($analysis_id,$params,\@ids);
-
-  $params = {
-    parameter_set_id => 5,
-    parameter_set_name => "No Aln Filtering",
-    sequence_quality_filtering => 1,
-    alignment_quality_filtering => 0
-  };
-  $params = _combine_hashes($base_params,$params);
-  _add_parameter_set($params);
-#  _add_nodes_to_analysis($analysis_id,$params,\@ids);
 
   $params = {
     parameter_set_id => 6,
@@ -239,35 +177,62 @@ sub omegas {
   };
   $params = _combine_hashes($base_params,$params);
   _add_parameter_set($params);
-#  _add_nodes_to_analysis($analysis_id,$params,\@ids);
 
-  $params = {
-    parameter_set_id => 7,
-    parameter_set_name => "Primates",
-    keep_species => "9606,9598,9544,9478,30611,30608"
+
+}
+
+sub align {
+  my $analysis_id = 102;
+  my $logic_name = "Align";
+  my $module = "Bio::EnsEMBL::Compara::RunnableDB::MCoffee";
+  my $params = {
+    method => 'cmcoffee'
   };
-  $params = _combine_hashes($base_params,$params);
-  _add_parameter_set($params);
-#  _add_nodes_to_analysis($analysis_id,$params,\@ids);
 
-  $params = {
-    parameter_set_id => 8,
-    parameter_set_name => "Glires",
-    keep_species => "10090,10116,43179,10020,10141,9986,9978"
-  };
-  $params = _combine_hashes($base_params,$params);
-  _add_parameter_set($params);
-#  _add_nodes_to_analysis($analysis_id,$params,\@ids);
+  _create_analysis($analysis_id,$logic_name,$module,$params,400,1);
+}
 
+sub sequence_quality {
+  my $analysis_id=103;
+  my $logic_name = "SequenceQuality";
+  my $module = "Bio::Greg::SequenceQualityLoader";
+  my $params = {};
+  
+  _create_analysis($analysis_id,$logic_name,$module,$params,100,1);
+}
 
-  $params = {
-    parameter_set_id => 9,
-    parameter_set_name => "Laurasiatheria",
-    keep_species => "9365,42254,9796,59463,132908,30538,9739,9913,9615,9685"
-  };
-  $params = _combine_hashes($base_params,$params);
-  _add_parameter_set($params);
-#  _add_nodes_to_analysis($analysis_id,$params,\@ids);
+sub omegas {
+  my $analysis_id = 105;
+  my $logic_name = "Omegas";
+  my $base_params = {
+    parameter_sets => "1,2,3,4,5,6,7,8,9",
+    sequence_quality_filtering => 1,
+    alignment_quality_filtering => 1,
+    remove_species => join(",",(9600, # orang not allowed.
+				9593, # gorilla not allowed.
+				9258, # platypus -- not allowed, or just ignored?
+				# Outside of Eutheria:
+  			        13616,# opossum
+				9031, # chicken
+                                9103, # turkey!!
+				59729,# zebra finch
+				28377,# anole lizard
+				8364, # xenopus
+				69293,# stickleback
+				8090, # medaka
+				99883,# tetraodon
+				31033,# fugu
+				7955, # zebrafish
+				7719, # c. intestinalis
+				51511,# c. savignyi
+				7165, # anopheles
+				7159, # aedes
+				7227, # fruitfly
+				6239, # c. elegans
+				4932  # s. cerevisiae
+				))
+    };
+  _create_analysis($analysis_id,$logic_name,$module,$base_params,400,1);
 
 }
 
@@ -279,14 +244,6 @@ sub mapping {
     sitewise_table => 'sitewise_aln'
   };
   _create_analysis($analysis_id,$logic_name,$module,$params,20,1);
-
-  #my @ids = ();
-  #my $cmd = "SELECT node_id FROM node_set_member where node_set_id=$ns";
-  #@ids = _select_node_ids($cmd);
-
-  #$params = {
-  #};
-  #_add_nodes_to_analysis($analysis_id,$params,\@ids);
 }
 
 sub protein_features {
@@ -297,66 +254,6 @@ sub protein_features {
     action => 'go'
     };
   _create_analysis($analysis_id,$logic_name,$module,$params,50);
-
-  my @ids = _select_node_ids("SELECT node_id FROM node_set_member WHERE node_set_id=$ns");
-  $params = {};
-  _add_nodes_to_analysis($analysis_id,$params,\@ids);
-}
-
-
-sub duplications {
-  my $analysis_id = 106;
-  my $logic_name = "Duplications";
-  my $params = {
-  };
-
-  _create_analysis($analysis_id,$logic_name,$module,$params,400,1);
-
-  my @ids = ();
-# Load the small non-overlapping dups. Run on duplication parent AND children nodes.
-  my $cmd = qq^
-SELECT ptn.node_id FROM node_set_member nsm, protein_tree_node ptn
-  WHERE nsm.node_set_id=2
-  AND (ptn.node_id = nsm.node_id OR ptn.parent_id=nsm.node_id)
-;
-^;
-  @ids = _select_node_ids($cmd);
-  print scalar(@ids) . "\n";
-  sleep(2);
-  $params = {
-    sequence_quality_threshold => 4,
-    remove_2x_offlimits => 1,
-    subtree => 'Chordata',
-    parameter_set_id => 101,
-    parameter_set_name => "2009-05-21 Small Duplications"
-  };
-  _add_parameter_set($params);
-  _add_nodes_to_analysis($analysis_id,$params,\@ids);
-
-# Load the large non-overlapping dups.
-  $cmd = qq^
-SELECT ptn.node_id FROM node_set_member nsm, protein_tree_node ptn
-  WHERE nsm.node_set_id=3
-  AND (ptn.node_id = nsm.node_id OR ptn.parent_id=nsm.node_id)
-;
-^;
-  @ids = _select_node_ids($cmd);
-  print scalar(@ids) . "\n";
-  sleep(2);
-  $params = {
-    sequence_quality_threshold => 4,
-    remove_2x_offlimits => 1,
-    subtree => 'Chordata',
-    parameter_set_id => 102,
-    parameter_set_name => "2009-05-26 Large Duplications"
-  };
-  _add_parameter_set($params);
-  _add_nodes_to_analysis($analysis_id,$params,\@ids);
-
-}
-
-sub output_trees {
-  my $analysis_id=
 }
 
 

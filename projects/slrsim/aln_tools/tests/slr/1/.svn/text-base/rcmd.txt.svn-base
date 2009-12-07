@@ -1,0 +1,116 @@
+
+    library(ape);
+    source("aln_tools/aln.tools.R");
+    source("aln_tools/phylo.tools.R");
+    source("aln_tools/plot.phylo.greg.R");
+    source("aln_tools/slr.tools.R");
+
+    files = c("/tmp/eslrplots/aln.fasta");
+    trees = c("/tmp/eslrplots/tree.nh");
+    slrs = c("/tmp/eslrplots/sitewise_aln.1.txt");
+    alns = list();
+    for (i in 1:length(files)) {
+	aln = read.aln(files[i]);
+	aln$tree = read.tree(trees[i]);
+	aln$omegas = slrs[i];
+	alns = append(alns,list(aln));
+    }
+
+    aln1 = alns[[1]];
+
+    height = max(1,aln1$num_seqs / 10);
+    width = min(48,aln1$length/10);
+
+    mult = 72 / width;
+    width = width*mult;
+    height = height*mult;
+
+    rowHeight = height/aln1$num_seqs
+    cex = rowHeight*5/10;
+    
+    print(paste("Width:",width," Height:",height));
+
+    pdf(file="~/public_html/test.pdf",width=width,height=height);
+
+    omd = par("omd");
+    pad = 0.01;
+    alignment_height = 0.3;
+
+    fit_to_track = function(
+	track_index,  # 1-based index.
+	num_tracks,   # total # of tracks.
+	height=1,     # height multiplier.
+	padding=0.1,
+        xlim=c(0,0.9)
+	) {
+	# Find the appropriate lower and upper bounds for this track.
+	track_height = 1/num_tracks;
+	# My actual height is decreased by the padding.
+	my_height = track_height - 2*(track_height*padding);
+
+	# Decrease height again by the height multiplier.
+	if (height < 1) my_height = track_height * height;
+
+	# Center the track in the "div" if the given height is less than the div height.
+	track_center_padding = (track_height - my_height) / 2;
+
+	lower_bound = (track_index-1)*(track_height);
+	upper_bound = track_index*(track_height);
+	low_y = lower_bound + track_center_padding;
+	hi_y = upper_bound - track_center_padding;
+
+	par(fig=c(xlim[1],xlim[2],low_y,hi_y),new=TRUE);
+    }
+
+    max_num_seqs = aln1$num_seqs;
+
+    tree = aln1$tree;
+    sprintf("Tree length: %f",sum(tree$edge.length))
+
+    tree_width = 100;
+
+    par(new=FALSE);
+    plot.new();
+
+    # Scale bars.
+    par(mar=c(0,0,0,0));
+    fit_to_track(2,3,padding=0);
+    plot.window(xlim=c(0+0.5-tree_width,aln1$length+0.5),ylim=c(-1,1));
+    barH = .15
+    bigBars = seq(from=1,to=aln1$length,by=50);
+    littleBars = seq(from=1,to=aln1$length,by=10);
+    segments(x0=littleBars,y0=-barH/2,x1=littleBars,y1=barH/2,lwd=4,col='gray');
+    segments(x0=bigBars,y0=-barH,x1=bigBars,y1=barH,lwd=4,col='black');
+
+    
+    bigText = as.character(bigBars);
+    text(x=bigBars,y=0,labels=bigText,cex=2,pos=4);
+
+    # Alignment.
+    fit_to_track(1,2,padding=0.05);
+    plot.aln(aln1,square=FALSE,overlay=FALSE,draw.chars=TRUE,char.col='white',tree.width=tree_width);
+
+    # Omegas.
+    par(mar=c(0,0,0,0));
+    fit_to_track(2,2,padding=0.05);
+    plot.new();
+    plot.window(xlim=c(0+0.5-tree_width,aln1$length+0.5),ylim=c(0,7));
+    plot.slr.blocks(aln1$omegas,overlay=TRUE,block.xlim=c(.2,0.8),color.lrt=TRUE);
+
+    fit_to_track(1,1,padding=0.05,xlim=c(0,1));
+    plot.new();
+#    plot.window(xlim=c(0,1),ylim=c(0,1));
+
+    leg.txt = c("2X missing sequence","Alignment quality filtered","Sequence quality filtered");
+    leg.col = c("black","#808080","#C0C0C0");
+    legend('bottomright',legend=leg.txt,fill=leg.col,cex=5,bg='white');
+    leg.txt = c("Positively selected site","Neutral site","Negatively selected site");
+    leg.col = c("red","gray","blue");
+    legend('topright',legend=leg.txt,fill=leg.col,cex=5,bg='white');
+
+    par(family="mono");
+    text(x=0.9,y=0.3,adj=c(0,0),labels="http://www.ensembl.org/Homo_sapiens/Gene/Compara_Tree?g=ENSG00000165168",cex=2);
+    text(x=0.91,y=0.5,adj=c(0,0.5),labels=sprintf("%-20s: %s\n%-20s: %s\n%-20s: %s\n%-20s: %s\n","Ensembl Gene", "ENSG00000165168","Ensembl Peptide", "ENSP00000367851","Gene Name", "CYBB","Species", "Homo_sapiens"),cex=3);
+
+    dev.off();
+

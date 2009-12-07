@@ -38,8 +38,6 @@ sub fetch_input {
 
     # For lognormal sampling.
     #omega_distribution => 'lognormal',
-    shape1 => 0.257,
-    shape2 => 1.431,
     meanlog => -4.079,
     sdlog => 1.23,
 
@@ -138,7 +136,7 @@ sub simulate_alignment_indelible {
   my $ins_rate = $params->{'ins_rate'};
   my $del_rate = $params->{'del_rate'};
 
-  print "LENGTH:$length\n";
+  print "Simulating sequence with $length codons...\n";
   
   my $tmp_dir = $self->worker_temp_directory;
   #use File::Path qw(mkpath rmtree);
@@ -149,17 +147,28 @@ sub simulate_alignment_indelible {
 
   my @bins = $self->get_equally_spaced_bins($params);
   my @probs = $self->get_equally_spaced_probs($params);
+  my @final_bins;
+  my @final_probs;
+  foreach my $prob (@probs) {
+    if ($prob > 0) {
+      push @final_bins, shift @bins;
+      push @final_probs, $prob;
+    }
+  }
+  @probs = @final_probs;
+  @bins = @final_bins;
+  print "probs: @probs\n";
   pop @probs;
   
   my $kappa = $params->{'kappa'};
-  my $submodel_str = $kappa." ". join(" ",@probs) . "\n" . join(" ",@bins);
+  my $submodel_str = $kappa."\n\t". join(" ",@probs) . "\n\t" . join(" ",@bins);
 
   my $class_to_omega;
   for (my $i=0; $i < scalar(@bins); $i++) {
     $class_to_omega->{$i} = $bins[$i];
   }
 
-  my $node_id = $tree->node_id;
+  my $node_id = $tree->node_id . time();
 
   my $ctrl_str = qq^
 [TYPE] CODON 1
@@ -170,8 +179,8 @@ sub simulate_alignment_indelible {
 
 [MODEL] model1
   [submodel] $submodel_str
-  [insertmodel] POW 2 50
-  [deletemodel] POW 2 50
+  [insertmodel] NB 0.35 1
+  [deletemodel] NB 0.35 1
   [insertrate] $ins_rate
   [deleterate] $del_rate
 
@@ -193,6 +202,15 @@ sub simulate_alignment_indelible {
   my $output = `indelible $ctrl_f\r\n`;
 
   my $aln_f = $output_f."_TRUE.fas";
+  if (!-e $aln_f) {
+    open(LOG,'LOG.txt');
+    while (<LOG>) {
+      chomp;
+      print "$_\n";
+    }
+    close(LOG);
+  }
+
   my $aln = Bio::EnsEMBL::Compara::AlignUtils->from_file($aln_f);
 
   print "$output\n";
@@ -374,12 +392,12 @@ sub get_equally_spaced_probs {
   my $r_cmd = qq^
    $r_pre
    
-   x = seq(from=$lo,to=$hi,by=($hi-$lo)/($k-1));
-   y = p$f;
-   z = diff(y);
+   x = seq(from=$lo,to=$hi,by=($hi-$lo)/($k-1))
+   y = p$f
+   z = diff(y)
    x = x[length(x)]
-   z = c(z,1-p$f);
-   print(sprintf("%.4f",z));
+   z = c(z,1-p$f)
+   print(sprintf("%.6f",z))
 ^;
   my @nums = $self->get_r_numbers($r_cmd);
   return @nums;
@@ -391,7 +409,7 @@ sub get_r_numbers {
 
   my @lines = Bio::Greg::EslrUtils->get_r_values($r_cmd,$self->worker_temp_directory);
   my $line = join(" ",@lines);
-  print $line."\n";
+#  print $line."\n";
   $line =~ s/\[.+?\]//g;
   $line =~ s/"//g;
   my @toks = split(" ",$line);
