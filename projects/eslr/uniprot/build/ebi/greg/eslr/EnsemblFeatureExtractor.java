@@ -62,7 +62,6 @@ public class EnsemblFeatureExtractor {
 		}
 		System.err.println(ensAcc);
 		memberId = EnsemblUtils.getMemberId(ensAcc);
-		// nodeId = EnsemblUtils.getTreeNodeId(memberId);
 
 		/*
 		 * Find the best corresponding UniProt entry for this Ensembl peptide.
@@ -79,9 +78,6 @@ public class EnsemblFeatureExtractor {
 		} catch (BreakException e) {
 			// Do nothing special.
 		}
-
-		// if (hasUni && Main.DEBUG)
-		// System.out.println("  " + uniAcc);
 
 		/*
 		 * Find and align the best PDB match.
@@ -109,85 +105,36 @@ public class EnsemblFeatureExtractor {
 					hasPdb = true;
 				}
 			} catch (BreakException be) {
-				// Do nothing special.
+				// Don't do anything special.
 			} catch (Exception e) {
 				throw e;
 			}
 		}
 
-		if (hasPdb && Main.DEBUG)
-			System.err.println("  " + pdbAcc);
-
 		StringBuffer ensBuff = new StringBuffer();
 		StringBuffer uniBuff = new StringBuffer();
 		StringBuffer pdbBuff = new StringBuffer();
-
-		ArrayList<Integer> memberToAlignment = EnsemblUtils
-				.memberToAlignmentMap(memberId, ensSeq); // The map we'll use to
-		// Grab domain annotations from Ensembl.
-		if (hasEns) {
-			// This call does most of the work in terms of getting the domain
-			// annotations.
-			// ArrayList<RegionTag> domains = FeatureExtractionUtils
-			// .getDomainsFromEnsembl(ensAcc, genomeDb);
-			//
-			// ArrayList<PosTagValue> tagvals = new ArrayList<PosTagValue>();
-			// for (int i = 0; i < ensSeq.length(); i++) {
-			// int ensPos = i;
-			// int alignmentPosition = memberToAlignment.get(i);
-			// for (RegionTag region : domains) {
-			// if (region.seq_end >= ensPos && region.seq_start <= ensPos) // If
-			// // the
-			// // region
-			// // overlaps
-			// // this
-			// // ensembl
-			// // position
-			// {
-			// // Figure out what our "feature position" should be...
-			// int current_feature_position = (ensPos - region.seq_start)
-			// + region.hit_start;
-			//
-			// PosTagValue ptv = new PosTagValue(nodeId,
-			// alignmentPosition, memberId, ensAcc, "ENS",
-			// region.tag, region.value,
-			// current_feature_position);
-			// tagvals.add(ptv);
-			// }
-			// }
-			// }
-			// if (tagvals.size() > 0) {
-			// if (Main.DEBUG)
-			// System.out.println("  --> Found " + tagvals.size()
-			// + " Ensembl tags.");
-			// }
-		}
 
 		/*
 		 * Grab the features for the given UniProt entry, if one exists.
 		 */
 		if (hasUni) {
-			// This call does most of the work in terms of getting the domain
-			// annotations.
 			List<RegionTag> regions = FeatureExtractionUtils
 					.getFeaturesFromUniProt(uniEntry);
 
 			ArrayList<PosTagValue> tagvals = new ArrayList<PosTagValue>();
 			for (int i = 0; i < ensSeq.length(); i++) {
 				int ensPos = i;
-				int alignmentPos = memberToAlignment.get(ensPos);
 				int uniPos = uniEnsMap.bToA[ensPos];
 				if (uniPos >= 0) {
 					uniBuff.append(uniSeq.charAt(uniPos));
 					for (RegionTag region : regions) {
 						if (region.seq_end >= uniPos
-								&& region.seq_start <= uniPos) // If the region
-						// overlaps this
-						// UNIPROT
-						// position
-						{
-							PosTagValue ptv = new PosTagValue(ensPos,
-									uniAcc, "UNI", region.tag, region.value);
+								&& region.seq_start <= uniPos) {
+							int featurePos = uniPos - region.seq_start;
+							PosTagValue ptv = new PosTagValue(ensPos, uniAcc,
+									"UNIPROT", region.tag, region.value, uniSeq
+											.charAt(uniPos - 1), featurePos);
 							tagvals.add(ptv);
 						}
 					}
@@ -213,7 +160,6 @@ public class EnsemblFeatureExtractor {
 			ArrayList<PosTagValue> tagvals = new ArrayList<PosTagValue>();
 			for (int i = 0; i < ensSeq.length(); i++) {
 				int ensPos = i;
-				int alignmentPos = memberToAlignment.get(ensPos);
 				int uniPos = uniEnsMap.bToA[ensPos];
 				if (uniPos >= 0) {
 					int pdbPos = pdbUniMap.bToA[uniPos];
@@ -223,14 +169,14 @@ public class EnsemblFeatureExtractor {
 						for (RegionTag region : regions) {
 							if (region.seq_end >= pdbPos
 									&& region.seq_start <= pdbPos) // If the
-							// region
-							// overlaps
-							// this
-							// ensembl
-							// position
+																	// regio
+																	// noverlaps
 							{
-								PosTagValue ptv = new PosTagValue(ensPos+1,
-										pdbAcc, "PDB", region.tag, region.value);
+								int featurePos = pdbPos - region.seq_start;
+								PosTagValue ptv = new PosTagValue(ensPos + 1,
+										pdbAcc, "PDB", region.tag,
+										region.value, pdbSeq.charAt(pdbPos),
+										featurePos);
 								tagvals.add(ptv);
 							}
 						}
@@ -243,13 +189,13 @@ public class EnsemblFeatureExtractor {
 				}
 			}
 			if (tagvals.size() > 0) {
-				
+
 				if (Main.DEBUG) {
 					System.err.println("  --> Found " + tagvals.size()
 							+ " PDB tags.");
 					System.out.println(PosTagValue.toTSV(tagvals));
 				}
-				
+
 			}
 		}
 

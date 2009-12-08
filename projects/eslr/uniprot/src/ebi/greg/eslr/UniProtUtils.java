@@ -1,18 +1,15 @@
 package ebi.greg.eslr;
 
 import java.io.File;
-import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 
 import uk.ac.ebi.kraken.interfaces.common.Sequence;
 import uk.ac.ebi.kraken.interfaces.uniprot.UniProtEntry;
-import uk.ac.ebi.kraken.interfaces.uniprot.features.DomainFeature;
 import uk.ac.ebi.kraken.interfaces.uniprot.features.Feature;
 import uk.ac.ebi.kraken.interfaces.uniprot.features.FeatureDescription;
 import uk.ac.ebi.kraken.interfaces.uniprot.features.FeatureType;
-import uk.ac.ebi.kraken.interfaces.uniprot.features.MetalFeature;
-import uk.ac.ebi.kraken.interfaces.uniprot.features.ModResFeature;
+import uk.ac.ebi.kraken.interfaces.uniprot.features.HelixFeature;
 import uk.ac.ebi.kraken.uuw.services.remoting.EntryIterator;
 import uk.ac.ebi.kraken.uuw.services.remoting.EntryRetrievalService;
 import uk.ac.ebi.kraken.uuw.services.remoting.Query;
@@ -78,7 +75,8 @@ public class UniProtUtils {
 				FeatureDescription fd = (FeatureDescription) m.invoke(f, new Object[]{});
 				value = fd.getValue().toLowerCase();
 			} catch (Exception e) {
-				e.printStackTrace();
+//				e.printStackTrace();
+				value = "NA";
 			}
 			
 			break;
