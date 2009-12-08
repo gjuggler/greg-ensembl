@@ -17,6 +17,19 @@ sub defaultMysqlURL {
   }
 }
 
+sub urlFromConnection {
+  my $class = shift;
+  my $dbc = shift;
+
+  my $url = sprintf("mysql://%s:%s@%s:%s/%s",
+                    $dbc->username,
+                    $dbc->password,
+                    $dbc->host,
+                    $dbc->port,
+                    $dbc->datbase);
+  return $url;
+}
+
 sub loadConfiguration {
   my $class = shift;
   my $params = shift;

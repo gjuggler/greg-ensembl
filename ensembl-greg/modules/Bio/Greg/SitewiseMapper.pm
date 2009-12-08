@@ -39,10 +39,11 @@ sub fetch_input {
 
   ### DEFAULT PARAMETERS ###
   $params->{'sitewise_table'} = 'sitewise_aln';
-  $params->{'do_mapping'} = 1;
-  $params->{'collect_tags'} = 1;
-  $params->{'collect_pfam'} = 1;
-  $params->{'collect_go'} = 1;
+  $params->{'do_mapping'} = 0;
+  $params->{'collect_tags'} = 0;
+  $params->{'collect_pfam'} = 0;
+  $params->{'collect_uniprot'} = 1;
+  $params->{'collect_go'} = 0;
   $params->{'create_plot'} = 0;
   $params->{'parameter_set_id'} = 1;
   #########################
@@ -94,6 +95,12 @@ sub run {
     print "  -> Finished collecting Pfam!";
   }
 
+  if ($params->{'collect_uniprot'}) {
+    print "Collecting UniProt annotations...\n";
+    $self->collect_uniprot();
+    print "  -> Finished collecting UniProt!";
+  }
+
   if ($params->{'collect_go'}) {
     print "Collecting GO annotations...\n";
     $self->collect_go();
@@ -109,8 +116,10 @@ sub run {
 sub do_mapping {
   my $self = shift;
 
-  print "Mapping sitewise $node_id  to genome...\n";
-    
+  my $node_id = $tree->node_id;
+  my $table = $params->{'sitewise_table'};
+  print "Mapping sitewise $node_id to genome...\n";
+  
   my $omega_cmd = qq^
       SELECT distinct(aln_position) aln_position FROM $table WHERE
       ncod >= 4
@@ -161,7 +170,7 @@ sub collect_go_terms
 {
     my $self = shift;
 
-    my $tree = $pta->fetch_node_by_node_id($node_id);
+    my $tree = $pta->fetch_node_by_node_id($tree->node_id);
     my @leaves = @{$tree->get_all_leaves};
 
     # GJ 2009-02-09 : priority for grabbing GO annotations. Human > mouse > zebrafish > drosophila > c.elegans
@@ -186,7 +195,7 @@ sub collect_go_terms
 	my @keepers = grep {$_->dbname eq "GO"} @{$db_entries};
 	foreach my $db_e (@keepers)
 	{
-	    $self->insert_go_term($node_id,$leaf,$db_e);
+	    $self->insert_go_term($tree->node_id,$leaf,$db_e);
 	    sleep(0.1);
 	}
     }
@@ -206,6 +215,30 @@ sub insert_go_term
     $sth->execute($node_id,$leaf->dbID,$leaf->stable_id,$db_e->display_id);
 }
 
+
+sub collect_uniprot {
+  my $self = shift;
+
+  my $sa = $tree->get_SimpleAlign;
+  my $pos_id_hash;
+
+  my $orig_cwd = cwd();
+  chdir "~/lib/greg-ensembl/projects/eslr/uniprot";
+
+  my $url = Bio::Greg::EslrUtils->urlFromConnection($tree->adaptor->dbc);
+  foreach my $leaf ($tree->leaves) {
+    my $stable_id = $leaf->stable_id;
+
+    open(JAVA, "java -jar uniProtExtraction.jar $stable_id $url |") or $self->throw("Cannot run UniProt Collector!");
+    my @output = <JAVA>;
+    print "@output\n";
+    my $rc = close(JAVA);
+    
+  }
+
+  chdir $orig_cwd;
+
+}
 
 sub collect_pfam {
   my $self = shift;
