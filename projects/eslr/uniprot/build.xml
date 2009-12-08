@@ -1,0 +1,74 @@
+<project name="UniProtExtraction" default="dist" basedir=".">
+	<description>
+        FreeLoader build script.
+    </description>
+
+	<target name="settings">
+		<property name="jarName" value="uniProtExtraction.jar"/>
+		<property name="lib" value="lib"/>
+	</target>
+	
+	<target name="clean" description="Cleans the build dir, forces recompile.">
+		<delete dir="build" includeemptydirs="false"/>
+	</target>
+	
+	<target name="init" depends="settings" description="Clean the build folder and create necessary folders.">
+		<mkdir dir="build"/>
+		<mkdir dir="lib"/>
+		<mkdir dir="src"/>
+	</target>
+	
+	<target name="build" depends="init" description="Compile the source.">
+		<javac srcdir="src" destdir="build" source="1.5" target="1.5" fork="true">
+			<classpath>
+				<fileset dir="${lib}"/>
+			</classpath>
+		</javac>
+		<!-- Copy the source/data files over, too -->
+		<copy todir="build" overwrite="true">
+			<fileset dir="src">
+				<include name="**/*" />
+			</fileset>
+		</copy>
+		<!-- <unzip dest="build">
+		    <patternset excludes="META-INF/**/*"/>
+		    <fileset dir="${lib}"/>
+		</unzip> -->
+	</target>
+	
+	<target name="dist" depends="build" description="Create the JAR file">
+		<fileset id="appletlibs" dir="${lib}" casesensitive="no">
+					<include name="**/*.jar" />
+		</fileset>		
+		<pathconvert pathsep=" " property="temp.spaceJarList" refid="appletlibs">
+			<chainedmapper>
+				<flattenmapper />
+				<globmapper from="*" to="${lib}/*"/>
+			</chainedmapper>
+		</pathconvert>
+		
+		<path id="build.classpath">
+			<fileset id="jars" dir="${lib}">
+				<include name="*.jar"/>
+			</fileset>
+		</path>
+		<pathconvert property="myClassPath" pathsep=" ">
+			<path refid="build.classpath"/>
+		</pathconvert>
+		
+		<jar jarfile="${jarName}" basedir="build">
+			<manifest>
+				<attribute name="Main-Class" value="ebi.greg.eslr.Main"/>
+				<attribute name="Class-Path" value="${temp.spaceJarList}"/>
+			</manifest>
+		</jar>
+		
+		<zip destfile="uniProtExtraction.zip" basedir="." includes="*.*,src/**/*.*,lib/**/*.*,src/**/*" excludes="uniProtExtraction.zip"/>
+	</target>
+
+	<target name="run" depends="dist" description="Run the script.">
+		<java maxmemory="512m" fork="true" jar="${jarName}">
+		</java>
+	</target>
+	
+</project>
