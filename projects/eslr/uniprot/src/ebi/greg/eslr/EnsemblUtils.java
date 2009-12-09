@@ -10,8 +10,6 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import uk.ac.ebi.kraken.interfaces.uniprot.UniProtEntry;
-
 /**
  * A collection of utility methods for Ensembl stuff.
  * 
@@ -111,13 +109,15 @@ public class EnsemblUtils {
 		double bestScore = -10000;
 		for (String uniProt : uAccs) {
 			// System.out.println("  "+uniProt);
-			UniProtEntry entry = UniProtUtils.getEntry(uniProt);
-			if (entry == null) {
-				System.err.println("Null entry:" + uniProt);
-				continue;
-			} else {
-				String uniPep = entry.getSequence().getValue();
-				String thisAcc = entry.getPrimaryUniProtAccession().getValue();
+//			UniProtEntry entry = UniProtUtils.getEntry(uniProt);
+//			if (entry == null) {
+//				System.err.println("Null entry:" + uniProt);
+//				continue;
+//			} else {
+//				String uniPep = entry.getSequence().getValue();
+				String uniPep = UniProtUtils.getSequence(uniProt);
+				if (uniPep == null)
+					continue;
 				AlignmentResult aln = JAlignerUtils.alignProteins(uniProt,
 						eAcc, uniPep, ensemblPep);
 				if (aln.score >= bestScore) {
@@ -126,7 +126,6 @@ public class EnsemblUtils {
 				}
 				aln = null;
 				uniPep = null;
-			}
 		}
 		if (bestAln == null)
 			throw new BreakException("No good UniProt alignment found!");

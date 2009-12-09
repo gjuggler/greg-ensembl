@@ -1,10 +1,8 @@
 package ebi.greg.eslr;
 
-import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 
-import uk.ac.ebi.kraken.interfaces.uniprot.UniProtEntry;
 import ebi.greg.eslr.FeatureExtractionUtils.RegionTag;
 import ebi.greg.eslr.JAlignerUtils.AlignmentWithMaps;
 
@@ -30,7 +28,7 @@ public class EnsemblFeatureExtractor {
 	boolean hasUni;
 	boolean hasPdb;
 
-	UniProtEntry uniEntry;
+//	UniProtEntry uniEntry;
 
 	public EnsemblFeatureExtractor(String ensemblAcc) {
 		this.ensAcc = ensemblAcc;
@@ -70,15 +68,16 @@ public class EnsemblFeatureExtractor {
 			uniEns = EnsemblUtils.getBestUniProtMatch(ensAcc, ensSeq, genomeDb);
 			uniAcc = uniEns.getName1();
 			uniEnsMap = new AlignmentWithMaps(uniEns);
-			uniEntry = UniProtUtils.getEntry(uniAcc);
-			uniSeq = uniEntry.getSequence().getValue();
+//			uniEntry = UniProtUtils.getEntry(uniAcc);
+			uniSeq = UniProtUtils.getSequence(uniAcc);
+//			uniSeq = uniEntry.getSequence().getValue();
 			if (uniSeq != null) {
 				hasUni = true;
 			}
 		} catch (BreakException e) {
 			// Do nothing special.
 		}
-
+		
 		/*
 		 * Find and align the best PDB match.
 		 */
@@ -93,7 +92,7 @@ public class EnsemblFeatureExtractor {
 		String pdbDssp = null;
 		if (hasUni) {
 			try {
-				pdbUni = PdbUtils.getBestPdbMatch(ensAcc, uniEntry,
+				pdbUni = PdbUtils.getBestPdbMatch(ensAcc, uniAcc,
 						ensemblPdbXrefs);
 				pdbAcc = pdbUni.getName1();
 				pdbUniMap = new AlignmentWithMaps(pdbUni);
@@ -120,7 +119,7 @@ public class EnsemblFeatureExtractor {
 		 */
 		if (hasUni) {
 			List<RegionTag> regions = FeatureExtractionUtils
-					.getFeaturesFromUniProt(uniEntry);
+					.getFeaturesFromUniProt(uniAcc);
 
 			ArrayList<PosTagValue> tagvals = new ArrayList<PosTagValue>();
 			for (int i = 0; i < ensSeq.length(); i++) {
@@ -150,7 +149,7 @@ public class EnsemblFeatureExtractor {
 				}
 			}
 		}
-
+		
 		if (hasPdb) {
 			// This call does most of the work in terms of getting the domain
 			// annotations.

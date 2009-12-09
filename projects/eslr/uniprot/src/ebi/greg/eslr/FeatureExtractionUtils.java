@@ -29,19 +29,6 @@ public class FeatureExtractionUtils
 			tags.add(new RegionTag("PFAM", rs.getString("pf.hit_name"), rs.getInt("pf.seq_start"), rs
 					.getInt("pf.seq_end"), rs.getInt("pf.hit_start"), rs.getInt("pf.hit_end")));
 		}
-
-		// We won't use Smart for now.
-//		query =
-//				"select t.stable_id,pf.hit_id,pf.seq_start,pf.seq_end from translation_stable_id t, protein_feature pf "
-//						+ " where t.stable_id=" + EnsemblUtils.qw(stable_id)
-//						+ " and pf.translation_id=t.translation_id" + " and pf.hit_id LIKE " + EnsemblUtils.qw("SM%")
-//						+ " ;";
-//		rs = s.executeQuery(query);
-//		while (rs.next())
-//		{
-//			tags.add(new RegionTag("DM_SMART", rs.getString("pf.hit_id"), rs.getInt("pf.seq_start"), rs
-//					.getInt("pf.seq_end")));
-//		}
 		return tags;
 	}
 
@@ -71,21 +58,18 @@ public class FeatureExtractionUtils
 			this.seq_start = start;
 			this.seq_end = end;	
 		}
+		
+		public String toString() {
+			return JavaUtils.join("\t", new String[]{tag,value,seq_start+"",seq_end+""});
+		}
 	}
 
-	public static List<RegionTag> getFeaturesFromUniProt(UniProtEntry uniEntry)
+	public static List<RegionTag> getFeaturesFromUniProt(String uniAcc)
 	{
-		ArrayList<Feature> features = new ArrayList<Feature>();
-		for (FeatureType ft : UniProtUtils.featureTypes)
-		{
-			features.addAll(uniEntry.getFeatures(ft));
-		}
 		ArrayList<RegionTag> regionTags = new ArrayList<RegionTag>();
-		for (Feature f : features)
+		for (String ft : UniProtUtils.featureTypes)
 		{
-			String[] tagval = UniProtUtils.featureToTagValue(f);
-			RegionTag rt = new RegionTag(tagval[0],tagval[1],f.getFeatureLocation().getStart(),f.getFeatureLocation().getEnd());
-			regionTags.add(rt);
+			regionTags.addAll(UniProtUtils.getUniProtFeatures(ft, uniAcc));
 		}
 		return regionTags;
 	}

@@ -6,44 +6,23 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 
-import uk.ac.ebi.kraken.interfaces.uniprot.DatabaseCrossReference;
-import uk.ac.ebi.kraken.interfaces.uniprot.DatabaseType;
-import uk.ac.ebi.kraken.interfaces.uniprot.UniProtEntry;
-import uk.ac.ebi.kraken.interfaces.uniprot.dbx.hssp.Hssp;
-import uk.ac.ebi.kraken.interfaces.uniprot.dbx.pdb.Pdb;
-
 public class PdbUtils
 {
 
-	public static AlignmentResult getBestPdbMatch(String ensAcc, UniProtEntry entry, ArrayList<String> ensemblPdbs)
+	public static AlignmentResult getBestPdbMatch(String ensAcc, String uniAcc, ArrayList<String> ensemblPdbs)
 			throws Exception
 	{
 		HashSet<String> pdbAccs = new HashSet<String>();
 		pdbAccs.addAll(ensemblPdbs);
 
-		List<DatabaseCrossReference> xrefs = entry.getDatabaseCrossReferences(DatabaseType.HSSP);
-		xrefs.addAll(entry.getDatabaseCrossReferences(DatabaseType.PDB));
-		for (DatabaseCrossReference ref : xrefs)
+		List<String> xrefs = UniProtUtils.getPDBCrossReferences(uniAcc);
+		for (String ref : xrefs)
 		{
-			if (ref instanceof Hssp)
-			{
-				if (Main.DEBUG)
-					System.err.println("  hssp");
-				Hssp hssp = (Hssp) ref;
-				String pdbAcc = hssp.getHsspDescription().getValue();
-				pdbAccs.add(pdbAcc.toLowerCase());
-			} else if (ref instanceof Pdb)
-			{
-				if (Main.DEBUG)
-					System.err.println("  pdb");
-				Pdb pdb = (Pdb) ref;
-				String pdbAcc = pdb.getPdbAccessionNumber().getValue().toLowerCase();
-				pdbAccs.add(pdbAcc.toLowerCase());
-			}
+			pdbAccs.add(ref.toLowerCase());
 		}
 
 		if (pdbAccs.size() == 0)
-			throw new BreakException("No PDB entries found for UniProt entry " + entry);
+			throw new BreakException("No PDB entries found for UniProt entry " + uniAcc);
 
 		AlignmentResult bestAln = null;
 		String bestPdbSeq = null;
@@ -53,13 +32,12 @@ public class PdbUtils
 			System.err.println("  "+pdbAcc);
 			try
 			{
-				String uniAcc = UniProtUtils.getAccession(entry);
 				String pdbSeq = getPdbFinderLine(pdbAcc, "seq");
 				/*
 				 * Align the pdb sequence with the uniprot sequence.
 				 * If this PDB's score is the best seen so far, store the relevant info.
 				 */
-				String uniSeq = entry.getSequence().getValue();
+				String uniSeq = UniProtUtils.getSequence(uniAcc);
 				final AlignmentResult aln = JAlignerUtils.alignProteins(pdbAcc, uniAcc, pdbSeq, uniSeq);
 				if (aln.getScore() >= bestScore)
 				{
