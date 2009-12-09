@@ -5,6 +5,7 @@ use Getopt::Long;
 use IO::File;
 use File::Basename;
 use File::Path;
+use Cwd;
 
 use Time::HiRes qw(sleep);
 
@@ -91,7 +92,7 @@ sub run {
 
   if ($params->{'collect_pfam'}) {
     print "Collecting Pfam annotations...\n";
-    $self->collect_pfam();
+    #$self->collect_pfam();
     print "  -> Finished collecting Pfam!";
   }
 
@@ -223,17 +224,19 @@ sub collect_uniprot {
   my $pos_id_hash;
 
   my $orig_cwd = cwd();
-  chdir "~/lib/greg-ensembl/projects/eslr/uniprot";
+  #chdir "~/lib/greg-ensembl/projects/eslr/uniprot";
+  chdir($ENV{HOME}."/src/greg-ensembl/projects/eslr/uniprot");
 
   my $url = Bio::Greg::EslrUtils->urlFromConnection($tree->adaptor->dbc);
+  print "$url\n";
+  print 'CWD:'.cwd()."\n";
   foreach my $leaf ($tree->leaves) {
     my $stable_id = $leaf->stable_id;
-
-    open(JAVA, "java -jar uniProtExtraction.jar $stable_id $url |") or $self->throw("Cannot run UniProt Collector!");
+    open(JAVA, "java -Xmx512m -jar uniProtExtraction.jar $stable_id $url |") or $self->throw("Cannot run UniProt Collector!");
     my @output = <JAVA>;
     print "@output\n";
     my $rc = close(JAVA);
-    
+    #exit(0);
   }
 
   chdir $orig_cwd;
@@ -256,6 +259,8 @@ sub collect_pfam {
       my $pf_hi = $f->hend;
       my $lo = $f->start;
       my $hi = $f->end;
+      $hi = $tx->length if ($hi > $tx->length);
+      print "lo:$lo hi:$hi hstart:$pf_lo hend:$pf_hi\n";
       foreach my $i (0 .. ($hi-$lo)) {
 	my $pos = $lo + $i;
 	my $aln_col = $sa->column_from_residue_number($name,$pos);

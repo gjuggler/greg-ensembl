@@ -1,13 +1,20 @@
 #!/usr/bin/env perl
 use warnings;
 use strict;
+use Getopt::Long;
+use Bio::EnsEMBL::Registry;
+use Bio::EnsEMBL::Compara::DBSQL::DBAdaptor;
+use Bio::EnsEMBL::Compara::ComparaUtils;
+use Bio::Greg::EslrUtils;
+use File::Path;
+use File::Basename;
 
 # A quick script to download and create a pdbfinder sqlite table.
 # wget ftp://ftp.cmbi.ru.nl/pub/molbio/data/pdbfinder2/PDBFIND2.TXT.gz; gunzip PDBFIND2.TXT.gz;
 # gunzip PDBFIND2.TXT.gz
 # Make sure the PDBFIND2.TXT is in the current directory.
 
-my $url = "mysql://ensadmin:ensembl@compara2:3306/gj1_57";
+my $url = 'mysql://ensadmin:ensembl@compara2:3306/gj1_57';
 GetOptions('url=s' => \$url);
 my $dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new(-url => $url);
 my $dbc = $dba->dbc;
@@ -15,11 +22,15 @@ my $dbc = $dba->dbc;
 create_mysql();
 #create_sqlite();
 
+$dbc->do("BEGIN WORK;");
+my $insert = $dbc->prepare("REPLACE INTO pdbfinder (id) VALUES (?);");
+my $update = $dbc->prepare("UPDATE pdbfinder set seq=? WHERE id=?;");
+my $update2 = $dbc->prepare("UPDATE pdbfinder set access=? WHERE id=?;");
+my $update3 = $dbc->prepare("UPDATE pdbfinder set dssp=? WHERE id=?;");
+
 open(IN,"PDBFIND2.TXT");
-my $pid = open(WRITEME, "| mysql -u") or die ("Couldn't fork $!\n");
 my $i=0;
 my $id;
-print WRITEME "BEGIN TRANSACTION;\n";
 while (<IN>) {
   $i++;
 #  last if ($i > 500);
@@ -28,21 +39,26 @@ while (<IN>) {
   if ($_ =~ 'ID\s*:\s*(\S+)') {
     $id = $1;
     print "$id\n";
-    print WRITEME "INSERT OR IGNORE INTO pdbfinder (id) VALUES ('$id');\n";
+    $insert->execute($id);
   }
   if ($_ =~ 'Sequence\s*:\s*(\S+)') {
-    print WRITEME "UPDATE pdbfinder SET seq='$1' WHERE id='$id';\n";
+    $update->execute($1,$id);
   }
   if ($_ =~ 'Access\s*:\s*(\S+)') { 
-    print WRITEME "UPDATE pdbfinder SET access='$1' WHERE id='$id';\n";
+    $update2->execute($1,$id);
   }
   if ($_ =~ 'DSSP\s*:\s*(\S+)') {
-    print WRITEME "UPDATE pdbfinder SET dssp='$1' WHERE id='$id';\n";
+    $update3->execute($1,$id);
   }
 }
 close(IN);
-print WRITEME "END TRANSACTION;\n";
-close(WRITEME);
+
+$insert->finish;
+$update->finish;
+$update2->finish;
+$update3->finish;
+
+$dbc->do("END WORK;");
 
 sub create_mysql {
   $dbc->do(qq^
@@ -51,7 +67,7 @@ CREATE TABLE IF NOT EXISTS pdbfinder (
   seq     MEDIUMTEXT,
   access  MEDIUMTEXT,
   dssp    MEDIUMTEXT, 
-  PRIMARY KEY (id),
+  PRIMARY KEY (id)
 );
 ^);
 }

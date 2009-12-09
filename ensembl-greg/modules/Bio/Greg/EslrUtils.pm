@@ -26,7 +26,7 @@ sub urlFromConnection {
                     $dbc->password,
                     $dbc->host,
                     $dbc->port,
-                    $dbc->datbase);
+                    $dbc->dbname);
   return $url;
 }
 
