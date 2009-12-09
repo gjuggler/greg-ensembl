@@ -232,7 +232,7 @@ sub collect_uniprot {
   print 'CWD:'.cwd()."\n";
   foreach my $leaf ($tree->leaves) {
     my $stable_id = $leaf->stable_id;
-    open(JAVA, "java -Xmx512m -jar uniProtExtraction.jar $stable_id $url |") or $self->throw("Cannot run UniProt Collector!");
+    open(JAVA, "java -Xmx512m  -cp uniprotjapi.properties -jar uniProtExtraction.jar $stable_id $url |") or $self->throw("Cannot run UniProt Collector!");
     my @output = <JAVA>;
     print "@output\n";
     my $rc = close(JAVA);

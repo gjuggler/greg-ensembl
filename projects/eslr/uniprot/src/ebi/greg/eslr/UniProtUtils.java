@@ -97,8 +97,13 @@ public class UniProtUtils {
 		return entries;
 	}
 
-	public static UniProtEntry getEntry(String acc) {
+    public static Map<String,Object> getEntryHash(String acc) {
+	
 
+    }
+
+	public static UniProtEntry getEntry(String acc) {
+	    
 		UniProtEntry entry = ers.getUniProtEntry(acc);
 		if (entry == null) {
 			Query query = UniProtQueryBuilder.buildQuery(acc);
