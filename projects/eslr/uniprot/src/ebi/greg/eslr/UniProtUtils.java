@@ -8,7 +8,6 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import uk.ac.ebi.kraken.interfaces.uniprot.features.FeatureType;
 import ebi.greg.eslr.FeatureExtractionUtils.RegionTag;
 
 /**
@@ -111,8 +110,18 @@ public class UniProtUtils {
 			for (int i=3; i < toks.length; i++) {
 				desc += " "+toks[i];
 			}
-			RegionTag rt = new RegionTag(type,desc,Integer.parseInt(start),Integer.parseInt(end));
-			tags.add(rt);
+			
+			if (type.equals("DISULFID")) {
+				// Special case: Disulfide bonds are encoded with the start and end as the donor and receiver
+				// of the bond.
+				RegionTag rt1 = new RegionTag(type,desc+" donor",Integer.parseInt(start),Integer.parseInt(start));
+				RegionTag rt2 = new RegionTag(type,desc+" receiver",Integer.parseInt(end),Integer.parseInt(end));
+				tags.add(rt1);
+				tags.add(rt2);
+			} else {
+				RegionTag rt = new RegionTag(type,desc,Integer.parseInt(start),Integer.parseInt(end));
+				tags.add(rt);
+			}
 		}
 		return tags;
 	}
