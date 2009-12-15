@@ -80,6 +80,11 @@ public class FeatureExtractionUtils
 		
 		for (int i=0; i < pdbDssp.length(); i++)
 		{
+			String s = pdbDssp.charAt(i)+"";
+			s = s.replaceAll("[EB]", "B"); // See http://www.uniprot.org/manual/strand
+			s = s.replaceAll("[T]", "T"); // See http://www.uniprot.org/manual/turn
+			s = s.replaceAll("[HGI]", "H"); // See http://www.uniprot.org/manual/helix
+			s = s.replaceAll("[C]", "L"); // See http://www.uniprot.org/manual/helix
 			RegionTag rt = new RegionTag("DSSP",""+pdbDssp.charAt(i),i,i);
 			regions.add(rt);
 		}

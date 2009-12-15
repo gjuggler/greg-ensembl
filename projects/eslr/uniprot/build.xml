@@ -19,7 +19,7 @@
 	</target>
 	
 	<target name="build" depends="init" description="Compile the source.">
-		<javac srcdir="src" destdir="build" source="1.5" target="1.5" fork="true" executable="/software/jdk/bin/javac" memoryMaximumSize="512m">
+		<javac srcdir="src" destdir="build" source="1.5" target="1.5" fork="true" memoryMaximumSize="512m">
 			<classpath>
 				<fileset dir="${lib}"/>
 			</classpath>
