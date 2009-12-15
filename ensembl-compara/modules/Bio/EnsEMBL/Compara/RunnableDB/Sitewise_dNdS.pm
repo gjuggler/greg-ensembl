@@ -72,6 +72,7 @@ sub fetch_input {
     action                 => 'slr',                # Which action to perform.
                                                     # 'slr' - SLR sitewise omegas.
                                                     # 'paml' - PAML sitewise omegas.
+                                                    # 'wobble' - SLR_wobble test.
                                                     # 'slr_reoptimise' - reoptimise with SLR
                                                     # 'paml_reoptimise' - reoptimise with PAML
                                                     # 'paml_lrt' - likelihood ratio test with PAML
@@ -163,8 +164,167 @@ sub run_with_params {
     $self->run_sitewise_dNdS($tree,$input_cdna,$params);
   } elsif ($params->{'action'} =~ m/paml/i) {
     $self->run_paml($tree,$input_cdna,$params);
+  } elsif ($params->{'action'} =~ m/wobble/i) {
+    $params->{'wobble'} = 0;
+    my $results_nowobble = $self->run_wobble($tree,$input_cdna,$params);
+    $params->{'wobble'} = 1;
+    my $results_wobble = $self->run_wobble($tree,$input_cdna,$params);
+    
+    $tree->store_tag("lnl_wobble",$results_wobble->{'lnL'});
+    $tree->store_tag("lnl_nowobble",$results_nowobble->{'lnL'});
   }
+
 }
+
+sub run_wobble {
+  my $self = shift;
+  my $tree = shift;
+  my $cdna_aln = shift;
+  my $params = shift;
+
+  if (scalar $tree->leaves > 30) {
+    $self->fail_job("Tree too large for wobbly analysis!!");
+  }
+
+  my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
+  
+  # LOAD VARIABLES FROM PARAMS.
+  my $slrexe = $params->{'slr_executable'};
+  my $gencode = $params->{'gencode'};
+  my $aminof = $params->{'aminof'};
+  my $codonf = $params->{'codonf'};
+  my $freqtype = $params->{'freqtype'};
+  my $wobble = $params->{'wobble'};
+
+  $slrexe = "/nfs/users/nfs_g/gj1/bin/Slr_wobble";
+
+  # Reorder the alignment according to the tree
+  $cdna_aln = Bio::EnsEMBL::Compara::AlignUtils->sort_by_tree($cdna_aln,$treeI);
+  
+  my $num_leaves = scalar(@{$tree->get_all_leaves});
+  my $tmpdir = $self->worker_temp_directory;
+
+  # CLEAN UP OLD RESULTS FILES.
+  unlink "$tmpdir/slr.res";
+  unlink "$tmpdir/tree";
+  unlink "$tmpdir/aln";
+  unlink "$tmpdir/slr.ctl";
+
+  my $tree_newick = Bio::EnsEMBL::Compara::TreeUtils->to_newick($tree);
+
+  my $tree_map;
+  my $i=0;
+  my @leaves = $tree->leaves;
+  foreach my $seq ($cdna_aln->each_seq) {
+    $i++;
+    my $id = $seq->id;
+
+    map {$tree_newick =~ s/$id/$i/g if ($_->stable_id eq $id)} @leaves;
+  }
+
+  Bio::EnsEMBL::Compara::AlignUtils->pretty_print($cdna_aln,{length => 50});
+
+  # OUTPUT THE ALIGNMENT.
+  my $alnout = Bio::AlignIO->new
+    ('-format'      => 'phylip',
+     '-file'          => ">$tmpdir/aln",
+     '-interleaved' => 0,
+     '-idlinebreak' => 1,
+     '-idlength'    => $cdna_aln->maxdisplayname_length + 1);
+  $alnout->write_aln($cdna_aln);
+  $alnout->close();
+  
+  # OUTPUT THE TREE.
+  open(OUT,">$tmpdir/tree");
+  print OUT sprintf("%d 1\n",$num_leaves);
+  print OUT $tree_newick . "\n";
+  close(OUT);
+  
+  # OUTPUT THE CTL FILE.
+  my $slr_ctl = "$tmpdir/slr.ctl";
+  open(SLR, ">$slr_ctl") or $self->throw("cannot open $slr_ctl for writing");
+  print SLR "seqfile\: aln\n";
+  print SLR "treefile\: tree\n";
+  my $outfile = "slr.res";
+  print SLR "outfile\: $outfile\n";
+  print SLR "gencode\: $gencode\n";
+  print SLR "aminof\: $aminof\n";
+  print SLR "codonf\: $codonf\n";
+  print SLR "freqtype\: $freqtype\n";
+  print SLR "seed\: 1\n";
+  print SLR "wobble\: $wobble\n";
+  close(SLR);
+
+# omega<-c(4.25610800e-03,9.13459526e-02,4.01739002e-01,1.19324070e+00,3.61980510e+00)
+# Pomega<-c(2.00000000e-01,2.00000000e-01,2.00000000e-01,2.00000000e-01,2.00000000e-01)
+# wobble<-c(1.53800820e-02)
+# Pwobble<-c(1.00000000e+00)
+# lnL     4.8308754989342551e+03
+#   0     3.604307e-01
+# #Sitewise log-likelihoods
+# Penalty = -2.290851e+00
+
+  my $rc = 1;
+  my $results;
+  my $error_string;
+  {
+    my $cwd = cwd();
+    chdir($tmpdir);
+    my $exit_status = 0;
+
+    #my $prefix="";
+    my $prefix= "export MALLOC_CHECK_=1;";
+    print "Running: $slrexe\n";
+    my $run;
+    open($run, "$prefix $slrexe |") or $self->throw("Cannot open exe $slrexe");
+    my @output;
+    while (<$run>) {
+      next if ($_ =~ 'Unrecognised');
+      next if ($_ =~ 'Odd gapping');
+      print $_;
+      push @output, $_;
+    }
+
+    $exit_status = close($run);
+    
+    foreach my $outline (@output) {
+      if ($outline =~ /lnL\s+(\S+)/) {
+	$results->{'lnL'} = $1;
+      }
+      if ($outline =~ /^omega<-c\((.*)\)/) {
+	my @omega_cats = split(',',$1);
+	$results->{'omega_cats'} = \@omega_cats;
+      }
+      if ($outline =~ /^wobble<-c\((.*)\)/) {
+	my @wobble_cats = split(',',$1);
+	$results->{'wobble_cats'} = \@wobble_cats;
+      }
+    }
+
+    print "LnL: ".$results->{'lnL'}."\n";
+    print "OMEGA: ". $results->{'omega_cats'}."\n";
+    print "WOBBLE: ". $results->{'wobble_cats'}."\n";
+  }
+
+
+  open RESULTS, "$tmpdir/$outfile" or die "couldnt open results file: $!";
+  my @sites;
+  while (<RESULTS>) {
+    #print $_;
+
+    if ( /(\S+)\s+(\S+)/ ) {
+      my $site = $1;
+      my $val = $2;
+      my @arr = 0 x 12;
+      $arr[3] = $val;
+      push @sites,\@arr;
+    }
+  }
+  $results->{'sites'} = \@sites;
+
+  return $results;
+}
+
 
 sub run_sitewise_dNdS
 {
