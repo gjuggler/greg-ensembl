@@ -428,3 +428,15 @@ Now, filter sites for sites where nothing is NA:
 
 Mysql job overview: 
 select count(*) AS '#',analysis_id AS analysis,status,retry_count AS retry,analysis_job_id AS id from analysis_job group by analysis_id,status;
+
+
+### 2009-12-14 ###
+
+Doing some work on collecting the data from slrsim runs.
+
+An R script, "collect_slrsim.R" is doing the heavy lifting here:
+ - Collect the set of simulation and parameter sets from the compara/slrsim database.
+ - For each parameter set, sim_set, and node_id, collect the true and inferred site-wise omegas
+   -> A single script, called "slrsim_stats_for_node" takes care of this step. The main reason to use the Compara API
+script here is because we need to map from one alignment to another. This is done by setting a "reference_id" parameter
+in the simulation settings; all comparisons will be based on the residues of the reference_id sequence.
