@@ -1,0 +1,14 @@
+[TYPE] NUCLEOTIDE 1
+
+[MODEL]    model        //  Evolutionary models are defined in [MODEL] blocks.
+ [submodel]     JC         //  Here the substitution model is simply set as JC69.
+ [indelmodel]   NB  0.7 1  //  Geometric indel length distribution (q=0.4, r=1)
+ [insertrate]   0.00       //  insertion rate = 0.08 relative to substitution rate of 1
+ [deleterate]   0.00       //  deletion rate = 0.12 relative to substitution rate of 1
+
+[TREE] tree (t1:1.364315804,(((t10:0.04487633801,t9:0.04487633801):0.1765386259,t2:0.2214149639):0.7914649145,(((t5:0.2476178527,(t4:0.08927295466,t8:0.08927295466):0.1583448981):0.06294645183,t7:0.3105643045):0.1709865437,(t6:0.02682409338,t3:0.02682409338):0.4547267548):0.5313290301):0.3514359258);
+
+[PARTITIONS] p1
+ [tree model 3000]
+
+[EVOLVE] p1 1 out

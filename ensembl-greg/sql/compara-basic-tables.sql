@@ -278,8 +278,8 @@ CREATE TABLE IF NOT EXISTS `sitewise_omega` (
   `type` enum('negative1','negative2','negative3','negative4','positive1','positive2','positive3','positive4') DEFAULT NULL,
   `note` enum('all_gaps','constant','synonymous','single_char','random') DEFAULT NULL,
 
-  FOREIGN KEY (node_id) REFERENCES protein_tree_node(node_id) ON DELETE CASCADE ON UPDATE CASCADE,
-  FOREIGN KEY (parameter_set_id) REFERENCES parameter_set(parameter_set_id) ON DELETE CASCADE ON UPDATE CASCADE,
+#  FOREIGN KEY (node_id) REFERENCES protein_tree_node(node_id) ON DELETE CASCADE ON UPDATE CASCADE,
+#  FOREIGN KEY (parameter_set_id) REFERENCES parameter_set(parameter_set_id) ON DELETE CASCADE ON UPDATE CASCADE,
 
   UNIQUE (node_id,parameter_set_id,aln_position),
   KEY(ncod)
@@ -300,8 +300,8 @@ CREATE TABLE IF NOT EXISTS `sitewise_pfam` (
   `pf_position` mediumint unsigned NOT NULL,
   `score` float(10,5) DEFAULT NULL,
 
-  FOREIGN KEY (node_id) REFERENCES protein_tree_node(node_id) ON DELETE CASCADE ON UPDATE CASCADE,
-  FOREIGN KEY (parameter_set_id) REFERENCES parameter_set(parameter_set_id) ON DELETE CASCADE ON UPDATE CASCADE,
+#  FOREIGN KEY (node_id) REFERENCES protein_tree_node(node_id) ON DELETE CASCADE ON UPDATE CASCADE,
+#  FOREIGN KEY (parameter_set_id) REFERENCES parameter_set(parameter_set_id) ON DELETE CASCADE ON UPDATE CASCADE,
 
   UNIQUE (node_id,parameter_set_id,aln_position,pfam_id),
   KEY `pfam_id` (`pfam_id`)
@@ -312,19 +312,19 @@ CREATE table if not exists sitewise_tag (
   node_id int unsigned NOT NULL,
   parameter_set_id tinyint unsigned NOT NULL,
   aln_position mediumint unsigned NOT NULL,
-  tag varchar(16) NOT NULL default '',
-  
-  value varchar(16) default NULL,
-  source varchar(32) default NULL,
 
-  FOREIGN KEY (node_id) REFERENCES protein_tree_node(node_id) ON DELETE CASCADE ON UPDATE CASCADE,
-  FOREIGN KEY (parameter_set_id) REFERENCES parameter_set(parameter_set_id) ON DELETE CASCADE ON UPDATE CASCADE,
+  tag varchar(16) NOT NULL default '',  # Tag
+  value varchar(16) default NULL,       # Value, i.e. type of modification, secondary structure, accessibility value
+  source varchar(8) default NULL,      # Source, i.e. PDB, Uniprot, etc.
+
+#  FOREIGN KEY (node_id) REFERENCES protein_tree_node(node_id) ON DELETE CASCADE ON UPDATE CASCADE,
+#  FOREIGN KEY (parameter_set_id) REFERENCES parameter_set(parameter_set_id) ON DELETE CASCADE ON UPDATE CASCADE,
 
   UNIQUE (node_id,parameter_set_id,aln_position,tag),
   KEY (source)
 ) ENGINE=InnoDB
   /*!50100
-     PARTITION BY KEY (source)
+     PARTITION BY KEY (tag)
      PARTITIONS 5
   */
 ;
@@ -338,9 +338,9 @@ CREATE TABLE IF NOT EXISTS sitewise_genome (
   chr_start                   int unsigned NOT NULL,
   chr_end                     int unsigned NOT NULL,
 
-  FOREIGN KEY (node_id) REFERENCES protein_tree_node(node_id) ON DELETE CASCADE ON UPDATE CASCADE,
-  FOREIGN KEY (member_id) REFERENCES member(member_id) ON DELETE CASCADE ON UPDATE CASCADE,
-  FOREIGN KEY (parameter_set_id) REFERENCES parameter_set(parameter_set_id) ON DELETE CASCADE ON UPDATE CASCADE,
+#  FOREIGN KEY (node_id) REFERENCES protein_tree_node(node_id) ON DELETE CASCADE ON UPDATE CASCADE,
+#  FOREIGN KEY (member_id) REFERENCES member(member_id) ON DELETE CASCADE ON UPDATE CASCADE,
+#  FOREIGN KEY (parameter_set_id) REFERENCES parameter_set(parameter_set_id) ON DELETE CASCADE ON UPDATE CASCADE,
 
   UNIQUE (node_id,parameter_set_id,aln_position,member_id),
   key (chr_name)

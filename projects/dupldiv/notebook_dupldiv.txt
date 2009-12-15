@@ -1,0 +1,10 @@
+### 2009-11-23 ###
+
+Reading Xun Gu's 2006 MBE paper, "Simple statistical method..."
+
+Notes:
+ - Interesting amino-acid models of duplication divergence.
+ - Models poisson process for radical and conservative changes
+ - Model for type II divergence: "early" versus "late" stages, with
+   increased (but disconnected) rates of radical / conservative change
+   between the two and 
