@@ -1,0 +1,110 @@
+### 2009-12-15 ###
+
+Finished fixing up the protein feature collection, and ran on the Ensembl 57 site-wise dataset (no filtering).
+Quick MySQL query results, with just UniProt features:
+
+mysql> select tag,count(*),avg(omega) from sitewise_tag st JOIN sitewise_aln sa ON (st.node_id=sa.node_id AND st.aln_position=sa.aln_position AND st.parameter_set_id=sa.parameter_set_id AND st.parameter_set_id=1) where ncod > 10 AND source="UNIPROT" group by tag;
++----------+----------+-------------+
+| tag      | count(*) | avg(omega)  |
++----------+----------+-------------+
+| ACT_SITE |     2437 | 0.042844891 |
+| BINDING  |     2047 | 0.067478115 |
+| CARBOHYD |     5200 | 0.374762846 |
+| DISULFID |    20898 | 0.047183405 |
+| DNA_BIND |    36292 | 0.060137992 |
+| METAL    |     3098 | 0.057102905 |
+| MOD_RES  |    30843 | 0.208813212 |
+| SIGNAL   |    52968 | 0.556030337 |
+| TRANSMEM |   317792 | 0.143774123 |
++----------+----------+-------------+
+9 rows in set (7 min 23.80 sec)
+
+PDB / DSSP solvent accessibility results:
+
+mysql> select tag,value,count(*),avg(omega) from sitewise_tag st JOIN sitewise_aln sa ON (st.node_id=sa.node_id AND st.aln_position=sa.aln_position AND st.parameter_set_id=sa.parameter_set_id AND st.parameter_set_id=1) where ncod > 10 AND source="PDB" AND tag="ACC" group by value;
++-----+-------+----------+-------------+
+| tag | value | count(*) | avg(omega)  |
++-----+-------+----------+-------------+
+| ACC | -     |     1017 | 0.183856440 |
+| ACC | 0     |    58794 | 0.079812942 |
+| ACC | 1     |    61410 | 0.083266759 |
+| ACC | 2     |   115636 | 0.110241695 |
+| ACC | 3     |    40420 | 0.139826235 |
+| ACC | 4     |    39979 | 0.158347177 |
+| ACC | 5     |    39536 | 0.163302856 |
+| ACC | 6     |    37557 | 0.170893575 |
+| ACC | 7     |    31978 | 0.188608525 |
+| ACC | 8     |    22853 | 0.199209544 |
+| ACC | 9     |    49891 | 0.149393714 |
+| ACC | ?     |      132 | 0.178985606 |
++-----+-------+----------+-------------+
+12 rows in set (8 min 22.88 sec)
+
+
+PDB / secondary structure results (looks a little messy...):
+
+mysql> select tag,value,count(*),avg(omega) from sitewise_tag st JOIN sitewise_aln sa ON (st.node_id=sa.node_id AND st.aln_position=sa.aln_position AND st.parameter_set_id=sa.parameter_set_id AND st.parameter_set_id=1) where ncod > 10 AND source="PDB" AND tag="DSSP" group by value;
++------+-------+----------+-------------+
+| tag  | value | count(*) | avg(omega)  |
++------+-------+----------+-------------+
+| DSSP | -     |     1017 | 0.183856440 |
+| DSSP | ?     |       25 | 0.339295996 |
+| DSSP | B     |     5866 | 0.134788732 |
+| DSSP | C     |   108082 | 0.145707893 |
+| DSSP | E     |   104965 | 0.123788715 |
+| DSSP | G     |    16574 | 0.146603397 |
+| DSSP | H     |   156321 | 0.112463903 |
+| DSSP | I     |       70 | 0.028132857 |
+| DSSP | S     |    49902 | 0.152399774 |
+| DSSP | T     |    56381 | 0.147449070 |
++------+-------+----------+-------------+
+10 rows in set (5 min 36.83 sec)
+
+
+Now let's try counting positively selected codons:
+
+mysql> select tag,value,count(*) AS total,count(IF(type IN ("positive1","positive2","positive3","positive4"),1,null))/count(*) AS pos, count(IF(type IN ("negative1","negative2","negative3","negative4"),1,null))/count(*) AS neg from sitewise_tag st JOIN sitewise_aln sa ON (st.node_id=sa.node_id AND st.aln_position=sa.aln_position AND st.parameter_set_id=sa.parameter_set_id AND st.parameter_set_id=1) where ncod > 10 AND source="PDB" group by tag,value order by tag,value;
++------+-------+--------+--------+--------+
+| tag  | value | total  | pos    | neg    |
++------+-------+--------+--------+--------+
+| ACC  | -     |   1017 | 0.0059 | 0.8948 |
+| ACC  | 0     |  58794 | 0.0008 | 0.9579 |
+| ACC  | 1     |  61410 | 0.0006 | 0.9557 |
+| ACC  | 2     | 115636 | 0.0016 | 0.9392 |
+| ACC  | 3     |  40420 | 0.0037 | 0.9207 |
+| ACC  | 4     |  39979 | 0.0041 | 0.9110 |
+| ACC  | 5     |  39536 | 0.0044 | 0.9030 |
+| ACC  | 6     |  37557 | 0.0042 | 0.8986 |
+| ACC  | 7     |  31978 | 0.0057 | 0.8848 |
+| ACC  | 8     |  22853 | 0.0057 | 0.8732 |
+| ACC  | 9     |  49891 | 0.0034 | 0.9120 |
+| ACC  | ?     |    132 | 0.0152 | 0.9015 |
+| DSSP | -     |   1017 | 0.0059 | 0.8948 |
+| DSSP | ?     |     25 | 0.0000 | 0.8400 |
+| DSSP | B     |   5866 | 0.0031 | 0.9202 |
+| DSSP | C     | 108082 | 0.0035 | 0.9134 |
+| DSSP | E     | 104965 | 0.0022 | 0.9317 |
+| DSSP | G     |  16574 | 0.0044 | 0.9144 |
+| DSSP | H     | 156321 | 0.0018 | 0.9366 |
+| DSSP | I     |     70 | 0.0000 | 1.0000 |
+| DSSP | S     |  49902 | 0.0044 | 0.9101 |
+| DSSP | T     |  56381 | 0.0035 | 0.9147 |
++------+-------+--------+--------+--------+
+22 rows in set (23.43 sec)
+
+mysql> select tag,count(*) AS total,count(IF(type IN ("positive1","positive2","positive3","positive4"),1,null))/count(*) AS pos, count(IF(type IN ("negative1","negative2","negative3","negative4"),1,null))/count(*) AS neg from sitewise_tag st JOIN sitewise_aln sa ON (st.node_id=sa.node_id AND st.aln_position=sa.aln_position AND st.parameter_set_id=sa.parameter_set_id AND st.parameter_set_id=1) where ncod > 10 AND source="UNIPROT" group by tag order by tag;
++----------+--------+--------+--------+
+| tag      | total  | pos    | neg    |
++----------+--------+--------+--------+
+| ACT_SITE |   2437 | 0.0004 | 0.9783 |
+| BINDING  |   2047 | 0.0029 | 0.9668 |
+| CARBOHYD |   5200 | 0.0108 | 0.8037 |
+| DISULFID |  20898 | 0.0004 | 0.9827 |
+| DNA_BIND |  36292 | 0.0012 | 0.9619 |
+| METAL    |   3098 | 0.0013 | 0.9609 |
+| MOD_RES  |  30843 | 0.0063 | 0.8419 |
+| SIGNAL   |  52968 | 0.0242 | 0.5732 |
+| TRANSMEM | 317792 | 0.0024 | 0.9112 |
++----------+--------+--------+--------+
+9 rows in set (12.75 sec)
+

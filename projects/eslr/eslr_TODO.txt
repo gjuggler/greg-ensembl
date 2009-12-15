@@ -1,6 +1,6 @@
 Project TODO list:
  [ ] Decide on a suitable alignment filtering method / cutoff.
- [ ] Re-connect with protein feature collection Java code.
+ [X 2009-12-15] Re-connect with protein feature collection Java code.
      Note: I think the right thing to do here is to make the Java stuff input ONLY a sequence and accession, and output ONLY sequence-aligned features.
      Then we can plug into the database using the Perl module.
  [ ] Create two sets of GO enrichments: 1 for human GO assignments, 1 for mouse GO assignments
