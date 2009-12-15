@@ -3,6 +3,7 @@ package Bio::EnsEMBL::Compara::AlignUtils;
 use Bio::AlignIO;
 use Bio::EnsEMBL::Compara::LocalMember;
 use File::Path;
+use Cwd;
 
 #
 # A grab bag of useful methods for tree manipulations.
@@ -12,6 +13,118 @@ my $TREE = "Bio::EnsEMBL::Compara::TreeUtils";
 my $ALN = "Bio::EnsEMBL::Compara::AlignUtils";
 my $COMPARA = "Bio::EnsEMBL::Compara::ComparaUtils";
 
+sub indelign{
+  # 1) Install GSL from ftp://ftp.gnu.org/gnu/gsl/gsl-1.13.tar.gz
+  #    Note: this can be a big pain in the ass, linking the GSL libraries to indelign. Be warned!
+  # 2) Install Indelign from http://europa.cs.uiuc.edu/indelign/Indelign.tar.gz
+  # 3) Make sure the executable is in your PATH.
+
+  my $class = shift;
+  my $sa = shift; # SimpleAlign of DNA/codon sequences.
+  my $tree = shift;
+  my $params = shift;
+  my $temp_dir = shift;
+  if (!defined $temp_dir) {
+    $temp_dir = '/tmp/indelign';
+    mkpath([$temp_dir]);
+  }
+
+  my $aln_orig = "$temp_dir/aln.fa";
+  my $control_file = "$temp_dir/input.txt";
+  my $out1 = "$temp_dir/out_aln.fa";
+  my $out2 = "$temp_dir/out_anno.fa";
+  my $anchor_stat = "/homes/greg/src/Indelign-2.0.3/samples/AnchorStat.txt";
+
+  $class->to_file($sa,$aln_orig);
+
+  my $orig_dir = cwd();
+  chdir($temp_dir);
+
+  # Call the FindAnchor program.
+  my $num_seqs = scalar($sa->each_seq);
+  `FindAnchor $aln_orig $num_seqs $anchor_stat`;
+
+  # Write the input file.
+  my $params = {
+    '0_NumSeq' => $num_seqs,
+    '1_Tree' => Bio::EnsEMBL::Compara::TreeUtils->to_newick($tree),
+    '2_Out1' => $out1,
+    '3_Out2' => $out2,
+    '4_LenDist' => 'MGM(2,2)',
+    '5_DiffLenDist' => 'true',
+    '6_NotRE' => 'false',
+    '7_prA' => 0.333,
+    '8_prC' => 0.167,
+    '9_prG' => 0.167,
+    '10_prT' => 0.333,
+  };
+  open(OUT,">$control_file");
+  foreach my $param (sort {$a <=> $b} keys %{$params}) {
+    my $val = $params->{$param};
+    $param =~ s/(\d+)_//g;
+    printf OUT "%s = %s\n",$param,$val;
+  }
+  close(OUT);
+
+  # Call the Indelign2 program.
+  my $cmd = "Indelign2 $aln_orig ${aln_orig}-anchor1 ${aln_orig}-anchor2 $control_file $anchor_stat -A";
+  print "$cmd\n";
+  `$cmd`;
+
+}
+
+
+# Calculate the average column entropy (ACE) of an alignment.
+sub column_entropies {
+  my $class = shift;
+  my $sa = shift; # SimpleAlign object
+
+# Column entropy = -sum(Pk*log(Pk)), where Pk is the proportion of k in a column
+  my $column_entropy_sum;
+  my @column_entropy_array;
+  foreach my $pos (1 .. $sa->length/3) {
+    my @col_array = $class->get_column_array($sa,$pos,3);
+#    print join(" ",@col_array)."\n";
+
+    # Collect the codon proportions into a hash.
+    my $n = scalar(@col_array);
+    my %codon_hash;
+    foreach my $codon (@col_array) {
+      if (!defined $codon_hash{$codon}) {
+        $codon_hash{$codon} = 1/$n;
+      } else {
+        $codon_hash{$codon} = $codon_hash{$codon} + 1/$n;
+      }
+    }
+    
+    # Add up the entropy for each codon.
+    my $column_entropy;
+    foreach my $cdn (keys %codon_hash) {
+      my $Pk = $codon_hash{$cdn};
+      $column_entropy = $column_entropy + ($Pk * log($Pk));
+    }
+    $column_entropy = -$column_entropy;
+    push @column_entropy_array, $column_entropy;
+
+    # Keep a running sum of column-wise CEs.
+    #$column_entropy_sum = $column_entropy_sum + $column_entropy;
+  }
+  # Return the mean CE for this alignment.
+  #my $ace = $column_entropy_sum / $sa->length;
+  return @column_entropy_array;
+}
+
+sub ace {
+  my $class = shift;
+  my $sa = shift;
+
+  # Get the array of column entropies.
+  my @ce_array = $class->column_entropies($sa);
+
+  my $sum;
+  map {$sum = $sum + $_} @ce_array;
+  return $sum / scalar(@ce_array);
+}
 
 sub to_aln {
   my $class = shift;
@@ -78,6 +191,25 @@ sub get_nongaps_at_column {
     $nongap_count++ if ($residue !~ /[-x]/i);
   }
   return $nongap_count;
+}
+
+sub get_column_array {
+  my $class = shift;
+  my $aln = shift;
+  my $pos = shift;
+  my $codon_width = shift;
+
+  $codon_width = 1 unless (defined $codon_width);
+
+  my $lo_i = ($pos-1)*$codon_width + 1;
+  my $hi_i = ($pos)*$codon_width;
+
+  my @chars = ();
+  foreach my $seq ($aln->each_seq) {
+    my $residue = $seq->subseq($lo_i,$hi_i);
+    push @chars,$residue;
+  }
+  return @chars;
 }
 
 sub get_column_string {

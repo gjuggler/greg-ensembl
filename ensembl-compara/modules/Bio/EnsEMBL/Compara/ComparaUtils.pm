@@ -1203,6 +1203,15 @@ sub string_to_hash {
   return {};
 }
 
+sub load_params_from_tag {
+  my $class = shift;
+  my $tree = shift;
+  my $tag = shift;
+
+  my $tag_string = $tree->get_tagvalue($tag);
+  return $class->string_to_hash($tag_string);
+}
+
 sub load_params_from_param_set {
   my $class = shift;
   my $dbc = shift;
