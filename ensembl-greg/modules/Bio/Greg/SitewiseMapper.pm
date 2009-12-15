@@ -44,7 +44,8 @@ sub fetch_input {
   $params->{'collect_tags'} = 0;
   $params->{'collect_pfam'} = 0;
   $params->{'collect_uniprot'} = 1;
-  $params->{'collect_go'} = 0;
+  $params->{'collect_go'} = 1;
+  $params->{'go_taxon_id'} = 9606;
   $params->{'create_plot'} = 0;
   $params->{'parameter_set_id'} = 1;
   #########################
@@ -93,19 +94,19 @@ sub run {
   if ($params->{'collect_pfam'}) {
     print "Collecting Pfam annotations...\n";
     #$self->collect_pfam();
-    print "  -> Finished collecting Pfam!";
+    print "  -> Finished collecting Pfam!\n";
   }
 
   if ($params->{'collect_uniprot'}) {
     print "Collecting UniProt annotations...\n";
     $self->collect_uniprot();
-    print "  -> Finished collecting UniProt!";
+    print "  -> Finished collecting UniProt!\n";
   }
 
   if ($params->{'collect_go'}) {
     print "Collecting GO annotations...\n";
     $self->collect_go();
-    print "  -> Finished collecting GO terms!";
+    print "  -> Finished collecting GO terms!\n";
   }
 
   if ($params->{'create_plot'}) {
@@ -167,19 +168,18 @@ sub collect_gene_tags {
   $gene_tags = Bio::Greg::EslrUtils->collectDuplicationTags($tree,$params);
 }
 
-sub collect_go_terms
+sub collect_go
 {
     my $self = shift;
 
     my $tree = $pta->fetch_node_by_node_id($tree->node_id);
     my @leaves = @{$tree->get_all_leaves};
 
-    # GJ 2009-02-09 : priority for grabbing GO annotations. Human > mouse > zebrafish > drosophila > c.elegans
-#    my @species_leaves = grep {$_->taxon_id == 9606 || $_->taxon_id == 10090 ||
-#			       $_->taxon_id == 7955 || $_->taxon_id == 7227 ||
-#			   $_->taxon_id == 6239} @leaves;
-#    @leaves = @species_leaves if (scalar(@species_leaves) >= 1);
-    my @leaves = grep {$_->taxon_id==9606} @leaves;
+    my $taxon_id = 0;
+    if (defined $params->{'go_taxon_id'}) {
+      $taxon_id = $params->{'go_taxon_id'} if (defined $params->{'go_taxon_id'});
+      @leaves = grep {$_->taxon_id==$taxon_id} @leaves;
+    }
 
     my %go_terms;
     my $taxon_id;
@@ -211,7 +211,8 @@ sub insert_go_term
     my ($node_id,$leaf,$db_e) = @_;
 
     my $cmd = "INSERT IGNORE INTO go_terms (node_id,member_id,stable_id,go_term) values (?,?,?,?);";
-    print $cmd."\n";
+#    print $cmd."\n";
+    print "  ".join(" ",$leaf->dbID,$leaf->stable_id,$db_e->display_id)."\n";
     my $sth = $dba->dbc->prepare($cmd);
     $sth->execute($node_id,$leaf->dbID,$leaf->stable_id,$db_e->display_id);
 }
@@ -224,20 +225,76 @@ sub collect_uniprot {
   my $pos_id_hash;
 
   my $orig_cwd = cwd();
-  #chdir "~/lib/greg-ensembl/projects/eslr/uniprot";
-  chdir($ENV{HOME}."/src/greg-ensembl/projects/eslr/uniprot");
+  if ($ENV{'USER'} =~ /gj1/) {
+    chdir($ENV{HOME}."/src/greg-ensembl/projects/eslr/uniprot");
+  } else {
+    chdir($ENV{HOME}."/lib/greg-ensembl/projects/eslr/uniprot");    
+  }
 
   my $url = Bio::Greg::EslrUtils->urlFromConnection($tree->adaptor->dbc);
   print "$url\n";
   print 'CWD:'.cwd()."\n";
+
+  my $cmd = qq^
+    REPLACE INTO sitewise_tag (node_id,parameter_set_id,aln_position,tag,value,source) values(?,?,?,?,?,?);
+  ^;
+  my $sth = $dba->dbc->prepare($cmd);
+
   foreach my $leaf ($tree->leaves) {
+    next unless ($leaf->taxon_id == 9606 || $leaf->taxon_id==10090);
+
     my $stable_id = $leaf->stable_id;
-    open(JAVA, "java -Xmx512m  -cp uniprotjapi.properties -jar uniProtExtraction.jar $stable_id $url |") or $self->throw("Cannot run UniProt Collector!");
-    my @output = <JAVA>;
-    print "@output\n";
-    my $rc = close(JAVA);
-    #exit(0);
+
+    my @output;
+    my $rc;
+    if ($ENV{'USER'} =~ /gj1/) {
+      my $proxy = "-Dhttp.proxyHost=wwwcache.sanger.ac.uk  -Dhttp.proxyPort=3128";
+      open(JAVA, "java -Xmx512m $proxy  -cp uniprotjapi.properties -jar uniProtExtraction.jar $stable_id $url |")
+	or $self->throw("Cannot run UniProt Collector!");
+      @output = <JAVA>;
+      $rc = close(JAVA);
+    } else {
+      open(JAVA, "java -cp uniprotjapi.properties -jar uniProtExtraction.jar $stable_id $url |") 
+	or $self->throw("Cannot run UniProt Collector!");
+      @output = <JAVA>;
+      $rc = close(JAVA);
+    }
+
+    foreach my $line (@output) {
+      chomp $line;
+      my @tokens = split("\t",$line);
+      print $line."\n";
+
+      my $acc = $tokens[0];
+      my $seq_pos = $tokens[1];
+      my $source = $tokens[2];
+      my $tag = $tokens[3];
+      my $value = $tokens[4];
+      my $residue = $tokens[5];
+
+      my $node_id = $tree->node_id;
+      my $parameter_set_id = $params->{parameter_set_id};
+      my $aln_position = $sa->column_from_residue_number($stable_id,$seq_pos);
+
+      my ($seq) = $sa->each_seq_with_id($stable_id);
+      my $actual_residue = substr($seq->seq,$aln_position-1,1);
+
+      if ($actual_residue ne $residue) {
+	print "Residues don't match: ".sprintf("%s %s ensembl:%s pdb:%s",$node_id,$aln_position,$actual_residue,$residue);
+	next;
+      }
+
+      $sth->execute(
+		    $node_id,
+		    $parameter_set_id,
+		    $aln_position,
+		    $tag,
+		    $value,
+		    $source);
+    }
   }
+
+  $sth->finish;
 
   chdir $orig_cwd;
 

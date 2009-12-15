@@ -345,8 +345,9 @@ DELIMITER //
 CREATE PROCEDURE hive_overview()
 READS SQL DATA
 BEGIN
-  select analysis_id AS analysis,status,count(*) AS 'cnt',retry_count AS 'retry',analysis_job_id AS ex_id
+  select analysis_id AS analysis,retry_count AS 'retry',status,count(*) AS 'cnt',analysis_job_id AS ex_id
   from analysis_job
-  group by analysis_id,status;
+  group by analysis_id,retry_count,status
+  ;
 END //
 DELIMITER ;
