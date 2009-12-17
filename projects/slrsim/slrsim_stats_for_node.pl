@@ -18,7 +18,7 @@ my ($url,$clean) = undef;
 GetOptions('url=s' => \$url,
 	   'clean' => \$clean
 	   );
-$url = 'mysql://slrsim:slrsim@mysql-greg.ebi.ac.uk:4134/gj1_slrsim_1' if (!$url);
+$url = 'mysql://slrsim:slrsim@mysql-greg.ebi.ac.uk:4134/slrsim_anisimova' if (!$url);
 my $project_base = getcwd();
 
 # Load the adaptors.
@@ -45,17 +45,14 @@ sub get_data_for_node {
     $sa_true = $tree->get_SimpleAlign();
     my $cdna_aln = $tree->get_SimpleAlign(-cdna => 1);
     @true_entropies = Bio::EnsEMBL::Compara::AlignUtils->column_entropies($cdna_aln);
-    
+
     $pta->protein_tree_member("aln_mcoffee");
     $tree = $pta->fetch_node_by_node_id($node_id);
     $sa_aln = $tree->get_SimpleAlign();
     $cdna_aln = $tree->get_SimpleAlign(-cdna => 1);
     @aln_entropies = Bio::EnsEMBL::Compara::AlignUtils->column_entropies($cdna_aln);
-
-    Bio::EnsEMBL::Compara::AlignUtils->indelign($cdna_aln,$tree,{});
-
-    exit(0);
   };
+  die if ($!);
   return if (!$sa_true || !$sa_aln);
 
   
@@ -80,7 +77,7 @@ sub get_data_for_node {
   $nogaps =~ s/-//g;
 
   my $aln_table_name = $param_set_params->{'output_table'};
-  my $sth1 = $dbh->prepare("SELECT aln_position,omega FROM sitewise_aln WHERE node_id=?;");
+  my $sth1 = $dbh->prepare("SELECT aln_position,omega,type FROM sitewise_omega WHERE node_id=?;");
   my $sth2 = $dbh->prepare("SELECT aln_position,omega,type,note,ncod FROM $aln_table_name WHERE node_id=? AND parameter_set_id=?;");
   $sth1->execute($node_id);
   $sth2->execute($node_id,$parameter_set_id);
@@ -88,7 +85,7 @@ sub get_data_for_node {
   my $true_omegas = $sth1->fetchall_hashref('aln_position');
   my $aln_omegas = $sth2->fetchall_hashref('aln_position');
 
-  print join("\t",qw(ref_seq true aln aln_type aln_note ncod true_e aln_e))."\n";
+  print join("\t",qw(ref_seq true aln true_type aln_type aln_note ncod true_e aln_e))."\n";
   for (my $i=1; $i <= length($nogaps); $i++) {
     my $true_col = $sa_true->column_from_residue_number($ref_name,$i);
     my $aln_col = $sa_aln->column_from_residue_number($ref_name,$i);
@@ -99,11 +96,12 @@ sub get_data_for_node {
     my $aln = $aln_omegas->{$aln_col}->{'omega'};
     next unless ($aln && $true);
     my $aln_type = $aln_omegas->{$aln_col}->{'type'};
+    my $true_type = $true_omegas->{$aln_col}->{'type'};
     my $aln_note = $aln_omegas->{$aln_col}->{'note'};
     my $ncod = $aln_omegas->{$aln_col}->{'ncod'};
     my $true_e = sprintf "%.3f", $true_entropies[$true];
     my $aln_e = sprintf "%.3f", $aln_entropies[$aln];
 
-    print join("\t",($ref_name,$true,$aln,$aln_type,$aln_note,$ncod,$true_e,$aln_e))."\n";
+    print join("\t",($ref_name,$true,$aln,$true_type,$aln_type,$aln_note,$ncod,$true_e,$aln_e))."\n";
   }
 }

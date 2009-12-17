@@ -1,6 +1,6 @@
 library(RMySQL)
 drv <- dbDriver('MySQL')
-con <- dbConnect(drv, host='mysql-greg.ebi.ac.uk', port=4134, user='slrsim', password='slrsim', dbname='gj1_slrsim_1')
+con <- dbConnect(drv, host='mysql-greg.ebi.ac.uk', port=4134, user='slrsim', password='slrsim', dbname='slrsim_anisimova')
 
 get_vector = function(con,query) {
   res = dbSendQuery(con,query)
@@ -32,15 +32,15 @@ get_data = function(node_id,param_set)  {
 }
 
 all_data = data.frame();
-for (parameter_set_id in c(2)) {
-  for (sim_set in sim_sets[3:10]) {
+for (parameter_set_id in c(1,2)) {
+  for (sim_set in sim_sets) {
     node_ids = get_vector(con,sprintf('SELECT distinct node_id FROM protein_tree_tag WHERE tag="sim_set" AND value="%s";',sim_set))
     for (node_id in node_ids) {
     print(sprintf("%s %s %s",parameter_set_id,sim_set,node_id))
       # Grab the site-wise information into a data frame.
       data = get_data(node_id,parameter_set_id)
 
-      if (!is.data.frame(data))
+      if (!is.data.frame(data) || nrow(data)==0)
         next
 
       # Add some useful info to the data frame.
@@ -52,5 +52,13 @@ for (parameter_set_id in c(2)) {
     } 
   }
 }
-
 dbDisconnect(con)
+
+df.accuracy = function(df) {
+  pos_vec = c('positive1','positive2','positive3','positive4')
+  pos_pos = nrow(subset(df,true_type=="positive1" & aln_type %in% pos_vec))
+  all_pos = nrow(subset(df,aln_type %in% pos_vec))
+  all_pos = max(all_pos,1)
+  pos_pos/all_pos
+}
+

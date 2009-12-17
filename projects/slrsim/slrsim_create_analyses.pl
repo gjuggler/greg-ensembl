@@ -15,15 +15,11 @@ my ($clean,$url) = undef;
 GetOptions('clean' => \$clean,
            'url=s' => \$url
 	   );
-
 Bio::EnsEMBL::Registry->no_version_check(1);
 
 $url = 'mysql://greg:TMOqp3now@mysql-greg.ebi.ac.uk:4134/gj1_slrsim_test' if (!$url);
 my $dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new(-url => $url);
 my $dbc = $dba->dbc;
-my $dbh = $dbc->db_handle;
-my $pta = $dba->get_ProteinTreeAdaptor();
-my $mba = $dba->get_MemberAdaptor();
 
 my $LIMIT='';
 my $SKIP_ADDING_JOBS=0;
@@ -42,23 +38,24 @@ connect_analysis("AlignScores","Omegas",1);
 sub clean_tables {
   if ($clean) {
 
-    $dba->dbc->do("create table if not exists omega_tr LIKE sitewise_omega");
-    $dba->dbc->do("create table if not exists omega_mc LIKE sitewise_omega");
-    $dba->dbc->do("create table if not exists aln_mcoffee LIKE protein_tree_member;");
-    $dba->dbc->do("create table if not exists aln_mcoffee_score LIKE protein_tree_member_score;");
-    $dba->dbc->do("create table if not exists aln_mcoffee_prank LIKE protein_tree_member_score;");
-    $dba->dbc->do("create table if not exists aln_mcoffee_trimal LIKE protein_tree_member_score;");
-    $dba->dbc->do("create table if not exists aln_mcoffee_gblocks LIKE protein_tree_member_score;");
+    $dbc->do("create table if not exists omega_tr LIKE sitewise_omega");
+    $dbc->do("create table if not exists omega_mc LIKE sitewise_omega");
+    $dbc->do("create table if not exists aln_mcoffee LIKE protein_tree_member;");
+    $dbc->do("create table if not exists aln_mcoffee_score LIKE protein_tree_member_score;");
+    $dbc->do("create table if not exists aln_mcoffee_prank LIKE protein_tree_member_score;");
+    $dbc->do("create table if not exists aln_mcoffee_trimal LIKE protein_tree_member_score;");
+    $dbc->do("create table if not exists aln_mcoffee_gblocks LIKE protein_tree_member_score;");
 
     my @truncate_tables = qw^
 sequence
 aln_mcoffee aln_mcoffee_score aln_mcoffee_prank aln_mcoffee_trimal aln_mcoffee_gblocks
 analysis_job
 sitewise_omega
+omega_mc omega_tr
 parameter_set
 node_set_member node_set
       ^;
-    map {print "$_\n";$dba->dbc->do("truncate table $_")} @truncate_tables;
+    map {print "$_\n";eval {$dba->dbc->do("truncate table $_");}} @truncate_tables;
   }
 }
 
@@ -115,7 +112,7 @@ sub calculate_omegas {
 
   $params = {
     parameter_set_id => 1,
-    name => "SLR True Alignment",
+    name => "SLR (true alignment)",
     input_table => 'protein_tree_member',
     output_table => 'omega_tr'
   };
@@ -128,13 +125,13 @@ sub calculate_omegas {
   
   $params = {
     parameter_set_id => 2,
-    name => "SLR (no filter)"
+    name => "SLR"
   };
   _add_parameter_set(_combine_hashes($bp,$params));
 
   $params = {
     parameter_set_id => 3,
-    name => "SLR (trimAl filter)",
+    name => "SLR+trimAl",
     alignment_score_filtering => 1,
     alignment_score_table => 'aln_mcoffee_trimal',
     alignment_score_threshold => 5,
@@ -143,7 +140,7 @@ sub calculate_omegas {
 
   $params = {
     parameter_set_id => 4,
-    name => "SLR (Gblocks filter)",
+    name => "SLR+Gblocks",
     alignment_score_filtering => 1,
     alignment_score_table => 'aln_mcoffee_gblocks',
     alignment_score_threshold => 5,
@@ -152,7 +149,7 @@ sub calculate_omegas {
 
   $params = {
     parameter_set_id => 5,
-    name => "SLR (Prank filter)",
+    name => "SLR+Prank",
     alignment_score_filtering => 1,
     alignment_score_table => 'aln_mcoffee_prank',
     alignment_score_threshold => 5,
@@ -161,7 +158,7 @@ sub calculate_omegas {
 
   $params = {
     parameter_set_id => 6,
-    name => "SLR (MCoffee filter)",
+    name => "SLR+MCoffee",
     alignment_score_filtering => 1,
     alignment_score_table => 'aln_mcoffee_score',
     alignment_score_threshold => 5,
@@ -170,9 +167,9 @@ sub calculate_omegas {
 
   $params = {
     parameter_set_id => 7,
-    name => "PAML M8",
+    name => "PAML M3",
     action => 'paml',
-    model => 'M8'
+    model => 'M3'
   };
   _add_parameter_set(_combine_hashes($bp,$params));
 
@@ -186,6 +183,7 @@ sub calculate_omegas {
 
   $params = {
     parameter_set_id => 9,
+    name => "PAML LRT",
     action => 'paml_lrt',
     model => 'M7',
     model_b => 'M8'
