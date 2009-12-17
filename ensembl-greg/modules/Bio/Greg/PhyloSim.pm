@@ -3,6 +3,7 @@ package Bio::Greg::PhyloSim;
 use strict;
 use File::Basename;
 use File::Path;
+use Time::HiRes;
 
 use Bio::EnsEMBL::DBSQL::DBAdaptor;
 use Bio::EnsEMBL::Compara::Member;
@@ -120,6 +121,8 @@ sub simulate_alignment_indelible {
   my $self = shift;
   my $tree = shift;
   my $params = shift;
+
+  $tree = Bio::EnsEMBL::Compara::TreeUtils->scale($tree,1.95);
 
   my $newick = $tree->newick_format;
   # Add some padding to zero-length branches.
@@ -291,19 +294,26 @@ sub _store_sitewise_omegas {
   $parameter_set_id = $params->{'parameter_set_id'} if (defined $params->{'parameter_set_id'});
 
   # Insert new omegas into the node.
-  my $sth = $self->dbc->prepare("REPLACE INTO $output_table (aln_position,node_id,parameter_set_id,omega,omega_lower,omega_upper,ncod) values (?,?,?,?,?,?,?);");
+  my $sth = $self->dbc->prepare("REPLACE INTO $output_table (aln_position,aln_position_fraction,node_id,parameter_set_id,omega,omega_lower,omega_upper,type,ncod) values (?,?,?,?,?,?,?,?,?);");
   #print "sw: $sitewise_ref\n";
   foreach my $hr (@{$sitewise_ref}) {
     #print "hr: $hr\n";
-    #print "ALN pos:".$hr->{aln_position}."\n";
+    printf "%d %d\n",$hr->{aln_position},$hr->{omega};
     my $ncod = Bio::EnsEMBL::Compara::AlignUtils->get_nongaps_at_column($sa,$hr->{aln_position});
 
+    my $type = "negative1" if ($hr->{omega} < 1);
+    $type = "positive1" if ($hr->{omega} > 1);
+
+    my $aln_position_fraction = $hr->{aln_position} / $sa->length;
+
     $sth->execute($hr->{aln_position},
+                  $aln_position_fraction,
 		  $hr->{node_id},
 		  $parameter_set_id,
 		  $hr->{omega},
 		  $hr->{omega_lower},
 		  $hr->{omega_upper},
+                  $type,
 		  $ncod);
     sleep(0.1);
   }
