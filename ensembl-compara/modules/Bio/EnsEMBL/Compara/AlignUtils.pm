@@ -18,45 +18,49 @@ sub indelign{
   #    Note: this can be a big pain in the ass, linking the GSL libraries to indelign. Be warned!
   # 2) Install Indelign from http://europa.cs.uiuc.edu/indelign/Indelign.tar.gz
   # 3) Make sure the executable is in your PATH.
-
   my $class = shift;
   my $sa = shift; # SimpleAlign of DNA/codon sequences.
-  my $tree = shift;
+  my $tree = shift; # Note: Indelign requires a ROOTED tree as input!!!
   my $params = shift;
   my $temp_dir = shift;
   if (!defined $temp_dir) {
     $temp_dir = '/tmp/indelign';
+    rmtree([$temp_dir]);
     mkpath([$temp_dir]);
   }
 
   my $aln_orig = "$temp_dir/aln.fa";
   my $control_file = "$temp_dir/input.txt";
-  my $out1 = "$temp_dir/out_aln.fa";
-  my $out2 = "$temp_dir/out_anno.fa";
+  my $out_aln = "$temp_dir/out_aln.fa";
+  my $out_anno = "$temp_dir/out_anno.fa";
+  my $ancestor_anno = "$temp_dir/AncAnnotation.txt";
   my $anchor_stat = "/homes/greg/src/Indelign-2.0.3/samples/AnchorStat.txt";
 
   $class->to_file($sa,$aln_orig);
-
+  print $tree->newick_format()."\n";
   my $orig_dir = cwd();
   chdir($temp_dir);
 
   # Call the FindAnchor program.
   my $num_seqs = scalar($sa->each_seq);
-  `FindAnchor $aln_orig $num_seqs $anchor_stat`;
+  my $rc = system("FindAnchor $aln_orig $num_seqs $anchor_stat 2>/dev/null");
+  die "FindAnchor error!" if ($rc);
 
   # Write the input file.
+  # Annoyingly, the parameters have to be in a certain order for Indelign to work (!@$!@$).
+  # Use a numerical prefix to sort, and then remove it before writing the control file.
   my $params = {
     '0_NumSeq' => $num_seqs,
     '1_Tree' => Bio::EnsEMBL::Compara::TreeUtils->to_newick($tree),
-    '2_Out1' => $out1,
-    '3_Out2' => $out2,
+    '2_Out1' => $out_aln,
+    '3_Out2' => $out_anno,
     '4_LenDist' => 'MGM(2,2)',
     '5_DiffLenDist' => 'true',
     '6_NotRE' => 'false',
-    '7_prA' => 0.333,
-    '8_prC' => 0.167,
-    '9_prG' => 0.167,
-    '10_prT' => 0.333,
+    '7_prA' => 0.25,
+    '8_prC' => 0.25,
+    '9_prG' => 0.25,
+    '10_prT' => 0.25,
   };
   open(OUT,">$control_file");
   foreach my $param (sort {$a <=> $b} keys %{$params}) {
@@ -67,10 +71,40 @@ sub indelign{
   close(OUT);
 
   # Call the Indelign2 program.
-  my $cmd = "Indelign2 $aln_orig ${aln_orig}-anchor1 ${aln_orig}-anchor2 $control_file $anchor_stat -A";
+  my $cmd = "Indelign2 $aln_orig ${aln_orig}-anchor1 ${aln_orig}-anchor2 $control_file $anchor_stat -A 2>/dev/null";
   print "$cmd\n";
-  `$cmd`;
+  $rc = system($cmd);
+  print "$rc\n";
+  die "Indelign error!" if ($rc != 0);
 
+  # TODO: collect the output into site-wise, cumulative insertion and deletion counts.
+  my @insertions = (0) x $sa->length;
+  my @deletions = (0) x $sa->length;
+
+  open(IN,$out_anno);
+  my @leaf_lines = <IN>;
+  close(IN);
+  open(IN,$ancestor_anno);
+  my @anc_lines = <IN>;
+  close(IN);
+
+  foreach my $line (@leaf_lines,@anc_lines) {
+    if ($line =~ m/(\d+)\s+(\d+)\s+(Insertion|Deletion)/) {
+      my $start = $1;
+      my $stop = $2;
+      my $in_del = $3;
+      $start += 1;
+      $stop += 1;
+      if ($in_del eq 'Insertion') {
+        map {$insertions[$_] += 1} ($start..$stop);
+      } else {
+        map {$deletions[$_] += 1} ($start..$stop);
+      }
+    }
+  }
+
+  chdir $orig_dir;
+  return (\@insertions,\@deletions);
 }
 
 

@@ -15,6 +15,12 @@ my $TREEI = "Bio::Tree::TreeI";
 my $NSET = "Bio::EnsEMBL::Compara::NestedSet";
 my $PTREE = "Bio::EnsEMBL::Compara::ProteinTree";
 
+# Root a tree at its midpoint.
+sub midpoint_root {
+  
+  # TODO!!
+}
+
 # Returns whether $node has an ancestor with the same node_id as $ancestor.
 sub has_ancestor_node_id {
   my $class = shift;
