@@ -28,6 +28,7 @@ my $tree;
 my $pos_values;
 my $mapped_omegas;
 my $gene_tags;
+my $dup_tags;
 
 sub fetch_input {
   my $self = shift;
@@ -42,6 +43,7 @@ sub fetch_input {
   $params->{'sitewise_table'} = 'sitewise_aln';
   $params->{'do_mapping'} = 0;
   $params->{'collect_tags'} = 0;
+  $params->{'collect_dup_tags'} = 0;
   $params->{'collect_pfam'} = 0;
   $params->{'collect_uniprot'} = 1;
   $params->{'collect_go'} = 1;
@@ -88,7 +90,13 @@ sub run {
   if ($params->{'collect_tags'}) {
     print "Collecting gene tags...\n";
     $self->collect_gene_tags();
-    print "  -> Finished collecting tags!\n";
+    print "  -> Finished collecting gene tags!\n";
+  }
+
+  if ($params->{'collect_dup_tags'}) {
+    print "Collecting duplication tags...\n";
+    $self->collect_dup_tags();
+    print "  -> Finished collecting duplication tags!\n";
   }
 
   if ($params->{'collect_pfam'}) {
@@ -163,9 +171,12 @@ sub do_mapping {
 
 sub collect_gene_tags {
   my $self = shift;
+  $gene_tags = Bio::Greg::EslrUtils->collectGeneTags($tree,$params);
+}
 
-  #$gene_tags = Bio::Greg::EslrUtils->collectGeneTags($tree,$params);
-  $gene_tags = Bio::Greg::EslrUtils->collectDuplicationTags($tree,$params);
+sub collect_dup_tags {
+  my $self = shift;
+  $dup_tags = Bio::Greg::EslrUtils->collectDuplicationTags($tree,$params);
 }
 
 sub collect_go
