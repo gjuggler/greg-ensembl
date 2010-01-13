@@ -54,16 +54,16 @@ sub get_data_for_node {
   };
   die if ($!);
   return if (!$sa_true || !$sa_aln);
-
   
-
-  my $sim_params = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_tag($tree,"sim_params");
+  my $sim_params = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_tag($tree,"params_slrsim");
   my $param_set_params = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_param_set($tree->adaptor,$parameter_set_id);
 
+  my @sim_tags = grep {$_ =~ m/sim_/} $tree->get_all_tags;
+  
   # Get the sequence to act as a reference in site-wise value comparisons.
   my $reference_id = '';
-  if (defined $sim_params->{'reference_id'}) {
-    $reference_id = $sim_params->{'reference_id'};
+  if (defined $sim_params->{'sim_ref'}) {
+    $reference_id = $sim_params->{'sim_ref'};
   }
 
   my @seqs = $sa_true->each_seq;
@@ -78,14 +78,15 @@ sub get_data_for_node {
 
   my $aln_table_name = $param_set_params->{'output_table'};
   my $sth1 = $dbh->prepare("SELECT aln_position,omega,type FROM sitewise_omega WHERE node_id=?;");
-  my $sth2 = $dbh->prepare("SELECT aln_position,omega,type,note,ncod FROM $aln_table_name WHERE node_id=? AND parameter_set_id=?;");
+  my $sth2 = $dbh->prepare("SELECT aln_position,omega,type,note,ncod,lrt_stat FROM $aln_table_name WHERE node_id=? AND parameter_set_id=?;");
   $sth1->execute($node_id);
   $sth2->execute($node_id,$parameter_set_id);
   
   my $true_omegas = $sth1->fetchall_hashref('aln_position');
   my $aln_omegas = $sth2->fetchall_hashref('aln_position');
 
-  print join("\t",qw(ref_seq true aln true_type aln_type aln_note ncod true_e aln_e))."\n";
+  print join("\t",@sim_tags,
+             qw(node_id parameter_set true aln true_type aln_type aln_note ncod true_e aln_e lrt))."\n";
   for (my $i=1; $i <= length($nogaps); $i++) {
     my $true_col = $sa_true->column_from_residue_number($ref_name,$i);
     my $aln_col = $sa_aln->column_from_residue_number($ref_name,$i);
@@ -95,13 +96,17 @@ sub get_data_for_node {
     my $true = $true_omegas->{$true_col}->{'omega'};
     my $aln = $aln_omegas->{$aln_col}->{'omega'};
     next unless ($aln && $true);
-    my $aln_type = $aln_omegas->{$aln_col}->{'type'};
-    my $true_type = $true_omegas->{$aln_col}->{'type'};
-    my $aln_note = $aln_omegas->{$aln_col}->{'note'};
-    my $ncod = $aln_omegas->{$aln_col}->{'ncod'};
+    my $aln_type = $aln_omegas->{$aln_col}->{'type'} || '';
+    my $true_type = $true_omegas->{$aln_col}->{'type'} || '';
+    my $aln_note = $aln_omegas->{$aln_col}->{'note'} || '';
+    my $ncod = $aln_omegas->{$aln_col}->{'ncod'} || 0;
     my $true_e = sprintf "%.3f", $true_entropies[$true];
     my $aln_e = sprintf "%.3f", $aln_entropies[$aln];
+    my $lrt = $aln_omegas->{$aln_col}->{'lrt_stat'} || 99;
 
-    print join("\t",($ref_name,$true,$aln,$true_type,$aln_type,$aln_note,$ncod,$true_e,$aln_e))."\n";
+    my @vals = map {$tree->get_tagvalue($_)} @sim_tags;
+    push @vals,($node_id,$parameter_set_id,$true,$aln,$true_type,$aln_type,$aln_note,$ncod,$true_e,$aln_e,$lrt);
+
+    print join("\t",@vals)."\n";
   }
 }

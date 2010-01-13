@@ -440,3 +440,7 @@ An R script, "collect_slrsim.R" is doing the heavy lifting here:
    -> A single script, called "slrsim_stats_for_node" takes care of this step. The main reason to use the Compara API
 script here is because we need to map from one alignment to another. This is done by setting a "reference_id" parameter
 in the simulation settings; all comparisons will be based on the residues of the reference_id sequence.
+
+
+### 2009-12-21 ###
+

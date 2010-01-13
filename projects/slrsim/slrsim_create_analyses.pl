@@ -28,12 +28,12 @@ clean_tables();
 
 simulate_alignments();
 align_sequences();
-alignment_scores();
+#alignment_scores();
 calculate_omegas();
 
 connect_analysis("PhyloSim","Align",1);
-connect_analysis("Align","AlignScores",1);
-connect_analysis("AlignScores","Omegas",1);
+connect_analysis("Align","Omegas",1);
+#connect_analysis("AlignScores","Omegas",1);
 
 sub clean_tables {
   if ($clean) {
@@ -49,7 +49,7 @@ sub clean_tables {
     my @truncate_tables = qw^
 sequence
 aln_mcoffee aln_mcoffee_score aln_mcoffee_prank aln_mcoffee_trimal aln_mcoffee_gblocks
-analysis_job
+analysis_job dataflow_rule hive
 sitewise_omega
 omega_mc omega_tr
 parameter_set
@@ -105,8 +105,7 @@ sub calculate_omegas {
   my $logic_name = "Omegas";
   my $module = "Bio::EnsEMBL::Compara::RunnableDB::Sitewise_dNdS";
   my $params = {
-#    parameter_sets => "2,3,4,5,6,7,8,9",
-    parameter_sets => "1,2"
+    parameter_sets => "1,2,3"
   };
   _create_analysis($analysis_id,$logic_name,$module,$params,30,1);
 
@@ -131,64 +130,64 @@ sub calculate_omegas {
 
   $params = {
     parameter_set_id => 3,
-    name => "SLR+trimAl",
-    alignment_score_filtering => 1,
-    alignment_score_table => 'aln_mcoffee_trimal',
-    alignment_score_threshold => 5,
-  };
-  _add_parameter_set(_combine_hashes($bp,$params));
-
-  $params = {
-    parameter_set_id => 4,
-    name => "SLR+Gblocks",
-    alignment_score_filtering => 1,
-    alignment_score_table => 'aln_mcoffee_gblocks',
-    alignment_score_threshold => 5,
-  };
-  _add_parameter_set(_combine_hashes($bp,$params));
-
-  $params = {
-    parameter_set_id => 5,
-    name => "SLR+Prank",
-    alignment_score_filtering => 1,
-    alignment_score_table => 'aln_mcoffee_prank',
-    alignment_score_threshold => 5,
-  };
-  _add_parameter_set(_combine_hashes($bp,$params));
-
-  $params = {
-    parameter_set_id => 6,
-    name => "SLR+MCoffee",
-    alignment_score_filtering => 1,
-    alignment_score_table => 'aln_mcoffee_score',
-    alignment_score_threshold => 5,
-  };
-  _add_parameter_set(_combine_hashes($bp,$params));
-
-  $params = {
-    parameter_set_id => 7,
     name => "PAML M3",
     action => 'paml',
     model => 'M3'
   };
   _add_parameter_set(_combine_hashes($bp,$params));
 
-  $params = {
-    parameter_set_id => 8,
-    name => "PAML M2",
-    action => 'paml',
-    model => 'M2'
-  };
-  _add_parameter_set(_combine_hashes($bp,$params));
+#  $params = {
+#    parameter_set_id => 4,
+#    name => "PAML M2",
+#    action => 'paml',
+#    model => 'M2'
+#  };
+#  _add_parameter_set(_combine_hashes($bp,$params));
 
-  $params = {
-    parameter_set_id => 9,
-    name => "PAML LRT",
-    action => 'paml_lrt',
-    model => 'M7',
-    model_b => 'M8'
-  };
-  _add_parameter_set(_combine_hashes($bp,$params));
+#  $params = {
+#    parameter_set_id => 5,
+#    name => "SLR+trimAl",
+#    alignment_score_filtering => 1,
+#    alignment_score_table => 'aln_mcoffee_trimal',
+#    alignment_score_threshold => 5,
+#  };
+#  _add_parameter_set(_combine_hashes($bp,$params));
+#
+#  $params = {
+#    parameter_set_id => 6,
+#    name => "SLR+Gblocks",
+#    alignment_score_filtering => 1,
+#    alignment_score_table => 'aln_mcoffee_gblocks',
+#    alignment_score_threshold => 5,
+#  };
+#  _add_parameter_set(_combine_hashes($bp,$params));
+#
+#  $params = {
+#    parameter_set_id => 7,
+#    name => "SLR+Prank",
+#    alignment_score_filtering => 1,
+#    alignment_score_table => 'aln_mcoffee_prank',
+#    alignment_score_threshold => 5,
+#  };
+#  _add_parameter_set(_combine_hashes($bp,$params));
+#
+#  $params = {
+#    parameter_set_id => 8,
+#    name => "SLR+MCoffee",
+#    alignment_score_filtering => 1,
+#    alignment_score_table => 'aln_mcoffee_score',
+#    alignment_score_threshold => 5,
+#  };
+#  _add_parameter_set(_combine_hashes($bp,$params));
+
+#  $params = {
+#    parameter_set_id => 9,
+#    name => "PAML LRT",
+#    action => 'paml_lrt',
+#    model => 'M7',
+#    model_b => 'M8'
+#  };
+#  _add_parameter_set(_combine_hashes($bp,$params));
   
 }
 
