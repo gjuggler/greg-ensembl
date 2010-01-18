@@ -58,7 +58,10 @@ sub get_data_for_node {
   my $sim_params = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_tag($tree,"params_slrsim");
   my $param_set_params = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_param_set($tree->adaptor,$parameter_set_id);
 
-  my @sim_tags = grep {$_ =~ m/sim_/} $tree->get_all_tags;
+  # Load simulation parameters into our output array.
+  $sim_params->{'sim_rep'} = $tree->get_tagvalue('sim_rep');
+  my @sim_tags = keys %$sim_params;
+  my @sim_vals = map {$sim_params->{$_}} @sim_tags;
   
   # Get the sequence to act as a reference in site-wise value comparisons.
   my $reference_id = '';
@@ -104,8 +107,8 @@ sub get_data_for_node {
     my $aln_e = sprintf "%.3f", $aln_entropies[$aln];
     my $lrt = $aln_omegas->{$aln_col}->{'lrt_stat'} || 99;
 
-    my @vals = map {$tree->get_tagvalue($_)} @sim_tags;
-    push @vals,($node_id,$parameter_set_id,$true,$aln,$true_type,$aln_type,$aln_note,$ncod,$true_e,$aln_e,$lrt);
+    
+    my @vals = (@sim_vals,$node_id,$parameter_set_id,$true,$aln,$true_type,$aln_type,$aln_note,$ncod,$true_e,$aln_e,$lrt);
 
     print join("\t",@vals)."\n";
   }

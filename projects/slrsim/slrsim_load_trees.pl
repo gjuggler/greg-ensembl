@@ -11,6 +11,7 @@ use Bio::Greg::ComparaLite::HiveUtils;
 use Bio::EnsEMBL::Hive::DBSQL::DBAdaptor;
 use File::Path;
 use File::Basename;
+use Digest::MD5 qw(md5_hex);
 use Cwd;
 
 my ($url,$folder,$config,$clean) = undef;
@@ -58,12 +59,17 @@ sub create_simsets {
     simulation_replicates => 100,
     sim_file => 'artificial.nh',
     sim_length => 1,
+    seq_length => 500,
     ins_rate => 0,
     del_rate => 0
   };
 
+  my $tree_anisimova_bglobin = 'anisimova_01_bglobin.nh';
+  my $tree_anisimova_artificial = 'anisimova_01_artificial.nh';
+  my $tree_primates = '2x_p.nh';
+  my $tree_vertebrates = '2x_v.nh';
+
   my $anisimova_02_M3 = {
-    seq_length => 500,
     omega_distribution => 'M3',
     p0 => 0.386,
     p1 => 0.535,
@@ -72,69 +78,114 @@ sub create_simsets {
     w1 => 0.304,
     w2 => 1.691
   };
+  my $anisimova_02_M3_hi = replace($anisimova_02_M3,{w2 => 4.739});
 
-  my $neutral = {
-    seq_length => 500,
+  my $massingham_05_A = {
+    omega_distribution => 'M8',
+    p0 => 0.9432,
+    p => 0.572,
+    q => 2.172,
+    w => 2.081
+  };
+  # the same set of params was used by anisimova et al:
+  my $anisimova_02_M8 = $massingham_05_A;
+
+  my $massingham_05_B = {
     omega_distribution => 'M3',
-    p0 => 0.5,
-    p1 => 0.5,
-    w0 => 1,
-    w1 => 1
+    p0 => 0.75,
+    p1 => 0.25,
+    w0 => 0.5,
+    w1 => 1.5
   };
 
-  my $sim_counter=0;
+  my $neutral = {
+    omega_distribution => 'constant',
+    w => 1
+  };
 
   foreach my $j (0.11, 1.1, 5.5, 11) {
     foreach my $indel (0,0.01,0.05,0.1,0.2) {
       $s_params = {
-        sim_name => 'art',
-        sim_file => 'anisimova_01_artificial.nh',
+        sim_name => 'art_anisimova',
+        sim_file => $tree_anisimova_artificial,
         sim_ref => '1',
         sim_length => $j,
         ins_rate => $indel,
         del_rate => $indel
       };
       push @simulation_sets, replace($base_p,$anisimova_02_M3,$s_params);
+
+      $s_params = replace($s_params, {sim_name => 'art_anisimova_hi'});
+      push @simulation_sets, replace($base_p,$anisimova_02_M3_hi,$s_params);
     }
   }
 
   foreach my $j (0.11, 1.1, 5.5, 11) {
     $s_params = {
       sim_name => 'art_neutral',
-      sim_file => 'anisimova_01_artificial.nh',
+      sim_file => $tree_anisimova_artificial,
       sim_ref => '1',
       sim_length => $j
     };
-    push @simulation_sets, replace($base_p,$neutral,$s_params); # Note: we're using the neutral evolution params here.
+    push @simulation_sets, replace($base_p,$neutral,$s_params);
   }
 
-#  foreach my $j (0.38,2.11,16.88,33.76) {
-#    foreach my $indel (0, 0.05, 0.1) {
-#      $s_params = {
-#        sim_name => 'bglobin_human',
-#        sim_file => 'anisimova_01_bglobin.nh',
-#        sim_ref => 'human',
-#        sim_length => $j,
-#        ins_rate => $indel,
-#        del-rate => $indel
-#      };
-#      push @simulation_sets, replace($base_p,$anisimova_02_M3,$s_params);
-#    }
-#  }
+  foreach my $j (0.38,2.11,16.88,33.76) {
+    $s_params = {
+      sim_name => 'bglobin_neutral',
+      sim_file => $tree_anisimova_bglobin,
+      sim_ref => 'human',
+      sim_length => $j
+    };
+    push @simulation_sets, replace($base_p,$neutral,$s_params);
+  }
 
-#  foreach my $j (0.38,2.11,16.88,33.76) {
-#    foreach my $indel (0, 0.05, 0.1) {
-#      $s_params = {
-#        sim_name => 'bglobin_xen',
-#        sim_file => 'anisimova_01_bglobin.nh',
-#        sim_ref => 'xenlaev',
-#        sim_length => $j,
-#        ins_rate => $indel,
-#        del_rate => $indel
-#      };
-#      push @simulation_sets, replace($base_p,$anisimova_02_M3,$s_params);
-#    }
-#  }
+  $s_params = {
+    sim_name => 'mass_05_A',
+    sim_file => $tree_anisimova_artificial,
+    sim_ref => '1',
+    sim_length => 1.1
+  };
+  push @simulation_sets, replace($base_p,$massingham_05_A,$s_params);
+
+  $s_params = {
+    sim_name => 'mass_05_B',
+    sim_file => $tree_anisimova_artificial,
+    sim_ref => '1',
+    sim_length => 1.1
+  };
+  push @simulation_sets, replace($base_p,$massingham_05_B,$s_params);
+
+  foreach my $j (0.38, 2.11, 16.88) {
+    foreach my $indel (0,0.01,0.05,0.1,0.2) {
+      $s_params = {
+      sim_name => 'bglobin_anisimova',
+      sim_file => $tree_anisimova_bglobin,
+      sim_ref  => 'human',
+      sim_length => $j,
+      ins_rate => $indel,
+      del_rate => $indel
+      };
+
+      push @simulation_sets, replace($base_p,$anisimova_02_M3,$s_params);
+    }
+  }
+
+  foreach my $indel (0, 0.01, 0.02, 0.05) {
+    $s_params = {
+      sim_name => 'bglobin_ref_hum',
+      sim_file => $tree_anisimova_bglobin,
+      sim_ref => 'human',
+      sim_length => 16.88,
+      ins_rate => $indel,
+      del_rate => $indel
+    };
+    push @simulation_sets, replace($base_p,$anisimova_02_M3_hi,$s_params);
+
+    $s_params = replace($s_params, {sim_name => 'bglobin_ref_xen',
+                                    sim_ref => 'xenlaev'});
+    push @simulation_sets, replace($base_p,$anisimova_02_M3_hi,$s_params);
+  }
 
 }
 
@@ -158,8 +209,7 @@ foreach my $params (@simulation_sets) {
   my $sim_set = $params->{'sim_name'};
   my $replicates = $params->{'simulation_replicates'};
   my $tree_length = $params->{'sim_length'};
-  my $file = $tree_dir.'/'.$params->{'sim_file'};
-  
+  my $file = $tree_dir.'/'.$params->{'sim_file'};  
   open(IN,"$file");
   my $newick_str = join("",<IN>);
   close(IN);
@@ -167,6 +217,12 @@ foreach my $params (@simulation_sets) {
   my $sim_param_str = Bio::EnsEMBL::Compara::ComparaUtils->hash_to_string($params);
   foreach my $sim_rep (1 .. $replicates) {
     print "$file $sim_set $sim_rep\n";
+    
+    my $md5 = Digest::MD5->new;
+    $md5->add($params);
+    $md5->add($sim_rep);
+    my $unique_string = substr($md5->hexdigest,20);
+
     my $node = Bio::EnsEMBL::Compara::TreeUtils->from_newick($newick_str);
     my $bl = Bio::EnsEMBL::Compara::TreeUtils->total_distance($node);
     my $n = scalar $node->leaves;
@@ -180,7 +236,7 @@ foreach my $params (@simulation_sets) {
     # Go through each leaf and store the member objects.
     foreach my $leaf ($node->leaves) {
       $leaf->stable_id($leaf->name);
-      $leaf->source_name($sim_set.'_'.$sim_rep);
+      $leaf->source_name($unique_string);
       $mba->store($leaf);
     }
     

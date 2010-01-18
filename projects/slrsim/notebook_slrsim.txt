@@ -442,5 +442,28 @@ script here is because we need to map from one alignment to another. This is don
 in the simulation settings; all comparisons will be based on the residues of the reference_id sequence.
 
 
-### 2009-12-21 ###
+### 2010-01-14 ###
 
+What did I do:
+ - Finished running the 'artificial' simulations with a 6-taxon tree.
+ - Updated the collect_slrsim.R and slrsim_stats_for_node scripts to include a fuller set of simulation parameters.
+ - Created a Hive process (Bio::Greg::CollectStats) to parallelize the collection of site-wise stats.
+   -> uses a table (defined in slrsim_tables.sql) to store up the results.
+   -> collect_slrsim.R now has a 'get_data_alt' function which dumps the data from SQL and into a data frame
+ - Collected data for the first set of 'Anisimova artificial' runs. (to analyze tomorrow)
+
+### 2010-01-15 ###
+
+What did I do:
+ - Started looking at the Anisimova artificial results
+   -> Started using the ROCR package to do ROC curves
+   -> Created a slr.roc function to plot ROCs for various parameter sets (not finished...)
+ - Implemented simulation under the M8 model distribution
+   -> Required creating a cumulative distribution function so we can discretize into an M3 model and bring into Indelible
+ 
+
+### 2010-01-17 ###
+
+What did I do:
+ - Finished a second run of the simulations. Implemented distributions to approximate Massingham's model from 2005.
+   -> Worked on sorting & visualizing the results in Excel using data bar. Very simple to use.
