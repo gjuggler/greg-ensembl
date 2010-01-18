@@ -220,6 +220,7 @@ sub get_nongaps_at_column {
   
   my $nongap_count = 0;
   foreach my $seq ($aln->each_seq) {
+    next if ($pos >= $seq->length);
     my $residue = $seq->subseq($pos,$pos);
     #print $residue;
     $nongap_count++ if ($residue !~ /[-x]/i);
