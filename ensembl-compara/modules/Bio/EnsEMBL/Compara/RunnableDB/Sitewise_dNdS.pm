@@ -56,7 +56,7 @@ sub fetch_input {
     alignment_quality_filtering => 0,
     sequence_quality_filtering => 0,
 
-    parameter_sets         => '1',
+    parameter_sets         => 'all',
 
     # SLR Parameters
     gencode                => 'universal',
@@ -100,19 +100,18 @@ sub fetch_input {
 }
 
 sub run {
-  my $self = shift;
-  
-  my $node_id = $params->{'node_id'};
-  #my $sth = $dba->dbc->prepare("select * from sitewise_aln where node_id=$node_id limit 1;");
-  #$sth->execute();
-  #if ($sth->fetchrow_arrayref) {
-  #  #print "HAS SOMETHING ALREADY!\n";
-  #  #$dont_write_output = 1;
-  #  $sth->finish;
-  #  #return undef;
-  #}
+  my $self = shift;  
 
-  my @param_sets = split(",",$params->{'parameter_sets'});
+  my $node_id = $params->{'node_id'};
+
+  my @param_sets;
+  my $param_set_string = $params->{'parameter_sets'};
+  if ($param_set_string eq 'all') {
+    my $sth = $dba->dbc->prepare("select distinct(parameter_set_id) FROM parameter_set order by parameter_set_id;");
+    @param_sets = @{$sth->fetchall_arrayref([0])};
+  } else {
+    @param_sets = split(",",$params->{'parameter_sets'});
+  }
   delete $params->{'parameter_sets'};
   foreach my $param_set (@param_sets) {
     print "PARAM SET: $param_set\n";

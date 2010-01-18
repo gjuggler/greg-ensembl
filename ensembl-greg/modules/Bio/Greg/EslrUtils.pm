@@ -319,7 +319,7 @@ sub collectGeneTags {
   }
   
   my $node_id = $tree->node_id;
-  my $sw = "sitewise_aln";
+  my $sw = "sitewise_omega";
 
   $hash->{'leaf_count'} = scalar($tree->leaves);
   $hash->{'node_count'} = scalar($tree->nodes);
@@ -333,29 +333,25 @@ sub collectGeneTags {
   $hash->{'tree_length_max'} = sprintf "%.3f", max_distance($tree);
   $hash->{'tree_length_avg'} = sprintf "%.3f", avg_distance($tree);
   $hash->{'avg_gc'} = gc_content($tree);
+
   # Alignment stats.
   my $sa = $tree->get_SimpleAlign;
   $hash->{'aln_length'} = sprintf "%d", $sa->length;
   $hash->{'aln_percent_identity'} = sprintf "%.3f", $sa->percentage_identity;
+
   # Avg seq length.
   my $seq_len=0;
   map {$seq_len += $_->seq_length} $tree->leaves;
   $hash->{'avg_seq_length'} = sprintf "%.3f", $seq_len / scalar($tree->leaves);
 
-  my $map = {
-    v => 1,
-    no2x => 2,
-    only2x => 3,
-    no_seq_f => 4,
-    no_aln_f => 5,
-    no_f => 6,
-    p => 7,
-    g => 8,
-    l => 9
-    };
+  my @param_names = mysql_getval("SELECT parameter_value FROM parameter_set where parameter_name='name' ORDER BY parameter_set_id;");
+  my @param_ids = mysql_getval("SELECT parameter_set_id FROM parameter_set where parameter_name='name' ORDER BY parameter_set_id;");
+  my %param_hash = zip(@param_names,@param_ids);
+  
+  foreach my $name (keys %param_hash) {
+    my $cl = substr($name,0,2);
+    my $num = $param_hash{$name};
 
-  foreach my $cl (('v','p','g','l','no2x','only2x')) {
-    my $num = $map->{$cl};
     $hash->{$cl.'_lrt'} = avg_sitewise("lrt_stat",$node_id,$sw,$num);
     $hash->{$cl.'_omega'} = avg_sitewise("omega",$node_id,$sw,$num);
     $hash->{$cl.'_pscs'} = num_pscs($node_id,$sw,$num);
@@ -363,7 +359,7 @@ sub collectGeneTags {
 
     $hash->{$cl.'_num_clusters'} = psc_clusters($tree,$sa,$sw,$num,0,0);
     $hash->{$cl.'_num_clusters_dbl'} = psc_clusters($tree,$sa,$sw,$num,0,1);
-#    $hash->{$cl.'_num_weak_clusters'} = psc_clusters($tree,$sa,$sw,$num,1);
+    $hash->{$cl.'_num_weak_clusters'} = psc_clusters($tree,$sa,$sw,$num,1);
 
     my $param_set = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_param_set($tree->adaptor->dbc,$num);
     $hash->{$cl.'_bl_total'} = '';

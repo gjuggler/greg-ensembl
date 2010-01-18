@@ -342,7 +342,7 @@ CREATE TABLE IF NOT EXISTS sitewise_genome (
 #  FOREIGN KEY (member_id) REFERENCES member(member_id) ON DELETE CASCADE ON UPDATE CASCADE,
 #  FOREIGN KEY (parameter_set_id) REFERENCES parameter_set(parameter_set_id) ON DELETE CASCADE ON UPDATE CASCADE,
 
-  UNIQUE (node_id,parameter_set_id,aln_position,member_id),
+  UNIQUE (node_id,chr_name,aln_position,parameter_set_id,member_id),
   key (chr_name)
 ) ENGINE=InnoDB
   /*!50100 

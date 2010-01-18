@@ -192,7 +192,7 @@ sub create_instance_from_rowhash {
   $self->init_instance_from_rowhash($node, $rowhash);
   $self->_load_tagvalues($node);
   
-  #$self->cache_add_object($node);
+  $self->cache_add_object($node);
 
   return $node;
 }
