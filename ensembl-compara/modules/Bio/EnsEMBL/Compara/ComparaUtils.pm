@@ -1221,16 +1221,27 @@ sub load_params_from_param_set {
 
   return {} unless (defined $param_set_id);
 
+  my $params;
+
   my $cmd = qq^SELECT parameter_value FROM parameter_set WHERE parameter_set_id=$param_set_id AND parameter_name="params";  ^;
   my $sth = $dbc->prepare($cmd);
   $sth->execute();
   my $row = "";
   while (@row = $sth->fetchrow_array) {
-    my $obj = eval($row[0]);
-    $sth->finish;
-    return $obj;
+    $params = eval($row[0]);
   }
-  return {};
+  $sth->finish;
+
+  my $cmd = qq^SELECT parameter_value FROM parameter_set WHERE parameter_set_id=$param_set_id AND parameter_name="name";  ^;
+  $sth = $dbc->prepare($cmd);
+  $sth->execute();
+  my $row = "";
+  while (@row = $sth->fetchrow_array) {
+    $params->{parameter_set_name} = $row[0];
+  }
+  $sth->finish;
+
+  return $params;
 }
 
 sub replace_params {

@@ -11,6 +11,7 @@ use Bio::Greg::ComparaLite::HiveUtils;
 use Bio::EnsEMBL::Hive::DBSQL::DBAdaptor;
 use File::Path;
 use File::Basename;
+use Digest::MD5 qw(md5_hex);
 use Cwd;
 
 my ($url,$folder,$config,$clean) = undef;
@@ -36,6 +37,7 @@ my $pta = $dba->get_ProteinTreeAdaptor();
 my $params = {
   'tree_dir' => 'trees',
 };
+my @simulation_sets = ();
 
 sub replace {
   my $result = {};
@@ -55,14 +57,19 @@ sub create_simsets {
   my $base_p = {
     simulation_program => 'indelible',
     simulation_replicates => 100,
-    tree_file => 'artificial.nh',
-    tree_length => 1,
+    sim_file => 'artificial.nh',
+    sim_length => 1,
+    seq_length => 500,
     ins_rate => 0,
     del_rate => 0
   };
 
+  my $tree_anisimova_bglobin = 'anisimova_01_bglobin.nh';
+  my $tree_anisimova_artificial = 'anisimova_01_artificial.nh';
+  my $tree_primates = '2x_p.nh';
+  my $tree_vertebrates = '2x_v.nh';
+
   my $anisimova_02_M3 = {
-    seq_length => 500,
     omega_distribution => 'M3',
     p0 => 0.386,
     p1 => 0.535,
@@ -71,32 +78,113 @@ sub create_simsets {
     w1 => 0.304,
     w2 => 1.691
   };
+  my $anisimova_02_M3_hi = replace($anisimova_02_M3,{w2 => 4.739});
 
-  foreach my $j (0.11, 1.1, 11) {
-    $s_params = {
-      tree_file => 'anisimova_01_artificial.nh',
-      reference_id => '1',
-      tree_length => $j
-    };
-    $params->{sprintf 'simset_ani_art_%.2f',$j} = replace($base_p,$anisimova_02_M3,$s_params);
-  }  
+  my $massingham_05_A = {
+    omega_distribution => 'M8',
+    p0 => 0.9432,
+    p => 0.572,
+    q => 2.172,
+    w => 2.081
+  };
+  # the same set of params was used by anisimova et al:
+  my $anisimova_02_M8 = $massingham_05_A;
 
-  foreach my $j (0.38,2.11,16.88) {
-    $s_params = {
-      tree_file => 'anisimova_01_bglobin.nh',
-      reference_id => 'human',
-      tree_length => $j
-    };
-    $params->{sprintf 'simset_ani_bgl_human_%.2f',$j} = replace($base_p,$anisimova_02_M3,$s_params);
+  my $massingham_05_B = {
+    omega_distribution => 'M3',
+    p0 => 0.75,
+    p1 => 0.25,
+    w0 => 0.5,
+    w1 => 1.5
+  };
+
+  my $neutral = {
+    omega_distribution => 'constant',
+    w => 1
+  };
+
+  foreach my $j (0.11, 1.1, 5.5, 11) {
+    foreach my $indel (0,0.01,0.05,0.1,0.2) {
+      $s_params = {
+        sim_name => 'art_anisimova',
+        sim_file => $tree_anisimova_artificial,
+        sim_ref => '1',
+        sim_length => $j,
+        ins_rate => $indel,
+        del_rate => $indel
+      };
+      push @simulation_sets, replace($base_p,$anisimova_02_M3,$s_params);
+
+      $s_params = replace($s_params, {sim_name => 'art_anisimova_hi'});
+      push @simulation_sets, replace($base_p,$anisimova_02_M3_hi,$s_params);
+    }
   }
 
-  foreach my $j (0.38,2.11,16.88) {
+  foreach my $j (0.11, 1.1, 5.5, 11) {
     $s_params = {
-      tree_file => 'anisimova_01_bglobin.nh',
-      reference_id => 'xenlaev',
-      tree_length => $j
+      sim_name => 'art_neutral',
+      sim_file => $tree_anisimova_artificial,
+      sim_ref => '1',
+      sim_length => $j
     };
-    $params->{sprintf 'simset_ani_bgl_xenlaev_%.2f',$j} = replace($base_p,$anisimova_02_M3,$s_params);
+    push @simulation_sets, replace($base_p,$neutral,$s_params);
+  }
+
+  foreach my $j (0.38,2.11,16.88,33.76) {
+    $s_params = {
+      sim_name => 'bglobin_neutral',
+      sim_file => $tree_anisimova_bglobin,
+      sim_ref => 'human',
+      sim_length => $j
+    };
+    push @simulation_sets, replace($base_p,$neutral,$s_params);
+  }
+
+  $s_params = {
+    sim_name => 'mass_05_A',
+    sim_file => $tree_anisimova_artificial,
+    sim_ref => '1',
+    sim_length => 1.1
+  };
+  push @simulation_sets, replace($base_p,$massingham_05_A,$s_params);
+
+  $s_params = {
+    sim_name => 'mass_05_B',
+    sim_file => $tree_anisimova_artificial,
+    sim_ref => '1',
+    sim_length => 1.1
+  };
+  push @simulation_sets, replace($base_p,$massingham_05_B,$s_params);
+
+  foreach my $j (0.38, 2.11, 16.88) {
+    foreach my $indel (0,0.01,0.05,0.1,0.2) {
+      $s_params = {
+      sim_name => 'bglobin_anisimova',
+      sim_file => $tree_anisimova_bglobin,
+      sim_ref  => 'human',
+      sim_length => $j,
+      ins_rate => $indel,
+      del_rate => $indel
+      };
+
+      push @simulation_sets, replace($base_p,$anisimova_02_M3,$s_params);
+    }
+  }
+
+  foreach my $indel (0, 0.01, 0.02, 0.05) {
+    $s_params = {
+      sim_name => 'bglobin_ref_hum',
+      sim_file => $tree_anisimova_bglobin,
+      sim_ref => 'human',
+      sim_length => 16.88,
+      ins_rate => $indel,
+      del_rate => $indel
+    };
+    push @simulation_sets, replace($base_p,$anisimova_02_M3_hi,$s_params);
+
+    $s_params = replace($s_params, {sim_name => 'bglobin_ref_xen',
+                                    sim_ref => 'xenlaev'});
+    push @simulation_sets, replace($base_p,$anisimova_02_M3_hi,$s_params);
   }
 
 }
@@ -114,38 +202,41 @@ if ($clean) {
 
 # The list of simulation replicates to use. These will be stored as tags in the XYZ_tag table,
 # and accessible using the $node->get_tagvalue("tag_key") method.
-my @simulation_sets = sort grep {$_ =~ /simset_/} keys %{$params};
+# my @simulation_sets = sort grep {$_ =~ /simset_/} keys %{$params};
 
 my $tree_dir = $params->{'tree_dir'};
-foreach my $sim_set (@simulation_sets) {
-  my $p = $params->{$sim_set};
-  my $replicates = $p->{'simulation_replicates'};
-  my $tree_length = $p->{'tree_length'};
-  my $file = $tree_dir.'/'.$p->{'tree_file'};
-  
+foreach my $params (@simulation_sets) {
+  my $sim_set = $params->{'sim_name'};
+  my $replicates = $params->{'simulation_replicates'};
+  my $tree_length = $params->{'sim_length'};
+  my $file = $tree_dir.'/'.$params->{'sim_file'};  
   open(IN,"$file");
   my $newick_str = join("",<IN>);
   close(IN);
   
-  my $sim_param_str = Bio::EnsEMBL::Compara::ComparaUtils->hash_to_string($p);
+  my $sim_param_str = Bio::EnsEMBL::Compara::ComparaUtils->hash_to_string($params);
   foreach my $sim_rep (1 .. $replicates) {
     print "$file $sim_set $sim_rep\n";
+    
+    my $md5 = Digest::MD5->new;
+    $md5->add($params);
+    $md5->add($sim_rep);
+    my $unique_string = substr($md5->hexdigest,20);
+
     my $node = Bio::EnsEMBL::Compara::TreeUtils->from_newick($newick_str);
     my $bl = Bio::EnsEMBL::Compara::TreeUtils->total_distance($node);
     my $n = scalar $node->leaves;
-#    print "$bl $n \n";
     if ($tree_length) {
       $node = Bio::EnsEMBL::Compara::TreeUtils->scale_to($node,$tree_length);
-#      print "Tree length: $tree_length\n";
     }
+    my $length = Bio::EnsEMBL::Compara::TreeUtils->total_distance($node);
+
     #print "Rescaled: ". Bio::EnsEMBL::Compara::TreeUtils->to_newick($node)."\n";
     
     # Go through each leaf and store the member objects.
     foreach my $leaf ($node->leaves) {
       $leaf->stable_id($leaf->name);
-      $sim_set =~ s/simset_//g;
-#      print $sim_set."\n";
-      $leaf->source_name($sim_set.'_'.$sim_rep);
+      $leaf->source_name($unique_string);
       $mba->store($leaf);
     }
     
@@ -153,13 +244,15 @@ foreach my $sim_set (@simulation_sets) {
     $pta->store($node);
     
     # Store the tags.
-    $node->store_tag("input_file",$file);
-    $node->store_tag("sim_set",$sim_set);
+    foreach my $tag (grep {$_ =~ m/sim_/g} keys %{$params}) {
+      $node->store_tag($tag,$params->{$tag});
+    }
     $node->store_tag("sim_rep",$sim_rep);
-    $node->store_tag("sim_params",$sim_param_str);
+    $node->store_tag("params_slrsim",$sim_param_str);
   }
 }
 
 foreach my $node (@{$pta->fetch_all_roots}) {
   print $node->get_tagvalue("input_file")."\t".$node->node_id."\t" . scalar(@{$node->get_all_leaves}) . "\n";
 }
+

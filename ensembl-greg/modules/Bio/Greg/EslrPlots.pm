@@ -89,9 +89,11 @@ sub plotTree {
   my $return_mid_cmd = shift;
 
   my $dba;
-  if (!$tree_in) {
+  if ($tree_in) {
+    $dba = $tree_in->adaptor->db;
+  } else {
     $dba = $params->{'dba'};
-  }
+  } 
 
   my $defaults = {
     max_tree_length => 0,
@@ -178,10 +180,10 @@ sub plotTree {
   
   my $r_start = qq{
 library(ape);
-source("aln_tools/aln.tools.R");
-source("aln_tools/slr.tools.R");
-source("aln_tools/phylo.tools.R");
-source("aln_tools/plot.phylo.greg.R");
+source("aln-tools/aln.tools.R");
+source("aln-tools/slr.tools.R");
+source("aln-tools/phylo.tools.R");
+source("aln-tools/plot.phylo.greg.R");
 
 print("$aln_f");
 aln = read.aln("$aln_f");
@@ -296,6 +298,7 @@ sub plotTreeWithOmegas {
     gblocks_mask_character => 'U',
     subtree_mask_character => 'Z',
     remove_subtree => 0,
+    remove_blank_columns => 0,
     output_gene_info => 0,
     sitewise_table => 'sitewise_aln',
     exon_cased => 0,
@@ -444,10 +447,10 @@ sub plotTreeWithOmegas {
   
   my $rcmd = qq{
     library(ape);
-    source("aln_tools/aln.tools.R");
-    source("aln_tools/phylo.tools.R");
-    source("aln_tools/plot.phylo.greg.R");
-    source("aln_tools/slr.tools.R");
+    source("aln-tools/aln.tools.R");
+    source("aln-tools/phylo.tools.R");
+    source("aln-tools/plot.phylo.greg.R");
+    source("aln-tools/slr.tools.R");
 
     files = $aln_file_list;
     trees = $tree_file_list;
@@ -504,10 +507,10 @@ numbers = c(numbers,2,1,0)
 layout(matrix(numbers,nrow=num_rows,ncol=num_cols,byrow=T),heights=heights,widths=widths)
 #layout.show(num_tracks+3)
 par(xaxs='i',mai=rep(0,4))
-source("aln_tools/aln.tools.R")
-source("aln_tools/slr.tools.R")
-source("aln_tools/plot.phylo.greg.R")
-source("aln_tools/phylo.tools.R")
+source("aln-tools/aln.tools.R")
+source("aln-tools/slr.tools.R")
+source("aln-tools/plot.phylo.greg.R")
+source("aln-tools/phylo.tools.R")
 aln = read.aln(files[1])
 tree = read.tree(trees[1])
 slr = read.slr(slrs[1])
@@ -523,7 +526,7 @@ plot(c(1),type='n',axes=F,lwd=4)
 
 # Plot SLR.
 plot.slr.blocks(slr,xlim=a\$xlim,log=T)
-axis(side=2)
+axis(side=2,at=c(0.01,1,10))
 
 # Plot tracks.
 plot.slr.type(slr,xlim=a\$xlim,type='positive')
@@ -589,10 +592,10 @@ sub plotDuplicationComparison {
 
 #     my $rcmd = <<"RCMD";
 #     library(ape);
-#     source("aln_tools/aln.tools.R");
-#     source("aln_tools/phylo.tools.R");
-#     source("aln_tools/plot.phylo.greg.R");
-#     source("aln_tools/slr.tools.R");
+#     source("aln-tools/aln.tools.R");
+#     source("aln-tools/phylo.tools.R");
+#     source("aln-tools/plot.phylo.greg.R");
+#     source("aln-tools/slr.tools.R");
 
 #     files = $aln_file_list;
 #     trees = $tree_file_list;

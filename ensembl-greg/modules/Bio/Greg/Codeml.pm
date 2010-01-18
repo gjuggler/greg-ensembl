@@ -386,14 +386,15 @@ sub new {
 
   my $self = $class->SUPER::new(@args);
   $self->{'_branchLengths'} = 0;
-  my ($aln, $tree, $st, $params, $exe, 
+  my ($aln, $tree, $st, $params, $exe, $tempdir,
       $ubl) = $self->_rearrange([qw(ALIGNMENT TREE SAVE_TEMPFILES 
-				    PARAMS EXECUTABLE BRANCHLENGTHS)],
+				    PARAMS EXECUTABLE TEMPDIR BRANCHLENGTHS)],
 				    @args);
   defined $aln && $self->alignment($aln);
   defined $tree && $self->tree($tree, branchLengths => ($ubl || 0) );
   defined $st  && $self->save_tempfiles($st);
   defined $exe && $self->executable($exe);
+  defined $tempdir && $self->tempdir($tempdir);
 
   $self->set_default_parameters();
   if( defined $params ) {
@@ -421,17 +422,20 @@ sub new {
 
 sub prepare{
    my ($self,$aln,$tree) = @_;
+
    unless ( $self->save_tempfiles ) {
        # brush so we don't get plaque buildup ;)
        $self->cleanup();
    }
+   
    $tree = $self->tree unless $tree;
    $aln  = $self->alignment unless $aln;
+   my $tempdir = $self->tempdir();
+
    if( ! $aln ) { 
        $self->warn("must have supplied a valid alignment file in order to run codeml");
        return 0;
    }
-   my ($tempdir) = $self->tempdir();
    my ($tempseqFH,$tempseqfile);
    if( ! ref($aln) && -e $aln ) { 
        $tempseqfile = $aln;
@@ -503,7 +507,7 @@ sub prepare{
 =cut
 
 sub run {
-   my ($self) = shift;;
+   my ($self) = shift;
    my $tmpdir = $self->prepare(@_);
    my $outfile = $self->outfile_name;
    
@@ -592,10 +596,12 @@ sub extract_empirical_bayes {
     # NOTE FROM PAML DOCUMENTATION, p.29: "We suggest that you ignore the NEB output and use the BEB results only."
 
     my $has_bayes_section = 0;
-    my $naive_results;
     my $bayes_results;
     my $bayes_se;
+    my $bayes_prob; # Probability that a given site is greater than one.
     my $pos_sites;
+
+    my $site_class_omegas;
 
     foreach my $line (@suppl) {
 #      chomp($line);
@@ -606,6 +612,7 @@ sub extract_empirical_bayes {
     #print "Has bayes: $has_bayes_section\n";
     my $started_bayes = 0;
     my $started_pos_sel_sites = 0;
+    my $started_naive = 0;
     foreach my $line (@suppl) {
       chomp($line);
       next if (length($line) == 0);      
@@ -613,26 +620,68 @@ sub extract_empirical_bayes {
 #      next if ($line =~ /prob/i);
 #      next if ($line =~ /lnL/i);
 
+      if ($line =~ /w:\s+(.*)/) {
+        my $stuff = $1;
+        chomp $stuff;
+        my @toks = split(/\s+/,$stuff);
+        for (my $i=0; $i < scalar(@toks); $i++) {
+          $site_class_omegas->{$i} = $toks[$i];
+          print "Site class: $i ".$toks[$i]."\n";
+        }
+      }
+
       $started_bayes = 1 if ($line =~ m/Bayes Empirical Bayes/i);
+      $started_naive = 1 if ($line =~ m/Naive Empirical Bayes/i);
       $started_pos_sel_sites = 1 if ($line =~ m/positively selected sites/i && !$has_bayes_section);
       $started_pos_sel_sites = 1 if ($line =~ m/positively selected sites/i && $has_bayes_section && $started_bayes);
       
-      if (!$has_bayes_section && !$started_pos_sel_sites) {
+      if (!$has_bayes_section && $started_naive && !$started_pos_sel_sites) {
+        next if ($line =~ /empirical/i);
+
+        #Naive Empirical Bayes (NEB) probabilities for 10 classes& postmean_w
+        # 1 M   0.00320 0.01289 0.02424 0.03656 0.04965 0.06350 0.07828 0.09450 0.11369 0.52349 (10)  0.642     
+        chomp $line;
         my @bits = split(/\s+/,$line);
         my $pos = $bits[1];
         my $omega = pop @bits;
+
+        my $prob_gt_one = 0;
+        #print $pos."\n";
+        foreach my $site_class (keys %{$site_class_omegas}) {
+          my $post_prob = $bits[$site_class+3];
+          #print "  Post prob: ${site_class} $post_prob\n";
+          if ($site_class_omegas->{$site_class} > 1) {
+            $prob_gt_one += $post_prob;
+          }
+        }
+        #print "   >1: ${prob_gt_one}\n";
         
-        $naive_results->{$pos} = $omega;
+        $bayes_results->{$pos} = $omega;
+        $bayes_prob->{$pos} = $prob_gt_one;
+        $bayes_se->{$pos} = '';
       }
 
       if ($has_bayes_section && $started_bayes && !$started_pos_sel_sites) {
+        next if ($line =~ /empirical/i);
+        #Bayes Empirical Bayes (BEB) probabilities for 11 classes (class)& postmean_w
+        # 1 M   0.03403 0.08222 0.10935 0.11735 0.11455 0.10627 0.09566 0.08451 0.07399 0.07080 0.11128 ( 4)  0.745 +-  1.067
         
         my @bits = split(/\s+/,$line);
         my $pos = $bits[1];
         my $se = pop @bits;
-        my $ignore_me = pop @bits;
+        my $plus_minus_sign = pop @bits;
         my $omega = pop @bits;
+
+        my $prob_gt_one = 0;
+        foreach my $site_class (keys %{$site_class_omegas}) {
+          my $post_prob = $bits[$site_class+2];
+          print "Post prob: ${site_class} $post_prob\n";
+          if ($site_class_omegas->{$site_class} > 1) {
+            $prob_gt_one += $post_prob;
+          }
+        }
         
+        $bayes_prob->{$pos} = $prob_gt_one;
         $bayes_results->{$pos} = $omega;
         $bayes_se->{$pos} = $se;
       }
@@ -652,7 +701,7 @@ sub extract_empirical_bayes {
         $pos_sites->{$site} = 1;
       }
     }
-    return ($naive_results,$bayes_results,$bayes_se,$pos_sites);
+    return ($bayes_results,$bayes_se,$bayes_prob,$pos_sites);
 }
 
 
@@ -1097,7 +1146,15 @@ sub DESTROY {
 
 sub tempdir {
     my $self = shift;
+    my $new_temp_dir = shift;
 
+    if (defined $new_temp_dir) {
+      $self->{'_tempdir'} = $new_temp_dir;
+    }
+    if (defined $self->{'_tempdir'}) {
+      return $self->{'_tempdir'};
+    }
+    
     my $tempdir = $self->SUPER::tempdir;
     $self->SUPER::tempdir($tempdir."_codeml");
 

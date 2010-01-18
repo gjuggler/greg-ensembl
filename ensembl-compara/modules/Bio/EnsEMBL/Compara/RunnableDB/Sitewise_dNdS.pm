@@ -55,6 +55,7 @@ sub fetch_input {
 
     alignment_quality_filtering => 0,
     sequence_quality_filtering => 0,
+    store_gaps             => 1,
 
     parameter_sets         => 'all',
 
@@ -137,6 +138,7 @@ sub run {
     }
     
     #eval {
+    Bio::EnsEMBL::Compara::ComparaUtils->hash_print($new_params);
       $self->run_with_params($new_params,$tree);
       $tree->release_tree;
     #};
@@ -147,17 +149,22 @@ sub run_with_params {
   my $self = shift;
   my $params = shift;
   my $tree = shift;
-  $self->check_job_fail_options;
+
+  #$self->check_job_fail_options;
 
   print "Getting alignments...\n";
   my $aa_aln = $tree->get_SimpleAlign();
   my $cdna_aln = $tree->get_SimpleAlign(-cdna => 1);
 
+  foreach my $leaf ($tree->leaves) {
+    print $leaf->member_id."\n";
+  }
+
   $input_aa = Bio::EnsEMBL::Compara::ComparaUtils->fetch_masked_alignment($aa_aln,$cdna_aln,$tree,$params,0);
   $input_cdna = Bio::EnsEMBL::Compara::ComparaUtils->fetch_masked_alignment($aa_aln,$cdna_aln,$tree,$params,1);
 
-  Bio::EnsEMBL::Compara::AlignUtils->pretty_print($input_aa,{length => 150});
-  Bio::EnsEMBL::Compara::AlignUtils->pretty_print($input_cdna,{length => 150});
+  Bio::EnsEMBL::Compara::AlignUtils->pretty_print($input_aa,{length => 1500});
+  Bio::EnsEMBL::Compara::AlignUtils->pretty_print($input_cdna,{length => 1500});
 
   if ($params->{'action'} =~ m/slr/i) {
     $self->run_sitewise_dNdS($tree,$input_cdna,$params);
@@ -625,7 +632,7 @@ sub run_paml {
   } else {
     ### Perform a BEB sitewise analysis of omegas.
 
-    # Should we be scaling the tree? Dunno. GJ 2009-10-09
+    # Should we be scaling the tree? Dunno... GJ 2009-10-09
     #Bio::EnsEMBL::Compara::TreeUtils->scale($treeI,3);
     
     my $model = $params->{'model'};
@@ -636,25 +643,26 @@ sub run_paml {
     };
     my $codeml = Bio::Greg::Codeml->new( -params => $codeml_params,
                                          -alignment => $input_cdna, 
-                                         -tree => $treeI);
-    #$codeml->save_tempfiles(1);
+                                         -tree => $treeI,
+                                         -tempdir => $self->worker_temp_directory);
+    $codeml->save_tempfiles(1);
     $codeml->run();
 
     # Use this block for testing the parsing.
     #open(IN,"/tmp/cIIZtxAvlt_codeml/rst");
     #my @supps = <IN>;
     #close(IN);
-    #my ($naive,$bayes,$se,$pos) = $codeml->extract_empirical_bayes(\@supps);
+    #my ($naive,$bayes,$se,$prob,$pos) = $codeml->extract_empirical_bayes(\@supps);
 
-    my ($naive,$bayes,$se,$pos) = $codeml->extract_empirical_bayes();
-    my $paml_results = $naive;
-    $paml_results = $bayes if ($bayes);
+    my ($bayes,$se,$prob,$pos) = $codeml->extract_empirical_bayes();
+    my $paml_results = $bayes;
     
     my $results;
     my @slr_style_sites;
     foreach my $site (1 .. $input_cdna->length/3) {
       my $omega = $paml_results->{$site};
       my $se = $se->{$site};
+      my $prob = $prob->{$site};
 
       next if (!defined $omega);
       my $lower = $omega - $se;
@@ -662,6 +670,7 @@ sub run_paml {
       my $upper = $omega + $se;
 
       my $result = '';
+      $result = 'positive1' if ($prob > 0.5);
       $result = 'positive4' if ($pos->{$site});
       
       # Just for reference: slr style output.
@@ -674,6 +683,7 @@ sub run_paml {
       $slr_style[3] = $omega;
       $slr_style[4] = $lower;
       $slr_style[5] = $upper;
+      $slr_style[6] = $prob || 0;
       $slr_style[10] = $result;
       
       push @slr_style_sites, \@slr_style;
@@ -750,13 +760,15 @@ sub store_sitewise {
     }
 
     # These two cases are pretty useless, so we'll skip 'em.
-    next if ($note eq 'all_gaps');
-    next if ($note eq 'single_char');
+    if (!$params->{'store_gaps'}) {
+      next if ($note eq 'all_gaps');
+      next if ($note eq 'single_char');
+    }
 
     my $nongaps = Bio::EnsEMBL::Compara::AlignUtils->get_nongaps_at_column($input_aa,$original_site);
     next if ($nongaps == 0);
 
-    printf("Site: %s  nongaps: %d  omegas: %3f (%3f - %3f) type: %s note: %s \n",$site,$nongaps,$omega,$lower,$upper,$type,$note);
+    #printf("Site: %s  nongaps: %d  omegas: %3f (%3f - %3f) type: %s note: %s \n",$site,$nongaps,$omega,$lower,$upper,$type,$note);
 
     my $sth = $tree->adaptor->prepare
       ("REPLACE INTO $table

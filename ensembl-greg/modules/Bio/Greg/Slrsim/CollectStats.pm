@@ -1,36 +1,56 @@
-#!/usr/bin/env perl
+package Bio::Greg::Slrsim::CollectStats;
 
-use warnings;
 use strict;
-use DBI;
-use Getopt::Long;
-use Bio::EnsEMBL::Compara::DBSQL::DBAdaptor;
-use Bio::EnsEMBL::Compara::ComparaUtils;
-use Bio::EnsEMBL::Compara::AlignUtils;
-use Bio::Greg::ComparaLite::HiveUtils;
-use Bio::Greg::EslrUtils;
-use Bio::EnsEMBL::Hive::DBSQL::DBAdaptor;
-use File::Path;
-use File::Basename;
+use Time::HiRes qw(sleep);
+
 use Cwd;
+use Bio::AlignIO;
 
-my ($url,$clean) = undef;
-GetOptions('url=s' => \$url,
-	   'clean' => \$clean
-	   );
-$url = 'mysql://slrsim:slrsim@mysql-greg.ebi.ac.uk:4134/slrsim_anisimova' if (!$url);
-my $project_base = getcwd();
+use Bio::EnsEMBL::Compara::ComparaUtils;
+use Bio::EnsEMBL::Compara::DBSQL::DBAdaptor;
+use Bio::EnsEMBL::Compara::NestedSet;
+use Bio::EnsEMBL::Hive;
+use Bio::EnsEMBL::Hive::Process;
 
-# Load the adaptors.
-Bio::EnsEMBL::Registry->no_version_check(1);
-my $dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new(-url => $url);
-my $dbc = $dba->dbc;
-my $dbh = $dbc->db_handle;
-my $pta = $dba->get_ProteinTreeAdaptor();
+our @ISA = qw(Bio::EnsEMBL::Hive::Process);
 
-get_data_for_node($ARGV[0],$ARGV[1]);
+my $dba;
+my $pta;
+
+my $tree;
+my $params;
+
+my $results;
+
+sub fetch_input {
+  my ($self) = @_;
+
+  $dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new(-DBCONN=>$self->db->dbc);
+  $pta = $dba->get_ProteinTreeAdaptor;
+
+  $params = {
+    alignment_table => 'aln_mcoffee',
+    parameter_sets => '2,3',
+  };
+
+  $params = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_string($params,$self->parameters);
+  $params = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_string($params,$self->input_id);
+}
+
+sub run {
+  my $self = shift;
+
+  my $node_id = $params->{'node_id'};
+
+  my @parameter_sets = split(',',$params->{'parameter_sets'});
+  foreach my $ps_id (@parameter_sets) {
+    $self->get_data_for_node($node_id,$ps_id);
+  }
+
+}
 
 sub get_data_for_node {
+  my $self = shift;
   my $node_id = shift;
   my $parameter_set_id = shift;
 
@@ -58,10 +78,20 @@ sub get_data_for_node {
   my $sim_params = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_tag($tree,"params_slrsim");
   my $param_set_params = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_param_set($tree->adaptor,$parameter_set_id);
 
-  # Load simulation parameters into our output array.
+  # These two come from alternative sources.
   $sim_params->{'sim_rep'} = $tree->get_tagvalue('sim_rep');
-  my @sim_tags = keys %$sim_params;
-  my @sim_vals = map {$sim_params->{$_}} @sim_tags;
+  $sim_params->{'parameter_set_name'} = $param_set_params->{'parameter_set_name'};
+
+  # Load simulation parameters into our output array.
+  my @sim_tags = qw(sim_file simulation_program ins_rate del_rate omega_distribution
+     seq_length sim_length sim_name sim_rep parameter_set_name);
+  my @sim_vals = map {
+    if (defined $sim_params->{$_}) {
+      $sim_params->{$_};
+    } else {
+      'NA';
+    }
+  } @sim_tags;
   
   # Get the sequence to act as a reference in site-wise value comparisons.
   my $reference_id = '';
@@ -80,25 +110,34 @@ sub get_data_for_node {
   $nogaps =~ s/-//g;
 
   my $aln_table_name = $param_set_params->{'output_table'};
-  my $sth1 = $dbh->prepare("SELECT aln_position,omega,type FROM sitewise_omega WHERE node_id=?;");
-  my $sth2 = $dbh->prepare("SELECT aln_position,omega,type,note,ncod,lrt_stat FROM $aln_table_name WHERE node_id=? AND parameter_set_id=?;");
+  my $sth1 = $pta->prepare("SELECT aln_position,omega,type FROM sitewise_omega WHERE node_id=?;");
+  my $sth2 = $pta->prepare("SELECT aln_position,omega,type,note,ncod,lrt_stat FROM $aln_table_name WHERE node_id=? AND parameter_set_id=?;");
   $sth1->execute($node_id);
   $sth2->execute($node_id,$parameter_set_id);
   
   my $true_omegas = $sth1->fetchall_hashref('aln_position');
   my $aln_omegas = $sth2->fetchall_hashref('aln_position');
 
-  print join("\t",@sim_tags,
+  my $table = 'sitewise_stats';
+  my $sth = $pta->prepare("REPLACE INTO $table (node_id, parameter_set_id, aln_position, stats) VALuES (?,?,?,?)");
+
+  # Put the tab-delimited header string into the meta table.
+  my $header = join("\t",@sim_tags,
              qw(node_id parameter_set true aln true_type aln_type aln_note ncod true_e aln_e lrt))."\n";
+  my $header_sth = $pta->prepare("INSERT IGNORE INTO meta VALUES (123,1,?,?)");
+  $header_sth->execute('slrsim_stats_header',$header);
+  $header_sth->finish;
+
   for (my $i=1; $i <= length($nogaps); $i++) {
     my $true_col = $sa_true->column_from_residue_number($ref_name,$i);
     my $aln_col = $sa_aln->column_from_residue_number($ref_name,$i);
 
-#    print "${true_col} ${aln_col}\n";
-
     my $true = $true_omegas->{$true_col}->{'omega'};
     my $aln = $aln_omegas->{$aln_col}->{'omega'};
-    next unless ($aln && $true);
+    if (!($aln && $true)) {
+      print " =>Skipping! aln:$aln_col $aln  true:$true_col $true\n";
+      next;
+    }
     my $aln_type = $aln_omegas->{$aln_col}->{'type'} || '';
     my $true_type = $true_omegas->{$aln_col}->{'type'} || '';
     my $aln_note = $aln_omegas->{$aln_col}->{'note'} || '';
@@ -106,10 +145,14 @@ sub get_data_for_node {
     my $true_e = sprintf "%.3f", $true_entropies[$true];
     my $aln_e = sprintf "%.3f", $aln_entropies[$aln];
     my $lrt = $aln_omegas->{$aln_col}->{'lrt_stat'} || 99;
-
     
     my @vals = (@sim_vals,$node_id,$parameter_set_id,$true,$aln,$true_type,$aln_type,$aln_note,$ncod,$true_e,$aln_e,$lrt);
-
-    print join("\t",@vals)."\n";
+    my $str = join("\t",@vals);
+    print $str."\n";
+    $sth->execute($node_id,$parameter_set_id,$aln_col,$str);
   }
+
+  $sth->finish;
 }
+
+1;

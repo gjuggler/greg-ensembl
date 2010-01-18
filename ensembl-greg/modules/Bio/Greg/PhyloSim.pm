@@ -37,22 +37,32 @@ sub fetch_input {
   $params = {
     num_bins => 20,
 
-    # For lognormal sampling.
-    #omega_distribution => 'lognormal',
-    meanlog => -4.079,
-    sdlog => 1.23,
+    omega_distribution => 'M3',
+
+    ### Omega Distribution Parameters ###
+
+    # For lognormal model.
+    #meanlog => -4.079,
+    #sdlog => 1.23,
 
     # for M3 models.
-    omega_distribution => 'M3',
-    p0 => 0.386,
-    p1 => 0.535,
-    p2 => 0.079,
-    w0 => 0.018,
-    w1 => 0.304,
-    w2 => 1.691,
-    # etc. etc.
+    #p0 => 0.386,
+    #p1 => 0.535,
+    #p2 => 0.079,
+    #w0 => 0.018,
+    #w1 => 0.304,
+    #w2 => 1.691,
+    # etc. etc. if you want to continue the M3 model.
 
-    seq_length => 500,
+    # for M8 models.
+    #p0 => 0.9432,
+    #p => 0.572,
+    #q => 2.172,
+    #w => 2.081,
+
+    ### End Omega Distribution Parameters ###
+
+    seq_length => 200,
     kappa => 2,
     ins_rate => 0.01,
     del_rate => 0.01,
@@ -67,13 +77,9 @@ sub fetch_input {
   $node_id = $params->{'node_id'} if (!defined $node_id);
   $pta->table_base($params->{'input_table_base'});
   $tree = $pta->fetch_node_by_node_id($node_id);
-  foreach my $leaf ($tree->leaves) {
-    print $leaf."\n";
-    print $leaf->stable_id."\n";
-  }
 
   # Load up tree-wise simulation params.
-  my $sp_str = $tree->get_tagvalue('sim_params');
+  my $sp_str = $tree->get_tagvalue('params_slrsim');
   $params = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_string($params,$sp_str);
   Bio::EnsEMBL::Compara::ComparaUtils->hash_print($params);
 
@@ -86,7 +92,7 @@ sub run {
 
   if ($params->{'simulation_program'} eq 'indelible') {
     $aln = $self->simulate_alignment_indelible($tree,$params);
-    print "ALN : $aln\n";
+    #print "ALN : $aln\n";
   } elsif ($params=>{'simulation_program'} eq 'phylosim') {
     $aln = $self->simulate_alignment_phylosim($tree,$params);
   }
@@ -105,6 +111,21 @@ sub write_output {
   Bio::EnsEMBL::Compara::ComparaUtils->store_SimpleAlign_into_table($out_table,$tree,$final_aa,$final_cdna);
   print "STORING OMEGAS\n";
   $self->_store_sitewise_omegas("sitewise_omega",\@sitewise_omegas,$final_aa,$params);
+
+  my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
+  my $aa_aln = $tree->get_SimpleAlign();
+  my $cdna_aln = $tree->get_SimpleAlign(-cdna => 1);
+  $cdna_aln = Bio::EnsEMBL::Compara::AlignUtils->sort_by_tree($cdna_aln,$treeI);
+  my $alnout = Bio::AlignIO->new
+    ('-format'      => 'phylip',
+     '-file'          => $self->worker_temp_directory,
+     '-interleaved' => 0,
+     '-idlinebreak' => 1,
+     '-idlength'    => $cdna_aln->maxdisplayname_length + 1);
+  $alnout->write_aln($cdna_aln);
+  $alnout->close();
+
+  #Bio::EnsEMBL::Compara::AlignUtils->pretty_print($aa_aln,{length => 1500});
 }
 
 sub throw_error {
@@ -141,9 +162,10 @@ sub simulate_alignment_indelible {
 
   print "Simulating sequence with $length codons...\n";
   
-  my $tmp_dir = $self->worker_temp_directory;
+  my $tmp_dir = $self->worker_temp_directory . $tree->node_id . '/';
+  print "Temp dir: $tmp_dir\n";
   #use File::Path qw(mkpath rmtree);
-  #mkpath([$tmp_dir]);
+  mkpath([$tmp_dir]);
 
   my $output_f = $tmp_dir."sim.txt";
   my $ctrl_f = $tmp_dir."control.txt";
@@ -152,16 +174,18 @@ sub simulate_alignment_indelible {
   my @probs = $self->get_equally_spaced_probs($params);
   my @final_bins;
   my @final_probs;
-  foreach my $prob (@probs) {
-    if ($prob > 0) {
-      push @final_bins, shift @bins;
+  for (my $i=0; $i < scalar(@probs); $i++) {
+    my $prob = $probs[$i];
+#    if ($prob > 0) {
+      push @final_bins, $bins[$i];
       push @final_probs, $prob;
-    }
+#    }
   }
   @probs = @final_probs;
   @bins = @final_bins;
   print "probs: @probs\n";
-  pop @probs;
+  print "bins: @bins\n";
+  pop @probs; # Remove the last probability; Indelible only wants (n-1) probabilities in its input!
   
   my $kappa = $params->{'kappa'};
   my $submodel_str = $kappa."\n\t". join(" ",@probs) . "\n\t" . join(" ",@bins);
@@ -205,14 +229,14 @@ sub simulate_alignment_indelible {
   my $output = `indelible $ctrl_f\r\n`;
 
   my $aln_f = $output_f."_TRUE.fas";
-  if (!-e $aln_f) {
-    open(LOG,'LOG.txt');
-    while (<LOG>) {
-      chomp;
-      print "$_\n";
-    }
-    close(LOG);
-  }
+#  if (!-e $aln_f) {
+#    open(LOG,'LOG.txt');
+#    while (<LOG>) {
+#      chomp;
+#      print "$_\n";
+#    }
+#    close(LOG);
+#  }
 
   my $aln = Bio::EnsEMBL::Compara::AlignUtils->from_file($aln_f);
 
@@ -293,34 +317,64 @@ sub _store_sitewise_omegas {
   my $parameter_set_id = 1;
   $parameter_set_id = $params->{'parameter_set_id'} if (defined $params->{'parameter_set_id'});
 
-  # Insert new omegas into the node.
-  my $sth = $self->dbc->prepare("REPLACE INTO $output_table (aln_position,aln_position_fraction,node_id,parameter_set_id,omega,omega_lower,omega_upper,type,ncod) values (?,?,?,?,?,?,?,?,?);");
+ 
+  eval {
+ # Insert new omegas into the node.
+#  my $sth = $self->dbc->prepare("INSERT IGNORE INTO $output_table (aln_position,aln_position_fraction,node_id,parameter_set_id,omega,omega_lower,omega_upper,type,ncod) values (?,?,?,?,?,?,?,?,?);");
   #print "sw: $sitewise_ref\n";
+#  $self->dbc->do("LOCK TABLES $output_table WRITE");
+  my @insert_strings = ();
   foreach my $hr (@{$sitewise_ref}) {
     #print "hr: $hr\n";
-    printf "%d %d\n",$hr->{aln_position},$hr->{omega};
+    #printf "%d %d\n",$hr->{aln_position},$hr->{omega};
     my $ncod = Bio::EnsEMBL::Compara::AlignUtils->get_nongaps_at_column($sa,$hr->{aln_position});
 
-    my $type = "negative1" if ($hr->{omega} < 1);
-    $type = "positive1" if ($hr->{omega} > 1);
+    my $type;
+    if ($hr->{omega} <= 1) {
+      $type = "negative1";
+    } else {
+      $type = "positive1";
+    }
 
     my $aln_position_fraction = $hr->{aln_position} / $sa->length;
 
-    $sth->execute($hr->{aln_position},
-                  $aln_position_fraction,
-		  $hr->{node_id},
-		  $parameter_set_id,
-		  $hr->{omega},
-		  $hr->{omega_lower},
-		  $hr->{omega_upper},
-                  $type,
-		  $ncod);
-    sleep(0.1);
+    push @insert_strings, sprintf('(%d,%.5f,%d,%d,%.5f,%.5f,%.5f,"%s",%d)',
+                              $hr->{aln_position},
+                              $aln_position_fraction,
+                              $hr->{node_id},
+                              $parameter_set_id,
+                              $hr->{omega},
+                              $hr->{omega_lower},
+                              $hr->{omega_upper},
+                              $type,
+                              $ncod);
+#    $sth->execute(
+#$hr->{aln_position},
+#                  $aln_position_fraction,
+#		  $hr->{node_id},
+#		  $parameter_set_id,
+#		  $hr->{omega},
+#		  $hr->{omega_lower},
+#		  $hr->{omega_upper},
+#                  $type,
+#		  $ncod);
+#    sleep(0.1);
   }
-  $sth->finish();
+  
+  my $insert = join(",",@insert_strings);
+  $self->dbc->do("INSERT IGNORE INTO $output_table (aln_position,aln_position_fraction,node_id,parameter_set_id,omega,omega_lower,omega_upper,type,ncod) values $insert ;");
+#  $sth->finish();
+#  $self->dbc->do("UNLOCK TABLES;");
+  };
+  if ($@) {
+    open(OUT,">/homes/greg/tmp/".$tree->node_id.".txt");
+    print OUT $@."\n";
+    close(OUT);
+    die($@);
+  }
 }
 
-sub get_paml_bins {
+sub get_m3_bins {
   my $self = shift;
   my $params = shift;
   
@@ -333,10 +387,10 @@ sub get_paml_bins {
   return @bins;
 }
 
-sub get_paml_probs {
+sub get_m3_probs {
   my $self = shift;
   my $params = shift;
-  
+
   my $i=0;
   my @probs;
   while ($params->{'p'.$i}) {
@@ -350,12 +404,12 @@ sub get_equally_spaced_bins {
   my $self = shift;
   my $params = shift;
 
-  if ($params->{'omega_distribution'} =~ m/M[0-9]/) {
-    return $self->get_paml_bins($params);
+  if ($params->{'omega_distribution'} =~ m/M3/i) {
+    return $self->get_m3_bins($params);
   }
 
   my $k = $params->{'num_bins'};
-  my $lo = 0.0001;
+  my $lo = 0;
   my $hi = 3;
 
   my $r_cmd = qq^
@@ -370,21 +424,40 @@ sub get_equally_spaced_probs {
   my $self = shift;
   my $params = shift;
 
-  if ($params->{'omega_distribution'} =~ m/M[0-9]/) {
-    return $self->get_paml_probs($params);
-  }
-
   my $function = $params->{'omega_distribution'};
   my $k = $params->{'num_bins'};
-  my $lo = 0.0001;
+  my $lo = 0;
   my $hi = 3;
 
-  my $r_pre = "";
+  my $r_pre = qq^
+
+ppaml_m8 = function(x,p0,p,q,w) {
+  y = pbeta(x,shape1=p,shape2=q)*p0
+  y[x>=w] = y[x>=w] + (1-p0)
+  return(y)
+}
+pconst = function(x,w) {
+  y = rep(0,length(x))
+  y[x>=w] = 1
+  return(y)
+}
+  ^;
   my $f = "";
-  if ($function eq "uniform") {
+  if ($function =~ m/M3/i) {
+    return $self->get_m3_probs($params);
+  } elsif ($function =~ m/M8/i) {
+    my $p0 = $params->{'p0'};
+    my $p = $params->{'p'};
+    my $q = $params->{'q'};
+    my $w = $params->{'w'};
+    $f = qq^paml_m8(x,p0=${p0},p=$p,q=$q,w=$w)^;
+  } elsif ($function eq "constant") {
+    my $w = $params->{'w'};
+    $f = qq^const(x,w=$w)^;
+  } elsif ($function eq "uniform") {
     my $min = $params->{'min'};
     my $max = $params->{'max'};
-    $f = qq^unif(x,min=$min,max=$max));^;
+    $f = qq^unif(x,min=$min,max=$max)^;
   } elsif ($function eq "gamma") {
     my $shape = $params->{'shape'};
     my $rate = $params->{'rate'};
@@ -427,6 +500,7 @@ sub get_r_numbers {
 }
 
 # Calls R to extract the equiprobable bins for a given distribution.
+# GJ 20010-01-15 this is currently NOT used!!!
 sub get_equiprobable_bins {
   my $self = shift;
   my $params = shift;
