@@ -6,12 +6,12 @@ sub defaultMysqlURL {
   my $class = shift;
 
   if ($ENV{'USER'} =~ /gj1/) {
-    my $url = 'mysql://ensadmin:ensembl@ens-research:3306/gj1_compara_54';
+    my $url = 'mysql://ensadmin:ensembl@ens-research:3306/gj1_2xmammals_gold';
     print $url."\n";
     return $url;
     # return 'mysql://ensadmin:ensembl@compara2:5316/avilella_compara_homology_53';
   } else {
-    my $url = 'mysql://ensadmin:ensembl@127.0.0.1:5425/gj1_compara_54';
+    my $url = 'mysql://ensadmin:ensembl@127.0.0.1:5425/gj1_2xmammals_gold';
     print $url."\n";
     return $url;
   }
@@ -479,7 +479,11 @@ sub run_r {
   $vanilla = "--slave" if ($params->{'silent'});
 
   my $r_cmd = "R";
-  if ($ENV{'USER'} =~ /gj1/) {
+  if ($params->{'farm'}) {
+    $r_cmd = "/software/bin/R-2.9.0";
+  } elsif ($params->{'bigmen'}) {
+    $r_cmd = "bsub -Is -R'select[mem>10000] rusage[mem=10000]' -M10000000 /software/R-2.9.0/bin/R ";
+  } elsif ($ENV{'USER'} =~ /gj1/) {
     $r_cmd = "/software/R-2.9.0/bin/R";
   } else {
 
