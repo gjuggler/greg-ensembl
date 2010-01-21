@@ -57,7 +57,7 @@ sub fetch_input {
     sequence_quality_filtering => 0,
     store_gaps             => 1,
 
-    parameter_sets         => '1',
+    parameter_sets         => 'all',
 
     # SLR Parameters
     gencode                => 'universal',
@@ -99,11 +99,18 @@ sub fetch_input {
 }
 
 sub run {
-  my $self = shift;
-  
+  my $self = shift;  
+
   my $node_id = $params->{'node_id'};
 
-  my @param_sets = split(",",$params->{'parameter_sets'});
+  my @param_sets;
+  my $param_set_string = $params->{'parameter_sets'};
+  if ($param_set_string eq 'all') {
+    my $sth = $dba->dbc->prepare("select distinct(parameter_set_id) FROM parameter_set order by parameter_set_id;");
+    @param_sets = @{$sth->fetchall_arrayref([0])};
+  } else {
+    @param_sets = split(",",$params->{'parameter_sets'});
+  }
   delete $params->{'parameter_sets'};
   foreach my $param_set (@param_sets) {
     print "PARAM SET: $param_set\n";
@@ -166,11 +173,13 @@ sub run_with_params {
   } elsif ($params->{'action'} =~ m/wobble/i) {
     $params->{'wobble'} = 0;
     my $results_nowobble = $self->run_wobble($tree,$input_cdna,$params);
-    $params->{'wobble'} = 1;
-    my $results_wobble = $self->run_wobble($tree,$input_cdna,$params);
-    
-    $tree->store_tag("lnl_wobble",$results_wobble->{'lnL'});
     $tree->store_tag("lnl_nowobble",$results_nowobble->{'lnL'});
+
+    sleep(2);
+
+    $params->{'wobble'} = 1;
+    my $results_wobble = $self->run_wobble($tree,$input_cdna,$params);    
+    $tree->store_tag("lnl_wobble",$results_wobble->{'lnL'});
   }
 
 }
@@ -211,17 +220,19 @@ sub run_wobble {
 
   my $tree_newick = Bio::EnsEMBL::Compara::TreeUtils->to_newick($tree);
 
+  # Map the stable_ids into shorter integers, to stay below Slr_wobble's max label length.
   my $tree_map;
   my $i=0;
   my @leaves = $tree->leaves;
   foreach my $seq ($cdna_aln->each_seq) {
     $i++;
     my $id = $seq->id;
-
     map {$tree_newick =~ s/$id/$i/g if ($_->stable_id eq $id)} @leaves;
   }
 
   Bio::EnsEMBL::Compara::AlignUtils->pretty_print($cdna_aln,{length => 50});
+
+  #$cdna_aln = $cdna_aln->slice(1,100);
 
   # OUTPUT THE ALIGNMENT.
   my $alnout = Bio::AlignIO->new
@@ -263,16 +274,17 @@ sub run_wobble {
 # #Sitewise log-likelihoods
 # Penalty = -2.290851e+00
 
+  my $cwd = cwd();
+  chdir($tmpdir);
+
   my $rc = 1;
   my $results;
   my $error_string;
   {
-    my $cwd = cwd();
-    chdir($tmpdir);
     my $exit_status = 0;
 
-    #my $prefix="";
-    my $prefix= "export MALLOC_CHECK_=1;";
+    my $prefix="";
+#    my $prefix= "export MALLOC_CHECK_=1;";
     print "Running: $slrexe\n";
     my $run;
     open($run, "$prefix $slrexe |") or $self->throw("Cannot open exe $slrexe");
@@ -300,16 +312,16 @@ sub run_wobble {
       }
     }
 
-    print "LnL: ".$results->{'lnL'}."\n";
-    print "OMEGA: ". $results->{'omega_cats'}."\n";
-    print "WOBBLE: ". $results->{'wobble_cats'}."\n";
+    print " -> LnL: ".$results->{'lnL'}."\n";
+    print " -> OMEGA: ". @{$results->{'omega_cats'}}."\n";
+    print " -> WOBBLE: ". @{$results->{'wobble_cats'}}."\n";
   }
 
 
   open RESULTS, "$tmpdir/$outfile" or die "couldnt open results file: $!";
   my @sites;
   while (<RESULTS>) {
-    #print $_;
+    print $_;
 
     if ( /(\S+)\s+(\S+)/ ) {
       my $site = $1;
@@ -321,6 +333,7 @@ sub run_wobble {
   }
   $results->{'sites'} = \@sites;
 
+  chdir $cwd;
   return $results;
 }
 

@@ -957,11 +957,14 @@ sub get_genome_taxonomy_below_level {
 # Returns the NCBI taxonomy tree of Ensembl genomes in NHX format.
 sub get_genome_tree_nhx {
   my $class = shift;
+  my $dba = shift;
+  my $params = shift;
 
   my @gdbs = Bio::EnsEMBL::Compara::ComparaUtils->get_all_genomes($dba);
   my $species_tree = $class->get_genome_taxonomy_below_level($dba,1);
 
-  my $include_imgs = 0;
+  my $labels_option = $params->{'labels'};
+  my $include_imgs = $params->{'images'};
 
   @gdbs = sort {$a->taxon->binomial cmp $b->taxon->binomial} @gdbs;
   foreach my $gdb (@gdbs) {
@@ -974,23 +977,22 @@ sub get_genome_tree_nhx {
     my @vals = $sh->fetchrow_array();
     my $ensp = $vals[0];
 
-    #print $tx->ensembl_alias."\n";
-    #print $tx->short_name."\n";
-    #print $gdb->taxon->classification . "\n";
-
-    @vals = ($ensp,$tx_id,$tx->ensembl_alias,$tx->binomial,$tx->short_name);
-    my $pretty_str = sprintf("%-20s  %6s  %-22s  %-30s  %-8s",@vals);
-    print $pretty_str."\n";
-
     my $leaf = $species_tree->find_node_by_node_id($tx_id);
     next unless $leaf;
 
+    $leaf->add_tag("bcol","gray");
     if ($include_imgs) {
       my $underbar_species = $tx->binomial;
       $underbar_species =~ s/ /_/g;
       $leaf->add_tag("img","http://www.ensembl.org/img/species/pic_${underbar_species}.png");
     }
-    $leaf->name($tx->ensembl_alias);
+    if ($labels_option eq 'mnemonics') {
+      @vals = ($ensp,$tx_id,$tx->ensembl_alias,$tx->binomial,$tx->short_name);
+      my $pretty_str = sprintf("%-20s  %6s  %-22s  %-30s  %-8s",@vals);
+      $leaf->name($pretty_str);
+    } else {
+      $leaf->name($tx->ensembl_alias);
+    }
   }
   return $species_tree->nhx_format;
 }

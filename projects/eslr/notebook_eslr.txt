@@ -108,3 +108,14 @@ mysql> select tag,count(*) AS total,count(IF(type IN ("positive1","positive2","p
 +----------+--------+--------+--------+
 9 rows in set (12.75 sec)
 
+
+### 2010-01-18 ###
+
+What I did:
+ - Let's run a nice E-SLR pipeline once and for all. Don't bother with alignment / seq quality filtering, just align and analyze.
+ - Current database and table locations:
+   -> mysql://compara2/gj1_57: dupldiv run
+   -> mysql://ens-research/gj1_compara_53: OLD version of 2xmammals analysis.
+   -> mysql://ens-research/gj1_compara_54: NEW version of 2xmammals analysis.
+ - Loaded the 2xmammals gold into ens-research/gj1_2xmammals_gold.
+ - Re-ran the data collection and dumping scripts for the Broad colleagues.   

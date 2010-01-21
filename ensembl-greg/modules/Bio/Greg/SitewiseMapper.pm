@@ -41,15 +41,15 @@ sub fetch_input {
 
   ### DEFAULT PARAMETERS ###
   $params->{'sitewise_table'} = 'sitewise_aln';
-  $params->{'do_mapping'} = 0;
-  $params->{'collect_tags'} = 0;
+  $params->{'do_mapping'} = 1;
+  $params->{'collect_tags'} = 1;
   $params->{'collect_dup_tags'} = 0;
-  $params->{'collect_pfam'} = 0;
+  $params->{'collect_pfam'} = 1;
   $params->{'collect_uniprot'} = 1;
   $params->{'collect_go'} = 1;
   $params->{'go_taxon_id'} = 9606;
   $params->{'create_plot'} = 0;
-  $params->{'parameter_set_id'} = 1;
+  $params->{'parameter_set_id'} = 1; # The parameter set to use for UniProt extraction.
   #########################
   
   # Fetch parameters from the two possible locations. Input_id takes precedence!

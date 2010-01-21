@@ -10,185 +10,42 @@ use Bio::EnsEMBL::Compara::ComparaUtils;
 use Bio::Greg::EslrUtils;
 use File::Path;
 use File::Basename;
+Bio::EnsEMBL::Registry->no_version_check(1);
 
-my $url = 'mysql://ensadmin:ensembl@compara2:3306/gj1_eslr';
-my $clean = 1;
+my $url = 'mysql://ensadmin:ensembl@compara2:3306/gj1_wobble';
+
 my $dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new(-url => $url);
 my $dbc = $dba->dbc;
-my $analysis_hash; # Hash to store mapping between analysis names and ID numbers.
+my $dbh = $dbc->db_handle;
+my $pta = $dba->get_ProteinTreeAdaptor();
+my $mba = $dba->get_MemberAdaptor();
 
+my $analysis_hash;
 
-###
-# Most of the pipeline is defined with the following function calls.
-###
+my $SKIP_ADDING_JOBS = 0;
+#my $LIMIT = "";
+my $LIMIT = "limit 10";
 
-parameter_sets();
 node_sets();
 omegas();
-mapping();
 
 connect_analysis("NodeSets","Omegas",1);
-connect_analysis("Omegas","Mapping",1);
-
-#print_database_tree();
-
-
-sub clean_tables {
-  if ($clean) {    
-    my @truncate_tables = qw^
-      analysis_job dataflow_rule hive
-      sitewise_omega
-      parameter_set
-      node_set_member node_set
-      ^;
-    map {print "$_\n";eval {$dba->dbc->do("truncate table $_");}} @truncate_tables;
-  }
-}
 
 sub node_sets {
   my $analysis_id=101;
   my $logic_name = "NodeSets";
   my $module = "Bio::Greg::NodeSets";
   my $params = {
-    flow_node_set => 8
+    flow_node_set => 8,  # Add superfamily subtrees to the pipeline.
+    flow_parent_and_children => 0
   };
   _create_analysis($analysis_id,$logic_name,$module,$params,30,1);
 
   $params = {};
-  my $cmd = "SELECT node_id FROM protein_tree_node WHERE parent_id=1 AND root_id=1;";
+  my $cmd = "SELECT node_id FROM protein_tree_node where node_id=root_id $LIMIT;";
   my @nodes = _select_node_ids($cmd);
+  $dbc->do("DELETE from analysis_job WHERE analysis_id=$analysis_id;");
   _add_nodes_to_analysis($analysis_id,$params,\@nodes);  
-}
-
-sub parameter_sets {
-  my $params;
-  my $base_params={};
-  
-  $params = {
-    parameter_set_id => 1,
-    parameter_set_name => "Mammals"
-  };
-  $params = _combine_hashes($base_params,$params);
-  _add_parameter_set($params);
-
-  $params = {
-    parameter_set_id => 2,
-    parameter_set_name => "Primates",
-    keep_species => "9606,9598,9544,9478,30611,30608"
-  };
-  $params = _combine_hashes($base_params,$params);
-  _add_parameter_set($params);
-
-  $params = {
-    parameter_set_id => 3,
-    parameter_set_name => "Glires",
-    keep_species => "10090,10116,43179,10020,10141,9986,9978"
-  };
-  $params = _combine_hashes($base_params,$params);
-  _add_parameter_set($params);
-
-
-  $params = {
-    parameter_set_id => 4,
-    parameter_set_name => "Laurasiatheria",
-    keep_species => "9365,42254,9796,59463,132908,30538,9739,9913,9615,9685"
-  };
-  $params = _combine_hashes($base_params,$params);
-  _add_parameter_set($params);
-
-  $params = {
-    parameter_set_id => 5,
-    parameter_set_name => "Afrotheria",
-    keep_species => "9813,9785,9731"
-  };
-  $params = _combine_hashes($base_params,$params);
-  _add_parameter_set($params);
-
-  $params = {
-    parameter_set_id => 6,
-    parameter_set_name => "No 2x",
-    keep_species => join(",",(9796, # horse
-			      9913, # cow
-			      9615, # dog
-			      9606, # human
-			      9600, # orang
-			      9593, # gorilla
-			      9598, # chimp
-			      9544, # macaque
-			      10090,# mouse
-			      10116,# rat
-			      10141,# guinea pig
-			      # Chicken and tetraodon are hi-Q but are being ignored in all sets.
- 			      ))
-  };
-  $params = _combine_hashes($base_params,$params);
-  _add_parameter_set($params);
-
-  $params = {
-    parameter_set_id => 7,
-    parameter_set_name => "2x Only",
-    keep_species => join(",",(9365,   # hedgehog
-			      42254,  # shrew
-			      59463,  # microbat
-			      132908, # megabat
-			      30538,  # alpaca
-			      9739,   # dolphin
-			      9685,   # cat
-			      9478,   # tarsier
-			      30611,  # bushbaby
-			      30608,  # mouse lemur
-			      43179,  # squirrel
-			      10020,  # kangaroo rat
-			      9986,   # rabbit
-			      9978,   # pika
-			      37347,  # tree shrew
-			      9361,   # armadillo
-			      9358,   # sloth
-			      9813,   # hyrax
-			      9785,   # elephant
-			      9371    # tenrec
-			      ))
-  };
-  $params = _combine_hashes($base_params,$params);
-  _add_parameter_set($params);
-
-  $params = {
-    parameter_set_id => 8,
-    parameter_set_name => "No Primates",
-    remove_species => join(",",(9606,   # human
-				9598,   # chimp
-				9544,   # macaque
-				9478,   # tarsier
-				30611,  # bushbaby
-				30608,  # mouse lemur
-				9593,   # gorilla
-				9600,   # orang
-				9483    # marmoset
-				))
-  };
-  $params = _combine_hashes($base_params,$params);
-  _add_parameter_set($params);
-
-}
-
-sub align {
-  my $analysis_id = 102;
-  my $logic_name = "Align";
-  my $module = "Bio::EnsEMBL::Compara::RunnableDB::MCoffee";
-  my $params = {
-    method => 'cmcoffee'
-  };
-
-  _create_analysis($analysis_id,$logic_name,$module,$params,400,1);
-}
-
-sub sequence_quality {
-  my $analysis_id=103;
-  my $logic_name = "SequenceQuality";
-  my $module = "Bio::Greg::SequenceQualityLoader";
-  my $params = {};
-  
-  _create_analysis($analysis_id,$logic_name,$module,$params,100,1);
 }
 
 sub omegas {
@@ -196,15 +53,17 @@ sub omegas {
   my $logic_name = "Omegas";
   my $module = "Bio::EnsEMBL::Compara::RunnableDB::Sitewise_dNdS";
   my $base_params = {
-    parameter_sets => "all",
-    sequence_quality_filtering => 1,
-    alignment_quality_filtering => 1,
+    action => 'wobble',
+    parameter_sets => "1",
+    sequence_quality_filtering => 0,
+    alignment_quality_filtering => 0,
     remove_species => join(",",(
-				# Outside of Eutheria:
-				9258, # platypus
+				#9600, # orang not allowed.
+				#9593, # gorilla not allowed.
+				#9258, # platypus -- not allowed, or just ignored?
+				# Outside of theria:
   			        13616,# opossum
 				9031, # chicken
-                                9103, # turkey!!
 				59729,# zebra finch
 				28377,# anole lizard
 				8364, # xenopus
@@ -224,6 +83,14 @@ sub omegas {
     };
   _create_analysis($analysis_id,$logic_name,$module,$base_params,400,1);
 
+  my $params;
+  
+  $params = {
+    parameter_set_id => 1,
+    parameter_set_name => "Mammals"
+  };
+  $params = _combine_hashes($base_params,$params);
+  _add_parameter_set($params);
 }
 
 sub mapping {
@@ -231,17 +98,12 @@ sub mapping {
   my $logic_name = "Mapping";
   my $module = "Bio::Greg::SitewiseMapper";
   my $params = {
-    sitewise_table => 'sitewise_omega'
+    sitewise_table => 'sitewise_aln'
   };
   _create_analysis($analysis_id,$logic_name,$module,$params,20,1);
+
 }
 
-sub print_database_tree {
-  my $nhx = Bio::EnsEMBL::Compara::ComparaUtils->get_genome_tree_nhx($dba,{labels => 'mnemonics',
-									   images => 1});
-
-  print $nhx."\n";
-}
 
 sub _combine_hashes {
   my @hashes = @_;
@@ -273,6 +135,9 @@ sub _add_parameter_set {
 }
 
 
+
+
+
 ########*********########
 #-------~~~~~~~~~-------#
 ########*********########
@@ -286,7 +151,9 @@ sub _create_analysis {
   my $batch_size = shift || 1;
   
   $analysis_hash->{$logic_name} = $analysis_id;
+
   my $param_string = Bio::EnsEMBL::Compara::ComparaUtils->hash_to_string($params);
+
   my $cmd = qq{REPLACE INTO analysis SET
 		 created=now(),
 		 analysis_id=$analysis_id,
@@ -295,12 +162,21 @@ sub _create_analysis {
 		 parameters="$param_string"
 		 ;};
   $dbc->do($cmd);
+
   $cmd = qq{UPDATE analysis_stats SET
 	      hive_capacity=$hive_capacity,
 	      batch_size=$batch_size
 	      WHERE analysis_id=$analysis_id
 	      ;};
   $dbc->do($cmd);
+
+#  $cmd = qq{REPLACE INTO dataflow_rule SET
+#	      from_analysis_id=$analysis_id,
+#	      to_analysis_url="$logic_name",
+#	      branch_code=2
+#	      ;
+#	  };
+#  $dbc->do($cmd);
 }
 
 sub connect_analysis {
@@ -309,7 +185,9 @@ sub connect_analysis {
   my $branch_code = shift;
 
   my $from_id = $analysis_hash->{$from_name};
+
   $branch_code = 1 unless (defined $branch_code);
+
   my $cmd = qq{REPLACE INTO dataflow_rule SET
 		 from_analysis_id=$from_id,
 		 to_analysis_url="$to_name",
@@ -319,6 +197,8 @@ sub connect_analysis {
 }
 
 sub _add_nodes_to_analysis {
+  return if ($SKIP_ADDING_JOBS);
+
   my $analysis_id = shift;
   my $params = shift || {};
   my $node_arrayref = shift;
@@ -340,9 +220,11 @@ sub _add_nodes_to_analysis {
 
 sub _select_node_ids {
   my $cmd = shift;
+
   if (!defined $cmd) {
     $cmd = "SELECT node_id FROM protein_tree_node WHERE parent_id=1 AND root_id=1";
   }
+
   my $sth = $dbc->prepare($cmd);
   $sth->execute();
 
@@ -351,4 +233,30 @@ sub _select_node_ids {
   @node_ids = map {@{$_}[0]} @node_ids;  # Some weird mappings to unpack the numbers from the arrayrefs.
   $sth->finish;
   return @node_ids;
+}
+
+
+
+
+sub one_time_use {
+  #my $member = $mba->fetch_by_source_stable_id(undef,'ENSMLUP00000013762');
+  #print $member->stable_id."\n";
+  #Bio::EnsEMBL::Compara::ComparaUtils->get_quality_string_for_member($member);
+  #exit(0);
+
+  my $reg = "Bio::EnsEMBL::Registry";
+  $reg->load_registry_from_url('mysql://ensro@ens-livemirror/54:3306',0); 
+  my $genome_db_adaptor = $dba->get_GenomeDBAdaptor();
+  foreach my $gdb (@{$genome_db_adaptor->fetch_all}) {
+    #print $gdb->name."\n";
+    my $core_adaptor = $reg->get_DBAdaptor($gdb->name,"Core");
+    next unless ($core_adaptor);
+    my $locator = $core_adaptor->locator;
+    $locator .= ";species=".$gdb->name;
+    $locator .= ";disconnect_when_inactive=1";
+    print $locator."\n";
+    $gdb->locator($locator);
+    $genome_db_adaptor->store($gdb);
+    #print $core_adaptor->dbc->locator."\n";
+  }
 }
