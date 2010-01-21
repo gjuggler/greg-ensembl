@@ -30,10 +30,11 @@ my %node_set_hash;
 
 sub fetch_input {
   my( $self) = @_;
-  
 
+  print $self."\n";
+  
   # Load up the Compara DBAdaptor.
-  if ($self->dba) {
+  if ($self->{'dba'}) {
     $dba = $self->dba;
   } else {
     $dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new(-DBCONN=>$self->db->dbc);

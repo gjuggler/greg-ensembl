@@ -8,6 +8,8 @@ use Bio::EnsEMBL::Utils::Exception;
 use Bio::EnsEMBL::Compara::AlignUtils;
 use Bio::EnsEMBL::Compara::TreeUtils;
 
+use Bio::EnsEMBL::Registry;
+
 use File::Path;
 
 #
@@ -17,6 +19,11 @@ use File::Path;
 my $TREE = "Bio::EnsEMBL::Compara::TreeUtils";
 my $ALN = "Bio::EnsEMBL::Compara::AlignUtils";
 my $COMPARA = "Bio::EnsEMBL::Compara::ComparaUtils";
+
+Bio::EnsEMBL::Registry->load_registry_from_db(-host => 'ens-livemirror',
+					      -user => 'ensro',
+					      );
+Bio::EnsEMBL::Registry->set_disconnect_when_inactive(1);
 
 sub cigar_line {
   my ($class,$str) = @_;
@@ -764,6 +771,7 @@ sub get_tree_for_comparative_analysis {
     }
   }
 
+  # Explicitly add anything that shows up in the 'remove_species' parameter to the remove list.
   if ($remove_species ne '') {
     my @rs = split(",",$remove_species);
     map {$remove_hash{$_}=1} @rs;
@@ -914,9 +922,11 @@ sub get_genome_taxonomy_below_level {
   my $class = shift;
   my $dba = shift;
   my $root_taxon_id = shift;
+  my $verbose = shift || 0;
 
   my @gdbs = $class->get_all_genomes($dba);
-  my @ncbi_ids = map {$_->taxon->taxon_id} @gdbs;
+  
+  my @ncbi_ids = map {$_->taxon_id} @gdbs;
 
   my $taxon_a = $dba->get_NCBITaxonAdaptor;
 
@@ -936,21 +946,45 @@ sub get_genome_taxonomy_below_level {
     if (!$TREE->has_ancestor_node_id($tx,$root)) {
       #print "not below tax level!!!\n";
       next;
+    } else {
+      print "Okay: ".$tx->name."\n" if ($verbose);
     }
     
     my $node = $tx;
     while (defined $node) {
+      last if (!$TREE->has_ancestor_node_id($node,$root));
+      print $node->name." " if ($verbose);
       $keepers{$node->node_id} = $node;
       $node = $node->parent;
     }
+    print "\n" if ($verbose);
   }
 
   my @nodes = values %keepers;
-  #print "Size: ".scalar(@nodes)."\n";
+  print "Size: ".scalar(@nodes)."\n" if ($verbose);
 
+  #$taxon_a->clear_cache;
   my $new_tree = $taxon_a->_build_tree_from_nodes(\@nodes);
-  $new_tree = $new_tree->copy()->minimize_tree;
+  # The call to "copy" seems to be important here...
+  $new_tree = $new_tree->copy->minimize_tree;
   return $new_tree;
+}
+
+sub get_genomes_within_clade {
+  my $class = shift;
+  my $dba = shift;
+  my $clade = shift || 1;
+
+  my @gdbs = $class->get_all_genomes($dba);
+  my $species_tree = $class->get_genome_taxonomy_below_level($dba,$clade);
+
+  my @genomes;
+  foreach my $gdb (@gdbs) {
+    my $leaf = $species_tree->find_node_by_node_id($gdb->taxon->taxon_id);
+    push @genomes, $gdb if ($leaf);
+  }
+
+  return @genomes;
 }
 
 
@@ -960,7 +994,7 @@ sub get_genome_tree_nhx {
   my $dba = shift;
   my $params = shift;
 
-  my @gdbs = Bio::EnsEMBL::Compara::ComparaUtils->get_all_genomes($dba);
+  my @gdbs = $class->get_all_genomes($dba);
   my $species_tree = $class->get_genome_taxonomy_below_level($dba,1);
 
   my $labels_option = $params->{'labels'};
@@ -1003,7 +1037,11 @@ sub get_all_genomes {
 
   my $gda = $dba->get_GenomeDBAdaptor();
   my $all_dbs = $gda->fetch_all();
-  return @{$all_dbs};
+  my @all_genomes;
+  foreach my $db (@$all_dbs) {
+    push @all_genomes,$db if ($db->taxon);
+  }
+  return @all_genomes;
 }
 
 sub get_2x_genomes {
