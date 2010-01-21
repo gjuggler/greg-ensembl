@@ -40,17 +40,17 @@ sub fetch_input {
   my( $self) = @_;
   
   # Load up the Compara DBAdaptor.
-#  if ($self->dba) {
-#    $dba = $self->dba;
-#  } else {
+  if ($self->{dba}) {
+    $dba = $self->dba;
+  } else {
     $dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new(-DBCONN=>$self->db->dbc);
-#  }
+  }
   $pta = $dba->get_ProteinTreeAdaptor;
   
   ### DEFAULT PARAMETERS ###
   $params = {
     input_table            => 'protein_tree_member',
-    output_table           => 'sitewise_aln',
+    output_table           => 'sitewise_omega',
     parameter_set_id       => 1,
 
     alignment_quality_filtering => 0,
@@ -66,8 +66,8 @@ sub fetch_input {
     freqtype               => 0,                    # Options: 0, 1, 2 (default 0)
 
     # PAML Parameters
-    model                  => 'M3',                 # Used for Bayes Empirical Bayes sitewise analysis.
-    model_b                => 'M7',                 # Used for the likelihood ratio tests.
+    #model                  => 'M3',                 # Used for Bayes Empirical Bayes sitewise analysis.
+    #model_b                => 'M7',                 # Used for the likelihood ratio tests.
 
     # Actions
     action                 => 'slr',                # Which action to perform.
@@ -92,7 +92,7 @@ sub fetch_input {
 
   #########################
 
-  $self->check_job_fail_options;
+  #$self->check_job_fail_options;
   #$self->check_if_exit_cleanly;
 
   $dba->dbc->disconnect_when_inactive(1);
@@ -106,14 +106,14 @@ sub run {
   my @param_sets;
   my $param_set_string = $params->{'parameter_sets'};
   if ($param_set_string eq 'all') {
-    my $sth = $dba->dbc->prepare("select distinct(parameter_set_id) FROM parameter_set order by parameter_set_id;");
-    @param_sets = @{$sth->fetchall_arrayref([0])};
+    my $query = qq^select distinct(parameter_set_id) FROM parameter_set order by parameter_set_id;^;
+    @param_sets = @{$dba->dbc->db_handle->selectcol_arrayref($query)};
   } else {
     @param_sets = split(",",$params->{'parameter_sets'});
   }
+
   delete $params->{'parameter_sets'};
   foreach my $param_set (@param_sets) {
-    print "PARAM SET: $param_set\n";
     my $param_set_params = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_param_set($dba->dbc,$param_set);
     my $tree_tag_params = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_tree_tags($dba,$node_id);
     my $new_params = Bio::EnsEMBL::Compara::ComparaUtils->replace_params($params,$param_set_params,$tree_tag_params);
@@ -138,7 +138,6 @@ sub run {
     }
     
     #eval {
-    Bio::EnsEMBL::Compara::ComparaUtils->hash_print($new_params);
       $self->run_with_params($new_params,$tree);
       $tree->release_tree;
     #};
@@ -163,8 +162,8 @@ sub run_with_params {
   $input_aa = Bio::EnsEMBL::Compara::ComparaUtils->fetch_masked_alignment($aa_aln,$cdna_aln,$tree,$params,0);
   $input_cdna = Bio::EnsEMBL::Compara::ComparaUtils->fetch_masked_alignment($aa_aln,$cdna_aln,$tree,$params,1);
 
-  Bio::EnsEMBL::Compara::AlignUtils->pretty_print($input_aa,{length => 1500});
-  Bio::EnsEMBL::Compara::AlignUtils->pretty_print($input_cdna,{length => 1500});
+  Bio::EnsEMBL::Compara::AlignUtils->pretty_print($input_aa,{length => 100});
+  Bio::EnsEMBL::Compara::AlignUtils->pretty_print($input_cdna,{length => 100});
 
   if ($params->{'action'} =~ m/slr/i) {
     $self->run_sitewise_dNdS($tree,$input_cdna,$params);

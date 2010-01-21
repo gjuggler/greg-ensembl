@@ -83,8 +83,26 @@ sub new {
 
   return bless {'code'    => $code,
                 'name'    => $name,
-                'description'    => $desc,
+                'description' => $desc,
                 'value'   => $value}, $class;
+}
+
+=head2 new_fast
+
+  Arg [1]    : hashref to be blessed
+  Description: Construct a new Bio::EnsEMBL::Attribute using the hashref.
+  Exceptions : none
+  Returntype : Bio::EnsEMBL::Attribute
+  Caller     : general, subclass constructors
+  Status     : Stable
+
+=cut
+
+
+sub new_fast {
+  my $class = shift;
+  my $hashref = shift;
+  return bless $hashref, $class;
 }
 
 

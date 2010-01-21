@@ -1,9 +1,22 @@
-#
-# EnsEMBL module for Bio::EnsEMBL::DBSQL::BaseFeatureAdaptor
-#
-# Copyright (c) 2003 Ensembl
-#
-# You may distribute this module under the same terms as perl itself
+=head1 LICENSE
+
+  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
+=cut
 
 =head1 NAME
 
@@ -20,10 +33,6 @@ abstract methods must be performed by subclasses.
 This is a base adaptor for feature adaptors. This base class is simply a way
 of eliminating code duplication through the implementation of methods
 common to all feature adaptors.
-
-=head1 CONTACT
-
-Contact Ensembl development list for info: <ensembl-dev@ebi.ac.uk>
 
 =head1 METHODS
 
@@ -42,7 +51,7 @@ use Bio::EnsEMBL::Utils::Argument qw(rearrange);
 
 @EXPORT = (@{$DBI::EXPORT_TAGS{'sql_types'}});
 
-our $SLICE_FEATURE_CACHE_SIZE = 4;
+our $SLICE_FEATURE_CACHE_SIZE    = 4;
 our $MAX_SPLIT_QUERY_SEQ_REGIONS = 3;
 
 =head2 new
@@ -65,14 +74,52 @@ sub new {
 
   my $self = $class->SUPER::new(@_);
 
-  #initialize an LRU cache
-  my %cache;
-  tie(%cache, 'Bio::EnsEMBL::Utils::Cache', $SLICE_FEATURE_CACHE_SIZE);
-  $self->{'_slice_feature_cache'} = \%cache;
+  if ( defined $self->db->no_cache() && $self->db->no_cache() ) {
+    warning(
+          "You are using the API without caching most recent features. "
+            . "Performance might be affected." );
+  } else {
+    # Initialize an LRU cache.
+    my %cache;
+    tie( %cache, 'Bio::EnsEMBL::Utils::Cache',
+         $SLICE_FEATURE_CACHE_SIZE );
+    $self->{'_slice_feature_cache'} = \%cache;
+  }
 
   return $self;
 }
 
+=head2 clear_cache
+
+  Args      : None
+  Example   : my $sa =
+                $registry->get_adaptor( 'Mus musculus', 'Core',
+                                        'Slice' );
+              my $ga =
+                $registry->get_adaptor( 'Mus musculus', 'Core',
+                                        'Gene' );
+
+              my $slice =
+                $sa->fetch_by_region( 'Chromosome', '1', 1e8,
+                                      1.05e8 );
+
+              my $genes = $ga->fetch_all_by_Slice($slice);
+
+              $ga->clear_cache();
+
+  Description   : Empties the feature cache associated with this
+                  feature adaptor.
+  Return type   : None
+  Exceptions    : None
+  Caller        : General
+  Status        : At risk (under development)
+
+=cut
+
+sub clear_cache {
+  my ($self) = @_;
+  $self->{'_slice_feature_cache'} = ();
+}
 
 =head2 fetch_all_by_Slice
 
@@ -126,17 +173,22 @@ sub fetch_all_by_Slice {
 =cut
 
 sub fetch_all_by_Slice_and_score {
-  my ($self, $slice, $score, $logic_name) = @_;
-  my $constraint;
+  my ( $self, $slice, $score, $logic_name ) = @_;
 
-  if(defined $score) {
-    #get the synonym of the primary_table
-    my @tabs = $self->_tables;
-    my $syn = $tabs[0]->[1];
-    $constraint = "${syn}.score > $score";
+  my $constraint;
+  if ( defined($score) ) {
+    # Get the synonym of the primary_table
+    my @tabs = $self->_tables();
+    my $syn  = $tabs[0]->[1];
+
+    $constraint = sprintf( "%s.score > %s",
+                $syn,
+                $self->dbc()->db_handle()->quote( $score, SQL_FLOAT ) );
   }
-  return $self->fetch_all_by_Slice_constraint($slice, $constraint, 
-					      $logic_name);
+
+  return
+    $self->fetch_all_by_Slice_constraint( $slice, $constraint,
+                                          $logic_name );
 }
 
 
@@ -164,7 +216,7 @@ sub fetch_all_by_Slice_and_score {
 sub fetch_all_by_Slice_constraint {
   my($self, $slice, $constraint, $logic_name) = @_;
 
-  my @result;
+  my @result = ();
 
   if(!ref($slice) || !$slice->isa("Bio::EnsEMBL::Slice")) {
     throw("Bio::EnsEMBL::Slice argument expected.");
@@ -173,26 +225,46 @@ sub fetch_all_by_Slice_constraint {
   $constraint ||= '';
   $constraint = $self->_logic_name_to_constraint($constraint, $logic_name);
 
-  #if the logic name was invalid, undef was returned
-  return [] if(!defined($constraint));
+  # If the logic name was invalid, undef was returned
+  return [] if ( !defined($constraint) );
 
-  #check the cache and return if we have already done this query
-  my $key = uc(join(':', $slice->name, $constraint));
+  my $key;
 
-  if(exists($self->{'_slice_feature_cache'}->{$key})) {
-    return $self->{'_slice_feature_cache'}->{$key};
+  # Will only use feature_cache if hasn't been no_cache attribute set
+  if (
+    !( defined( $self->db()->no_cache() ) && $self->db()->no_cache() ) )
+  {
+
+    # Check the cache and return the cached results if we have already
+    # done this query.  The cache key is the made up from the slice
+    # name, the constraint, and the bound parameters (if there are any).
+    $key = uc( join( ':', $slice->name(), $constraint ) );
+
+    my $bind_params = $self->bind_param_generic_fetch();
+
+    if ( defined($bind_params) ) {
+      $key .= ':'
+        . join( ':', map { $_->[0] . '/' . $_->[1] } @{$bind_params} );
+    }
+
+    if ( exists( $self->{'_slice_feature_cache'}->{$key} ) ) {
+      # Clear the bound parameters and return the cached data.
+      $self->{'_bind_param_generic_fetch'} = ();
+      return $self->{'_slice_feature_cache'}->{$key};
+    }
   }
 
   my $sa = $slice->adaptor();
 
   # Hap/PAR support: retrieve normalized 'non-symlinked' slices
-  my @proj = @{$sa->fetch_normalized_slice_projection($slice)};
+  my @proj = @{ $sa->fetch_normalized_slice_projection($slice) };
 
-  if(@proj == 0) {
-    throw('Could not retrieve normalized Slices. Database contains ' .
-          'incorrect assembly_exception information.');
+  if ( @proj == 0 ) {
+    throw( 'Could not retrieve normalized Slices. '
+         . 'Database contains incorrect assembly_exception information.'
+    );
   }
-  
+
   # Want to get features on the FULL original slice
   # as well as any symlinked slices
 
@@ -249,10 +321,12 @@ sub fetch_all_by_Slice_constraint {
     else {
       push @result, @$features;
     }
+}
+
+  # Will only use feature_cache when set attribute no_cache in DBAdaptor
+  if ( defined($key) ) {
+    $self->{'_slice_feature_cache'}->{$key} = \@result;
   }
-
-  $self->{'_slice_feature_cache'}->{$key} = \@result;
-
 
   return \@result;
 }
@@ -267,17 +341,39 @@ sub fetch_all_by_Slice_constraint {
                only features with an analysis of type $logic_name will be 
                returned. 
   Returntype : listref of Bio::EnsEMBL::SeqFeatures
-  Exceptions : thrown if $logic_name
+  Exceptions : thrown if no $logic_name
   Caller     : General
   Status     : Stable
 
 =cut
 
 sub fetch_all_by_logic_name {
-  my $self = shift;
-  my $logic_name = shift || throw( "Need a logic_name" );
-  my $constraint = $self->_logic_name_to_constraint( '',$logic_name );
+  my ( $self, $logic_name ) = @_;
+
+  if ( !defined($logic_name) ) {
+    throw("Need a logic_name");
+  }
+
+  my $constraint = $self->_logic_name_to_constraint( '', $logic_name );
+
   return $self->generic_fetch($constraint);
+}
+
+# Method that creates an object.  Called by the _objs_from_sth() method
+# in the sub-classes (the various feature adaptors).  Overridden by the
+# feature collection classes.
+
+sub _create_feature {
+  my ( $self, $feature_type, $args ) = @_;
+  return $feature_type->new( %{$args} );
+}
+
+# This is the same as the above, but calls the new_fast() constructor of
+# the feature type.
+
+sub _create_feature_fast {
+  my ( $self, $feature_type, $args ) = @_;
+  return $feature_type->new_fast($args);
 }
 
 #
@@ -336,7 +432,8 @@ sub _slice_fetch {
       } else {
 	$sr_id = $self->db()->get_SliceAdaptor()->get_seq_region_id($slice);
       }
-
+      #if there is mapping information, use the external_seq_region_id to get features
+      $sr_id = $self->get_seq_region_id_external($sr_id);
       $constraint .= " AND " if($constraint);
       $constraint .=
           "${tab_syn}.seq_region_id = $sr_id AND " .
@@ -353,7 +450,7 @@ sub _slice_fetch {
 
       # features may still have to have coordinates made relative to slice
       # start
-      $fs = _remap($fs, $mapper, $slice);
+      $fs = $self->_remap( $fs, $mapper, $slice );
 
       push @features, @$fs;
     } else {
@@ -384,10 +481,9 @@ sub _slice_fetch {
         my $id_str = join(',', @ids);
         $constraint .= " AND " if($constraint);
         $constraint .= "${tab_syn}.seq_region_id IN ($id_str)";
-
         my $fs = $self->generic_fetch($constraint, $mapper, $slice);
 
-        $fs = _remap($fs, $mapper, $slice);
+        $fs = $self->_remap( $fs, $mapper, $slice );
 
         push @features, @$fs;
 
@@ -411,10 +507,9 @@ sub _slice_fetch {
             $constraint .=
               " AND ${tab_syn}.seq_region_start >= $min_start";
           }
-
           my $fs = $self->generic_fetch($constraint,$mapper,$slice);
 
-          $fs = _remap($fs, $mapper, $slice);
+          $fs = $self->_remap( $fs, $mapper, $slice );
 
           push @features, @$fs;
         }
@@ -426,6 +521,22 @@ sub _slice_fetch {
 }
 
 
+#for a given seq_region_id, gets the one used in an external database, if present, otherwise, returns the internal one
+sub get_seq_region_id_external{
+    my $self = shift;
+    my $sr_id = shift;
+ 
+    return (exists $self->db->get_CoordSystemAdaptor->{'_internal_seq_region_mapping'}->{$sr_id} ? $self->db->get_CoordSystemAdaptor->{'_internal_seq_region_mapping'}->{$sr_id} : $sr_id);
+}
+
+#for a given seq_region_id and coord_system, gets the one used in the internal (core) database
+sub get_seq_region_id_internal{
+    my $self = shift;
+    my $sr_id = shift;
+
+    return (exists $self->db->get_CoordSystemAdaptor->{'_external_seq_region_mapping'}->{$sr_id} ? $self->db->get_CoordSystemAdaptor->{'_external_seq_region_mapping'}->{$sr_id} : $sr_id);
+
+}
 
 #
 # Helper function containing some common feature storing functionality
@@ -461,6 +572,7 @@ sub _pre_store {
   }
 
   # make sure feature coords are relative to start of entire seq_region
+
   if($slice->start != 1 || $slice->strand != 1) {
     #move feature onto a slice of the entire seq_region
     $slice = $slice_adaptor->fetch_by_region($slice->coord_system->name(),
@@ -484,6 +596,68 @@ sub _pre_store {
   my ($tab) = $self->_tables();
   my $tabname = $tab->[0];
 
+  my $mcc = $db->get_MetaCoordContainer();
+
+  $mcc->add_feature_type($cs, $tabname, $feature->length);
+
+  my $seq_region_id = $slice_adaptor->get_seq_region_id($slice);
+
+  if(!$seq_region_id) {
+    throw('Feature is associated with seq_region which is not in this DB.');
+  }
+
+  return ($feature, $seq_region_id);
+}
+
+
+# The same function as _pre_store
+# This one is used to store user uploaded features in XXX_userdata db
+
+sub _pre_store_userdata {
+  my $self    = shift;
+  my $feature = shift;
+
+  if(!ref($feature) || !$feature->isa('Bio::EnsEMBL::Feature')) {
+    throw('Expected Feature argument.');
+  }
+
+  $self->_check_start_end_strand($feature->start(),$feature->end(),
+                                 $feature->strand());
+
+
+  my $slice = $feature->slice();
+  my $slice_adaptor = $slice->adaptor;
+
+  if(!ref($slice) || !$slice->isa('Bio::EnsEMBL::Slice')) {
+    throw('Feature must be attached to Slice to be stored.');
+  }
+
+  # make sure feature coords are relative to start of entire seq_region
+
+  if($slice->start != 1 || $slice->strand != 1) {
+    #move feature onto a slice of the entire seq_region
+    $slice = $slice_adaptor->fetch_by_region($slice->coord_system->name(),
+                                             $slice->seq_region_name(),
+                                             undef, #start
+                                             undef, #end
+                                             undef, #strand
+                                             $slice->coord_system->version());
+
+    $feature = $feature->transfer($slice);
+
+    if(!$feature) {
+      throw('Could not transfer Feature to slice of ' .
+            'entire seq_region prior to storing');
+    }
+  }
+
+  # Ensure this type of feature is known to be stored in this coord system.
+  my $cs = $slice->coord_system;
+
+  my ($tab) = $self->_tables();
+  my $tabname = $tab->[0];
+
+  my $db = $self->db;
   my $mcc = $db->get_MetaCoordContainer();
 
   $mcc->add_feature_type($cs, $tabname, $feature->length);
@@ -535,7 +709,7 @@ sub _check_start_end_strand {
 # converted and placed on the slice.
 #
 sub _remap {
-  my ($features, $mapper, $slice) = @_;
+  my ( $self, $features, $mapper, $slice ) = @_;
 
   #check if any remapping is actually needed
   if(@$features && (!$features->[0]->isa('Bio::EnsEMBL::Feature') ||
@@ -790,12 +964,20 @@ sub _list_seq_region_ids {
   my @out;
   
   my $sql = qq(
-    SELECT distinct(sr.seq_region_id)
-    FROM seq_region sr, $table a
-    WHERE sr.seq_region_id = a.seq_region_id
-  );
+  SELECT DISTINCT
+            sr.seq_region_id
+  FROM      seq_region sr,
+            $table a,
+            coord_system cs
+  WHERE     sr.seq_region_id = a.seq_region_id
+    AND     sr.coord_system_id = cs.coord_system_id
+    AND     cs.species_id = ?);
+
   my $sth = $self->prepare($sql);
-  $sth->execute;
+
+  $sth->bind_param( 1, $self->species_id(), SQL_INTEGER );
+
+  $sth->execute();
 
   while (my ($id) = $sth->fetchrow) {
     push(@out, $id);
@@ -858,6 +1040,39 @@ sub remove_by_RawContig {
   my $self = shift;
   deprecate("Use remove_by_Slice instead");
   return $self->remove_by_Slice(@_);
+}
+
+
+sub remove_by_analysis_id {
+  my ($self, $analysis_id) = @_;
+
+  $analysis_id or throw("Must call with analysis id");
+
+  my @tabs = $self->_tables;
+  my ($tablename) = @{$tabs[0]};
+
+  my $sql = "DELETE FROM $tablename WHERE analysis_id = $analysis_id";
+#  warn "SQL : $sql";
+      
+  my $sth = $self->prepare($sql);
+  $sth->execute();
+  $sth->finish();
+}
+
+sub remove_by_feature_id {
+  my ($self, $features_list) = @_;
+
+  my @feats = @$features_list or throw("Must call store with features");
+
+  my @tabs = $self->_tables;
+  my ($tablename) = @{$tabs[0]};
+
+  my $sql = sprintf "DELETE FROM $tablename WHERE ${tablename}_id IN (%s)", join ', ', @feats;
+#  warn "SQL : $sql";
+      
+  my $sth = $self->prepare($sql);
+  $sth->execute();
+  $sth->finish();
 }
 
 

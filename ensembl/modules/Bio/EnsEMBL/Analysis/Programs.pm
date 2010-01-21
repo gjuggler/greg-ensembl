@@ -1,3 +1,22 @@
+=head1 LICENSE
+
+  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
+=cut
 
 package Bio::EnsEMBL::Analysis::Programs;
 use strict;
@@ -5,6 +24,7 @@ use vars qw( %Program_Paths );
 use Carp;
 use Cwd;
 use Sys::Hostname;
+use Bio::EnsEMBL::Utils::Exception qw ( throw ) ; 
 
 sub import {
     my $pkg = shift;
@@ -55,10 +75,9 @@ sub import {
     }
     
     # Give informative death message if programs weren't found
-    if (@missing) {
-        die "Unable to locate the following programs as '",
-            (getpwuid($<))[0], "' on host '", hostname(), "'\n",
-            map "--> $_\n", @missing;
+    if (@missing) { 
+        throw("Unable to locate the following programs as '". (getpwuid($<))[0]. "' on host '". hostname(). "' :\t".
+        join ( " --> " , @missing )) ; 
     }
 }
 

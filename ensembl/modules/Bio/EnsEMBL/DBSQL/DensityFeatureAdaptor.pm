@@ -1,11 +1,22 @@
-#
-# Ensembl module for Bio::EnsEMBL::DBSQL::DensityFeatureAdaptor
-#
-# Copyright EMBL/EBI
-#
-# You may distribute this module under the same terms as perl itself
+=head1 LICENSE
 
-# POD documentation - main docs before the code
+  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
+=cut
 
 =head1 NAME
 
@@ -13,22 +24,20 @@ Bio::EnsEMBL::DBSQL::DensityFeatureAdaptor
 
 =head1 SYNOPSIS
 
-my $dfa = $database_adaptor->get_DensityFeatureAdaptor();
+  my $dfa = $database_adaptor->get_DensityFeatureAdaptor();
 
-my $interpolate = 1;
-my $blocks_wanted = 50;
+  my $interpolate   = 1;
+  my $blocks_wanted = 50;
 
-@dense_feats = @{$dfa->fetch_all_by_Slice($slice,'SNPDensity',
-                                             $blocks_wanted, $interpolate);}
+  @dense_feats = @{
+    $dfa->fetch_all_by_Slice( $slice, 'SNPDensity', $blocks_wanted,
+      $interpolate );
+    }
 
 =head1 DESCRIPTION
 
 Density Feature Adaptor - An adaptor responsible for the creation of density
 features from the database.
-
-=head1 CONTACT
-
-Post questions to the Ensembl developer list.
 
 =head1 METHODS
 
@@ -374,8 +383,9 @@ sub _objs_from_sth {
       $dta->fetch_by_dbID($density_type_id);
 
     #get the slice object
+    #need to get the internal_seq_region, if present
+    $seq_region_id = $self->get_seq_region_id_internal($seq_region_id);
     my $slice = $slice_hash{"ID:".$seq_region_id};
-
     if(!$slice) {
       $slice = $sa->fetch_by_seq_region_id($seq_region_id);
       $slice_hash{"ID:".$seq_region_id} = $slice;
@@ -448,15 +458,19 @@ sub _objs_from_sth {
       $slice = $dest_slice;
     }
 
-    push @features, Bio::EnsEMBL::DensityFeature->new
-      (-dbID          => $density_feature_id,
-       -adaptor       => $self,
-       -start         => $seq_region_start,
-       -end           => $seq_region_end,
-       -seq_region    => $slice,
-       -density_value => $density_value,
-       -density_type  => $density_type);
+    push( @features,
+          $self->_create_feature( 'Bio::EnsEMBL::DensityFeature', {
+                                    -dbID       => $density_feature_id,
+                                    -adaptor    => $self,
+                                    -start      => $seq_region_start,
+                                    -end        => $seq_region_end,
+                                    -seq_region => $slice,
+                                    -density_value => $density_value,
+                                    -density_type  => $density_type
+                                  } ) );
+
   }
+
   return \@features;
 }
 

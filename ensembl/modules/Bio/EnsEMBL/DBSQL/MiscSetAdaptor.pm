@@ -1,46 +1,49 @@
-#
-# Ensembl module for Bio::EnsEMBL::DBSQL::MiscSetAdaptor
-#
-# Copyright (c) 2003 EnsEMBL
-#
-# You may distribute this module under the same terms as perl itself
+=head1 LICENSE
 
-# POD documentation - main docs before the code
+  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
+=cut
 
 =head1 NAME
 
 Bio::EnsEMBL::DBSQL::MiscSetAdaptor - Provides database interaction for
 Bio::EnsEMBL::MiscSet objects.
 
-
 =head1 SYNOPSIS
 
-  #$db is a Bio::EnsEMBL::DBSQL::DBAdaptor object:
-  $msa = $db->get_MiscSetAdaptor();
+  my $msa = $registry->get_adaptor( 'Human', 'Core', 'MiscSet' );
 
-  $misc_set = $msa->fetch_by_dbID(1234);
+  my $misc_set = $msa->fetch_by_dbID(1234);
 
   $misc_set = $msa->fetch_by_code('clone');
 
-
 =head1 DESCRIPTION
 
-This class provides database interactivity for MiscSet objects.  MiscSets
-are used to classify MiscFeatures into groups.
+This class provides database interactivity for MiscSet objects.
+MiscSets are used to classify MiscFeatures into groups.
 
-=head1 CONTACT
-
-This modules is part of the Ensembl project http://www.ensembl.org
-
-Questions can be posted to the ensembl-dev mailing list:
-ensembl-dev@ebi.ac.uk
+=head1 METHODS
 
 =cut
 
+package Bio::EnsEMBL::DBSQL::MiscSetAdaptor;
+
 use strict;
 use warnings;
-
-package Bio::EnsEMBL::DBSQL::MiscSetAdaptor;
 
 use Bio::EnsEMBL::MiscSet;
 use Bio::EnsEMBL::DBSQL::BaseAdaptor;
@@ -91,7 +94,10 @@ sub new {
   Example    : foreach my $ms (@{$msa->fetch_all()}) {
                  print $ms->code(), ' ', $ms->name(), "\n";
                }
-  Description: Retrieves every MiscSet defined in the DB
+  Description: Retrieves every MiscSet defined in the DB.
+               NOTE:  In a multi-species database, this method will
+               return all the entries matching the search criteria, not
+               just the ones associated with the current species.
   Returntype : listref of Bio::EnsEMBL::MiscSets
   Exceptions : none
   Caller     : general
@@ -266,6 +272,46 @@ sub store {
   return;
 }
 
+=head2 update
 
+  Arg [1]    : Bio::EnsEMBL::MiscSet $miscset
+  Example    : $adaptor->update($miscset)
+  Description: Updates this misc_set in the database
+  Returntype : int 1 if update is performed, undef if it is not
+  Exceptions : throw if arg is not an misc_set object
+  Caller     : ?
+  Status     : Stable
+
+=cut
+
+sub update {
+  my $self = shift;
+  my $m    = shift;
+
+  if (!ref($m) || !$m->isa('Bio::EnsEMBL::MiscSet')) {
+    throw("Expected Bio::EnsEMBL::MiscSet argument.");
+  }
+
+  if(!$m->is_stored($self->db())) {
+    return undef;
+  }
+
+  my $sth = $self->prepare("UPDATE misc_set ".
+			   "SET code =?, name =?, description = ?, max_length = ? ".
+			   "WHERE misc_set_id = ?");
+
+  $sth->bind_param(1,$m->code,SQL_VARCHAR);
+  $sth->bind_param(2,$m->name,SQL_VARCHAR);
+  $sth->bind_param(3,$m->description,SQL_VARCHAR);
+  $sth->bind_param(4,$m->longest_feature,SQL_INTEGER);
+  $sth->bind_param(5,$m->dbID,SQL_INTEGER);
+
+  $sth->execute();
+  $sth->finish();
+
+ # update the internal caches
+  $self->{'_id_cache'}->{$m->dbID} = $m;
+  $self->{'_code_cache'}->{lc($m->code())} = $m;
+}
 
 1;

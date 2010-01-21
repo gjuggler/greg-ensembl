@@ -1,32 +1,36 @@
-package Bio::EnsEMBL::Utils::ScriptUtils;
+=head1 LICENSE
 
-=head1 NAME
+  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
 
+  This software is distributed under a modified Apache license.
+  For license details, please see
 
-=head1 SYNOPSIS
-
-
-=head1 DESCRIPTION
-
-
-=head1 METHODS
-
-
-=head1 LICENCE
-
-This code is distributed under an Apache style licence. Please see
-http://www.ensembl.org/info/about/code_licence.html for details.
-
-=head1 AUTHOR
-
-Patrick Meidl <meidl@ebi.ac.uk>, Ensembl core API team
+    http://www.ensembl.org/info/about/code_licence.html
 
 =head1 CONTACT
 
-Please post comments/questions to the Ensembl development list
-<ensembl-dev@ebi.ac.uk>
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
 
 =cut
+
+=head1 NAME
+
+Bio::EnsEMBL::Utils::ScriptUtils;
+
+=head1 SYNOPSIS
+
+=head1 DESCRIPTION
+
+=head1 METHODS
+
+=cut
+
+package Bio::EnsEMBL::Utils::ScriptUtils;
 
 use strict;
 use warnings;
@@ -43,6 +47,7 @@ our @EXPORT_OK = qw(
   directory_hash
   path_append
   dynamic_use
+  inject
 );
 
 
@@ -67,18 +72,28 @@ our @EXPORT_OK = qw(
 =cut
 
 sub user_proceed {
-  my $text = shift;
+  my ($text, $interactive, $default) = @_;
 
-  print "$text\n" if $text;
-  print "[y/N] ";
+  unless (defined($default)) {
+    die("Need a default answer for non-interactive runs.");
+  }
+
+  my $input;
+
+  if ($interactive) {
+    print "$text\n" if $text;
+    print "[y/N] ";
   
-  my $input = lc(<>);
-  chomp $input;
+    $input = lc(<>);
+    chomp $input;
+  } else {
+    $input = $default;
+  }
   
   if ($input eq 'y') {
     return(1);
   } else {
-    print "Skipping.\n";
+    print "Skipping.\n" if ($interactive);
     return(0);
   }
 }
@@ -204,17 +219,17 @@ sub path_append {
 
   unless (-d $return_path) {
     system("mkdir -p $return_path") == 0 or
-      throw("Unable to create directory $return_path: $!\n");
+      die("Unable to create directory $return_path: $!\n");
   }
   
   return $return_path;
 }
 
 
-=head2 dynamic_use
+=head2 inject
 
   Arg [1]    : String $classname - The name of the class to require/import
-  Example    : $self->dynamic_use('Bio::EnsEMBL::DBSQL::DBAdaptor');
+  Example    : $self->inject('Bio::EnsEMBL::DBSQL::DBAdaptor');
   Description: Requires and imports the methods for the classname provided,
                checks the symbol table so that it doesnot re-require modules
                that have already been required.
@@ -224,7 +239,7 @@ sub path_append {
 
 =cut
 
-sub dynamic_use {
+sub inject {
   my $classname = shift;
   my ($parent_namespace, $module) = $classname =~/^(.*::)(.*)$/ ?
                                       ($1,$2) : ('::', $classname);
@@ -239,6 +254,11 @@ sub dynamic_use {
   $classname->import();
   
   return 1;
+}
+
+
+sub dynamic_use {
+  return inject(@_);
 }
 
 1;

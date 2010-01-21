@@ -1,4 +1,23 @@
-# Let the code begin...
+=head1 LICENSE
+
+  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
+=cut
+
 package Bio::EnsEMBL::External::BlastAdaptor;
 
 use strict;
@@ -264,28 +283,28 @@ sub store {
   my $ret_value = undef;
   if( $obj->isa("Bio::Tools::Run::SearchMulti") ) {
     $ret_value = $self->store_search_multi( $obj, @_ );
-    warn "Just stored as Bio::Tools::Run::SearchMulti";
+#    warn "Just stored as Bio::Tools::Run::SearchMulti";
   } elsif( $obj->isa( "Bio::Search::Result::ResultI" ) ) {
     $ret_value = $self->store_result(       $obj, @_ );
-    warn "Just stored as Bio::Tools::Result::ResultI";
+#    warn "Just stored as Bio::Tools::Result::ResultI";
   } elsif( $obj->isa( "Bio::Search::Hit::HitI" ) ) {
     $ret_value = $self->store_hit(       $obj, @_ );
-    warn "Just stored as Bio::Tools::Hit::HitI";
+#    warn "Just stored as Bio::Tools::Hit::HitI";
   } elsif( $obj->isa( "Bio::Search::HSP::HSPI" ) ) {
     $ret_value = $self->store_hsp(       $obj, @_ );
-    warn "Just stored as Bio::Tools::HSP::HSPI";
+#    warn "Just stored as Bio::Tools::HSP::HSPI";
   } else {
-    warn "DID NOT STORE  ".ref($obj);
+#    warn "DID NOT STORE  ".ref($obj);
     $self->throw( "Do not know how to store objects of type ".ref($obj) );
     return undef;
   }
-  if( $self->{'disconnect_flag'} ) {
-    warn "HERE WE ARE DISCONNECTING....";
-    $self->dbc->db_handle->disconnect();
-    $self->dbc->connected(0);
-    warn "AND  WE ARE RECONNECTING....";
-    $self->dbc->connect();
-  }
+#  if( $self->{'disconnect_flag'} ) {
+#    warn "HERE WE ARE DISCONNECTING....";
+#    $self->dbc->db_handle->disconnect();
+#    $self->dbc->connected(0);
+#    warn "AND  WE ARE RECONNECTING....";
+#    $self->dbc->connect();
+#  }
   return $ret_value;
 }
 
@@ -919,10 +938,13 @@ SELECT ticket
 FROM   blast_ticket
 WHERE  update_time < SUBDATE( NOW(), INTERVAL $days DAY ) /;
 
-  my $sth = $self->dbc->db_handle->prepare($q);
-  my $rv = $sth->execute() || $self->throw( $sth->errstr );
-  my $res = $sth->fetchall_arrayref;
-  $sth->finish;
+
+#need to dort this bit - use and a loop and "Delete ... limit 1000" to prevent tying up the database
+
+#  my $sth = $self->dbc->db_handle->prepare($q);
+#  my $rv = $sth->execute() || $self->throw( $sth->errstr );
+#  my $res = $sth->fetchall_arrayref;
+#  $sth->finish;
   
   # Delete result and ticket rows associated with old tickets
 #  my $q_del_tmpl = qq/
@@ -961,8 +983,9 @@ WHERE  update_time < SUBDATE( NOW(), INTERVAL $days DAY ) /;
     my $table_name  = $row->[0];  ## table name
     my $num_rows    = $row->[4];  ## # Rows...
     my $update_time = $row->[12]; ## update time ---  Should be a string like 2003-08-15 10:36:56
+		next unless $update_time; #cope with an occasional innodb table that has no update time
     my @time = split( /[-:\s]/, $update_time );
-    
+   
     my $epoch_then = timelocal( $time[5], $time[4],   $time[3], 
 				$time[2], $time[1]-1, $time[0] - 1900 );
     my $secs_old = time() - $epoch_then;
@@ -1137,4 +1160,41 @@ sub rotate_daily_tables {
 }
 
 #----------------------------------------------------------------------
+
+
+=head2 cleanup_processes
+
+  Arg [1]   : none
+  Function  : Kills any sleeping processes older that 1000
+  Returntype: boolean
+  Exceptions: 
+  Caller    : 
+  Example   : 
+
+=cut
+
+sub cleanup_processes {
+  my $self = shift;
+  my $dbh = $self->dbc->db_handle;
+  my $sth = $self->prepare( 'show processlist' );
+  my $kill_sth = $self->prepare('kill ?');
+  $sth->execute;
+  my $res = $sth->fetchall_arrayref([0,3,4,5]);
+  my $c = 0;
+  foreach my $ps (@$res) {
+    my ($pid,$db,$stat,$time) = @$ps;
+    if ($db eq 'ensembl_blast') {
+      if ( ($stat eq 'Sleep') && ($time > 1000) ) {
+	$kill_sth->execute($pid);
+	$c++;
+      }
+    }
+  }
+  warn "Killed $c processes";
+  return 1;
+}
+
+
+
+
 1;

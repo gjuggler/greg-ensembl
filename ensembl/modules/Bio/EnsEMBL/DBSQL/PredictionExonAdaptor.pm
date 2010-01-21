@@ -1,10 +1,22 @@
-#EnsEMBL PredictionExon reading writing adaptor for mySQL
-#
-# Copyright EMBL-EBI 2003
-#
-# Author: Arne Stabenau
-# 
-#
+=head1 LICENSE
+
+  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
+=cut
 
 =head1 NAME
 
@@ -13,24 +25,17 @@ PredictionExons.
 
 =head1 SYNOPSIS
 
-$pea = $database_adaptor->get_PredictionExonAdaptor();
-$pexon = $pea->fetch_by_dbID();
+  $pea   = $database_adaptor->get_PredictionExonAdaptor();
+  $pexon = $pea->fetch_by_dbID();
 
-my $slice = $database_adaptor->get_SliceAdaptor->fetch_by_region('X',1,1e6);
+  my $slice =
+    $database_adaptor->get_SliceAdaptor->fetch_by_region( 'X', 1, 1e6 );
 
-my @pexons = @{$pea->fetch_all_by_Slice($slice)};
+  my @pexons = @{ $pea->fetch_all_by_Slice($slice) };
 
-
-=head1 CONTACT
-
-  Post questions to the EnsEMBL development list ensembl-dev@ebi.ac.uk
-
-=head1 APPENDIX
-
-  The rest of the documentation describes object methods.
+=head1 METHODS
 
 =cut
-
 
 package Bio::EnsEMBL::DBSQL::PredictionExonAdaptor;
 
@@ -41,6 +46,7 @@ use strict;
 use Bio::EnsEMBL::DBSQL::BaseFeatureAdaptor;
 use Bio::EnsEMBL::PredictionExon;
 use Bio::EnsEMBL::Utils::Exception qw( warning throw deprecate );
+
 
 @ISA = qw( Bio::EnsEMBL::DBSQL::BaseFeatureAdaptor );
 
@@ -246,8 +252,9 @@ sub remove {
     return undef;
   }
 
-  my $sth = $self->prepare( "delete from prediction_exon where prediction_exon_id = ?" );
-  $sth->bind_param(1,$pexon->dbID,SQL_INTEGER);
+  my $sth = $self->prepare(
+            "DELETE FROM prediction_exon WHERE prediction_exon_id = ?");
+  $sth->bind_param( 1, $pexon->dbID, SQL_INTEGER );
   $sth->execute();
 
   $pexon->dbID(undef);
@@ -347,6 +354,8 @@ sub _objs_from_sth {
   }
 
   FEATURE: while($sth->fetch()) {
+    #need to get the internal_seq_region, if present
+    $seq_region_id = $self->get_seq_region_id_internal($seq_region_id);
     my $slice = $slice_hash{"ID:".$seq_region_id};
     my $dest_mapper = $mapper;
 
@@ -424,17 +433,20 @@ sub _objs_from_sth {
       $slice = $dest_slice;
     }
 
-    #finally, create the new PredictionExon
-    push @exons, Bio::EnsEMBL::PredictionExon->new
-      ( '-start'         =>  $seq_region_start,
-        '-end'           =>  $seq_region_end,
-        '-strand'        =>  $seq_region_strand,
-        '-adaptor'       =>  $self,
-        '-slice'         =>  $slice,
-        '-dbID'          =>  $prediction_exon_id,
-        '-phase'         =>  $start_phase,
-        '-score'         =>  $score,
-        '-p_value'       =>  $p_value);
+    # Finally, create the new PredictionExon.
+    push( @exons,
+          $self->_create_feature( 'Bio::EnsEMBL::PredictionExon', {
+                                    '-start'   => $seq_region_start,
+                                    '-end'     => $seq_region_end,
+                                    '-strand'  => $seq_region_strand,
+                                    '-adaptor' => $self,
+                                    '-slice'   => $slice,
+                                    '-dbID'    => $prediction_exon_id,
+                                    '-phase'   => $start_phase,
+                                    '-score'   => $score,
+                                    '-p_value' => $p_value
+                                  } ) );
+
   }
 
   return \@exons;

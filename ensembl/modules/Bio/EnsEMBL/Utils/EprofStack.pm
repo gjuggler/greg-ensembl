@@ -1,14 +1,22 @@
+=head1 LICENSE
 
-#
-# BioPerl module for Bio::EnsEMBL::Util::EprofStack
-#
-# Cared for by Ewan Birney <birney@ebi.ac.uk>
-#
-# Copyright Ewan Birney
-#
-# You may distribute this module under the same terms as perl itself
+  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
 
-# POD documentation - main docs before the code
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
+=cut
 
 =head1 NAME
 
@@ -16,54 +24,44 @@ Bio::EnsEMBL::Util::EprofStack - DESCRIPTION of Object
 
 =head1 SYNOPSIS
 
-Give standard usage here
-
 =head1 DESCRIPTION
 
-Describe the object here
-
-=head1 CONTACT
-
-Describe contact details here
-
-=head1 APPENDIX
-
-The rest of the documentation details each of the object methods. Internal methods are usually preceded with a _
+=head1 METHODS
 
 =cut
 
-
-# Let the code begin...
-
-
 package Bio::EnsEMBL::Utils::EprofStack;
 
-use POSIX;
 use strict;
+use warnings;
 
+use POSIX;
 
-use Bio::EnsEMBL::Utils::Exception qw(warning);
+use Bio::EnsEMBL::Utils::Exception ('warning');
+
 BEGIN {
- eval {
- require Time::HiRes;
- Time::HiRes->import('time');
- };
-};
+  eval {
+    require Time::HiRes;
+    Time::HiRes->import('time');
+  };
+}
 
+sub new {
+  my ( $proto, $name ) = @_;
 
-sub new { 
-    my ($class,$name) = @_;
-    my $self = {
-       'is_active'       => 0,
-       'total_time'      => 0,
-       'total_time_time' => 0,
-       'max_time'        => 0, 
-       'min_time'        => 999999999,
-       'number'          => 0,
-       'tag'             => $name
-    };
-    bless $self,$class;
-    return $self;
+  my $class = ref($proto) || $proto;
+
+  my $self = bless( { 'is_active'       => 0,
+                      'total_time'      => 0,
+                      'total_time_time' => 0,
+                      'max_time'        => 0,
+                      'min_time'        => 999999999,
+                      'number'          => 0,
+                      'tag'             => $name
+                    },
+                    $class );
+
+  return $self;
 }
 
 =head2 push_stack
@@ -78,16 +76,21 @@ sub new {
 
 =cut
 
-sub push_stack{
-   my ($self,@args) = @_;
+sub push_stack {
+  my ( $self, @args ) = @_;
 
-   if( $self->{'is_active'} == 1 ) {
-       warning("Attempting to push stack on tag ".$self->tag." when active. Discarding previous push");
-   }
-   #my($user,$sys) = times();
-   # $self->{'current_start'} = (POSIX::times)[0];
-   $self->{'current_start'} = time();
-   $self->{'is_active'}=1
+  if ( $self->{'is_active'} == 1 ) {
+    warning(
+             sprintf(     "Attempting to push stack on tag '%s' "
+                        . "when active. Discarding previous push."
+                        . $self->tag() ) );
+  }
+
+  # my ( $user, $sys ) = times();
+  # $self->{'current_start'} = (POSIX::times)[0];
+
+  $self->{'current_start'} = time();
+  $self->{'is_active'}     = 1;
 }
 
 =head2 pop_stack
@@ -102,23 +105,35 @@ sub push_stack{
 
 =cut
 
-sub pop_stack{
-   my ($self,@args) = @_;
+sub pop_stack {
+  my ( $self, @args ) = @_;
 
-   if( $self->{'is_active'} == 0 ) {
-       warning("Attempting to pop stack on tag ".$self->tag." when not active. Ignoring");
-   }
-   #my($user,$sys) = times();
- #  my $clocktime = ( (POSIX::times)[0] - $self->{'current_start'} ) / POSIX::sysconf(&POSIX::_SC_CLK_TCK);
-   my $clocktime = time() - $self->{'current_start'};
-   $self->{'max_time'} = $clocktime if $self->{'max_time'} < $clocktime;
-   $self->{'min_time'} = $clocktime if $self->{'min_time'} > $clocktime;
-   $self->{'total_time'}+=$clocktime;
-   $self->{'total_time_time'} += $clocktime * $clocktime;
-   $self->{'number'}++;
-   $self->{'is_active'}=0;
-}
+  if ( $self->{'is_active'} == 0 ) {
+    warning(
+             sprintf( "Attempting to pop stack on tag '%s' "
+                        . "when not active. Ignoring.",
+                      $self->tag() ) );
+  }
 
+  # my ( $user, $sys ) = times();
+  # my $clocktime =
+  #   ( (POSIX::times)[0] - $self->{'current_start'} )/
+  #   POSIX::sysconf(&POSIX::_SC_CLK_TCK);
+
+  my $clocktime = time() - $self->{'current_start'};
+
+  if ( $self->{'max_time'} < $clocktime ) {
+    $self->{'max_time'} = $clocktime;
+  }
+  if ( $self->{'min_time'} > $clocktime ) {
+    $self->{'min_time'} = $clocktime;
+  }
+
+  $self->{'total_time'}      += $clocktime;
+  $self->{'total_time_time'} += $clocktime*$clocktime;
+  $self->{'number'}++;
+  $self->{'is_active'} = 0;
+} ## end sub pop_stack
 
 =head2 total_time_time
 
@@ -132,13 +147,11 @@ sub pop_stack{
 =cut
 
 sub total_time_time {
-   my $obj = shift;
-   if( @_ ) {
-      my $value = shift;
-      $obj->{'total_time_time'} = $value;
-    }
-    return $obj->{'total_time_time'};
+  my ( $self, $value ) = @_;
 
+  if ( defined($value) ) { $self->{'total_time_time'} = $value }
+
+  return $self->{'total_time_time'};
 }
 
 =head2 max_time
@@ -152,13 +165,12 @@ sub total_time_time {
 
 =cut
 
-sub max_time{
-   my $obj = shift;
-   if( @_ ) {
-      my $value = shift;
-      $obj->{'max_time'} = $value;
-    }
-    return $obj->{'max_time'};
+sub max_time {
+  my ( $self, $value ) = @_;
+
+  if ( defined($value) ) { $self->{'max_time'} = $value }
+
+  return $self->{'max_time'};
 }
 
 =head2 min_time
@@ -172,13 +184,12 @@ sub max_time{
 
 =cut
 
-sub min_time{
-   my $obj = shift;
-   if( @_ ) {
-      my $value = shift;
-      $obj->{'min_time'} = $value;
-    }
-    return $obj->{'min_time'};
+sub min_time {
+  my ( $self, $value ) = @_;
+
+  if ( defined($value) ) { $self->{'min_time'} = $value }
+
+  return $self->{'min_time'};
 }
 
 =head2 total_time
@@ -192,14 +203,12 @@ sub min_time{
 
 =cut
 
-sub total_time{
-   my $obj = shift;
-   if( @_ ) {
-      my $value = shift;
-      $obj->{'total_time'} = $value;
-    }
-    return $obj->{'total_time'};
+sub total_time {
+  my ( $self, $value ) = @_;
 
+  if ( defined($value) ) { $self->{'total_time'} = $value }
+
+  return $self->{'total_time'};
 }
 
 =head2 number
@@ -213,14 +222,12 @@ sub total_time{
 
 =cut
 
-sub number{
-   my $obj = shift;
-   if( @_ ) {
-      my $value = shift;
-      $obj->{'number'} = $value;
-    }
-    return $obj->{'number'};
+sub number {
+  my ( $self, $value ) = @_;
 
+  if ( defined($value) ) { $self->{'number'} = $value }
+
+  return $self->{'number'};
 }
 
 =head2 is_active
@@ -234,14 +241,12 @@ sub number{
 
 =cut
 
-sub is_active{
-   my $obj = shift;
-   if( @_ ) {
-      my $value = shift;
-      $obj->{'is_active'} = $value;
-    }
-    return $obj->{'is_active'};
+sub is_active {
+  my ( $self, $value ) = @_;
 
+  if ( defined($value) ) { $self->{'is_active'} = $value }
+
+  return $self->{'is_active'};
 }
 
 =head2 current_start
@@ -255,16 +260,13 @@ sub is_active{
 
 =cut
 
-sub current_start{
-   my $obj = shift;
-   if( @_ ) {
-      my $value = shift;
-      $obj->{'current_start'} = $value;
-    }
-    return $obj->{'current_start'};
+sub current_start {
+  my ( $self, $value ) = @_;
 
+  if ( defined($value) ) { $self->{'current_start'} = $value }
+
+  return $self->{'current_start'};
 }
-
 
 =head2 tag
 
@@ -277,14 +279,12 @@ sub current_start{
 
 =cut
 
-sub tag{
-   my $obj = shift;
-   if( @_ ) {
-      my $value = shift;
-      $obj->{'tag'} = $value;
-    }
-    return $obj->{'tag'};
+sub tag {
+  my ( $self, $value ) = @_;
 
+  if ( defined($value) ) { $self->{'tag'} = $value }
+
+  return $self->{'tag'};
 }
 
 1;

@@ -1,4 +1,22 @@
-package Bio::EnsEMBL::IdMapping::Cache;
+=head1 LICENSE
+
+  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
+=cut
 
 =head1 NAME
 
@@ -7,29 +25,14 @@ IdMapping application
 
 =head1 SYNOPSIS
 
-
 =head1 DESCRIPTION
-
 
 =head1 METHODS
 
-
-=head1 LICENCE
-
-This code is distributed under an Apache style licence. Please see
-http://www.ensembl.org/info/about/code_licence.html for details.
-
-=head1 AUTHOR
-
-Patrick Meidl <meidl@ebi.ac.uk>, Ensembl core API team
-
-=head1 CONTACT
-
-Please post comments/questions to the Ensembl development list
-<ensembl-dev@ebi.ac.uk>
-
 =cut
 
+
+package Bio::EnsEMBL::IdMapping::Cache;
 
 use strict;
 use warnings;
@@ -249,7 +252,9 @@ sub build_cache_from_genes {
   throw("You must provide a listref of genes.") unless (ref($genes) eq 'ARRAY');
 
   # biotype filter
-  $genes = $self->filter_biotype($genes) if ($self->conf->param('biotypes'));
+  if ( $self->conf->param('biotypes') ) {
+    $genes = $self->filter_biotypes($genes);
+  }
   my $num_genes = scalar(@$genes);
 
   # initialise cache for the given type.
@@ -730,38 +735,40 @@ sub do_upload {
 
 
 sub get_db_privs {
-  my $self = shift;
-  my $dbtype = shift;
+  my ( $self, $dbtype ) = @_;
 
   my %privs = ();
-  my $r;
+  my $rs;
 
   # get privileges from mysql db
   eval {
-    my $dbc = $self->get_DBAdaptor($dbtype)->dbc;
-    my $sql = qq(SHOW GRANTS FOR ).$dbc->username;
+    my $dbc = $self->get_DBAdaptor($dbtype)->dbc();
+    my $sql = qq(SHOW GRANTS FOR ) . $dbc->username();
     my $sth = $dbc->prepare($sql);
-    $sth->execute;
-    ($r) = $sth->fetchrow_array;
-    $sth->finish;
+    $sth->execute();
+    $rs = $sth->fetchall_arrayref();
+    $sth->finish();
   };
 
   if ($@) {
-    $self->logger->warning("Error obtaining privileges from $dbtype db: $@\n");
+    $self->logger->warning(
+      "Error obtaining privileges from $dbtype db: $@\n");
     return {};
   }
 
   # parse the output
-  $r =~ s/GRANT (.*) ON .*/$1/i;
-  foreach my $p (split(',', $r)) {
-    # trim leading and trailing whitespace
-    $p =~ s/^\s+//;
-    $p =~ s/\s+$//;
-    $privs{uc($p)} = 1;
+  foreach my $r ( map { $_->[0] } @{$rs} ) {
+    $r =~ s/GRANT (.*) ON .*/$1/i;
+    foreach my $p ( split( ',', $r ) ) {
+      # trim leading and trailing whitespace
+      $p =~ s/^\s+//;
+      $p =~ s/\s+$//;
+      $privs{ uc($p) } = 1;
+    }
   }
 
   return \%privs;
-}
+} ## end sub get_db_privs
 
 
 sub check_empty_tables {

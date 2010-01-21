@@ -1,9 +1,22 @@
-#
-# EnsEMBL module for Bio::EnsEMBL::DnaAlignFeatureAdaptor
-#
-# Copyright (c) 2003 EnsEMBL
-#
-# You may distribute this module under the same terms as perl itself
+=head1 LICENSE
+
+  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
+=cut
 
 =head1 NAME
 
@@ -11,22 +24,20 @@ Bio::EnsEMBL::DBSQL::DnaAlignFeatureAdaptor - Adaptor for DnaAlignFeatures
 
 =head1 SYNOPSIS
 
-    $dafa = $dbadaptor->get_DnaAlignFeatureAdaptor();
+  $dafa = $registry->get_adaptor( 'Human', 'Core', 'DnaAlignFeature' );
 
-    @features = @{$dafa->fetch_by_Slice($slice)};
+  my @features = @{ $dafa->fetch_all_by_Slice($slice) };
 
-    $dafa->store(@features);
+  $dafa->store(@features);
 
 =head1 DESCRIPTION
 
-This is an adaptor responsible for the retrieval and storage of 
-DnaDnaAlignFeatures from the database. This adaptor inherits most of its 
-functionality from the BaseAlignFeatureAdaptor and BaseFeatureAdaptor 
+This is an adaptor responsible for the retrieval and storage of
+DnaDnaAlignFeatures from the database. This adaptor inherits most of its
+functionality from the BaseAlignFeatureAdaptor and BaseFeatureAdaptor
 superclasses.
 
-=head1 CONTACT
-
-Post questions to the EnsEMBL development list <ensembl-dev@ebi.ac.uk>
+=head1 METHODS
 
 =cut
 
@@ -34,7 +45,7 @@ Post questions to the EnsEMBL development list <ensembl-dev@ebi.ac.uk>
 package Bio::EnsEMBL::DBSQL::DnaAlignFeatureAdaptor;
 use vars qw(@ISA);
 use strict;
-
+use Data::Dumper;
 use Bio::EnsEMBL::DnaDnaAlignFeature;
 use Bio::EnsEMBL::DBSQL::BaseAlignFeatureAdaptor;
 use Bio::EnsEMBL::Utils::Exception qw(throw warning);
@@ -58,9 +69,13 @@ use Bio::EnsEMBL::Utils::Exception qw(throw warning);
 sub _tables {
   my $self = shift;
 
-  return ['dna_align_feature', 'daf'];
+  return (['dna_align_feature', 'daf'],['external_db','exdb']);
 }
 
+
+sub _left_join{
+    return (['external_db',"exdb.external_db_id = daf.external_db_id"]);
+}
 
 =head2 _columns
 
@@ -94,7 +109,11 @@ sub _columns {
             daf.perc_ident
             daf.score
             daf.external_db_id
-            daf.hcoverage );
+            daf.hcoverage
+	    daf.external_data
+	    daf.pair_dna_align_feature_id
+	    exdb.db_name
+	    exdb.db_display_name);
 }
 
 
@@ -133,8 +152,9 @@ sub store {
      "INSERT INTO $tablename (seq_region_id, seq_region_start, seq_region_end,
                              seq_region_strand, hit_start, hit_end,
                              hit_strand, hit_name, cigar_line,
-                             analysis_id, score, evalue, perc_ident, external_db_id, hcoverage)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?, ?, ?, ?, ?)");
+                             analysis_id, score, evalue, perc_ident, external_db_id, 
+                             hcoverage, pair_dna_align_feature_id)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?, ?, ?, ?, ?, ?)");
 
  FEATURE: foreach my $feat ( @feats ) {
     if( !ref $feat || !$feat->isa("Bio::EnsEMBL::DnaDnaAlignFeature") ) {
@@ -192,6 +212,7 @@ sub store {
     $sth->bind_param(13,$feat->percent_id,SQL_FLOAT);
     $sth->bind_param(14,$feat->external_db_id,SQL_INTEGER);
     $sth->bind_param(15,$feat->hcoverage,SQL_DOUBLE);
+    $sth->bind_param(16,$feat->pair_dna_align_feature_id, SQL_INTEGER);
 
     $sth->execute();
     $original->dbID($sth->{'mysql_insertid'});
@@ -199,6 +220,122 @@ sub store {
   }
 
   $sth->finish();
+}
+
+
+sub save {
+  my ($self, $features) = @_;
+
+  my @feats = @$features;
+  throw("Must call store with features") if( scalar(@feats) == 0 );
+
+  my @tabs = $self->_tables;
+  my ($tablename) = @{$tabs[0]};
+
+  my $db = $self->db();
+  my $analysis_adaptor = $db->get_AnalysisAdaptor();
+
+  my $sql = qq{INSERT INTO $tablename (seq_region_id, seq_region_start, seq_region_end, seq_region_strand, hit_start, hit_end, hit_strand, hit_name, cigar_line, analysis_id, score, evalue, perc_ident, external_db_id, hcoverage, pair_dna_align_feature_id, external_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)};
+
+  my %analyses = ();
+
+  my $sth = $self->prepare($sql);
+     
+ FEATURE: foreach my $feat ( @feats ) {
+    if( !ref $feat || !$feat->isa("Bio::EnsEMBL::DnaDnaAlignFeature") ) {
+      throw("feature must be a Bio::EnsEMBL::DnaDnaAlignFeature,"
+            . " not a [".ref($feat)."].");
+    }
+
+    if($feat->is_stored($db)) {
+      warning("DnaDnaAlignFeature [".$feat->dbID."] is already stored" .
+              " in this database.");
+      next FEATURE;
+    }
+
+    my $hstart  = $feat->hstart || 0; # defined $feat->hstart  ? $feat->hstart : $feat->start ;
+    my $hend    = $feat->hend   || 0; # defined $feat->hend    ? $feat->hend : $feat->end;
+    my $hstrand = $feat->hstrand|| 0; # defined $feat->hstrand ? $feat->hstrand : $feat->strand;
+    if( $hstart && $hend ) {
+      if($hend < $hstart) {
+        throw("Invalid Feature start/end [$hstart/$hend]. Start must be less than or equal to end.");
+      }
+    }
+    my $cigar_string = $feat->cigar_string();
+    if(!$cigar_string) {
+      $cigar_string = $feat->length() . 'M';
+      warning("DnaDnaAlignFeature does not define a cigar_string.\n" .
+              "Assuming ungapped block with cigar_line=$cigar_string .");
+    }
+
+    my $hseqname = $feat->hseqname();
+    if(!$hseqname) {
+      throw("DnaDnaAlignFeature must define an hseqname.");
+    }
+
+    if(!defined($feat->analysis)) {
+      throw("An analysis must be attached to the features to be stored.");
+    }
+
+    #store the analysis if it has not been stored yet
+    if(!$feat->analysis->is_stored($db)) {
+      $analysis_adaptor->store($feat->analysis());
+    }
+
+    $analyses{ $feat->analysis->dbID }++;
+
+    my $original = $feat;
+    my $seq_region_id;
+    ($feat, $seq_region_id) = $self->_pre_store_userdata($feat);
+
+    my $extra_data = $feat->extra_data ? $self->dump_data($feat->extra_data) : '';
+
+    $sth->bind_param(1,$seq_region_id,SQL_INTEGER);
+    $sth->bind_param(2,$feat->start,SQL_INTEGER);
+    $sth->bind_param(3,$feat->end,SQL_INTEGER);
+    $sth->bind_param(4,$feat->strand,SQL_TINYINT);
+    $sth->bind_param(5,$hstart,SQL_INTEGER);
+    $sth->bind_param(6,$hend,SQL_INTEGER);
+    $sth->bind_param(7,$hstrand,SQL_TINYINT);
+    $sth->bind_param(8,$hseqname,SQL_VARCHAR);
+    $sth->bind_param(9,$cigar_string,SQL_LONGVARCHAR);
+    $sth->bind_param(10,$feat->analysis->dbID,SQL_INTEGER);
+    $sth->bind_param(11,$feat->score,SQL_DOUBLE);
+#    $sth->bind_param(11,$feat->score); # if the above statement does not work it means you need to upgrade DBD::mysql, meantime you can replace it with this line
+    $sth->bind_param(12,$feat->p_value,SQL_DOUBLE);
+    $sth->bind_param(13,$feat->percent_id,SQL_FLOAT);
+    $sth->bind_param(14,$feat->external_db_id,SQL_INTEGER);
+    $sth->bind_param(15,$feat->hcoverage,SQL_DOUBLE);
+    $sth->bind_param(16,$feat->pair_dna_align_feature_id,SQL_INTEGER);
+    $sth->bind_param(17,$extra_data,SQL_LONGVARCHAR);
+
+
+    $sth->execute();
+    $original->dbID($sth->{'mysql_insertid'});
+    $original->adaptor($self);
+  }
+
+  $sth->finish();
+
+## js5 hack to update meta_coord table... 
+  if( keys %analyses ) {
+
+    my $sth = $self->prepare( 'select sr.coord_system_id, max(daf.seq_region_end-daf.seq_region_start) from seq_region as sr, dna_align_feature as daf where daf.seq_region_id=sr.seq_region_id and analysis_id in ('.join(',',keys %analyses).') group by coord_system_id' );
+    $sth->execute;
+
+    foreach( @{ $sth->fetchall_arrayref } ) {
+      my $sth2 = $self->prepare( qq(insert ignore into meta_coord values("dna_align_feature",$_->[0],$_->[1])) );
+      $sth2->execute;
+      $sth2->finish;
+
+      $sth2 = $self->prepare( qq(update meta_coord set max_length = $_->[1] where coord_system_id = $_->[0] and table_name="dna_align_feature" and max_length < $_->[1]) );
+      $sth2->execute;
+      $sth2->finish;
+    }
+
+    $sth->finish;
+  }
+
 }
 
 
@@ -227,7 +364,9 @@ sub _objs_from_sth {
   # a fair bit of gymnastics is used.
   #
 
-  my $sa = $self->db()->get_SliceAdaptor();
+# in case of userdata we need the features on the dest_slice
+# in case of get_all_supporting_features dest_slice is not provided .. 
+  my $sa = $dest_slice ? $dest_slice->adaptor() : $self->db()->get_SliceAdaptor();
   my $aa = $self->db->get_AnalysisAdaptor();
 
   my @features;
@@ -239,14 +378,15 @@ sub _objs_from_sth {
   my($dna_align_feature_id, $seq_region_id, $analysis_id, $seq_region_start,
      $seq_region_end, $seq_region_strand, $hit_start, $hit_end, $hit_name,
      $hit_strand, $cigar_line, $evalue, $perc_ident, $score,
-     $external_db_id, $hcoverage );
+     $external_db_id, $hcoverage, $extra_data, $pair_dna_align_feature_id,
+     $external_db_name, $external_display_db_name);
 
   $sth->bind_columns(
     \$dna_align_feature_id, \$seq_region_id, \$analysis_id, \$seq_region_start,
     \$seq_region_end, \$seq_region_strand, \$hit_start, \$hit_end, \$hit_name,
     \$hit_strand, \$cigar_line, \$evalue, \$perc_ident, \$score,
-    \$external_db_id, \$hcoverage );
-
+    \$external_db_id, \$hcoverage, \$extra_data, \$pair_dna_align_feature_id,
+     \$external_db_name, \$external_display_db_name);
 
   my $asm_cs;
   my $cmp_cs;
@@ -344,25 +484,33 @@ sub _objs_from_sth {
       $slice = $dest_slice;
     }
 
-    #finally, create the new dna align feature
-    push @features, Bio::EnsEMBL::DnaDnaAlignFeature->new_fast
-      ( { 'slice'         =>  $slice,
-          'start'         =>  $seq_region_start,
-          'end'           =>  $seq_region_end,
-          'strand'        =>  $seq_region_strand,
-          'hseqname'      =>  $hit_name,
-          'hstart'        =>  $hit_start,
-          'hend'          =>  $hit_end,
-          'hstrand'       =>  $hit_strand,
-          'score'         =>  $score,
-          'p_value'       =>  $evalue,
-          'percent_id'    =>  $perc_ident,
-          'cigar_string'  =>  $cigar_line,
-          'analysis'      =>  $analysis,
-          'adaptor'       =>  $self,
-          'dbID'          =>  $dna_align_feature_id,
-	  'external_db_id'=>  $external_db_id,
-          'hcoverage'     =>  $hcoverage } );
+    # Finally, create the new DnaAlignFeature.
+    push( @features,
+          $self->_create_feature_fast(
+                                  'Bio::EnsEMBL::DnaDnaAlignFeature', {
+                                    'slice'      => $slice,
+                                    'start'      => $seq_region_start,
+                                    'end'        => $seq_region_end,
+                                    'strand'     => $seq_region_strand,
+                                    'hseqname'   => $hit_name,
+                                    'hstart'     => $hit_start,
+                                    'hend'       => $hit_end,
+                                    'hstrand'    => $hit_strand,
+                                    'score'      => $score,
+                                    'p_value'    => $evalue,
+                                    'percent_id' => $perc_ident,
+                                    'cigar_string' => $cigar_line,
+                                    'analysis'     => $analysis,
+                                    'adaptor'      => $self,
+                                    'dbID' => $dna_align_feature_id,
+                                    'external_db_id' => $external_db_id,
+                                    'hcoverage'      => $hcoverage,
+				    'extra_data'     => $extra_data ? $self->get_dumped_data($extra_data) : '',
+				    'dbname'         => $external_db_name,
+				    'db_display_name' => $external_display_db_name,
+				    'pair_dna_align_feature_id' => $pair_dna_align_feature_id
+                                  } ) );
+
   }
 
   return \@features;

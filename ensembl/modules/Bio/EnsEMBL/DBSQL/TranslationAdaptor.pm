@@ -1,11 +1,22 @@
-# EnsEMBL Translation reading writing adaptor for mySQL
-#
-# Copyright EMBL-EBI 2001
-#
-# Author: Arne Stabenau
-#
-# Date : 21.07.2001
-#
+=head1 LICENSE
+
+  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
+=cut
 
 =head1 NAME
 
@@ -14,31 +25,42 @@ Translation objects from a database.
 
 =head1 DESCRIPTION
 
-This adaptor provides a means to retrieve and store Bio::EnsEMBL::Translation
-objects from/in a database.
+This adaptor provides a means to retrieve and store
+Bio::EnsEMBL::Translation objects from/in a database.
 
-Translation objects only truly make sense in the context of their transcripts
-so the recommended means to retrieve Translations is by retrieving the
-Transcript object first, and then fetching the Translation.
+Translation objects only truly make sense in the context of their
+transcripts so the recommended means to retrieve Translations is
+by retrieving the Transcript object first, and then fetching the
+Translation.
 
 =head1 SYNOPSIS
 
-  my $db = Bio::EnsEMBL::DBSQL::DBAdaptor->new(...);
+  use Bio::EnsEMBL::Registry;
 
-  my $transcript_adaptor = $db->get_TranscriptAdaptor();
-  my $translation_adaptor = $db->get_TranslationAdaptor();
+  Bio::EnsEMBL::Registry->load_registry_from_db(
+    -host => 'ensembldb.ensembl.org',
+    -user => 'anonymous'
+  );
+
+  $transcript_adaptor =
+    Bio::EnsEMBL::Registry->get_adaptor( "human", "core",
+    "transcript" );
+
+  $translation_adaptor =
+    Bio::EnsEMBL::Registry->get_adaptor( "human", "core",
+    "translation" );
+
   my $transcript = $transcript_adaptor->fetch_by_dbID(131243);
-  my $translation = $translation_adaptor->fetch_by_Transcript($transcript);
+  my $translation =
+    $translation_adaptor->fetch_by_Transcript($transcript);
 
-  print "Translation Start Site: " .
-        $translation->start_Exon()->stable_id(), " ", $translation->start();
-  print "Translation Stop: " . 
-        $translation->end_Exon()->stable_id(), " ", $translation->end();
-
-
-=head1 CONTACT
-
-  ensembl-dev@ebi.ac.uk
+  print("Translation Start Site: "
+      . $translation->start_Exon()->stable_id() . " "
+      . $translation->start()
+      . "\n" );
+  print("Translation Stop: "
+      . $translation->end_Exon()->stable_id() . " "
+      . $translation->end() );
 
 =head1 METHODS
 
@@ -123,18 +145,19 @@ sub fetch_by_Transcript {
      throw("Could not find start or end exon in transcript_id=".$transcript->dbID."\n");
   }
 
-  my $translation = Bio::EnsEMBL::Translation->new
-   (
-     -dbID => $translation_id,
-     -adaptor => $self,
-     -seq_start => $seq_start,
-     -seq_end => $seq_end,
-     -start_exon => $start_exon,
-     -end_exon => $end_exon,
-     -stable_id => $stable_id,
-     -version => $version,
-     -created_date => $created_date || undef,
-     -modified_date => $modified_date || undef
+  my $translation = Bio::EnsEMBL::Translation->new_fast
+      ({
+     'dbID' => $translation_id,
+     'adaptor' => $self,
+     'start' => $seq_start,
+     'end' => $seq_end,
+     'start_exon' => $start_exon,
+     'end_exon' => $end_exon,
+     'stable_id' => $stable_id,
+     'version' => $version,
+     'created_date' => $created_date || undef,
+     'modified_date' => $modified_date || undef
+     }
    );
 
   return $translation;
@@ -190,7 +213,106 @@ sub fetch_all_by_external_name {
   return \@out;
 }
 
+=head2 fetch_all_by_GOTerm
 
+  Arg [1]   : Bio::EnsEMBL::OntologyTerm
+              The GO term for which translations should be fetched.
+
+  Example:  @translations = @{
+              $translation_adaptor->fetch_all_by_GOTerm(
+                $go_adaptor->fetch_by_accession('GO:0030326') ) };
+
+  Description   : Retrieves a list of translations that are
+                  associated with the given GO term, or with any of
+                  its descendent GO terms.
+
+  Return type   : listref of Bio::EnsEMBL::Translation
+  Exceptions    : Throws of argument is not a GO term
+  Caller        : general
+  Status        : Stable
+
+=cut
+
+sub fetch_all_by_GOTerm {
+  my ( $self, $term ) = @_;
+
+  if ( !ref($term)
+    || !$term->isa('Bio::EnsEMBL::OntologyTerm')
+    || $term->ontology() ne 'GO' )
+  {
+    throw('Argument is not a GO term');
+  }
+
+  my $entryAdaptor = $self->db->get_DBEntryAdaptor();
+
+  my %unique_dbIDs;
+  foreach my $accession ( map { $_->accession() }
+    ( $term, @{ $term->descendants() } ) )
+  {
+    my @ids =
+      $entryAdaptor->list_translation_ids_by_extids( $accession, 'GO' );
+    foreach my $dbID (@ids) { $unique_dbIDs{$dbID} = 1 }
+  }
+
+  my @result;
+  if ( scalar( keys(%unique_dbIDs) ) > 0 ) {
+    my $transcript_adaptor = $self->db()->get_TranscriptAdaptor();
+
+    foreach my $dbID ( sort { $a <=> $b } keys(%unique_dbIDs) ) {
+      my $transcript =
+        $transcript_adaptor->fetch_by_translation_id($dbID);
+      if ( defined($transcript) ) {
+        push( @result, $self->fetch_by_Transcript($transcript) );
+      }
+    }
+  }
+
+  return \@result;
+} ## end sub fetch_all_by_GOTerm
+
+=head2 fetch_all_by_GOTerm_accession
+
+  Arg [1]   : String
+              The GO term accession for which genes should be
+              fetched.
+
+  Example   :
+
+    @genes =
+      @{ $gene_adaptor->fetch_all_by_GOTerm_accession(
+        'GO:0030326') };
+
+  Description   : Retrieves a list of genes that are associated with
+                  the given GO term, or with any of its descendent
+                  GO terms.  The genes returned are in their native
+                  coordinate system, i.e. in the coordinate system
+                  in which they are stored in the database.  If
+                  another coordinate system is required then the
+                  Gene::transfer or Gene::transform method can be
+                  used.
+
+  Return type   : listref of Bio::EnsEMBL::Gene
+  Exceptions    : Throws of argument is not a GO term accession
+  Caller        : general
+  Status        : Stable
+
+=cut
+
+sub fetch_all_by_GOTerm_accession {
+  my ( $self, $accession ) = @_;
+
+  if ( $accession !~ /^GO:/ ) {
+    throw('Argument is not a GO term accession');
+  }
+
+  my $goAdaptor =
+    Bio::EnsEMBL::Registry->get_adaptor( 'Multi', 'Ontology',
+    'GOTerm' );
+
+  my $term = $goAdaptor->fetch_by_accession($accession);
+
+  return $self->fetch_all_by_GOTerm($term);
+}
 
 =head2 store
 

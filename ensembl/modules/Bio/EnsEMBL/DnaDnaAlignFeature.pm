@@ -1,15 +1,27 @@
-package Bio::EnsEMBL::DnaDnaAlignFeature;
+=head1 LICENSE
 
-# EnsEMBL module for storing dna-dna pairwise alignments
-#
-# Cared for by Michele Clamp <michele@sanger.ac.uk>
-#
-# You may distribute this module under the same terms as perl itself
-#
+  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
+=cut
 
 =head1 NAME
 
-  Bio::EnsEMBL::DnaDnaAlignFeature - Ensembl specific dna-dna pairwise alignment feature
+Bio::EnsEMBL::DnaDnaAlignFeature - Ensembl specific dna-dna pairwise
+alignment feature
 
 =head1 SYNOPSIS
 
@@ -18,16 +30,71 @@ package Bio::EnsEMBL::DnaDnaAlignFeature;
 =cut
 
 
+package Bio::EnsEMBL::DnaDnaAlignFeature;
+
+use strict;
+
 use Bio::EnsEMBL::BaseAlignFeature;
 
-
 use vars qw(@ISA);
-use strict;
 use Bio::SimpleAlign;
 use Bio::LocatableSeq;
+use Bio::EnsEMBL::Utils::Argument qw(rearrange);
 
 @ISA = qw( Bio::EnsEMBL::BaseAlignFeature );
 
+
+=head2 new
+
+  Arg [..]   : List of named arguments. (-pair_dna_align_feature_id) defined
+               in this constructor, others defined in BaseFeaturePair and 
+               SeqFeature superclasses.  
+  Example    : $daf = new DnaDnaAlignFeature(-cigar_string => '3M3I12M');
+  Description: Creates a new DnaDnaAlignFeature using either a cigarstring or
+               a list of ungapped features.  
+  Returntype : Bio::EnsEMBL::DnaDnaAlignFeature
+  Exceptions : none
+  Caller     : general
+  Status     : Stable
+
+=cut
+
+sub new {
+  
+  my $caller = shift;
+
+  my $class = ref($caller) || $caller;
+
+  my $self = $class->SUPER::new(@_);
+
+  my ($pair_dna_align_feature_id) = rearrange([qw(PAIR_DNA_ALIGN_FEATURE_ID)], @_);
+  if (defined $pair_dna_align_feature_id){
+      $self->{'pair_dna_align_feature_id'} = $pair_dna_align_feature_id;
+  }
+  return $self;
+}
+
+
+=head2 pair_dna_align_feature_id
+
+  Arg[1]     : (optional) String $arg - value to set
+  Example    : $self->pair_dna_align_feature_id($pair_feature_id);
+  Description: Getter/setter for attribute 'pair_dna_align_feature_id'
+               The id of the dna feature aligned
+  Returntype : String
+  Exceptions : none
+  Caller     : general
+  Status     : Stable
+
+=cut
+
+sub pair_dna_align_feature_id{
+    my ($self, $arg) = @_;
+    if (defined $arg){
+	$self->{pair_dna_align_feature_id} = $arg;
+    }
+    return $self->{pair_dna_align_feature_id};
+}
 
 =head2 _hit_unit
 

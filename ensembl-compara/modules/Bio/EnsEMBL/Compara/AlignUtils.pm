@@ -14,6 +14,7 @@ my $ALN = "Bio::EnsEMBL::Compara::AlignUtils";
 my $COMPARA = "Bio::EnsEMBL::Compara::ComparaUtils";
 
 sub indelign{
+  # Setup steps:
   # 1) Install GSL from ftp://ftp.gnu.org/gnu/gsl/gsl-1.13.tar.gz
   #    Note: this can be a big pain in the ass, linking the GSL libraries to indelign. Be warned!
   # 2) Install Indelign from http://europa.cs.uiuc.edu/indelign/Indelign.tar.gz

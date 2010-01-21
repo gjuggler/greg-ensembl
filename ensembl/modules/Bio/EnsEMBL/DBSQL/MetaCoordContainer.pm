@@ -1,7 +1,27 @@
-use strict;
-use warnings;
+=head1 LICENSE
+
+  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
+=cut
 
 package Bio::EnsEMBL::DBSQL::MetaCoordContainer;
+
+use strict;
+use warnings;
 
 use vars qw(@ISA);
 use strict;
@@ -11,31 +31,45 @@ use Bio::EnsEMBL::Utils::Exception;
 
 @ISA = qw(Bio::EnsEMBL::DBSQL::BaseAdaptor);
 
-
-
-
 sub new {
   my $class = shift;
 
   my $self = $class->SUPER::new(@_);
 
   #
-  # Retrieve the list of the coordinate systems that features are stored in
-  # and cache them
+  # Retrieve the list of the coordinate systems that features are stored
+  # in and cache them.
   #
-  my $sth = $self->prepare
-    ('SELECT table_name, coord_system_id, max_length  FROM meta_coord');
+
+  my @coord_systems =
+    @{ $self->db()->dnadb()->get_CoordSystemAdaptor->fetch_all() };
+
+  my @cs_ids;
+  foreach my $cs (@coord_systems) { push( @cs_ids, $cs->dbID() ) }
+
+  my $sth = $self->prepare(
+              'SELECT mc.table_name, mc.coord_system_id, mc.max_length '
+                . 'FROM meta_coord mc '
+                . 'WHERE mc.coord_system_id in ('
+                . join( ',', @cs_ids )
+                . ')' );
+
   $sth->execute();
 
-  while(my ($table_name, $cs_id, $max_length) = $sth->fetchrow_array()) {
-    $self->{'_feature_cache'}->{lc($table_name)} ||= [];
-    push @{$self->{'_feature_cache'}->{lc($table_name)}}, $cs_id;
-    $self->{'_max_len_cache'}->{$cs_id}->{lc($table_name)} = $max_length;
+  while ( my ( $table_name, $cs_id, $max_length ) =
+          $sth->fetchrow_array() )
+  {
+    $table_name = lc($table_name);
+
+    $self->{'_feature_cache'}->{$table_name} ||= [];
+
+    push( @{ $self->{'_feature_cache'}->{$table_name} }, $cs_id );
+    $self->{'_max_len_cache'}->{$cs_id}->{$table_name} = $max_length;
   }
   $sth->finish();
 
   return $self;
-}
+} ## end sub new
 
 
 

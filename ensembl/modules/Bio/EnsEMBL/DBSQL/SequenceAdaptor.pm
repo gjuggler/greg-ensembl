@@ -1,11 +1,22 @@
-#
-# Ensembl module for Bio::EnsEMBL::DBSQL::SequenceAdaptor
-#
-# Cared for by Arne Stabenau <stabenau@ebi.ac.uk>
-#
-# Copyright Ensembl
-#
-# You may distribute this module under the same terms as perl itself
+=head1 LICENSE
+
+  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
+=cut
 
 =head1 NAME
 
@@ -13,17 +24,14 @@ Bio::EnsEMBL::DBSQL::SequenceAdaptor - produce sequence strings from locations
 
 =head1 SYNOPSIS
 
-$seq_adptr = $database_adaptor->get_SequenceAdaptor();
-$dna = ${$seq_adptr->fetch_by_Slice_start_end_strand($slice, 1, 1000, -1);}
+  my $sa = $registry->get_adaptor( 'Human', 'Core', 'Sequence' );
+
+  my $dna =
+    ${ $sa->fetch_by_Slice_start_end_strand( $slice, 1, 1000, -1 ) };
 
 =head1 DESCRIPTION
 
 An adaptor for the retrieval of DNA sequence from the EnsEMBL database
-
-=head1 CONTACT
-
-Post questions/comments to the EnsEMBL development list:
-ensembl-dev@ebi.ac.uk
 
 =head1 METHODS
 
@@ -33,6 +41,7 @@ package Bio::EnsEMBL::DBSQL::SequenceAdaptor;
 
 use vars qw(@ISA @EXPORT);
 use strict;
+use warnings;
 
 use Bio::EnsEMBL::DBSQL::BaseAdaptor;
 use Bio::EnsEMBL::Utils::Exception qw(throw deprecate);
@@ -73,6 +82,28 @@ sub new {
 
   $self->{'seq_cache'} = \%seq_cache;
 
+
+#
+# See if this has any seq_region_attrib of type "_rna_edit_cache" if so store these
+# in a  hash.
+#
+
+  my $sth = $self->dbc->prepare('select sra.seq_region_id, sra.value from seq_region_attrib sra, attrib_type at where sra.attrib_type_id = at.attrib_type_id and code like "_rna_edit"');
+  
+  $sth->execute();
+  my ($seq_region_id, $value);
+  $sth->bind_columns(\$seq_region_id, \$value);
+  my %edits;
+  my $count = 0;
+  while($sth->fetch()){
+    $count++;
+    push @{$edits{$seq_region_id}}, $value;
+  }
+  $sth->finish;
+  if($count){
+    $self->{_rna_edits_cache} = \%edits;
+  }
+  
   return $self;
 }
 
@@ -204,12 +235,31 @@ sub fetch_by_Slice_start_end_strand {
      $seq .= 'N' x ($slice->length() - length($seq));
    }
 
+   if(defined($self->{_rna_edits_cache}) and defined($self->{_rna_edits_cache}->{$slice->get_seq_region_id})){
+     $self->_rna_edit($slice,\$seq);
+   }
+
    #if they asked for the negative slice strand revcomp the whole thing
    reverse_comp(\$seq) if($strand == -1);
 
    return \$seq;
 }
 
+
+
+sub _rna_edit {
+  my $self  = shift;
+  my $slice = shift;
+  my $seq   = shift; #reference to string
+
+  my $offset = $slice->start;   #substr start at 0 , but seq starts at 1 (so no -1 here)
+
+  foreach my $edit (@{$self->{_rna_edits_cache}->{$slice->get_seq_region_id}}){
+    my ($start, $end, $txt) = split (/\s+/, $edit);
+    substr($$seq,$start-$offset, ($end-$start)+1, $txt);
+  }
+  return;
+}
 
 
 sub _fetch_seq {
@@ -233,18 +283,18 @@ sub _fetch_seq {
       } else {
         # retrieve uncached portions of the sequence
 
-        my $sth = $self->prepare
-          ("SELECT SUBSTRING( d.sequence, ?, ?)
-            FROM dna d
-            WHERE d.seq_region_id = ?");
+        my $sth =
+          $self->prepare(   "SELECT SUBSTRING(d.sequence, ?, ?) "
+                          . "FROM dna d "
+                          . "WHERE d.seq_region_id = ?" );
 
         my $tmp_seq;
 
         my $min = ($i << $SEQ_CHUNK_PWR) + 1;
 
-	$sth->bind_param(1,$min,SQL_INTEGER);
-	$sth->bind_param(2,1 << $SEQ_CHUNK_PWR,SQL_INTEGER);
-	$sth->bind_param(3,$seq_region_id,SQL_INTEGER);
+        $sth->bind_param( 1, $min,                SQL_INTEGER );
+        $sth->bind_param( 2, 1 << $SEQ_CHUNK_PWR, SQL_INTEGER );
+        $sth->bind_param( 3, $seq_region_id,      SQL_INTEGER );
 
         $sth->execute();
         $sth->bind_columns(\$tmp_seq);
@@ -258,24 +308,24 @@ sub _fetch_seq {
     }
 
     # return only the requested portion of the entire sequence
-    my $min =  ($chunk_min    << $SEQ_CHUNK_PWR) + 1;
-    my $max = ($chunk_max+1) << $SEQ_CHUNK_PWR;
-    my $seq = substr($entire_seq, $start-$min, $length);
+    my $min = ( $chunk_min << $SEQ_CHUNK_PWR ) + 1;
+    my $max = ( $chunk_max + 1 ) << $SEQ_CHUNK_PWR;
+    my $seq = substr( $entire_seq, $start - $min, $length );
 
     return \$seq;
   } else {
 
     # do not do any caching for requests of very large sequences
-    my $sth = $self->prepare
-      ("SELECT SUBSTRING( d.sequence, ?, ?)
-        FROM dna d
-        WHERE d.seq_region_id = ?");
+    my $sth =
+      $self->prepare(   "SELECT SUBSTRING(d.sequence, ?, ?) "
+                      . "FROM dna d "
+                      . "WHERE d.seq_region_id = ?" );
 
     my $tmp_seq;
 
-    $sth->bind_param(1,$start,SQL_INTEGER);
-    $sth->bind_param(2,$length,SQL_INTEGER);
-    $sth->bind_param(3,$seq_region_id,SQL_INTEGER);
+    $sth->bind_param( 1, $start,         SQL_INTEGER );
+    $sth->bind_param( 2, $length,        SQL_INTEGER );
+    $sth->bind_param( 3, $seq_region_id, SQL_INTEGER );
 
     $sth->execute();
     $sth->bind_columns(\$tmp_seq);

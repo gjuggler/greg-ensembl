@@ -1,4 +1,22 @@
-package Bio::EnsEMBL::DBEntry;
+=head1 LICENSE
+
+  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
+=cut
 
 =head1 NAME
 
@@ -7,30 +25,16 @@ Object representing an external reference (xref)
 
 =head1 SYNOPSIS
 
-
 =head1 DESCRIPTION
 
-This object holds information about external references (xrefs) to Ensembl
-objects.
+This object holds information about external references (xrefs) to
+Ensembl objects.
 
 =head1 METHODS
 
-
-=head1 LICENCE
-
-This code is distributed under an Apache style licence. Please see
-http://www.ensembl.org/info/about/code_licence.html for details.
-
-=head1 AUTHOR
-
-Arne Stabenau <stabenau@ebi.ac.uk>, Ensembl core API team
-
-=head1 CONTACT
-
-Please post comments/questions to the Ensembl development list
-<ensembl-dev@ebi.ac.uk>
-
 =cut
+
+package Bio::EnsEMBL::DBEntry;
 
 use strict;
 use warnings;
@@ -88,7 +92,7 @@ sub new_fast {
                     -type => $type,
                     -secondary_db_name => $secondary_db_name,
                     -secondary_db_table => $secondary_db_table
-                    -linkage_annotation => $object_xref_text);
+		    -linkage_annotation => $object_xref_text);
   Description: Creates a new DBEntry object
   Returntype : Bio::EnsEMBL::DBEntry
   Exceptions : none
@@ -111,12 +115,12 @@ sub new {
        $dbname, $release, $display_id, $description,
        $primary_id_linkable, $display_id_linkable, $priority,
        $db_display_name, $info_type, $info_text, $type,
-       $secondary_db_name, $secondary_db_table, $link_annotation) =
+       $secondary_db_name, $secondary_db_table, $link_annotation, $analysis) =
     rearrange ( ['ADAPTOR','DBID','PRIMARY_ID','VERSION',
                  'DBNAME','RELEASE','DISPLAY_ID','DESCRIPTION',
 		 'PRIMARY_ID_LINKABLE','DISPLAY_ID_LINKABLE','PRIORITY',
 		 'DB_DISPLAY_NAME', 'INFO_TYPE', 'INFO_TEXT', 'TYPE',
-                 'SECONDARY_DB_NAME', 'SECONDARY_DB_TABLE', 'LINKAGE_ANNOTATION'], @args );
+                 'SECONDARY_DB_NAME', 'SECONDARY_DB_TABLE', 'LINKAGE_ANNOTATION', 'ANALYSIS'], @args );
 
   $self->{'adaptor'} = $adaptor;
   $self->{'dbID'}    = $dbID;
@@ -137,7 +141,9 @@ sub new {
   if( defined $type) { $self->type($type) }
   if( defined $secondary_db_name) { $self->secondary_db_name($secondary_db_name) }
   if( defined $secondary_db_table) { $self->secondary_db_table($secondary_db_table) }
+
   $self->linkage_annotation($link_annotation) if defined $link_annotation;
+  $self->analysis($analysis) if defined $analysis;
 
 
   return $self;
@@ -302,7 +308,7 @@ sub version {
   Arg [1]    : (optional) String $arg - value to set
   Example    : none
   Description: Getter/setter for attribute 'description'.
-               The object's description.
+               The object's description, from the external_db table
   Returntype : String
   Exceptions : none
   Caller     : general
@@ -318,6 +324,23 @@ sub description {
   return $self->{description};
 }
 
+=head2 analysis
+
+  Arg [1]    : Bio::EnsEMBL::Analysis $analysis
+  Example    : none
+  Description: get/set for attribute analysis
+  Returntype : Bio::EnsEMBL::Analysis
+  Exceptions : none
+  Caller     : general
+  Status     : Stable
+
+=cut
+
+sub analysis {
+   my $self = shift;
+  $self->{analysis} = shift if( @_ );
+  return $self->{analysis};
+}
 
 =head2 comment
 

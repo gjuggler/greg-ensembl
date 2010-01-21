@@ -1,4 +1,22 @@
-package Bio::EnsEMBL::DBSQL::AssemblyExceptionFeatureAdaptor;
+=head1 LICENSE
+
+  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
+=cut
 
 =head1 NAME
 
@@ -6,31 +24,22 @@ Bio::EnsEMBL::DBSQL::AssemblyExceptionFeatureAdaptor
 
 =head1 SYNOPSIS
 
-my $assembly_exception_feature_adaptor =
+  my $assembly_exception_feature_adaptor =
     $database_adaptor->get_AssemblyExceptionFeatureAdaptor();
-@assembly_exception_features =
-    $assembly_exception_feature_adaptor->fetch_by_Slice($slice);
+
+  @assembly_exception_features =
+    $assembly_exception_feature_adaptor->fetch_all_by_Slice($slice);
 
 =head1 DESCRIPTION
 
-Assembly Exception Feature Adaptor - database access for assembly exception
-features.
+Assembly Exception Feature Adaptor - database access for assembly
+exception features.
 
-=head1 LICENCE
-
-This code is distributed under an Apache style licence:
-Please see http://www.ensembl.org/code_licence.html for details
-
-=head1 AUTHOR
-
-Glenn Proctor <glenn@ebi.ac.uk>, Ensembl core API team
-
-=head1 CONTACT
-
-Please post comments/questions to the Ensembl development list
-<ensembl-dev@ebi.ac.uk>
+=head1 METHODS
 
 =cut
+
+package Bio::EnsEMBL::DBSQL::AssemblyExceptionFeatureAdaptor;
 
 use strict;
 use warnings;
@@ -97,11 +106,26 @@ sub fetch_all {
     return $self->{'_aexc_cache'};
   }
 
-  my $sth = $self->prepare
-    ("SELECT assembly_exception_id, seq_region_id, seq_region_start,
-             seq_region_end, exc_type, exc_seq_region_id, exc_seq_region_start,
-             exc_seq_region_end, ori
-      FROM assembly_exception");
+  my $statement = qq(
+  SELECT    ae.assembly_exception_id,
+            ae.seq_region_id,
+            ae.seq_region_start,
+            ae.seq_region_end,
+            ae.exc_type,
+            ae.exc_seq_region_id,
+            ae.exc_seq_region_start,
+            ae.exc_seq_region_end,
+            ae.ori
+  FROM      assembly_exception ae,
+            coord_system cs,
+            seq_region sr
+  WHERE     cs.species_id = ?
+    AND     sr.coord_system_id = cs.coord_system_id
+    AND     sr.seq_region_id = ae.seq_region_id);
+
+  my $sth = $self->prepare($statement);
+
+  $sth->bind_param( 1, $self->species_id(), SQL_INTEGER );
 
   $sth->execute();
 

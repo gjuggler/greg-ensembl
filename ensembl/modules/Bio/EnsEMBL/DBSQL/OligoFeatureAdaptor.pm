@@ -1,7 +1,22 @@
-#
-# Ensembl module for Bio::EnsEMBL::DBSQL::OligoFeatureAdaptor
-#
-# You may distribute this module under the same terms as Perl itself
+=head1 LICENSE
+
+  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
+=cut
 
 =head1 NAME
 
@@ -10,35 +25,25 @@ storing OligoFeature objects.
 
 =head1 SYNOPSIS
 
-my $ofa = $db->get_OligoFeatureAdaptor();
+  my $ofa = $db->get_OligoFeatureAdaptor();
 
-my $features = $ofa->fetch_all_by_Probe($probe);
-$features = $ofa->fetch_all_by_Slice_arrayname($slice, 'Array-1', 'Array-2');
+  my $features = $ofa->fetch_all_by_Probe($probe);
+  $features =
+    $ofa->fetch_all_by_Slice_arrayname( $slice, 'Array-1', 'Array-2' );
 
 =head1 DESCRIPTION
 
 The OligoFeatureAdaptor is a database adaptor for storing and retrieving
 OligoFeature objects.
 
-=head1 AUTHOR
-
-This module was created by Ian Sealy, but is almost entirely based on the
-OligoFeatureAdaptor module written by Arne Stabenau.
-
-This module is part of the Ensembl project: http://www.ensembl.org/
-
-=head1 CONTACT
-
-Post comments or questions to the Ensembl development list: ensembl-dev@ebi.ac.uk
-
 =head1 METHODS
 
 =cut
 
+package Bio::EnsEMBL::DBSQL::OligoFeatureAdaptor;
+
 use strict;
 use warnings;
-
-package Bio::EnsEMBL::DBSQL::OligoFeatureAdaptor;
 
 use Bio::EnsEMBL::Utils::Exception qw( throw warning );
 use Bio::EnsEMBL::OligoFeature;
@@ -71,7 +76,8 @@ sub fetch_all_by_Probe {
 		throw('fetch_all_by_Probe requires a stored Bio::EnsEMBL::OligoProbe object');
 	}
 	
-	return $self->generic_fetch( 'of.oligo_probe_id = ' . $probe->dbID() );
+	$self->bind_param_generic_fetch($probe->dbID(),SQL_INTEGER);
+	return $self->generic_fetch( 'of.oligo_probe_id = ?' );
 }
 
 =head2 fetch_all_by_probeset
@@ -94,7 +100,8 @@ sub fetch_all_by_probeset {
 		throw('fetch_all_by_probeset requires a probeset argument');
 	}
 	
-	return $self->generic_fetch( "op.probeset = '$probeset'" );
+	$self->bind_param_generic_fetch($probeset,SQL_VARCHAR);
+	return $self->generic_fetch( "op.probeset = ?" );
 }
 
 =head2 fetch_all_by_Slice_arrayname
@@ -327,6 +334,8 @@ sub _objs_from_sth {
 		my $analysis = $analysis_hash{$analysis_id} ||= $aa->fetch_by_dbID($analysis_id);
 
 		# Get the slice object
+		#need to get the internal_seq_region, if present
+		$seq_region_id = $self->get_seq_region_id_internal($seq_region_id);
 		my $slice = $slice_hash{'ID:'.$seq_region_id};
 
 		if (!$slice) {

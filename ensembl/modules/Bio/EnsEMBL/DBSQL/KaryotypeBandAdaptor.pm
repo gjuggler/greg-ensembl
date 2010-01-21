@@ -1,12 +1,22 @@
-#
-# Ensembl module for Bio::EnsEMBL::DBSQL::KaryotypeBandAdaptor
-#
-#
-# Copyright James Stalker
-#
-# You may distribute this module under the same terms as perl itself
+=head1 LICENSE
 
-# POD documentation - main docs before the code
+  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
+=cut
 
 =head1 NAME
 
@@ -14,39 +24,25 @@ Bio::EnsEMBL::DBSQL::KaryotypeBandAdaptor
 
 =head1 SYNOPSIS
 
-$kary_adaptor = $db_adaptor->get_KaryotypeBandAdaptor();
-foreach $band ( @{$kary_adaptor->fetch_all_by_Slice($slice)} ) {
-  #do something with band
-}
+  $kary_adaptor = $db_adaptor->get_KaryotypeBandAdaptor();
 
-$band = $kary_adaptor->fetch_by_dbID($id);
+  foreach $band ( @{ $kary_adaptor->fetch_all_by_Slice($slice) } ) {
+    # do something with band
+  }
 
-my @bands = @{$kary_adaptor->fetch_all_by_chr_name('X')};
+  $band = $kary_adaptor->fetch_by_dbID($id);
 
-my $band = $kary_adaptor->fetch_by_chr_band('4','q23');
+  my @bands = @{ $kary_adaptor->fetch_all_by_chr_name('X') };
 
+  my $band = $kary_adaptor->fetch_by_chr_band( '4', 'q23' );
 
 =head1 DESCRIPTION
 
 Database adaptor to provide access to KaryotypeBand objects
 
-=head1 AUTHOR
-
-James Stalker
-
-This modules is part of the Ensembl project http://www.ensembl.org
-
-=head1 CONTACT
-
-Email jws@sanger.ac.uk
-
-=head1 APPENDIX
-
-The rest of the documentation details each of the object methods. Internal 
-methods are usually preceded with a _
+=head1 METHODS
 
 =cut
-
 
 package Bio::EnsEMBL::DBSQL::KaryotypeBandAdaptor;
 
@@ -116,18 +112,24 @@ sub _objs_from_sth {
   $sth->bind_columns(\$karyotype_id, \$seq_region_id, \$seq_region_start,
                      \$seq_region_end, \$band, \$stain);
 
-  while($sth->fetch()) {
+  while ( $sth->fetch() ) {
+    #need to get the internal_seq_region, if present
+    $seq_region_id = $self->get_seq_region_id_internal($seq_region_id);
+
     my $slice = $slice_cache{$seq_region_id} ||=
       $slice_adaptor->fetch_by_seq_region_id($seq_region_id);
 
-    push @features, Bio::EnsEMBL::KaryotypeBand->new
-      (-START   => $seq_region_start,
-       -END     => $seq_region_end,
-       -SLICE   => $slice,
-       -ADAPTOR => $self,
-       -DBID    => $karyotype_id,
-       -NAME    => $band,
-       -STAIN   => $stain);
+    push( @features,
+          $self->_create_feature( 'Bio::EnsEMBL::KaryotypeBand', {
+                                    -START   => $seq_region_start,
+                                    -END     => $seq_region_end,
+                                    -SLICE   => $slice,
+                                    -ADAPTOR => $self,
+                                    -DBID    => $karyotype_id,
+                                    -NAME    => $band,
+                                    -STAIN   => $stain
+                                  } ) );
+
   }
 
   return \@features;

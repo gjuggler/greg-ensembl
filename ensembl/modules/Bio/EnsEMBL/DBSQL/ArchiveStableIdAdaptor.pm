@@ -1,4 +1,22 @@
-package Bio::EnsEMBL::DBSQL::ArchiveStableIdAdaptor;
+=head1 LICENSE
+
+  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
+=cut
 
 =head1 NAME
 
@@ -6,33 +24,48 @@ Bio::EnsEMBL::ArchiveStableIdAdaptor
 
 =head1 SYNOPSIS
 
-my $reg = "Bio::EnsEMBL::Registry";
-my $archiveStableIdAdaptor =
-  $reg->get_adaptor('human', 'core', 'ArchiveStableId');
+  my $registry = "Bio::EnsEMBL::Registry";
 
-my $stable_id = 'ENSG00000068990';
-  
-my $arch_id = $archiveStableIdAdaptor->fetch_by_stable_id($stable_id);
-print "Latest incarnation of this stable ID:\n";
-print "  Stable ID: ".$a->stable_id.".".$a->version."\n";
-print "  Release: ".$a->release." (".$a->assembly.", ".$a->db_name.")\n");
+  my $archiveStableIdAdaptor =
+    $registry->get_adaptor( 'Human', 'Core', 'ArchiveStableId' );
 
-print "\nStable ID history:\n\n";
-my $history = $archiveStableIdAdaptor->fetch_history_tree_by_stable_id($stable_id);
+  my $stable_id = 'ENSG00000068990';
 
-foreach my $a (@{ $history->get_all_ArchiveStableIds }) {
-  print "  Stable ID: ".$a->stable_id.".".$a->version."\n";
-  print "  Release: ".$a->release." (".$a->assembly.", ".$a->db_name.")\n\n");
-}
+  my $arch_id = $archiveStableIdAdaptor->fetch_by_stable_id($stable_id);
+
+  print("Latest incarnation of this stable ID:\n");
+  printf( "  Stable ID: %s.%d\n",
+    $arch_id->stable_id(), $arch_id->version() );
+  print("  Release: "
+      . $arch_id->release() . " ("
+      . $arch_id->assembly() . ", "
+      . $arch_id->db_name()
+      . ")\n" );
+
+  print "\nStable ID history:\n\n";
+
+  my $history =
+    $archiveStableIdAdaptor->fetch_history_tree_by_stable_id(
+    $stable_id);
+
+  foreach my $a ( @{ $history->get_all_ArchiveStableIds } ) {
+    printf( "  Stable ID: %s.%d\n", $a->stable_id(), $a->version() );
+    print("  Release: "
+        . $a->release() . " ("
+        . $a->assembly() . ", "
+        . $a->db_name()
+        . ")\n\n" );
+  }
 
 =head1 DESCRIPTION
 
-ArchiveStableIdAdaptor does all SQL to create ArchiveStableIds and works of 
+ArchiveStableIdAdaptor does all SQL to create ArchiveStableIds and works
+of
 
-    stable_id_event
-    mapping_session
-    peptite_archive
-    gene_archive
+  stable_id_event
+  mapping_session
+  peptite_archive
+  gene_archive
 
 tables inside the core database.
 
@@ -40,44 +73,32 @@ This whole module has a status of At Risk as it is under development.
 
 =head1 METHODS
 
-    fetch_by_stable_id
-    fetch_by_stable_id_version
-    fetch_by_stable_id_dbname
-    fetch_all_by_archive_id
-    fetch_predecessors_by_archive_id
-    fetch_successors_by_archive_id
-    fetch_history_tree_by_stable_id
-    add_all_current_to_history
-    list_dbnames
-    previous_dbname
-    next_dbname
-    get_peptide
-    get_current_release
-    get_current_assembly
-    
+  fetch_by_stable_id
+  fetch_by_stable_id_version
+  fetch_by_stable_id_dbname
+  fetch_all_by_archive_id
+  fetch_predecessors_by_archive_id
+  fetch_successors_by_archive_id
+  fetch_history_tree_by_stable_id
+  add_all_current_to_history
+  list_dbnames
+  previous_dbname
+  next_dbname
+  get_peptide
+  get_current_release
+  get_current_assembly
+
 =head1 RELATED MODULES
 
-Bio::EnsEMBL::ArchiveStableId
-Bio::EnsEMBL::StableIdEvent
-Bio::EnsEMBL::StableIdHistoryTree
+  Bio::EnsEMBL::ArchiveStableId
+  Bio::EnsEMBL::StableIdEvent
+  Bio::EnsEMBL::StableIdHistoryTree
 
-=head1 LICENCE
-
-This code is distributed under an Apache style licence:
-Please see http://www.ensembl.org/code_licence.html for details
-
-=head1 AUTHOR
-
-Ensembl core API team
-Currently maintained by Patrick Meidl <meidl@ebi.ac.uk>
-
-=head1 CONTACT
-
-Please post comments/questions to the Ensembl development list
-<ensembl-dev@ebi.ac.uk>
+=head1 METHODS
 
 =cut
 
+package Bio::EnsEMBL::DBSQL::ArchiveStableIdAdaptor;
 
 use strict;
 use warnings;
@@ -322,19 +343,19 @@ sub _fetch_archive_id {
   my $sql = qq(
     (SELECT * FROM stable_id_event sie, mapping_session ms
     WHERE sie.mapping_session_id = ms.mapping_session_id
-    AND sie.old_stable_id = "$stable_id"
+    AND sie.old_stable_id = ?
     $extra_sql1)
     UNION
     (SELECT * FROM stable_id_event sie, mapping_session ms
     WHERE sie.mapping_session_id = ms.mapping_session_id
-    AND sie.new_stable_id = "$stable_id"
+    AND sie.new_stable_id = ?
     $extra_sql2)
     ORDER BY created DESC
     LIMIT 1
   );
 
   my $sth = $self->prepare($sql);
-  $sth->execute;
+  $sth->execute($stable_id,$stable_id);
   my $r = $sth->fetchrow_hashref;
   $sth->finish;
 

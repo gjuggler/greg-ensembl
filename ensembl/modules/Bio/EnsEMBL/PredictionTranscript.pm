@@ -1,12 +1,22 @@
-# EnsEMBL module for Transcript
-# Copyright EMBL-EBI/Sanger center 2002
-#
-# Cared for by Arne Stabenau
-#
-#
-# You may distribute this module under the same terms as perl itself
+=head1 LICENSE
 
-# POD documentation - main docs before the code
+  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
+=cut
 
 =head1 NAME
 
@@ -14,38 +24,37 @@ PredictionTranscript
 
 =head1 SYNOPSIS
 
-
 =head1 DESCRIPTION
 
-Container for single transcript ab initio gene prediction such as GenScan or
-SNAP. Is directly storable/retrievable in Ensembl using
+Container for single transcript ab initio gene prediction such as
+GenScan or SNAP. Is directly storable/retrievable in Ensembl using
 PredictionTranscriptAdaptor.
 
 Creation:
 
-     my $tran = new Bio::EnsEMBL::PredictionTranscript();
-     $tran->add_Exon( $pred_exon );
+  my $tran = new Bio::EnsEMBL::PredictionTranscript();
+  $tran->add_Exon($pred_exon);
 
-     my $tran = new Bio::EnsEMBL::PredictionTranscript(-EXONS => @pred_exons);
+  my $tran =
+    new Bio::EnsEMBL::PredictionTranscript( -EXONS => @pred_exons );
 
 Manipulation:
 
-     # Returns an array of PredictionExon objects
-     my @pred_exons = @{$tran->get_all_Exons};
+  # Returns an array of PredictionExon objects
+  my @pred_exons = @{ $tran->get_all_Exons };
 
-     # Returns the peptide translation as string
-     my $pep   = $tran->translate()->seq();
+  # Returns the peptide translation as string
+  my $pep = $tran->translate()->seq();
 
-     # Get the exon cdna sequence.
-     my $cdna = $trans->spliced_seq();
+  # Get the exon cdna sequence.
+  my $cdna = $trans->spliced_seq();
 
-=head1 CONTACT
-
-Contact the Ensembl development list <ensembl-dev@ebi.ac.uk> for information
+=head1 METHODS
 
 =cut
 
 package Bio::EnsEMBL::PredictionTranscript;
+
 use vars qw(@ISA);
 use strict;
 
@@ -268,7 +277,7 @@ sub translation {
     $Xseq = "N"x$start_phase . $Xseq;
   }
 
-  my $tmpSeq = new Bio::Seq( -id => "dummy",
+  my $tmpSeq = new Bio::Seq( -id => $self->display_id,
 			     -seq => $Xseq,
 			     -moltype => "dna" );
 
@@ -300,8 +309,25 @@ sub translate {
   my ($self) = @_;
 
   my $dna = $self->translateable_seq();
+
+  my $codon_table_id;
+  if ( defined( $self->slice() ) ) {
+      my $attrib;
+      
+      ($attrib) = @{ $self->slice()->get_all_Attributes('codon_table') };
+      if ( defined($attrib) ) {
+	  $codon_table_id = $attrib->value();
+      }
+  }
+  $codon_table_id ||= 1; #default will be vertebrates
+
   if( CORE::length( $dna ) % 3 == 0 ) {
-    $dna =~ s/TAG$|TGA$|TAA$//i;
+   # $dna =~ s/TAG$|TGA$|TAA$//i;
+      my $codon_table =  Bio::Tools::CodonTable->new( -id => $codon_table_id );
+      
+      if ( $codon_table->is_ter_codon( substr( $dna, -3, 3 ) ) ) {
+	  substr( $dna, -3, 3, '' );
+      }
   }
   # the above line will remove the final stop codon from the mrna
   # sequence produced if it is present, this is so any peptide produced
@@ -309,9 +335,11 @@ sub translate {
   # if you want to have a terminal stop codon either comment this line out
   # or call translatable seq directly and produce a translation from it
 
-  my $bioseq = new Bio::Seq( -seq => $dna, -moltype => 'dna' );
+  my $bioseq = new Bio::Seq(  -id => $self->display_id, -seq => $dna, -moltype => 'dna' );
 
-  return $bioseq->translate();
+  my $translation = $bioseq->translate(undef,undef,undef,$codon_table_id);
+
+  return $translation;
 }
 
 

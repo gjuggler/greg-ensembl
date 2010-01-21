@@ -1,54 +1,61 @@
-package Bio::EnsEMBL::Exon;
+=head1 LICENSE
 
-#
-# EnsEMBL module for Bio::EnsEMBL::Exon
-#
-#
-# Copyright Ewan Birney
-#
-# You may distribute this module under the same terms as perl itself
+  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
 
-# POD documentation - main docs before the code
+  This software is distributed under a modified Apache license.
+  For license details, please see
 
-=pod 
+    http://www.ensembl.org/info/about/code_licence.html
 
-=head1 NAME Bio::EnsEMBL::Exon - A class representing an Exon
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
+=cut
+
+=head1 NAME
+
+Bio::EnsEMBL::Exon - A class representing an Exon
 
 =head1 SYNOPSIS
 
-    $ex = new Bio::EnsEMBL::Exon(-START     => 100,
-                                 -END       => 200,
-                                 -STRAND    => 1,
-                                 -SLICE     => $slice,
-                                 -DBID      => $dbID,
-                                 -ANALYSIS  => $analysis,
-                                 -STABLE_ID => 'ENSE000000123',
-                                 -VERSION   => 2
-                                 );
+    $ex = new Bio::EnsEMBL::Exon(
+      -START     => 100,
+      -END       => 200,
+      -STRAND    => 1,
+      -SLICE     => $slice,
+      -DBID      => $dbID,
+      -ANALYSIS  => $analysis,
+      -STABLE_ID => 'ENSE000000123',
+      -VERSION   => 2
+    );
 
-   #seq returns a Bio::Seq
-   my $seq = $exon->seq->seq();
+  # seq() returns a Bio::Seq
+  my $seq = $exon->seq->seq();
 
-   #peptide only makes sense within transcript context
-   my $pep = $exon->peptide($transcript)->seq();
+  # Peptide only makes sense within transcript context
+  my $pep = $exon->peptide($transcript)->seq();
 
-   #normal feature operations can be performed:
-   $exon = $exon->transform('clone');
-   $exon->move($new_start, $new_end, $new_strand);
-   print $exon->slice->seq_region_name();
+  # Normal feature operations can be performed:
+  $exon = $exon->transform('clone');
+  $exon->move( $new_start, $new_end, $new_strand );
+  print $exon->slice->seq_region_name();
 
 =head1 DESCRIPTION
 
 This is a class which represents an exon which is part of a transcript.
 See Bio::EnsEMBL:Transcript
 
-=head1 CONTACT
-
-Post questions to the EnsEMBL developer list: <ensembl-dev@ebi.ac.uk>
-
 =head1 METHODS
 
 =cut
+
+package Bio::EnsEMBL::Exon;
 
 use strict;
 
@@ -103,60 +110,73 @@ sub new {
 
   my $self = $class->SUPER::new( @_ );
 
-  my ( $phase, $end_phase, $stable_id, $version, $created_date, $modified_date,
-       $is_current ) = 
-    rearrange( [ "PHASE", "END_PHASE", "STABLE_ID", "VERSION",
-		 "CREATED_DATE", "MODIFIED_DATE", "IS_CURRENT" ], @_ );
+  my ( $phase, $end_phase, $stable_id, $version, $created_date,
+    $modified_date, $is_current, $is_constitutive )
+    = rearrange( [
+      "PHASE",        "END_PHASE",
+      "STABLE_ID",    "VERSION",
+      "CREATED_DATE", "MODIFIED_DATE",
+      "IS_CURRENT",   "IS_CONSTITUTIVE"
+    ],
+    @_
+    );
 
-  $self->phase($phase) if (defined $phase); # make sure phase is valid.
-  $self->{'end_phase'} = $end_phase;
-  $self->{'stable_id'} = $stable_id;
-  $self->{'version'} = $version;
-  $self->{'created_date'} = $created_date;
-  $self->{'modified_date'} = $modified_date;
-
-  # default is_current
-  $is_current = 1 unless (defined($is_current));
-  $self->{'is_current'} = $is_current;
-
-  return $self;
-}
-
-
-=head2 new_fast
-
-  Arg [1]    : Bio::EnsEMBL::Slice $slice
-  Arg [2]    : int $start
-  Arg [3]    : int $end
-  Arg [4]    : int $strand (1 or -1)
-  Example    : none
-  Description: create an Exon object
-  Returntype : Bio::EnsEMBL::Exon
-  Exceptions : throws if end < start
-  Caller     : general, creation in Bio::EnsEMBL::Lite::GeneAdaptor
-  Status     : Stable
-
-=cut
-
-sub new_fast {
-  my ($class, $slice, $start, $end, $strand) = @_;
-
-  my $self = bless {}, $class;
-
-  # Swap start and end if they're in the wrong order
-  # We assume that the strand is correct and keep the input value.
-
-  if ($start > $end) {
-    throw( "End smaller than start not allowed" );
+  if ( defined($phase) ) {    # make sure phase is valid.
+    $self->phase($phase);
   }
 
-  $self->start ($start);
-  $self->end   ($end);
-  $self->strand($strand);
-  $self->slice($slice);
+  $self->{'end_phase'}     = $end_phase;
+  $self->{'stable_id'}     = $stable_id;
+  $self->{'version'}       = $version;
+  $self->{'created_date'}  = $created_date;
+  $self->{'modified_date'} = $modified_date;
+
+  # Default is_current
+  if ( !defined($is_current) ) { $is_current = 1 }
+  $self->{'is_current'} = $is_current;
+
+  # Default is_constitutive
+  if ( !defined($is_constitutive) ) { $is_constitutive = 0 }
+  $self->{'is_constitutive'} = $is_constitutive;
 
   return $self;
 }
+
+
+# =head2 new_fast
+
+#   Arg [1]    : Bio::EnsEMBL::Slice $slice
+#   Arg [2]    : int $start
+#   Arg [3]    : int $end
+#   Arg [4]    : int $strand (1 or -1)
+#   Example    : none
+#   Description: create an Exon object
+#   Returntype : Bio::EnsEMBL::Exon
+#   Exceptions : throws if end < start
+#   Caller     : general, creation in Bio::EnsEMBL::Lite::GeneAdaptor
+#   Status     : Stable
+
+# =cut
+
+# sub new_fast {
+#   my ($class, $slice, $start, $end, $strand) = @_;
+
+#   my $self = bless {}, $class;
+
+#   # Swap start and end if they're in the wrong order
+#   # We assume that the strand is correct and keep the input value.
+
+#   if ($start > $end) {
+#     throw( "End smaller than start not allowed" );
+#   }
+
+#   $self->start ($start);
+#   $self->end   ($end);
+#   $self->strand($strand);
+#   $self->slice($slice);
+
+#   return $self;
+# }
 
 
 =head2 end_phase
@@ -1116,9 +1136,33 @@ sub version {
 =cut
 
 sub is_current {
-  my $self = shift;
-  $self->{'is_current'} = shift if (@_);
+  my ( $self, $value ) = @_;
+
+  if ( defined($value) ) {
+    $self->{'is_current'} = $value;
+  }
   return $self->{'is_current'};
+}
+
+=head2 is_constitutive
+
+  Arg [1]    : Boolean $is_constitutive
+  Example    : $exon->is_constitutive(0)
+  Description: Getter/setter for is_constitutive state of this exon.
+  Returntype : Int
+  Exceptions : none
+  Caller     : general
+  Status     : Stable
+
+=cut
+
+sub is_constitutive {
+  my ( $self, $value ) = @_;
+
+  if ( defined($value) ) {
+    $self->{'is_constitutive'} = $value;
+  }
+  return $self->{'is_constitutive'};
 }
 
 

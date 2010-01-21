@@ -1,15 +1,22 @@
-package Bio::EnsEMBL::DBSQL::ExonAdaptor;
+=head1 LICENSE
 
-#EnsEMBL Exon reading writing adaptor for mySQL
-#
-# Copyright EMBL-EBI 2001
-#
-# Author: Arne Stabenau
-# based on
-# Elia Stupkas Gene_Obj
-#
-# Date : 20.02.2001
-#
+  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
+=cut
 
 =head1 NAME
 
@@ -18,22 +25,21 @@ storage of exon objects
 
 =head1 SYNOPSIS
 
-  $exon_adaptor = $database_adaptor->get_ExonAdaptor();
-  $exon = $exon_adaptor->fetch_by_dbID($dbID);
+  my $exon_adaptor = $registry->get_adaptor( 'Human', 'Core', 'Exon' );
+
+  my $exon = $exon_adaptor->fetch_by_dbID($dbID);
 
 =head1 DESCRIPTION
 
-The ExonAdaptor is responsible for retrieving and storing Exon objects from an
-Ensembl database.  Most of the ExonAdaptor functionality is inherited from the
-B<Bio::EnsEMBL::DBSQL::BaseFeatureAdaptor> class.
-
-=head1 CONTACT
-
-Post questions/comments to the Ensembl dev list: ensembl-dev@ebi.ac.uk
+The ExonAdaptor is responsible for retrieving and storing Exon objects
+from an Ensembl database.  Most of the ExonAdaptor functionality is
+inherited from the B<Bio::EnsEMBL::DBSQL::BaseFeatureAdaptor> class.
 
 =head1 METHODS
 
 =cut
+
+package Bio::EnsEMBL::DBSQL::ExonAdaptor;
 
 use strict;
 
@@ -78,17 +84,22 @@ sub _tables {
 sub _columns {
   my $self = shift;
 
-  my $created_date = $self->db->dbc->from_date_to_seconds("created_date");
-  my $modified_date = $self->db->dbc->from_date_to_seconds("modified_date");
+  my $created_date =
+    $self->db->dbc->from_date_to_seconds("created_date");
+  my $modified_date =
+    $self->db->dbc->from_date_to_seconds("modified_date");
 
-  return ( 'e.exon_id', 'e.seq_region_id', 'e.seq_region_start',
-           'e.seq_region_end', 'e.seq_region_strand', 'e.phase','e.end_phase',
-           'e.is_current',
-	   'esi.stable_id', 'esi.version', $created_date, $modified_date );
+  return (
+    'e.exon_id',        'e.seq_region_id',     'e.seq_region_start',
+    'e.seq_region_end', 'e.seq_region_strand', 'e.phase',
+    'e.end_phase',      'e.is_current',        'e.is_constitutive',
+    'esi.stable_id',    'esi.version',         $created_date,
+    $modified_date
+  );
 }
 
 sub _left_join {
-  return ( [ 'exon_stable_id', "esi.exon_id = e.exon_id" ]);
+  return ( [ 'exon_stable_id', "esi.exon_id = e.exon_id" ] );
 }
 
 
@@ -124,7 +135,9 @@ sub _final_clause {
 sub fetch_by_stable_id {
   my ($self, $stable_id) = @_;
 
-  my $constraint = "esi.stable_id = '$stable_id' AND e.is_current = 1";
+  my $constraint = "esi.stable_id = ? AND e.is_current = 1";
+
+  $self->bind_param_generic_fetch($stable_id,SQL_VARCHAR);
   my ($exon) = @{ $self->generic_fetch($constraint) };
 
   return $exon;
@@ -149,7 +162,9 @@ sub fetch_by_stable_id {
 sub fetch_all_versions_by_stable_id {
   my ($self, $stable_id) = @_;
 
-  my $constraint = "esi.stable_id = '$stable_id'";
+  my $constraint = "esi.stable_id = ?";
+
+  $self->bind_param_generic_fetch($stable_id,SQL_VARCHAR);
 
   return $self->generic_fetch($constraint);
 }
@@ -244,15 +259,19 @@ sub store {
     throw("Exon does not have all attributes to store");
   }
 
-  # default to is_current = 1 if this attribute is not set
-  my $is_current = $exon->is_current;
-  $is_current = 1 unless (defined($is_current));
+  # Default to is_current = 1 if this attribute is not set
+  my $is_current = $exon->is_current();
+  if ( !defined($is_current) ) { $is_current = 1 }
+
+  # Default to is_constitutive = 0 if this attribute is not set
+  my $is_constitutive = $exon->is_constitutive();
+  if ( !defined($is_constitutive) ) { $is_constitutive = 0 }
 
   my $exon_sql = q{
     INSERT into exon ( seq_region_id, seq_region_start,
 		       seq_region_end, seq_region_strand, phase,
-		       end_phase, is_current )
-    VALUES ( ?, ?, ?, ?, ?, ?, ? )
+		       end_phase, is_current, is_constitutive )
+    VALUES ( ?,?,?,?,?,?,?,? )
   };
 
   my $exonst = $self->prepare($exon_sql);
@@ -264,13 +283,14 @@ sub store {
   ($exon, $seq_region_id) = $self->_pre_store($exon);
 
   #store the exon
-  $exonst->bind_param(1, $seq_region_id, SQL_INTEGER);
-  $exonst->bind_param(2, $exon->start, SQL_INTEGER);
-  $exonst->bind_param(3, $exon->end, SQL_INTEGER);
-  $exonst->bind_param(4, $exon->strand, SQL_TINYINT);
-  $exonst->bind_param(5, $exon->phase, SQL_TINYINT);
-  $exonst->bind_param(6, $exon->end_phase, SQL_TINYINT);
-  $exonst->bind_param(7, $is_current, SQL_TINYINT);
+  $exonst->bind_param( 1, $seq_region_id,   SQL_INTEGER );
+  $exonst->bind_param( 2, $exon->start,     SQL_INTEGER );
+  $exonst->bind_param( 3, $exon->end,       SQL_INTEGER );
+  $exonst->bind_param( 4, $exon->strand,    SQL_TINYINT );
+  $exonst->bind_param( 5, $exon->phase,     SQL_TINYINT );
+  $exonst->bind_param( 6, $exon->end_phase, SQL_TINYINT );
+  $exonst->bind_param( 7, $is_current,      SQL_TINYINT );
+  $exonst->bind_param( 8, $is_constitutive, SQL_TINYINT );
 
   $exonst->execute();
   $exonId = $exonst->{'mysql_insertid'};
@@ -496,15 +516,21 @@ sub _objs_from_sth {
   my %sr_name_hash;
   my %sr_cs_hash;
 
-  my ( $exon_id, $seq_region_id, $seq_region_start,
-       $seq_region_end, $seq_region_strand, $phase,
-       $end_phase, $is_current, $stable_id, $version, $created_date, 
-       $modified_date );
+  my (
+    $exon_id,        $seq_region_id,     $seq_region_start,
+    $seq_region_end, $seq_region_strand, $phase,
+    $end_phase,      $is_current,        $is_constitutive,
+    $stable_id,      $version,           $created_date,
+    $modified_date
+  );
 
-  $sth->bind_columns( \$exon_id, \$seq_region_id, \$seq_region_start,
-                      \$seq_region_end, \$seq_region_strand, \$phase,
-		      \$end_phase, \$is_current, \$stable_id, \$version,
-                      \$created_date, \$modified_date );
+  $sth->bind_columns(
+    \$exon_id,        \$seq_region_id,     \$seq_region_start,
+    \$seq_region_end, \$seq_region_strand, \$phase,
+    \$end_phase,      \$is_current,        \$is_constitutive,
+    \$stable_id,      \$version,           \$created_date,
+    \$modified_date
+  );
 
   my $asm_cs;
   my $cmp_cs;
@@ -541,6 +567,9 @@ sub _objs_from_sth {
   }
 
   FEATURE: while($sth->fetch()) {
+    #need to get the internal_seq_region, if present
+    $seq_region_id = $self->get_seq_region_id_internal($seq_region_id);
+
     my $slice = $slice_hash{"ID:".$seq_region_id};
     my $dest_mapper = $mapper;
 
@@ -616,28 +645,32 @@ sub _objs_from_sth {
       $slice = $dest_slice;
     }
 
-    #finally, create the new repeat feature
-    push @exons, Bio::EnsEMBL::Exon->new(
-        '-start'         =>  $seq_region_start,
-	'-end'           =>  $seq_region_end,
-	'-strand'        =>  $seq_region_strand,
-	'-adaptor'       =>  $self,
-	'-slice'         =>  $slice,
-	'-dbID'          =>  $exon_id,
-        '-stable_id'     =>  $stable_id,
-        '-version'       =>  $version,
-	'-created_date'  =>  $created_date || undef,
-	'-modified_date' =>  $modified_date || undef,
-        '-phase'         =>  $phase,
-        '-end_phase'     =>  $end_phase,
-        '-is_current'    =>  $is_current
-    );
+    # Finally, create the new exon.
+    push(
+      @exons,
+      $self->_create_feature_fast(
+        'Bio::EnsEMBL::Exon',
+        {
+          'start'           => $seq_region_start,
+          'end'             => $seq_region_end,
+          'strand'          => $seq_region_strand,
+          'adaptor'         => $self,
+          'slice'           => $slice,
+          'dbID'            => $exon_id,
+          'stable_id'       => $stable_id,
+          'version'         => $version,
+          'created_date'    => $created_date || undef,
+          'modified_date'   => $modified_date || undef,
+          'phase'           => $phase,
+          'end_phase'       => $end_phase,
+          'is_current'      => $is_current,
+          'is_constitutive' => $is_constitutive
+        } ) );
 
   }
 
   return \@exons;
 }
-
 
 =head1 DEPRECATED METHODS
 

@@ -1,11 +1,22 @@
-#
-# Ensembl module for Bio::EnsEMBL::DBSQL::DensityFeatureAdaptor
-#
-# Copyright EMBL/EBI
-#
-# You may distribute this module under the same terms as perl itself
+=head1 LICENSE
 
-# POD documentation - main docs before the code
+  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
+=cut
 
 =head1 NAME
 
@@ -13,20 +24,15 @@ Bio::EnsEMBL::DBSQL::UnmappedObjectAdaptor
 
 =head1 SYNOPSIS
 
-my $uoa = $database_adaptor->get_UnmappedObjectAdaptor();
+  my $uoa = $database_adaptor->get_UnmappedObjectAdaptor();
 
+  my $missed = @{ $uoa->fetch_all_by_type('xref') };
 
-my $missed = @{$uoa->fetch_all_by_type('xref');
-          
 =head1 DESCRIPTION
 
-Unmapped ObjectAdaptor - An adaptor responsible for the creation, editing, 
-retrieval of Unmapped Objects. These being the Objects that where not mapped
-in a specific process i.e. xref, cDNA, Markers.
-
-=head1 CONTACT
-
-Post questions to the Ensembl developer list.
+Unmapped ObjectAdaptor - An adaptor responsible for the creation,
+editing, retrieval of Unmapped Objects. These being the Objects that
+where not mapped in a specific process i.e. xref, cDNA, Markers.
 
 =head1 METHODS
 
@@ -61,21 +67,26 @@ our %desc_to_id;
 =cut
 
 sub new {
-  my $caller = shift;
+  my $proto = shift;
 
-  my $class = ref($caller) || $caller;
+  my $class = ref($proto) || $proto;
 
   my $self = $class->SUPER::new(@_);
 
-  my $sth = $self->prepare("select unmapped_reason_id, full_description from unmapped_reason");
+  my $sth =
+    $self->prepare(   "SELECT unmapped_reason_id, full_description "
+                    . "FROM unmapped_reason" );
 
   $sth->execute();
-  my ($id, $desc);
-  $sth->bind_columns(\$id, \$desc);
-  while($sth->fetch()) {
+
+  my ( $id, $desc );
+  $sth->bind_columns( \( $id, $desc ) );
+
+  while ( $sth->fetch() ) {
     $desc_to_id{$desc} = $id;
   }
-  $sth->finish;
+
+  $sth->finish();
 
   return $self;
 }
@@ -193,20 +204,25 @@ sub _objs_from_sth {
     my $analysis = $analysis_adaptor->fetch_by_dbID($analysis_id);
     
     #print "$identifier\n";
-    push @features, Bio::EnsEMBL::UnmappedObject->new
-      (-unmapped_object_id  => $unmapped_object_id,
-       -unmapped_reason_id  => $unmapped_reason_id,
-       -type                => $type,
-       -analysis            => $analysis,
-       -external_db_id      => $external_db_id,
-       -identifier          => $identifier,
-       -query_score         => $query_score,
-       -target_score        => $target_score,
-       -ensembl_id          => $ensembl_id,
-       -ensembl_object_type => $ensembl_object_type,
-       -summary             => $summary,
-       -full_desc           => $full_desc,
-       -adaptor             => $self);
+
+    push( @features,
+          $self->_create_feature(
+                         'Bio::EnsEMBL::UnmappedObject', {
+                           -unmapped_object_id  => $unmapped_object_id,
+                           -unmapped_reason_id  => $unmapped_reason_id,
+                           -type                => $type,
+                           -analysis            => $analysis,
+                           -external_db_id      => $external_db_id,
+                           -identifier          => $identifier,
+                           -query_score         => $query_score,
+                           -target_score        => $target_score,
+                           -ensembl_id          => $ensembl_id,
+                           -ensembl_object_type => $ensembl_object_type,
+                           -summary             => $summary,
+                           -full_desc           => $full_desc,
+                           -adaptor             => $self
+                         } ) );
+
   }
   return \@features;
 }
@@ -315,7 +331,8 @@ sub fetch_all_by_type {
   unless($type) {
     throw("type argument is required");
   }
-  $self->generic_fetch("uo.type = \'$type\'");
+  $self->bind_param_generic_fetch($type,SQL_VARCHAR);
+  $self->generic_fetch("uo.type = ?");
   
 }
 
@@ -340,7 +357,8 @@ sub fetch_all_by_analysis {
   unless($analysis) {
     throw("analysis argument is required");
   }
-  my $constraint = "uo.analysis_id = ".$analysis->dbID;
+  $self->bind_param_generic_fetch($analysis->dbID,SQL_INTEGER);
+  my $constraint = "uo.analysis_id = ?";
   if(defined($dbname)){
     my $db_id =0;
     my $sth = $self->prepare('select external_db_id from external_db where db_name like "'.
@@ -351,9 +369,9 @@ sub fetch_all_by_analysis {
     if(!defined($db_id) or $db_id == 0){
       throw("$dbname could not be found in the external database table\n");
     }
-    $constraint .= " AND uo.external_db_id = $db_id";
+    $self->bind_param_generic_fetch($db_id,SQL_INTEGER);
+    $constraint .= " AND uo.external_db_id = ?";
   }
-  #print $constraint."\n";
   $self->generic_fetch($constraint);
   
 }
@@ -378,7 +396,9 @@ sub fetch_by_identifier {
   unless($identifier) {
     throw("identifier argument is required");
   }
-  my $constraint = 'uo.identifier like "'.$identifier.'"';
+  $self->bind_param_generic_fetch($identifier,SQL_VARCHAR);
+  my $constraint = 'uo.identifier like ?';
+
   if(defined($dbname)){
     my $db_id =0;
     my $sth = $self->prepare('select external_db_id from external_db where db_name like "'.
@@ -389,9 +409,9 @@ sub fetch_by_identifier {
     if(!defined($db_id) or $db_id == 0){
       throw("$dbname could not be found in the external database table\n");
     }
-    $constraint .= " AND uo.external_db_id = $db_id";
+    $self->bind_param_generic_fetch($db_id,SQL_INTEGER);
+    $constraint .= " AND uo.external_db_id = ?";
   }
-  # print $constraint."\n";
   return $self->generic_fetch($constraint);
 }
 

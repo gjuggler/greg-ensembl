@@ -1,7 +1,22 @@
-#
-# Ensembl module for Bio::EnsEMBL::DBSQL::AffyProbeAdaptor
-#
-# You may distribute this module under the same terms as Perl itself
+=head1 LICENSE
+
+  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
+=cut
 
 =head1 NAME
 
@@ -10,25 +25,16 @@ storing AffyProbe objects.
 
 =head1 SYNOPSIS
 
-my $apa = $db->get_AffyProbeAdaptor();
+  my $apa = $db->get_AffyProbeAdaptor();
 
-my $probe = $opa->fetch_by_array_probeset_probe('Affy-1', 'Probeset-1', 'Probe-1');
+  my $probe =
+    $opa->fetch_by_array_probeset_probe( 'Affy-1', 'Probeset-1',
+    'Probe-1' );
 
 =head1 DESCRIPTION
 
 The AffyProbeAdaptor is a database adaptor for storing and retrieving
 AffyProbe objects.
-
-=head1 AUTHOR
-
-This module was originally written by Arne Stabenau, but was changed to be a
-subclass of OligoProbeAdaptor by Ian Sealy.
-
-This module is part of the Ensembl project: http://www.ensembl.org/
-
-=head1 CONTACT
-
-Post comments or questions to the Ensembl development list: ensembl-dev@ebi.ac.uk
 
 =head1 METHODS
 
@@ -158,8 +164,11 @@ sub _objs_from_sth {
 
   Arg [1]    : none
   Example    : my @probe_ids = @{$apa->list_dbIDs()};
-  Description: Gets an array of internal IDs for all AffyProbe objects in the
-               current database.
+  Description: Gets an array of internal IDs for all AffyProbe objects
+               in the current database.  NOTE: In a multi-species
+               database, this method will return the dbIDs of all
+               AffyProbe objects, not just the ones associated with
+               the current species.
   Returntype : List of ints
   Exceptions : None
   Caller     : ?
@@ -174,6 +183,10 @@ sub list_dbIDs {
 	# Can't use _list_dbIDs because only want OligoProbe objects on arrays of type AFFY
 	
 	my @out;
+
+        # FIXME: This SQL will not work as expected on multi-species
+        # databases.  It needs to be anchored in a coord_system entry
+        # coord_system.species_id = $self->species_id(). /ak4@2008-07-15
 	my $sql = "
 		SELECT DISTINCT op.oligo_probe_id
 		FROM   oligo_probe op, oligo_array oa

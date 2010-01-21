@@ -1,6 +1,22 @@
-#
-# EnsEMBL module for Bio::EnsEMBL::CoordSystem
-#
+=head1 LICENSE
+
+  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
+=cut
 
 =head1 NAME
 
@@ -15,8 +31,8 @@ Bio::EnsEMBL::CoordSystem
   #
   # Get all coord systems in the database:
   #
-  foreach my $cs (@{$csa->fetch_all()}) {
-    my $str = join ':', $cs->name(),$cs->version(),$cs->dbID();
+  foreach my $cs ( @{ $csa->fetch_all() } ) {
+    my $str = join ':', $cs->name(), $cs->version(), $cs->dbID();
     print "$str\n";
   }
 
@@ -36,12 +52,6 @@ versions, there is no version which applies to the entire set of clones.
 
 Coordinate system objects are immutable. Their name and version, and other
 attributes may not be altered after they are created.
-
-=head1 AUTHOR - Graham McVicker
-
-=head1 CONTACT
-
-Post questions to the EnsEMBL development list ensembl-dev@ebi.ac.uk
 
 =head1 METHODS
 
@@ -208,6 +218,24 @@ sub version {
 
 
 
+=head2 species
+
+  Arg [1]    : none
+  Example    : print $coord->species();
+  Description: Shortcut method to get the species this CoordSystem refers to.
+  Returntype : string
+  Exceptions : none
+  Caller     : general
+  Status     : Stable
+
+=cut
+
+sub species {
+  my $self = shift;
+  return $self->adaptor->db->species;
+}
+
+
 
 =head2 equals
 
@@ -229,7 +257,10 @@ sub equals {
   my $cs = shift;
 
   if(!$cs || !ref($cs) || !$cs->isa('Bio::EnsEMBL::CoordSystem')) {
-    throw('Argument must be a Bio::EnsEMBL::CoordSystem');
+    if ($cs->isa('Bio::EnsEMBL::ExternalData::DAS::CoordSystem')) {
+      return $cs->equals($self);
+    }
+    throw('Argument must be a CoordSystem');
   }
 
   if($self->{'version'} eq $cs->version() && $self->{'name'} eq $cs->name()) {

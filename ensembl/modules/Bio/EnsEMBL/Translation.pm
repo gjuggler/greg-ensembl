@@ -1,4 +1,22 @@
-package Bio::EnsEMBL::Translation;
+=head1 LICENSE
+
+  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
+=cut
 
 =head1 NAME
 
@@ -19,29 +37,17 @@ transcript
 
   # get start and end position in start/end exons
   my $start = $translation->start;
-  my $end = $translation->end;
+  my $end   = $translation->end;
 
 =head1 DESCRIPTION
 
 A Translation object defines the CDS and UTR regions of a Transcript
 through the use of start_Exon/end_Exon, and start/end attributes.
 
-=head1 LICENCE
-
-This code is distributed under an Apache style licence. Please see
-http://www.ensembl.org/info/about/code_licence.html for details.
-
-=head1 AUTHOR
-
-Ensembl core API team
-
-=head1 CONTACT
-
-Please post comments/questions to the Ensembl development list
-<ensembl-dev@ebi.ac.uk>
-
 =cut
 
+
+package Bio::EnsEMBL::Translation;
 
 use vars qw($AUTOLOAD @ISA);
 use strict;
@@ -91,10 +97,10 @@ sub new {
 
   my ( $start_exon, $end_exon, $seq_start, $seq_end,
        $stable_id, $version, $dbID, $adaptor, $seq,
-       $created_date, $modified_date ) = 
-    rearrange( [ "START_EXON", "END_EXON", "SEQ_START", "SEQ_END",
-                 "STABLE_ID", "VERSION", "DBID", "ADAPTOR",
-                 "SEQ", "CREATED_DATE", "MODIFIED_DATE" ], @_ );
+       $created_date, $modified_date ) =
+	   rearrange( [ "START_EXON", "END_EXON", "SEQ_START", "SEQ_END",
+			"STABLE_ID", "VERSION", "DBID", "ADAPTOR",
+			"SEQ", "CREATED_DATE", "MODIFIED_DATE" ], @_ );
 
   my $self = bless {
 		    'start_exon' => $start_exon,
@@ -111,6 +117,24 @@ sub new {
 		   }, $class;
 
   return $self;
+}
+
+=head2 new_fast
+
+  Arg [1]    : hashref to be blessed
+  Description: Construct a new Bio::EnsEMBL::Translation using the hashref.
+  Exceptions : none
+  Returntype : Bio::EnsEMBL::Translation
+  Caller     : general, subclass constructors
+  Status     : Stable
+
+=cut
+
+
+sub new_fast {
+  my $class = shift;
+  my $hashref = shift;
+  return bless $hashref, $class;
 }
 
 
@@ -931,18 +955,20 @@ sub get_all_SeqEdits {
 =cut
 
 sub modify_translation {
-  my ($self, $seq) = @_;
+  my ( $self, $seq ) = @_;
 
-  my @seqeds = @{$self->get_all_SeqEdits()};
+  my @seqeds = @{ $self->get_all_SeqEdits() };
 
-  # sort in reverse order to avoid complication of adjusting downstream edits
-  @seqeds = sort {$b <=> $a} @seqeds;
+  # Sort in reverse order to avoid complication of adjusting
+  # downstream edits.
+  @seqeds = sort { $b->start() <=> $a->start() } @seqeds;
 
-  # apply all edits
+  # Apply all edits.
   my $peptide = $seq->seq();
   foreach my $se (@seqeds) {
-    $se->apply_edit(\$peptide);
+    $se->apply_edit( \$peptide );
   }
+
   $seq->seq($peptide);
 
   return $seq;

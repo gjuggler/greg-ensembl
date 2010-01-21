@@ -1,10 +1,22 @@
-#
-# Ensembl module for TranscriptAlleles
-#
-# Copyright (c) 2005 Ensembl
-#
-# You may distribute this module under the same terms as perl itself
-#
+=head1 LICENSE
+
+  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
+=cut
 
 =head1 NAME
 
@@ -15,24 +27,23 @@ relationships between a transcript and Alleles
 
   use Bio::EnsEMBL::Utils::TranscriptAlleles;
 
-
   # get the peptide variations caused by a set of Alleles
 
-  %variations = %{Bio::EnsEMBL::Utils::TranscriptAlleles::get_all_peptide_variations($transcript, $alleles)};
-
+  %variations = %{
+    Bio::EnsEMBL::Utils::TranscriptAlleles::get_all_peptide_variations(
+      $transcript, $alleles ) };
 
 =head1 DESCRIPTION
 
-This is a utility class which can be used to find consequence type of an AlleleFeature in a
-transcript, and to determine the amino acid changes caused by the AlleleFeature in the Transcript
+This is a utility class which can be used to find consequence type of an
+AlleleFeature in a transcript, and to determine the amino acid changes
+caused by the AlleleFeature in the Transcript
 
-=head1 CONTACT
-
-Email questions to the ensembl developer mailing list <ensembl-dev@ebi.ac.uk>
 
 =head1 METHODS
 
 =cut
+
 package Bio::EnsEMBL::Utils::TranscriptAlleles;
 
 use strict;
@@ -254,40 +265,41 @@ sub type_variation {
       throw("Not possible to calculate the consequence type for ",ref($var)," : Bio::EnsEMBL::Variation::ConsequenceType object expected");
   }
 
-  ##to find if a SNP is overlapping with the transcript of the regulatory region, also the SNP should be within 5kb on both side of the transcript, then check whether they overlapping
-
-#   if ($g and ref($g) and $tr->isa('Bio::EnsEMBL::Genes')) {
-#     foreach my $rf (@{$g->fetch_all_regulatory_features()}) {
-#       my $rf_start = $rf->seq_region_start;
-#       my $rf_end  = $rf->seq_region_end;
-
-#       if ($var->end >= $rf_start and $var->start <= $rf_end) {
-#  	$var->type('REGULATORY_REGION');
-# 	last;
-#       }
-#     }
-#   }
-
-      my $dbFunc = $tr->adaptor->db->get_db_adaptor("funcgen");
-  if ($tr and ref($tr) and $tr->isa('Bio::EnsEMBL::Transcript') and (defined $dbFunc)) {
-      my $rfa = $dbFunc->get_ExternalFeatureAdaptor();      
-      foreach my $rf (@{$rfa->fetch_all_by_Slice($tr->feature_Slice)}){
-	  next if (($rf->feature_set->name !~ /miRNA/) && ($rf->feature_set->name !~ /cisRED/));
-#    foreach my $rf (@{$tr->fetch_all_regulatory_features()}) {
-      my $rf_start = $rf->start;
-      my $rf_end  = $rf->end;
-
-      if ($var->end >= $rf_start and $var->start <= $rf_end) {
- 	$var->type('REGULATORY_REGION') if (!defined $var->type || $var->type !~ /REGULATORY/);
-#	print $var->start, " has regulatiory_region near",$tr->dbID,"\n";
-        last;
-      }
-    }
-  }
-
   if (($var->start < $tr->start - $UPSTREAM) || ($var->end  > $tr->end + $DOWNSTREAM)){
     #since the variation is more than UPSTREAM and DOWNSTREAM of the transcript, there is no effect in the transcript
     return [];
+  }
+
+  if (!$tr->translation()) {#for other biotype rather than coding/IG genes
+    # check if the variation is completely outside the transcript:
+
+    if($var->end < $tr->start()) {
+      $var->type( ($tr->strand() == 1) ? 'UPSTREAM' : 'DOWNSTREAM' );
+      return [$var];
+    }
+    if($var->start > $tr->end()) {
+      $var->type( ($tr->strand() == 1) ? 'DOWNSTREAM' : 'UPSTREAM' );
+      return [$var];
+    }
+    if ($var->start >= $tr->start() and $var->end <= $tr->end()) {#within the transcript
+      if ($tr->biotype() eq "miRNA") {
+	my ($attribute) = @{$tr->get_all_Attributes('miRNA')};
+	#the value is the mature miRNA coordinate within miRNA transcript
+	if ( $attribute->value =~ /(\d+)-(\d+)/ ) {
+	  my @mapper_objs = $tr->cdna2genomic($1, $2, $tr->strand);#transfer cdna value to genomic coordinates
+	  foreach my $obj ( @mapper_objs ){#Note you can get more than one mature seq per miRNA
+	    if( $obj->isa("Bio::EnsEMBL::Mapper::Coordinate")){
+	      if ($var->start >= $obj->start() and $var->end <= $obj->end()) {
+		$var->type("WITHIN_MATURE_miRNA");
+		return [$var];
+	      }
+	    }
+	  }
+	}
+      }
+      $var->type("WITHIN_NON_CODING_GENE");
+      return [$var];
+    }
   }
 
   my $tm = $tr->get_TranscriptMapper();
@@ -351,7 +363,18 @@ sub type_variation {
 
     # variation must be intronic since mapped to cdna gap, but is within
     # transcript, note that ESSENTIAL_SPLICE_SITE only consider first (AG) and last (GT) 2 bases inside the intron.
+    # if variation is in intron, we need to check the lenth of intron, if it's shoter than 6, we call it SYNONYMOUS_CODING rather then INTRONIC
 
+    foreach my $intron (@{$tr->get_all_Introns()}) {
+      if ($intron->length <=5) {#the length of frameshift intron could be 1,2,4,5 bases
+	if ($var->start>=$intron->start and $var->end<=$intron->end) {
+	  #this is a type of SYNONYMOUS_CODING since changes happen in frameshift intron, which don't change exon structure
+	  $var->type('SYNONYMOUS_CODING');
+	  return [$var];
+	}
+      }
+    }
+    #if it's not in frameshift intron, then it's in normal intron
     $var->type('INTRONIC');
 
     if ($splice_site_2) {

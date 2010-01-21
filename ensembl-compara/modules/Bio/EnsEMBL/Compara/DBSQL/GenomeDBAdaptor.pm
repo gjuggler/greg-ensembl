@@ -15,11 +15,24 @@ Bio::EnsEMBL::Compara::DBSQL::GenomeDBAdaptor - DESCRIPTION of Object
 
 =head1 SYNOPSIS
 
-Give standard usage here
+  use Bio::EnsEMBL::Registry;
+
+  my $reg = "Bio::EnsEMBL::Registry";
+
+  $reg->load_registry_from_db(-host=>"ensembldb.ensembl.org", -user=>"anonymous");
+  my $genome_db_adaptor = $reg->get_adaptor("Multi", "compara", "GenomeDB");
+
+  $genome_db_adaptor->store($genome_db);
+
+  $genome_db = $genome_db_adaptor->fetch_by_dbID(22);
+  $all_genome_dbs = $genome_db_adaptor->fetch_all();
+  $genome_db = $genome_db_adaptor->fetch_by_name_assembly("Homo sapiens", 'NCBI36');
+  $genome_db = $genome_db_adaptor->fetch_by_registry_name("human");
+  $genome_db = $genome_db_adaptor->fetch_by_Slice($slice);
 
 =head1 DESCRIPTION
 
-Describe the object here
+This module is intended to access data in the genome_db table. The genome_db table stores information about each species including the taxon_id, species name, assembly, genebuild and the location of the core database
 
 =head1 AUTHOR - Ewan Birney
 
@@ -93,7 +106,7 @@ sub fetch_by_dbID {
 =head2 fetch_all
 
   Args       : none
-  Example    : none
+  Example    : my $all_genome_dbs = $genome_db_adaptor->fetch_all();
   Description: gets all GenomeDBs for this compara database
   Returntype : listref Bio::EnsEMBL::Compara::GenomeDB
   Exceptions : none
@@ -117,7 +130,7 @@ sub fetch_all {
 
   Arg [1]    : string $name
   Arg [2]    : string $assembly
-  Example    : $gdb = $gdba->fetch_by_name_assembly("Homo sapiens", 'NCBI_31');
+  Example    : $gdb = $gdba->fetch_by_name_assembly("Homo sapiens", 'NCBI36');
   Description: Retrieves a genome db using the name of the species and
                the assembly version.
   Returntype : Bio::EnsEMBL::Compara::GenomeDB
@@ -180,10 +193,7 @@ sub fetch_by_registry_name {
     throw("Cannot connect to core database for $name!");
   }
 
-  my $species_name = $species_db_adaptor->get_MetaContainer->get_Species->binomial;
-  my $species_assembly = $species_db_adaptor->get_CoordSystemAdaptor->fetch_all->[0]->version;
-   
-  return $self->fetch_by_name_assembly($species_name, $species_assembly);
+  return $self->fetch_by_core_DBAdaptor($species_db_adaptor);
 }
 
 =head2 fetch_by_Slice
@@ -208,12 +218,101 @@ sub fetch_by_Slice {
     throw("[$slice] must have an adaptor");
   }
 
-  my $species_name = 
-      $slice->adaptor->db->get_MetaContainer->get_Species->binomial;
-  my ($highest_cs) = @{$slice->adaptor->db->get_CoordSystemAdaptor->fetch_all()};
-  my $species_assembly = $highest_cs->version();
+  my $core_dba = $slice->adaptor()->db();
+  return $self->fetch_by_core_DBAdaptor($core_dba);
+}
 
+=head2 fetch_by_taxon_id
+
+  Arg [1]    : string $name
+  Arg [2]    : string $assembly
+  Example    : $gdb = $gdba->fetch_by_taxon_id(1234);
+  Description: Retrieves a genome db using the NCBI taxon_id of the species.
+  Returntype : Bio::EnsEMBL::Compara::GenomeDB
+  Exceptions : thrown if GenomeDB of taxon_id $taxon_id cannot be found. Will
+               warn if the taxon returns more than one GenomeDB (possible in
+               some branches of the Taxonomy)
+  Caller     : general
+  Status     : Stable
+
+=cut
+
+sub fetch_by_taxon_id {
+  my ($self, $taxon_id) = @_;
+
+  unless($taxon_id) {
+    throw('taxon_id argument is required');
+  }
+
+  my $sth;
+
+  my $sql = "SELECT genome_db_id FROM genome_db WHERE taxon_id = ? AND assembly_default = 1";
+  $sth = $self->prepare($sql);
+  $sth->execute($taxon_id);
+
+  my @ids = $sth->fetchrow_array();
+  $sth->finish;
+
+  my $return_count = scalar(@ids);
+	my $id;
+  if ($return_count ==0) {
+    throw("No GenomeDB with this taxon_id [$taxon_id]");
+  }
+  else {
+    ($id) = @ids;
+    if($return_count > 1) {
+      warning("taxon_id [${taxon_id}] returned more than one row. Returning the first at ID [${id}]");
+    }
+  }
+
+  return $self->fetch_by_dbID($id);
+}
+
+=head2 fetch_by_core_DBAdaptor
+
+	Arg [1]     : Bio::EnsEMBL::DBSQL::DBAdaptor
+	Example     : my $gdb = $gdba->fetch_by_core_DBAdaptor($core_dba);
+	Description : For a given core database adaptor object; this method will
+	              return the GenomeDB instance
+	Returntype  : Bio::EnsEMBL::Compara::GenomeDB
+	Exceptions  : thrown if no name is found for the adaptor
+	Caller      : general
+	Status      : Stable
+
+=cut
+
+sub fetch_by_core_DBAdaptor {
+	my ($self, $core_dba) = @_;
+	my $mc = $core_dba->get_MetaContainer();
+	my $species_name = $self->get_species_name_from_core_MetaContainer($mc);
+	my ($highest_cs) = @{$core_dba->get_CoordSystemAdaptor->fetch_all()};
+  my $species_assembly = $highest_cs->version();
   return $self->fetch_by_name_assembly($species_name, $species_assembly);
+}
+
+=head2 get_species_name_from_core_MetaContainer
+
+  Arg [1]     : Bio::EnsEMBL::MetaContainer
+  Example     : $gdba->get_species_name_from_core_MetaContainer($slice->adaptor->db->get_MetaContainer);
+  Description : Returns the name of a species which was used to
+                name the GenomeDB from a meta container. Can be
+                the species binomial name or the value of the
+                meta item species.compara_name
+  Returntype  : Scalar string
+  Exceptions  : thrown if no name is found
+  Caller      : general
+  Status      : Stable
+
+=cut
+
+sub get_species_name_from_core_MetaContainer {
+	my ($self, $meta_container) = @_;
+  my ($species_name) = @{$meta_container->list_value_by_key('species.compara_name')};
+  unless(defined $species_name) {
+    $species_name = $meta_container->get_Species->binomial;
+	}
+  throw('Species name was still empty/undefined after looking for species.compara_name and binomial name') unless $species_name;
+  return $species_name;
 }
 
 =head2 store
@@ -232,9 +331,9 @@ sub fetch_by_Slice {
 sub store{
   my ($self,$gdb) = @_;
 
-  unless(defined $gdb && ref $gdb && 
+  unless(defined $gdb && ref $gdb &&
 	 $gdb->isa('Bio::EnsEMBL::Compara::GenomeDB') ) {
-    $self->throw("Must have genomedb arg [$gdb]");
+    throw("Must have genomedb arg [$gdb]");
   }
 
   my $name = $gdb->name;
@@ -248,7 +347,7 @@ sub store{
      $assembly = "";
   } else {
       unless($name && $assembly && $taxon_id) {
-	  $self->throw("genome db must have a name, assembly, and taxon_id");
+	  throw("genome db must have a name, assembly, and taxon_id");
       }
   }
 
@@ -261,22 +360,39 @@ sub store{
 
   $sth->execute;
 
-  my $dbID = $sth->fetchrow_array();
+  my ($dbID) = $sth->fetchrow_array();
+
+  $sth->finish();
 
   if(!$dbID) {
     #if the genome db has not been stored before, store it now
-    my $sql = "INSERT into genome_db (name,assembly,taxon_id,assembly_default,genebuild,locator) ". 
-              " VALUES ('$name','$assembly', $taxon_id, $assembly_default, '$genebuild', '$locator')";
-    #print("$sql\n");
-    my $sth = $self->prepare($sql);
+   # my $sql = "INSERT into genome_db (name,assembly,taxon_id,assembly_default,genebuild,locator) ".
+    #          " VALUES ('$name','$assembly', $taxon_id, $assembly_default, '$genebuild', '$locator')";
+
+     my $sql = qq(
+           INSERT into genome_db (name,assembly,taxon_id,assembly_default,genebuild,locator)
+           VALUES (?,?,?,?,?,?)
+        );
+
+     #print("$sql\n");
+     $sth = $self->prepare($sql);
+     $sth->bind_param(1, $name, SQL_VARCHAR);
+     $sth->bind_param(2, $assembly, SQL_VARCHAR);
+     $sth->bind_param(3, $taxon_id, SQL_INTEGER);
+     $sth->bind_param(4, $assembly_default, SQL_TINYINT);
+     $sth->bind_param(5, $genebuild, SQL_VARCHAR);
+     $sth->bind_param(6, $locator, SQL_VARCHAR);
+
     if($sth->execute()) {
       $dbID = $sth->{'mysql_insertid'};
+      $sth->finish();
 
       if($gdb->dbID) {
         $sql = "UPDATE genome_db SET genome_db_id=".$gdb->dbID .
                " WHERE genome_db_id=$dbID";
         my $sth = $self->prepare($sql);
         if($sth->execute()) { $dbID = $gdb->dbID; }
+        $sth->finish();
       }
     }
   }
@@ -286,8 +402,9 @@ sub store{
               " ,locator = '$locator'".
               " WHERE genome_db_id=$dbID";
     #print("$sql\n");
-    my $sth = $self->prepare($sql);
+    $sth = $self->prepare($sql);
     $sth->execute();
+    $sth->finish();
   }
 
   #update the genomeDB object so that it's dbID and adaptor are set
@@ -296,8 +413,6 @@ sub store{
 
   return $dbID;
 }
-
-
 
 =head2 create_GenomeDBs
 
@@ -337,7 +452,7 @@ sub create_GenomeDBs {
   # grab all the possible species databases in the genome db table
   my $sth = $self->prepare("
      SELECT genome_db_id, name, assembly, taxon_id, assembly_default, genebuild, locator
-     FROM genome_db 
+     FROM genome_db
    ");
    $sth->execute;
 
@@ -359,6 +474,8 @@ sub create_GenomeDBs {
     $self->{'_cache'}->{$dbid} = $gdb;
   }
 
+  $sth->finish();
+
   $self->{'_GenomeDB_cache'} = 1;
 
   $self->sync_with_registry();
@@ -377,7 +494,7 @@ sub create_GenomeDBs {
   Example    :
   Description: Checks to see whether a consensus genome database has been
                analysed against the specific query genome database.
-               Returns the dbID of the database of the query genomeDB if 
+               Returns the dbID of the database of the query genomeDB if
                one is found.  A 0 is returned if no match is found.
   Returntype : int ( 0 or 1 )
   Exceptions : none
@@ -396,7 +513,7 @@ sub check_for_consensus_db {
   # just to make things a wee bit more readable
   my $cid = $con_gdb->dbID;
   my $qid = $query_gdb->dbID;
-  
+
   if ( exists $genome_consensus_xreflist{$cid .":" .$method_link_id} ) {
     for my $i ( 0 .. $#{$genome_consensus_xreflist{$cid .":" .$method_link_id}} ) {
       if ( $qid == $genome_consensus_xreflist{$cid .":" .$method_link_id}[$i] ) {
@@ -420,7 +537,7 @@ sub check_for_consensus_db {
   Example    : none
   Description: Checks to see whether a query genome database has been
                analysed against the specific consensus genome database.
-               Returns the dbID of the database of the consensus 
+               Returns the dbID of the database of the consensus
                genomeDB if one is found.  A 0 is returned if no match is
                found.
   Returntype : int ( 0 or 1 )
@@ -544,6 +661,18 @@ sub sync_with_registry {
   }
 }
 
+=head2 deleteObj
+
+  Arg         : none
+  Example     : none
+  Description : Called automatically by DBConnection during object destruction
+                phase. Clears the cache to avoid memory leaks.
+  Returntype  : none
+  Exceptions  : none
+  Caller      : general
+  Status      : Stable
+
+=cut
 
 sub deleteObj {
   my $self = shift;

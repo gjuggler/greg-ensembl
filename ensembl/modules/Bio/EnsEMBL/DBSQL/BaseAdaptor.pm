@@ -1,14 +1,22 @@
+=head1 LICENSE
 
-#
-# BioPerl module for Bio::EnsEMBL::DBSQL::BaseAdaptor
-#
-# Cared for by Ewan Birney <birney@ebi.ac.uk>
-#
-# Copyright Ewan Birney
-#
-# You may distribute this module under the same terms as perl itself
+  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
 
-# POD documentation - main docs before the code
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
+=cut
 
 =head1 NAME
 
@@ -16,74 +24,64 @@ Bio::EnsEMBL::DBSQL::BaseAdaptor - Base Adaptor for DBSQL adaptors
 
 =head1 SYNOPSIS
 
-    # base adaptor provides
-    
-    # SQL prepare function
-    $adaptor->prepare("sql statement");
+  # base adaptor provides
 
-    # get of root DBAdaptor object
-    $adaptor->db();
+  # SQL prepare function
+  $adaptor->prepare("sql statement");
 
-    # constructor, ok for inheritence
-    $adaptor = Bio::EnsEMBL::DBSQL::SubClassOfBaseAdaptor->new($dbobj)
+  # get of root DBAdaptor object
+  $adaptor->db();
+
+  # constructor, ok for inheritence
+  $adaptor = Bio::EnsEMBL::DBSQL::SubClassOfBaseAdaptor->new($dbobj)
 
 =head1 DESCRIPTION
 
 This is a true base class for Adaptors in the Ensembl DBSQL
 system. Original idea from Arne
 
-
 Adaptors are expected to have the following functions
 
-    $obj = $adaptor->fetch_by_dbID($internal_id);
+  $obj = $adaptor->fetch_by_dbID($internal_id);
 
 which builds the object from the primary key of the object. This
-function is crucial because it allows adaptors to collaborate
-relatively independently of each other - in other words, we can change
-the schema under one adaptor without too many knock on changes through
-the other adaptors.
+function is crucial because it allows adaptors to collaborate relatively
+independently of each other - in other words, we can change the schema
+under one adaptor without too many knock on changes through the other
+adaptors.
 
 Most adaptors will also have
 
-    $dbid = $adaptor->store($obj);
+  $dbid = $adaptor->store($obj);
 
 which stores the object. Currently the storing of an object also causes
 the objects to set
 
-    $obj->dbID
+  $obj->dbID();
 
 correctly and attach the adaptor.
 
-
 Other fetch functions go by the convention of
 
-    @object_array = @{$adaptor->fetch_all_by_XXXX($arguments_for_XXXX)};
+  @object_array = @{ $adaptor->fetch_all_by_XXXX($arguments_for_XXXX) };
 
-sometimes it returns an array ref denoted by the 'all' in the name of the
-method, sometimes an individual object. For example
+sometimes it returns an array ref denoted by the 'all' in the name of
+the method, sometimes an individual object. For example
 
-    $gene = $gene_adaptor->fetch_by_stable_id($stable_id);
+  $gene = $gene_adaptor->fetch_by_stable_id($stable_id);
 
 or
 
-    @fp  = @{$simple_feature_adaptor->fetch_all_by_Slice($slice)};
+  @fp = @{ $simple_feature_adaptor->fetch_all_by_Slice($slice) };
 
+Occassionally adaptors need to provide access to lists of ids. In this
+case the convention is to go list_XXXX, such as
 
-Occassionally adaptors need to provide access to lists of ids. In this case the
-convention is to go list_XXXX, such as
-
-    @gene_ids = @{$gene_adaptor->list_geneIds()};
+  @gene_ids = @{ $gene_adaptor->list_geneIds() };
 
 (note: this method is poorly named)
 
-=head1 CONTACT
-
-Post questions to the EnsEMBL developer mailing list: <ensembl-dev@ebi.ac.uk>
-
-=head1 APPENDIX
-
-The rest of the documentation details each of the object methods.
-Internal methods are usually preceded with a _
+=head1 METHODS
 
 =cut
 
@@ -94,6 +92,7 @@ use strict;
 
 use Bio::EnsEMBL::Utils::Exception qw(throw);
 use DBI qw(:sql_types);
+use Data::Dumper;
 
 @ISA = qw(Exporter);
 @EXPORT = (@{$DBI::EXPORT_TAGS{'sql_types'}});
@@ -114,29 +113,28 @@ use DBI qw(:sql_types);
 =cut
 
 sub new {
-  my ($class,$dbobj) = @_;
-  
-  my $self = {};
-  bless $self,$class;
-  
-  if( !defined $dbobj || !ref $dbobj ) {
+  my ( $class, $dbobj ) = @_;
+
+  my $self = bless {}, $class;
+
+  if ( !defined $dbobj || !ref $dbobj ) {
     throw("Don't have a db [$dbobj] for new adaptor");
   }
-  if($dbobj->isa('Bio::EnsEMBL::DBSQL::DBAdaptor')){
+
+  if ( $dbobj->isa('Bio::EnsEMBL::DBSQL::DBAdaptor') ) {
     $self->db($dbobj);
-    $self->dbc($dbobj->dbc);
-  }
-  elsif( ref($dbobj) =~ /DBAdaptor$/){
+    $self->dbc( $dbobj->dbc );
+    $self->species_id( $dbobj->species_id() );
+    $self->is_multispecies( $dbobj->is_multispecies() );
+  } elsif ( ref($dbobj) =~ /DBAdaptor$/ ) {
     $self->db($dbobj);
-    $self->dbc($dbobj->dbc);
-  }
-  elsif( ref($dbobj) =~ /DBConnection$/){
-    $self->dbc($dbobj);    
-  }
-  else{
+    $self->dbc( $dbobj->dbc );
+  } elsif ( ref($dbobj) =~ /DBConnection$/ ) {
+    $self->dbc($dbobj);
+  } else {
     throw("Don't have a DBAdaptor [$dbobj] for new adaptor");
   }
-  
+
   return $self;
 }
 
@@ -156,11 +154,12 @@ sub new {
 
 =cut
 
-sub prepare{
-  my ($self,$string) = @_;
- 
-# uncomment next line to cancel caching on the sql side. Needed for timing comparisons etc 
-#  $string =~ s/SELECT/SELECT SQL_NO_CACHE/i;
+sub prepare {
+  my ( $self, $string ) = @_;
+
+  # Uncomment next line to cancel caching on the SQL side.
+  # Needed for timing comparisons etc.
+  #$string =~ s/SELECT/SELECT SQL_NO_CACHE/i;
 
   return $self->dbc->prepare($string);
 }
@@ -175,17 +174,19 @@ sub prepare{
                using.
   Returntype : Bio::EnsEMBL::DBSQL::DBAdaptor
   Exceptions : none
-  Caller     : Adaptors inherited fro BaseAdaptor
+  Caller     : Adaptors inherited from BaseAdaptor
   Status     : Stable
 
 =cut
 
-sub db{
-  my $self = shift;
-  $self->{'db'} = shift if(@_);
+sub db {
+  my ( $self, $value ) = @_;
+
+  if ( defined($value) ) {
+    $self->{'db'} = $value;
+  }
 
   return $self->{'db'};
-
 }
 
 =head2 dbc
@@ -197,16 +198,66 @@ sub db{
                using.
   Returntype : Bio::EnsEMBL::DBSQL::DBConnection
   Exceptions : none
-  Caller     : Adaptors inherited fro BaseAdaptor
+  Caller     : Adaptors inherited from BaseAdaptor
   Status     : Stable
 
 =cut
 
-sub dbc{
-  my $self = shift;
-  $self->{'dbc'} = shift if(@_);
+sub dbc {
+  my ( $self, $value ) = @_;
+
+  if ( defined($value) ) {
+    $self->{'dbc'} = $value;
+  }
 
   return $self->{'dbc'};
+}
+
+=head2 is_multispecies
+
+  Arg [1]    : (optional) boolean $arg
+  Example    : if ($adaptor->is_multispecies()) { }
+  Description: Getter/Setter for the is_multispecies boolean of
+               to use for this adaptor.
+  Returntype : boolean
+  Exceptions : none
+  Caller     : general
+  Status     : Stable
+
+=cut
+
+sub is_multispecies {
+  my ( $self, $arg ) = @_;
+
+  if ( defined($arg) ) {
+    $self->{_is_multispecies} = $arg;
+  }
+
+  return $self->{_is_multispecies};
+}
+
+=head2 species_id
+
+  Arg [1]    : (optional) int $species_id
+               The internal ID of the species in a multi-species database.
+  Example    : $db = $adaptor->db();
+  Description: Getter/Setter for the internal ID of the species in a
+               multi-species database.  The default species ID is 1.
+  Returntype : Integer
+  Exceptions : none
+  Caller     : Adaptors inherited from BaseAdaptor
+  Status     : Stable
+
+=cut
+
+sub species_id {
+  my ( $self, $value ) = @_;
+
+  if ( defined($value) ) {
+    $self->{'species_id'} = $value;
+  }
+
+  return $self->{'species_id'} || 1;
 }
 
 
@@ -215,25 +266,23 @@ sub dbc{
 # if primary key field is not supplied, tablename_id is assumed
 # returns listref of IDs
 sub _list_dbIDs {
+  my ( $self, $table, $pk, $ordered ) = @_;
 
-  my ($self, $table, $pk, $ordered) = @_;
-  if (!defined($pk)) {
-    $pk = $table . "_id";
+  if ( !defined($pk) ) { $pk = $table . "_id" }
+
+  my $sql = "SELECT " . $pk . "  FROM " . $table;
+
+  if ( defined($ordered) && $ordered ) {
+    $sql .= " order by seq_region_id, seq_region_start";
   }
+
+  my $sth = $self->prepare($sql);
+  $sth->execute();
 
   my @out;
-  my $sql = "SELECT " . $pk . "  FROM " . $table;
-  if(defined($ordered) and $ordered){
-    $sql .= " order by seq_region_id, seq_region_start"
-  }	
-  my $sth = $self->prepare($sql);
-  $sth->execute;
+  while ( my ($id) = $sth->fetchrow() ) { push( @out, $id ) }
 
-  while (my ($id) = $sth->fetchrow) {
-    push(@out, $id);
-  }
-
-  $sth->finish;
+  $sth->finish();
 
   return \@out;
 }
@@ -261,6 +310,42 @@ sub _straight_join {
 }
 
 
+=head2 bind_param_generic_fetch
+
+ Arg [1]   : (optional)  scalar $param
+              This is the parameter to bind
+ Arg [2]   : (optional) int $sql_type
+              Type of the parameter (from DBI (:sql_types))
+ Example   :  $adaptor->bind_param_generic_fetch($stable_id,SQL_VARCHAR);
+              $adaptor->generic_fetch();
+ Description:  When using parameters for the query, will call the bind_param to avoid
+               some security issues. If there are no arguments, will return the bind_parameters
+ ReturnType : listref
+ Exceptions:  if called with one argument
+
+=cut
+
+sub bind_param_generic_fetch{
+    my $self = shift;
+    my $param = shift;
+    my $sql_type = shift;
+
+    if (defined $param && !defined $sql_type){
+	throw("Need to specify sql_type for parameter $param\n");
+    }
+    elsif (defined $param && defined $sql_type){
+	#both paramters have been entered, push it to the bind_param array
+	push @{$self->{'_bind_param_generic_fetch'}},[$param,$sql_type];
+    }
+    elsif (!defined $param && !defined $sql_type){
+	#when there are no arguments, return the array
+	return $self->{'_bind_param_generic_fetch'};
+    }
+	
+}
+
+
+
 =head2 generic_fetch
 
   Arg [1]    : (optional) string $constraint
@@ -283,7 +368,27 @@ sub _straight_join {
 sub generic_fetch {
   my ($self, $constraint, $mapper, $slice) = @_;
 
-  my @tabs = $self->_tables;
+  my @tabs = $self->_tables();
+
+  my $extra_default_where;
+
+  # Hack for feature types that needs to be restricted to species_id (in
+  # coord_system).
+  if (    $self->is_multispecies()
+       && $self->isa('Bio::EnsEMBL::DBSQL::BaseFeatureAdaptor')
+       && !$self->isa('Bio::EnsEMBL::DBSQL::UnmappedObjectAdaptor') )
+  {
+    push @tabs, [ 'seq_region', 'sr' ], [ 'coord_system', 'cs' ];
+
+    $extra_default_where = sprintf(
+                      '%s.seq_region_id = sr.seq_region_id '
+                        . 'AND sr.coord_system_id = cs.coord_system_id '
+                        . 'AND cs.species_id = ?',
+                      $tabs[0]->[1] );
+
+    $self->bind_param_generic_fetch( $self->species_id(), SQL_INTEGER );
+  }
+
   my $columns = join(', ', $self->_columns());
 
   my $db = $self->db();
@@ -326,16 +431,24 @@ sub generic_fetch {
       "SELECT $straight_join $columns\n"
     . "FROM $left_join_prefix ($tablenames) $left_join";
 
-  my $default_where = $self->_default_where_clause;
+  my $default_where = $self->_default_where_clause();
   my $final_clause = $self->_final_clause;
 
+  if ($extra_default_where) {
+    if ($default_where) {
+      $default_where .= "\n AND $extra_default_where";
+    } else {
+      $default_where = $extra_default_where;
+    }
+  }
+
   #append a where clause if it was defined
-  if($constraint) {
+  if ($constraint) {
     $sql .= "\n WHERE $constraint ";
-    if($default_where) {
+    if ($default_where) {
       $sql .= " AND\n       $default_where ";
     }
-  } elsif($default_where) {
+  } elsif ($default_where) {
     $sql .= "\n WHERE $default_where ";
   }
 
@@ -343,9 +456,22 @@ sub generic_fetch {
   $sql .= "\n$final_clause";
 
   # FOR DEBUG:
-  # printf(STDERR "SQL:\n%s\n", $sql);
+#warn "SQL:\n$sql\n";
+ #  printf(STDERR "SQL:\n%s\n", $sql);
 
   my $sth = $db->dbc->prepare($sql);
+  my $bind_parameters = $self->bind_param_generic_fetch();
+  if (defined $bind_parameters){
+      #if we have bind the parameters, call the DBI to bind them
+      my $i = 1;
+      foreach my $param (@{$bind_parameters}){
+	  $sth->bind_param($i,$param->[0],$param->[1]);
+	  $i++;
+      }
+      #after binding parameters, undef for future queries
+      $self->{'_bind_param_generic_fetch'} = ();
+  }
+#  print STDERR $sql,"\n";
   $sth->execute;
   my $res = $self->_objs_from_sth($sth, $mapper, $slice);
   $sth->finish();
@@ -382,7 +508,8 @@ sub fetch_by_dbID{
   #construct a constraint like 't1.table1_id = 123'
   my @tabs = $self->_tables;
   my ($name, $syn) = @{$tabs[0]};
-  my $constraint = "${syn}.${name}_id = $id";
+  $self->bind_param_generic_fetch($id,SQL_INTEGER);
+  my $constraint = "${syn}.${name}_id = ?";
 
   #Should only be one
   my ($feat) = @{$self->generic_fetch($constraint)};
@@ -395,17 +522,20 @@ sub fetch_by_dbID{
 
 =head2 fetch_all_by_dbID_list
 
-  Arg [1]    : listref of ints $id_list
-               The unique database identifiers for the features to be obtained
-  Example    : @feats = @{$adaptor->fetch_by_dbID_list([1234, 2131, 982]))};
-  Description: Returns the features created from the database defined by the
-               the ids in contained in the id list $id_list.  The features 
-               will be returned in their native coordinate system. That is, 
-               the coordinate system in which they are stored in the database.
-               In order to convert the features to a particular coordinate 
-               system use the transfer() or transform() method.  If none of the
-               features are found in the database a reference to an empty 
-               list is returned.
+  Arg [1]    : listref of integers $id_list
+               The unique database identifiers for the features to
+               be obtained.
+  Example    : @feats = @{$adaptor->fetch_all_by_dbID_list([1234, 2131, 982]))};
+  Description: Returns the features created from the database
+               defined by the the IDs in contained in the provided
+               ID list $id_list.  The features will be returned
+               in their native coordinate system.  That is, the
+               coordinate system in which they are stored in the
+               database.  In order to convert the features to a
+               particular coordinate system use the transfer() or
+               transform() method.  If none of the features are
+               found in the database a reference to an empty list is
+               returned.
   Returntype : listref of Bio::EnsEMBL::Features
   Exceptions : thrown if $id arg is not provided
                does not exist
@@ -415,46 +545,52 @@ sub fetch_by_dbID{
 =cut
 
 sub fetch_all_by_dbID_list {
-  my ($self,$id_list_ref) = @_;
+  my ( $self, $id_list_ref ) = @_;
 
-  if(!defined($id_list_ref) || ref($id_list_ref) ne 'ARRAY') {
+  if ( !defined($id_list_ref) || ref($id_list_ref) ne 'ARRAY' ) {
     throw("id_list list reference argument is required");
   }
 
-  return [] if(!@$id_list_ref);
+  if ( !@{$id_list_ref} ) { return [] }
+
+  # Construct a constraint like 't1.table1_id = 123'
+  my @tabs = $self->_tables();
+  my ( $name, $syn ) = @{ $tabs[0] };
+
+  # Ensure that we do not exceed MySQL's max_allowed_packet (defaults to
+  # 1 MB) splitting large queries into smaller queries of at most 256 KB
+  # (32768 8-bit characters).  Assuming a (generous) average dbID string
+  # length of 16, this means 2048 dbIDs in each query.
+  my $max_size = 2048;
+
+  my @id_list = @{$id_list_ref};
 
   my @out;
-  #construct a constraint like 't1.table1_id = 123'
-  my @tabs = $self->_tables;
-  my ($name, $syn) = @{$tabs[0]};
 
-  # mysql is faster and we ensure that we do not exceed the max query size by
-  # splitting large queries into smaller queries of 200 ids
-  my $max_size = 200;
-  my @id_list = @$id_list_ref;
-
-  while(@id_list) {
+  while (@id_list) {
     my @ids;
-    if(@id_list > $max_size) {
-      @ids = splice(@id_list, 0, $max_size);
+    my $id_str;
+
+    if ( scalar(@id_list) > $max_size ) {
+      @ids = splice( @id_list, 0, $max_size );
     } else {
-      @ids = splice(@id_list, 0);
+      @ids     = @id_list;
+      @id_list = ();
     }
 
-    my $id_str;
-    if(@ids > 1)  {
-      $id_str = " IN (" . join(',', @ids). ")";
+    if ( scalar(@ids) > 1 ) {
+      $id_str = " IN (" . join( ',', @ids ) . ")";
     } else {
       $id_str = " = " . $ids[0];
     }
 
     my $constraint = "${syn}.${name}_id $id_str";
 
-    push @out, @{$self->generic_fetch($constraint)};
+    push @out, @{ $self->generic_fetch($constraint) };
   }
 
   return \@out;
-}
+} ## end sub fetch_all_by_dbID_list
 
 # might not be a good idea, but for convenience
 # shouldnt be called on the BIG tables though
@@ -573,5 +709,27 @@ sub _objs_from_sth {
   throw(   "abstract method _objs_from_sth not defined "
          . "by implementing subclass of BaseAdaptor" );
 }
+
+sub dump_data {
+  my $self = shift;
+  my $data = shift;
+
+  my $dumper = Data::Dumper->new([$data]);
+  $dumper->Indent(0);
+  $dumper->Terse(1);
+  my $dump = $dumper->Dump();
+# $dump =~ s/'/\\'/g;
+# $dump =~ s/^\$VAR1 = //;
+  return $dump;
+}
+
+sub get_dumped_data {
+    my $self = shift;
+    my $data = shift;
+
+    $data =~ s/\n|\r|\f|\\//g;
+    return eval ($data);
+}
+
 
 1;

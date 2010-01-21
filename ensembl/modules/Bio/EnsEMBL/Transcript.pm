@@ -1,4 +1,22 @@
-package Bio::EnsEMBL::Transcript;
+=head1 LICENSE
+
+  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
+=cut
 
 =head1 NAME
 
@@ -8,20 +26,20 @@ Bio::EnsEMBL::Transcript - object representing an Ensembl transcript
 
 Creation:
 
-     my $tran = new Bio::EnsEMBL::Transcript();
-     my $tran = new Bio::EnsEMBL::Transcript(-EXONS => \@exons);
+  my $tran = new Bio::EnsEMBL::Transcript();
+  my $tran = new Bio::EnsEMBL::Transcript( -EXONS => \@exons );
 
 Manipulation:
 
-     # Returns an array of Exon objects
-     my @exons = @{$tran->get_all_Exons()};
+  # Returns an array of Exon objects
+  my @exons = @{ $tran->get_all_Exons() };
 
-     # Returns the peptide translation of the exons as a Bio::Seq
-     if($tran->translation() {
-       my $pep   = $tran->translate();
-     } else {
-       print "Transcript ", $tran->stable_id(), " is non-coding\n";
-     }
+  # Returns the peptide translation of the exons as a Bio::Seq
+  if ( $tran->translation() ) {
+    my $pep = $tran->translate();
+  } else {
+    print "Transcript ", $tran->stable_id(), " is non-coding\n";
+  }
 
 =head1 DESCRIPTION
 
@@ -29,21 +47,11 @@ A representation of a transcript within the Ensembl system.  A transcript
 consists of a set of Exons and (possibly) a Translation which defines the
 coding and non-coding regions of the exons.
 
-=head1 LICENCE
-
-This code is distributed under an Apache style licence. Please see
-http://www.ensembl.org/info/about/code_licence.html for details.
-
-=head1 AUTHOR
-
-Ensembl core API team
-
-=head1 CONTACT
-
-Please post comments/questions to the Ensembl development list
-<ensembl-dev@ebi.ac.uk>
+=head1 METHODS
 
 =cut
+
+package Bio::EnsEMBL::Transcript;
 
 use strict;
 
@@ -119,19 +127,19 @@ sub new {
     deprecate("Transcript constructor should use named arguments.\n" .
               'Use Bio::EnsEMBL::Transcript->new(-EXONS => \@exons);' .
               "\ninstead of Bio::EnsEMBL::Transcript->new(\@exons);");
-  }
+}
   else {
-    ( $exons, $stable_id, $version, $external_name, $external_db,
-      $external_status, $display_xref, $created_date, $modified_date,
-      $description, $biotype, $confidence, $external_db_name, $status,
-      $is_current ) = 
-        rearrange( [ "EXONS", 'STABLE_ID', 'VERSION', 'EXTERNAL_NAME', 
-                     'EXTERNAL_DB', 'EXTERNAL_STATUS', 'DISPLAY_XREF',
-		     'CREATED_DATE', 'MODIFIED_DATE', 'DESCRIPTION',
-		     'BIOTYPE', 'CONFIDENCE', 'EXTERNAL_DB_NAME', 'STATUS',
-                     'IS_CURRENT' ], @_ );
+      ( $exons, $stable_id, $version, $external_name, $external_db,
+	$external_status, $display_xref, $created_date, $modified_date,
+	$description, $biotype, $confidence, $external_db_name, $status,
+	$is_current ) = 
+	    rearrange( [ "EXONS", 'STABLE_ID', 'VERSION', 'EXTERNAL_NAME', 
+			 'EXTERNAL_DB', 'EXTERNAL_STATUS', 'DISPLAY_XREF',
+			 'CREATED_DATE', 'MODIFIED_DATE', 'DESCRIPTION',
+			 'BIOTYPE', 'CONFIDENCE', 'EXTERNAL_DB_NAME', 'STATUS',
+			 'IS_CURRENT' ], @_ );
   }
-
+  
   if( $exons ) {
     $self->{'_trans_exon_array'} = $exons;
     $self->recalculate_coordinates();
@@ -566,19 +574,23 @@ sub display_xref {
 =cut
 
 sub translation {
-  my $self = shift;
-  if( @_ ) {
-    my $value = shift;
-    if( defined($value) &&
-        (!ref($value) || !$value->isa('Bio::EnsEMBL::Translation'))) {
+  my ( $self, $value ) = @_;
+
+  if ( defined($value) ) {
+    if ( !ref($value) || !$value->isa('Bio::EnsEMBL::Translation') ) {
       throw("Bio::EnsEMBL::Translation argument expected.");
     }
+
     $self->{'translation'} = $value;
-  } elsif( !exists($self->{'translation'}) and defined($self->adaptor())) {
+
+  } elsif ( !exists( $self->{'translation'} )
+    && defined( $self->adaptor() ) )
+  {
     $self->{'translation'} =
-      $self->adaptor()->db()->get_TranslationAdaptor()->
-        fetch_by_Transcript( $self );
+      $self->adaptor()->db()->get_TranslationAdaptor()
+      ->fetch_by_Transcript($self);
   }
+
   return $self->{'translation'};
 }
 
@@ -905,10 +917,11 @@ sub coding_region_end {
 =cut
 
 sub edits_enabled {
-  my $self = shift;
+  my ( $self, $boolean ) = @_;
 
-  if(@_) {
-    $self->{'edits_enabled'} = shift;
+  if ( defined($boolean) ) {
+    $self->{'edits_enabled'} = $boolean;
+
     # flush cached values that will be different with/without edits
     $self->{'cdna_coding_start'} = undef;
     $self->{'cdna_coding_end'}   = undef;
@@ -1003,41 +1016,40 @@ sub get_all_Attributes {
 =cut
 
 sub add_Attributes {
-  my $self = shift;
+  my $self    = shift;
   my @attribs = @_;
 
-  if( ! exists $self->{'attributes'} ) {
+  if ( !exists $self->{'attributes'} ) {
     $self->{'attributes'} = [];
   }
 
   my $seq_change = 0;
-  for my $attrib ( @attribs ) {
-    if( ! $attrib->isa( "Bio::EnsEMBL::Attribute" )) {
-     throw( "Argument to add_Attribute has to be an Bio::EnsEMBL::Attribute" );
+  for my $attrib (@attribs) {
+    if ( !$attrib->isa("Bio::EnsEMBL::Attribute") ) {
+      throw("Argument to add_Attribute "
+          . "has to be an Bio::EnsEMBL::Attribute" );
     }
-    push( @{$self->{'attributes'}}, $attrib );
-    if($attrib->code eq "_rna_edit"){
+    push( @{ $self->{'attributes'} }, $attrib );
+    if ( $attrib->code eq "_rna_edit" ) {
       $seq_change = 1;
     }
   }
-  if($seq_change){
-    foreach my $ex(@{$self->get_all_Exons()}){
+  if ($seq_change) {
+    foreach my $ex ( @{ $self->get_all_Exons() } ) {
       $ex->{'_trans_exon_array'} = undef;
-      $ex->{'_seq_cache'} = undef;
+      $ex->{'_seq_cache'}        = undef;
     }
     my $translation = $self->translation;
-    if(defined($translation)){
-      $translation->{seq}=undef;
+    if ( defined($translation) ) {
+      $translation->{seq} = undef;
     }
   }
 
   # flush cdna coord cache b/c we may have added a SeqEdit
   $self->{'cdna_coding_start'} = undef;
-  $self->{'cdna_coding_end'} = undef;
+  $self->{'cdna_coding_end'}   = undef;
   $self->{'transcript_mapper'} = undef;
-
-  return;
-}
+} ## end sub add_Attributes
 
 
 =head2 add_Exon
@@ -1129,11 +1141,20 @@ sub add_Exon{
 
 =head2 get_all_Exons
 
-  Arg [1]    : none
-  Example    : my @exons = @{$transcript->get_all_Exons()};
-  Description: Returns an listref of the exons in this transcipr in order.
-               i.e. the first exon in the listref is the 5prime most exon in 
-               the transcript.
+  Arg [CONSTITUTIVE]    : Boolean
+                          Only return constitutive exons if true (non-zero)
+
+  Examples  :   my @exons = @{ $transcript->get_all_Exons() };
+
+                my @exons =
+                  @{ $transcript->get_all_Exons( -constitutive => 1 ) };
+
+  Description: Returns an listref of the exons in this transcript
+               in order, i.e. the first exon in the listref is the
+               5prime most exon in the transcript.  Only returns
+               constitutive exons if the CONSTITUTIVE argument is
+               true.
+
   Returntype : a list reference to Bio::EnsEMBL::Exon objects
   Exceptions : none
   Caller     : general
@@ -1142,14 +1163,56 @@ sub add_Exon{
 =cut
 
 sub get_all_Exons {
-   my ($self) = @_;
-   if( ! defined $self->{'_trans_exon_array'} && defined $self->adaptor() ) {
-     $self->{'_trans_exon_array'} = $self->adaptor()->db()->
-       get_ExonAdaptor()->fetch_all_by_Transcript( $self );
-   }
-   return $self->{'_trans_exon_array'};
-}
+  my ( $self, @args ) = @_;
 
+  my $constitutive;
+  if (@args) {
+    $constitutive = rearrange( 'CONSTITUTIVE', @args );
+  }
+
+  if (!defined( $self->{'_trans_exon_array'} )
+    && defined( $self->adaptor() ) )
+  {
+    $self->{'_trans_exon_array'} =
+      $self->adaptor()->db()->get_ExonAdaptor()
+      ->fetch_all_by_Transcript($self);
+  }
+
+  my @result;
+  if ( defined($constitutive) && $constitutive != 0 ) {
+    foreach my $exon ( @{ $self->{'_trans_exon_array'} } ) {
+      if ( $exon->is_constitutive() ) {
+        push( @result, $exon );
+      }
+    }
+  } else {
+    @result = @{ $self->{'_trans_exon_array'} };
+  }
+
+  return \@result;
+} ## end sub get_all_Exons
+
+=head2 get_all_constitutive_Exons
+
+  Arg        :  None
+
+  Examples   :  my @exons = @{ $transcript->get_all_constitutive_Exons() };
+
+  Description:  Returns an listref of the constitutive exons in this
+                transcript in order, i.e. the first exon in the
+                listref is the 5prime most exon in the transcript.
+
+  Returntype : a list reference to Bio::EnsEMBL::Exon objects
+  Exceptions : none
+  Caller     : general
+  Status     : Stable
+
+=cut
+
+sub get_all_constitutive_Exons {
+  my ($self) = @_;
+  return $self->get_all_Exons( '-constitutive' => 1 );
+}
 
 =head2 get_all_Introns
 
@@ -1226,18 +1289,19 @@ sub length {
 
 =cut
 
-sub flush_Exons{
-   my ($self,@args) = @_;
-   $self->{'transcript_mapper'} = undef;
-   $self->{'coding_region_start'} = undef;
-   $self->{'coding_region_end'} = undef;
-   $self->{'cdna_coding_start'} = undef;
-   $self->{'cdna_coding_end'} = undef;
-   $self->{'start'} = undef;
-   $self->{'end'} = undef;
-   $self->{'strand'} = undef;
+sub flush_Exons {
+  my ($self) = @_;
 
-   $self->{'_trans_exon_array'} = [];
+  $self->{'transcript_mapper'}   = undef;
+  $self->{'coding_region_start'} = undef;
+  $self->{'coding_region_end'}   = undef;
+  $self->{'cdna_coding_start'}   = undef;
+  $self->{'cdna_coding_end'}     = undef;
+  $self->{'start'}               = undef;
+  $self->{'end'}                 = undef;
+  $self->{'strand'}              = undef;
+
+  $self->{'_trans_exon_array'} = [];
 }
 
 
@@ -1391,13 +1455,13 @@ sub get_all_translateable_Exons {
 
   Args       : none
   Example    : none
-  Description: return the peptide (plus eventuel stop codon) for this 
-               transcript. Does N padding of non phase matching exons. 
-               It uses translateable_seq internally.
-               Returns undef if this Transcript does not have a translation
-               (i.e. pseudogene).
+  Description: Return the peptide (plus eventual stop codon) for
+               this transcript.  Does N-padding of non-phase
+               matching exons.  It uses translateable_seq
+               internally.  Returns undef if this Transcript does
+               not have a translation (i.e. pseudogene).
   Returntype : Bio::Seq or undef
-  Exceptions : If no Translation is set in this Transcript
+  Exceptions : none
   Caller     : general
   Status     : Stable
 
@@ -1406,54 +1470,71 @@ sub get_all_translateable_Exons {
 sub translate {
   my ($self) = @_;
 
-  if(!$self->translation()) {
-    return undef;
-  }
-
+  if ( !defined( $self->translation() ) ) { return undef }
 
   my $mrna = $self->translateable_seq();
 
-  my $display_id = $self->translation->display_id || scalar($self->translation);
+  # Alternative codon tables (such as the mitochondrial codon table)
+  # can be specified for a sequence region via the seq_region_attrib
+  # table.  A list of codon tables and their codes is at:
+  # http://www.ncbi.nlm.nih.gov/htbin-post/Taxonomy/wprintgc?mode=c
 
-  # remove final stop codon from the mrna if it is present
-  # produced peptides will not have '*' at end
-  # if terminal stop codon is desired call translatable_seq directly
-  # and produce a translation from it
+  my $codon_table_id;
+  my ( $complete5, $complete3 );
+  if ( defined( $self->slice() ) ) {
+    my $attrib;
 
-  if( CORE::length( $mrna ) % 3 == 0 ) {
-    $mrna =~ s/TAG$|TGA$|TAA$//i;
+    ($attrib) = @{ $self->slice()->get_all_Attributes('codon_table') };
+    if ( defined($attrib) ) {
+      $codon_table_id = $attrib->value();
+    }
+
+    ($attrib) = @{ $self->slice()->get_all_Attributes('complete5') };
+    if ( defined($attrib) ) {
+      $complete5 = $attrib->value();
+    }
+
+    ($attrib) = @{ $self->slice()->get_all_Attributes('complete3') };
+    if ( defined($attrib) ) {
+      $complete3 = $attrib->value();
+    }
+  }
+  $codon_table_id ||= 1;    # default vertebrate codon table
+
+  # Remove final stop codon from the mrna if it is present.  Produced
+  # peptides will not have '*' at end.  If terminal stop codon is
+  # desired call translatable_seq directly and produce a translation
+  # from it.
+
+  if ( CORE::length($mrna) % 3 == 0 ) {
+    my $codon_table =
+      Bio::Tools::CodonTable->new( -id => $codon_table_id );
+
+    if ( $codon_table->is_ter_codon( substr( $mrna, -3, 3 ) ) ) {
+      substr( $mrna, -3, 3, '' );
+    }
   }
 
-  if(CORE::length($mrna) <1){
-    return undef; 
-  }
+  if ( CORE::length($mrna) < 1 ) { return undef }
+
+  my $display_id = $self->translation->display_id()
+    || scalar( $self->translation() );
 
   my $peptide = Bio::Seq->new( -seq      => $mrna,
-                               -moltype  => "dna",
+                               -moltype  => 'dna',
                                -alphabet => 'dna',
                                -id       => $display_id );
 
-  # Alternative codon tables (such as the mitochondrial codon table) can
-  # be sepcified for a sequence region via the seq_region_attrib table.
-  # A list of codon tables and their codes is at:
-  # http://www.ncbi.nlm.nih.gov/htbin-post/Taxonomy/wprintgc?mode=c
+  my $translation =
+    $peptide->translate( undef, undef, undef, $codon_table_id, undef,
+                         undef, $complete5, $complete3 );
 
-  my $codon_table;
-  if($self->slice()) {
-    my ($attrib) = @{$self->slice()->get_all_Attributes('codon_table')};
-    $codon_table = $attrib->value() if($attrib);
-  }
-
-  $codon_table ||= 1; # default vertebrate codon table
-
-  my $translation = $peptide->translate(undef,undef,undef,$codon_table);
-
-  if($self->edits_enabled()) {
-    $self->translation()->modify_translation( $translation );
+  if ( $self->edits_enabled() ) {
+    $self->translation()->modify_translation($translation);
   }
 
   return $translation;
-}
+} ## end sub translate
 
 
 =head2 seq
@@ -1883,11 +1964,11 @@ sub transform {
 
 
   # flush cached internal values that depend on the exon coords
-  $new_transcript->{'transcript_mapper'} = undef;
+  $new_transcript->{'transcript_mapper'}   = undef;
   $new_transcript->{'coding_region_start'} = undef;
-  $new_transcript->{'coding_region_end'} = undef;
-  $new_transcript->{'cdna_coding_start'} = undef;
-  $new_transcript->{'cdna_coding_end'} = undef;
+  $new_transcript->{'coding_region_end'}   = undef;
+  $new_transcript->{'cdna_coding_start'}   = undef;
+  $new_transcript->{'cdna_coding_end'}     = undef;
 
   return $new_transcript;
 }
@@ -1949,11 +2030,11 @@ sub transfer {
 
 
   # flush cached internal values that depend on the exon coords
-  $new_transcript->{'transcript_mapper'} = undef;
+  $new_transcript->{'transcript_mapper'}   = undef;
   $new_transcript->{'coding_region_start'} = undef;
-  $new_transcript->{'coding_region_end'} = undef;
-  $new_transcript->{'cdna_coding_start'} = undef;
-  $new_transcript->{'cdna_coding_end'} = undef;
+  $new_transcript->{'coding_region_end'}   = undef;
+  $new_transcript->{'cdna_coding_start'}   = undef;
+  $new_transcript->{'cdna_coding_end'}     = undef;
 
   return $new_transcript;
 }
@@ -1974,64 +2055,71 @@ sub transfer {
 =cut
 
 sub recalculate_coordinates {
-  my $self = shift;
+  my ($self) = @_;
 
   my $exons = $self->get_all_Exons();
 
-  return if(!$exons || !@$exons);
+  if ( !$exons || !@$exons ) { return }
 
   my ( $slice, $start, $end, $strand );
+
   my $e_index;
-  for ($e_index=0; $e_index<@$exons; $e_index++) {
+  for ( $e_index = 0; $e_index < @$exons; $e_index++ ) {
     my $e = $exons->[$e_index];
     # Skip missing or unmapped exons!
-    next if (!defined($e) or !defined($e->start));
-    $slice = $e->slice();
+    next if ( !defined($e) or !defined( $e->start ) );
+    $slice  = $e->slice();
     $strand = $e->strand();
-    $start = $e->start();
-    $end = $e->end();
+    $start  = $e->start();
+    $end    = $e->end();
     last;
   }
 
   my $transsplicing = 0;
 
   # Start loop after first exon with coordinates
-  for (; $e_index<@$exons; $e_index++) {
+  for ( ; $e_index < @$exons; $e_index++ ) {
     my $e = $exons->[$e_index];
+
     # Skip missing or unmapped exons!
-    next if (!defined($e) or !defined($e->start));
-    if( $e->start() < $start ) {
+    if ( !defined($e) or !defined( $e->start ) ) { next }
+
+    if ( $e->start() < $start ) {
       $start = $e->start();
     }
 
-    if( $e->end() > $end ) {
+    if ( $e->end() > $end ) {
       $end = $e->end();
     }
 
-    if( $slice && $e->slice() && $e->slice()->name() ne $slice->name() ) {
-      throw( "Exons with different slices not allowed on one Transcript" );
+    if ( $slice
+      && $e->slice()
+      && $e->slice()->name() ne $slice->name() )
+    {
+      throw("Exons with different slices "
+          . "are not allowed on one Transcript" );
     }
 
-    if( $e->strand() != $strand ) {
+    if ( $e->strand() != $strand ) {
       $transsplicing = 1;
     }
   }
-  if( $transsplicing ) {
-    warning( "Transcript contained trans splicing event" );
+  if ($transsplicing) {
+    warning("Transcript contained trans splicing event");
   }
 
-  $self->start( $start );
-  $self->end( $end );
-  $self->strand( $strand );
-  $self->slice( $slice );
+  $self->start($start);
+  $self->end($end);
+  $self->strand($strand);
+  $self->slice($slice);
 
   # flush cached internal values that depend on the exon coords
-  $self->{'transcript_mapper'} = undef;
+  $self->{'transcript_mapper'}   = undef;
   $self->{'coding_region_start'} = undef;
-  $self->{'coding_region_end'} = undef;
-  $self->{'cdna_coding_start'} = undef;
-  $self->{'cdna_coding_end'} = undef;
-}
+  $self->{'coding_region_end'}   = undef;
+  $self->{'cdna_coding_start'}   = undef;
+  $self->{'cdna_coding_end'}     = undef;
+} ## end sub recalculate_coordinates
 
 
 =head2 display_id
