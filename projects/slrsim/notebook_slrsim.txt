@@ -483,3 +483,9 @@ What did I do:
  - Checking on which summary statistics depend on the proportion of pos-sel sites:
    -> DOES depend: ppv, npv
    -> DOES NOT depend: spec, sens
+
+
+### 2010-01-20 ###
+
+What did I do:
+ - Changing ComparaUtils to automatically import parameters from the sim_params tag.
