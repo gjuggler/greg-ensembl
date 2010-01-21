@@ -40,17 +40,22 @@ if (!exists('all_data')) {
   all_data = get_data_alt()
 
   # Touch-ups.
-  all_data$program = rep('slr',nrow(all_data))
-  all_data[all_data$parameter_set==3,]$program = 'paml'
-  all_data$program = as.factor(all_data$program)
-  all_data[is.na(all_data$ins_rate),]$ins_rate = 0
-  all_data[is.na(all_data$del_rate),]$del_rate = 0
+  #all_data[is.na(all_data$ins_rate),]$ins_rate = 0
+  #all_data[is.na(all_data$del_rate),]$del_rate = 0
+}
+
+is.paml = function(df) {
+  if (grepl("paml",df[1,]$parameter_set_name,ignore.case=T)) {
+    return(TRUE)
+  } else {
+    return(FALSE)
+  } 
 }
 
 df.stats = function(df,thresh=3.8,paml_thresh=0.95,type='all') {
 
   aln_thresh = 1
-  if (df$program[1] == 'paml') {
+  if (is.paml(df)) {
     thresh = paml_thresh
     aln_thresh = -1
   }
@@ -93,32 +98,34 @@ df.stats = function(df,thresh=3.8,paml_thresh=0.95,type='all') {
 
 df.fwer = function(df,thresh=3.8,paml_thresh=0.95) {
   aln_thresh = 1
-  if (df$program[1] == 'paml') {
+  if (is.paml(df)) {
     thresh = paml_thresh
     aln_thresh = -1
   } 
 
   df.fp = function(df,thresh) {
     fps = nrow(subset(df,true_type!="positive1" & lrt>thresh & aln>aln_thresh))
-    if(fps>0)
-      return(1)
-    return(0)
+    return(fps)
   }
 
   error_by_protein = by(df,df$node_id,df.fp,thresh=thresh)
-  return(list(fwer=sum(error_by_protein)/length(error_by_protein)))
+  max_errors = max(error_by_protein)
+  min_errors = min(error_by_protein)
+  return(list(fwer=sum(error_by_protein >= 1)/length(error_by_protein),
+              max=max_errors,min=min_errors))
 }
 
 df.cor = function(df) {
   return(list(cor=cor(df$true,df$aln,method='spearman')))
 }
 
+
 # Go through each experiment, calculate summary stats, and build a data frame.
 summarize.results = function(data,thresh=3.8,paml_thresh=0.95) {
 
   # Paste together some metadata so that we have one ID per experiment.
-  attrs = c('sim_name','program','ins_rate','sim_length')
-  ids = paste(data$sim_name,data$parameter_set,data$ins_rate,data$sim_length)
+  attrs = c('sim_name','parameter_set_name','ins_rate','tree_length')
+  ids = paste(data$sim_name,data$parameter_set_name,data$ins_rate,data$tree_length)
   unique_ids = unique(ids)
 
   for (my_id in unique_ids) {
@@ -145,42 +152,19 @@ summarize.results = function(data,thresh=3.8,paml_thresh=0.95) {
   return(res.df)
 }
 
-slr.roc = function(df) {
+plot.roc = function(df,color='black',lty='solid',lwd=1,overlay=T) {
   require(RColorBrewer)       
 
-  lengths = unique(df$sim_length)
-  indels = unique(df$ins_rate)
-  psets = unique(df$parameter_set)
-
-  length.col = brewer.pal(length(lengths),"Greens")
-  indel.col = brewer.pal(length(indels),"Reds")
-  pset.lty = c('solid','dashed')
-  plot(c(),xlim=c(0,0.1),ylim=c(0,1))
-
-  # Hold tree size const, vary indel rate.
-  for (i in 1:length(psets)) {
-    pset = psets[i]
-    for (j in 1:length(indels)) {
-      x = indels[i]
-      slr = subset(df,parameter_set==pset & sim_name=='art' & ins_rate==x & sim_length==1.1)
-      if (pset == 2) {
-        slr$lrt = sign(slr$aln-1)*slr$lrt
-      }
-      a = get.perf(slr)
-      plot(a,col=indel.col[i],lty=pset.lty[i],add=T)
-    }
+  if (!overlay) {
+    plot(c(),xlim=c(0,0.1),ylim=c(0,1))
   }
 
-
-  # Hold indel rate const, vary tree size.
-  for (i in 1:length(lengths)) {
-    x = lengths[i]
-    slr = subset(df,parameter_set==2 & sim_name=='art' & ins_rate==0 & sim_length==x)
-    slr$lrt = sign(slr$aln-1)*slr$lrt
-    a = get.perf(slr)
-    #plot(a,col=length.col[i],add=T)
+  if (!is.paml(df)) {
+    # Create a signed LRT if it's SLR-based data.
+    df$lrt = sign(df$aln-1)*df$lrt
   }
-
+  a = get.perf(df)
+  plot(a,col=color,lty=lty,lwd=lwd,add=overlay)
 }
 
 get.perf = function(df,...) {
@@ -190,4 +174,72 @@ get.perf = function(df,...) {
   pred = prediction(df$lrt,truth)
   perf = performance(pred,measure="tpr",x.measure="fpr")
   return(perf)
+}
+
+empty.plot = function() {
+  plot(c(),xlim=c(0,0.1),ylim=c(0,1),xlab='',ylab='')
+}
+
+do.some.plots = function(data) {
+
+  slr.lty = 'solid'
+  paml.lty = 'dashed'
+  leg.txt = c('SLR','PAML M3')
+  leg.lty = c(slr.lty,paml.lty)
+  # Massingham 2005 simulation A
+  empty.plot()
+  title(main="Massingham 2005 A",xlab="Type I Error",ylab="True Positives Rate")
+  legend('bottomright',legend=leg.txt,lty=leg.lty)
+  d = subset(data,sim_name=="mass_05_A" & parameter_set_name=="SLR")
+  plot.roc(d,lty=slr.lty)
+  d = subset(data,sim_name=="mass_05_A" & parameter_set_name=="PAML M3")
+  plot.roc(d,lty=paml.lty)
+  # Massingham 2005 simulation B
+  empty.plot()
+  title(main="Massingham 2005 B",xlab="Type I Error",ylab="True Positives Rate")
+  legend('bottomright',legend=leg.txt,lty=leg.lty)
+  d = subset(data,sim_name=="mass_05_B" & parameter_set_name=="SLR")
+  plot.roc(d,lty=slr.lty)
+  d = subset(data,sim_name=="mass_05_B" & parameter_set_name=="PAML M3")
+  plot.roc(d,lty=paml.lty)
+
+
+  # Xenopus vs Human bglobin simulations
+  empty.plot()
+  rate.cols = 'Set1'
+  hum.lty = 'solid'
+  xen.lty = 'dashed'
+  leg.txt = c('Human','Xenopus')
+  leg.lty = c(hum.lty,xen.lty)
+
+  bglobin.data = subset(data,sim_name=='bglobin_ref_hum' | sim_name=='bglobin_ref_xen')
+  bglobin.data = subset(bglobin.data,parameter_set_name=="SLR")
+  rate.list = unique(bglobin.data$ins_rate)
+  cols = brewer.pal(length(rate.list),rate.cols)
+  for (i in 1:length(rate.list)) {
+    rate = rate.list[i]
+    data.sub = subset(bglobin.data,ins_rate == rate)
+
+    d = subset(data.sub,sim_name=='bglobin_ref_hum')
+    plot.roc(d,lty=hum.lty,col=cols[i])
+
+    d = subset(data.sub,sim_name=='bglobin_ref_xen')
+    plot.roc(d,lty=xen.lty,col=cols[i])
+  }
+
+  title(main='Anisimova-M3 with B-globain tree (n=17)',xlab='Type I Error',ylab='Sensitivity')
+  legend('bottomright',title='Reference species',bg='white',
+    legend=leg.txt,lty=leg.lty)
+  legend('bottomright',title='Indel rate',inset=c(0,0.2),bg='white',
+    legend=unlist(rate.list),lty='solid',col=cols)
+  # Try plotting a tree.
+  library(ape)
+  library(Hmisc)
+  plot.tree = function() {
+    tree = read.tree('trees/anisimova_01_bglobin.nh')
+    plot.phylo(tree,cex=0.3)
+  }
+  subplot(plot.tree,x=0.087,y=0.65,size=c(1.5,1.5))
+
+
 }

@@ -143,7 +143,7 @@ sub simulate_alignment_indelible {
   my $tree = shift;
   my $params = shift;
 
-  $tree = Bio::EnsEMBL::Compara::TreeUtils->scale($tree,1.95);
+  #$tree = Bio::EnsEMBL::Compara::TreeUtils->scale($tree,1.95);
 
   my $newick = $tree->newick_format;
   # Add some padding to zero-length branches.
@@ -443,6 +443,7 @@ pconst = function(x,w) {
 }
   ^;
   my $f = "";
+
   if ($function =~ m/M3/i) {
     return $self->get_m3_probs($params);
   } elsif ($function =~ m/M8/i) {

@@ -47,7 +47,8 @@ sub replace {
   return $result;
 }
 
-create_simsets();
+#create_simsets();
+x_simsets();
 
 sub create_simsets {
   my $i=1;
@@ -200,6 +201,66 @@ if ($clean) {
   $dba->dbc->do("truncate table sequence;");
 }
 
+sub x_simsets {
+  my $base_p = {
+    simulation_program => 'indelible',
+    simulation_replicates => 100,
+    sim_file => 'artificial.nh',
+    seq_length => 500,
+    tree_mult => 1,
+    ins_rate => 0.05,
+    del_rate => 0.05
+  };
+
+  my $full = '2x_v.nh';
+  my $nox = '2x_nox.nh';
+  my $primates = '2x_p.nh';
+  my $glires = '2x_g.nh';
+  my $fortyfourmammals = '44mammals.nh';
+  my $ensembl = 'ensembl.nh';
+
+  my $distr_lognormal = {
+    omega_distribution => 'lognormal',
+    meanlog => -4.079,
+    sdlog => 1.23
+  };
+
+  my $s_params;
+
+  foreach my $mult (0.1, 0.5, 1, 2, 5) {
+    $base_p = replace($base_p,{tree_mult => $mult});
+
+    $s_params = {
+      sim_name => '2x full',
+      sim_file => $full,
+      sim_ref => 'human'
+    };
+    push @simulation_sets, replace($base_p,$distr_lognormal,$s_params);
+    
+    $s_params = {
+      sim_name => '2x no2x',
+      sim_file => $nox,
+      sim_ref => 'human'
+    };
+    push @simulation_sets, replace($base_p,$distr_lognormal,$s_params);
+    
+    $s_params = {
+      sim_name => '2x primates',
+      sim_file => $primates,
+      sim_ref => 'human'
+    };
+    push @simulation_sets, replace($base_p,$distr_lognormal,$s_params);
+    
+    $s_params = {
+      sim_name => '2x glires',
+      sim_file => $glires,
+      sim_ref => 'mouse'
+    };
+    push @simulation_sets, replace($base_p,$distr_lognormal,$s_params);
+  }
+
+}
+
 # The list of simulation replicates to use. These will be stored as tags in the XYZ_tag table,
 # and accessible using the $node->get_tagvalue("tag_key") method.
 # my @simulation_sets = sort grep {$_ =~ /simset_/} keys %{$params};
@@ -209,6 +270,7 @@ foreach my $params (@simulation_sets) {
   my $sim_set = $params->{'sim_name'};
   my $replicates = $params->{'simulation_replicates'};
   my $tree_length = $params->{'sim_length'};
+  my $tree_mult = $params->{'tree_mult'};
   my $file = $tree_dir.'/'.$params->{'sim_file'};  
   open(IN,"$file");
   my $newick_str = join("",<IN>);
@@ -229,10 +291,12 @@ foreach my $params (@simulation_sets) {
     if ($tree_length) {
       $node = Bio::EnsEMBL::Compara::TreeUtils->scale_to($node,$tree_length);
     }
+    if ($tree_mult) {
+      $node = Bio::EnsEMBL::Compara::TreeUtils->scale($node,$tree_mult);
+    }
     my $length = Bio::EnsEMBL::Compara::TreeUtils->total_distance($node);
+    print "  -> $length\n";
 
-    #print "Rescaled: ". Bio::EnsEMBL::Compara::TreeUtils->to_newick($node)."\n";
-    
     # Go through each leaf and store the member objects.
     foreach my $leaf ($node->leaves) {
       $leaf->stable_id($leaf->name);

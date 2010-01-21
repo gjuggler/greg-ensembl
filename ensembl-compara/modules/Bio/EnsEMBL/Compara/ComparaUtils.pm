@@ -1203,6 +1203,26 @@ sub string_to_hash {
   return {};
 }
 
+sub load_params_from_tree_tags {
+  my $class = shift;
+  my $dba = shift;
+  my $node_id = shift;
+
+  my $pta = $dba->get_ProteinTreeAdaptor;
+  my $tree = $pta->fetch_node_by_node_id($node_id);
+
+  my $tags = $tree->get_tagvalue_hash;
+
+  my @param_objs;
+  foreach my $tag (keys %$tags) {
+    if ($tag =~ /params/i) {
+      push @param_objs,$class->load_params_from_tag($tree,$tag);
+    }
+  }
+
+  return $class->replace_params(@param_objs);
+}
+
 sub load_params_from_tag {
   my $class = shift;
   my $tree = shift;
@@ -1224,7 +1244,7 @@ sub load_params_from_param_set {
   my $cmd = qq^SELECT parameter_value FROM parameter_set WHERE parameter_set_id=$param_set_id AND parameter_name="params";  ^;
   my $sth = $dbc->prepare($cmd);
   $sth->execute();
-  my $row = "";
+  my @row;
   while (@row = $sth->fetchrow_array) {
     $params = eval($row[0]);
   }
@@ -1233,7 +1253,7 @@ sub load_params_from_param_set {
   my $cmd = qq^SELECT parameter_value FROM parameter_set WHERE parameter_set_id=$param_set_id AND parameter_name="name";  ^;
   $sth = $dbc->prepare($cmd);
   $sth->execute();
-  my $row = "";
+  my @row;
   while (@row = $sth->fetchrow_array) {
     $params->{parameter_set_name} = $row[0];
   }
@@ -1242,21 +1262,29 @@ sub load_params_from_param_set {
   return $params;
 }
 
+
 sub replace_params {
   my $class = shift;
-  my $paramsA = shift;
-  my $paramsB = shift;
+  my @params = @_;
 
-  my $new_params = {};
-
-  foreach my $key (keys %{$paramsA}) {
-    $new_params->{$key} = $paramsA->{$key};
+  my $final_params = shift @params;
+  while (@params) {
+    my $p = shift @params;
+    if (!ref $p) {
+      $p = eval($p);
+    }
+    
+    my $new_params = {};
+    foreach my $key (keys %{$final_params}) {
+      $new_params->{$key} = $final_params->{$key};
+    }
+    foreach my $key (keys %{$p}) {
+      $new_params->{$key} = $p->{$key};
+    }
+    $final_params = $new_params;
   }
-  foreach my $key (keys %{$paramsB}) {
-    $new_params->{$key} = $paramsB->{$key};
-  }
 
-  return $new_params;
+  return $final_params;
 }
 
 # Loads a given tree and alignment (with optional CDNA alignment too) into a ProteinTree object, ready to be stored in the Compara database.
