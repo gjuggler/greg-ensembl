@@ -119,3 +119,20 @@ What I did:
    -> mysql://ens-research/gj1_compara_54: NEW version of 2xmammals analysis.
  - Loaded the 2xmammals gold into ens-research/gj1_2xmammals_gold.
  - Re-ran the data collection and dumping scripts for the Broad colleagues.   
+   -> These didn't really work... so I just gave him the old ensembl_genes.tsv file and promsied an update soon.
+
+### 2010-01-20 ###
+ - Creating the database for the latest E-SLR run. Will be stored in mysql://ens-research/gj1_eslr .
+   -> bash> mysql -uensadmin -pensembl -hens-research -A gj1_eslr < ~/scratch/ensembl_compara_56.sql
+ - Make note of possible pos-sel validation, from sabeti Science paper: PCDH15 in human.
+
+### 2010-01-21 ###
+
+What I did:
+ - Kept an eye on the running e-slr pipeline. Should be done in a day or two...
+ - Group meeting. Notes:
+   -> Ewan still wants the two sets of GO enrichments. Consider just making this from 2xmammals gold data, with an update to follow from the latest sitewise run.
+   -> Think of statistics we can use to characterize the clustering of pos-sel sites.
+      -> For each pos-sel site, what is the chance that at least one site within N codons is also pos-sel?
+      -> "", what is the chance that at least one site is within the XYZ% percentile of the lognormal distribution?
+      -> What is the mantel t-test clustering coefficient for the gene?

@@ -11,38 +11,141 @@ use Bio::Greg::EslrUtils;
 use File::Path;
 use File::Basename;
 
-my $url = 'mysql://ensadmin:ensembl@compara2:3306/gj1_eslr';
+my ($url) = undef;
+GetOptions('url=s' => \$url);
 my $clean = 1;
 my $dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new(-url => $url);
 my $dbc = $dba->dbc;
 my $analysis_hash; # Hash to store mapping between analysis names and ID numbers.
 
+# Clean up our mess.
+clean_tables();
 
-###
-# Most of the pipeline is defined with the following function calls.
-###
-
+# Define parameters (species sets, filtering options, etc).
 parameter_sets();
+
+# Create analyses.
 node_sets();
 omegas();
 mapping();
 
+# Connect the dots.
 connect_analysis("NodeSets","Omegas",1);
 connect_analysis("Omegas","Mapping",1);
 
-#print_database_tree();
+sub parameter_sets {
+  my $params;
+  my $base_params={};
 
-
-sub clean_tables {
-  if ($clean) {    
-    my @truncate_tables = qw^
-      analysis_job dataflow_rule hive
-      sitewise_omega
-      parameter_set
-      node_set_member node_set
-      ^;
-    map {print "$_\n";eval {$dba->dbc->do("truncate table $_");}} @truncate_tables;
+  # Subroutines to return a list of taxon IDs with specific features.
+  sub clade_taxon_ids {
+    my $clade = shift || 1;
+    my @genomes = Bio::EnsEMBL::Compara::ComparaUtils->get_genomes_within_clade($dba,$clade);
+    my @taxon_ids = map {$_->taxon_id} @genomes;
+    return @taxon_ids;
   }
+  sub coverage_taxon_ids {
+    my $coverage = shift;
+
+    my @output;
+    my @all_gdb = Bio::EnsEMBL::Compara::ComparaUtils->get_genomes_within_clade($dba,1);
+    foreach my $gdb (@all_gdb) {
+      # This is finicky: we need to call the "db_adaptor" method to get the Bio::EnsEMBL::DBSQL::DBAdaptor object, and then the meta container.
+      my $meta = $gdb->db_adaptor->get_MetaContainer;
+      my $str = @{$meta->list_value_by_key('assembly.coverage_depth')}[0];
+      push @output, $gdb->taxon_id if ($str eq $coverage);
+    }
+    return @output;
+  }
+  sub subtract {
+    my $list_a = shift;
+    my @remove_us = @_;
+    my $hash;
+    map {$hash->{$_}=1} @$list_a;
+    foreach my $list_b (@remove_us) {
+      map {delete $hash->{$_}} @$list_b;
+    }
+    return keys %$hash;
+  }
+
+  my @all = clade_taxon_ids();
+  my @mamms = clade_taxon_ids("Eutheria");
+  my $not_mammals = join(",",subtract(\@all,\@mamms));
+
+  my $everything = join(",",clade_taxon_ids());
+  my $mammals = join(",",clade_taxon_ids("Eutheria"));
+  my $primates = join(",",clade_taxon_ids("Primates"));
+  my $glires = join(",",clade_taxon_ids("Glires"));
+  my $laurasiatheria = join(",",clade_taxon_ids("Laurasiatheria"));
+  my $afrotheria = join(",",clade_taxon_ids("Afrotheria"));
+
+  my $sauria = join(",",clade_taxon_ids("Sauria"));
+  my $fish = join(",",clade_taxon_ids("Clupeocephala"));
+  
+  # Get only hi-coverage genomes.
+  my $hi_coverage = join(",",coverage_taxon_ids("high"));
+  my $lo_coverage = join(",",coverage_taxon_ids("low"));
+
+  $params = {
+    parameter_set_name => "Mammals",
+    keep_species => $mammals,
+  };
+  $params = _combine_hashes($base_params,$params);
+  _add_parameter_set($params);
+
+  $params = {
+    parameter_set_name => "Primates",
+    keep_species => $primates
+  };
+  $params = _combine_hashes($base_params,$params);
+  _add_parameter_set($params);
+
+  $params = {
+    parameter_set_name => "Glires",
+    keep_species => $glires
+  };
+  $params = _combine_hashes($base_params,$params);
+  _add_parameter_set($params);
+
+  $params = {
+    parameter_set_name => "Laurasiatheria",
+    keep_species => $laurasiatheria
+  };
+  $params = _combine_hashes($base_params,$params);
+  _add_parameter_set($params);
+
+  $params = {
+    parameter_set_name => "No 2x",
+    keep_species => $hi_coverage,
+    remove_species => $not_mammals
+  };
+  $params = _combine_hashes($base_params,$params);
+  _add_parameter_set($params);
+
+  $params = {
+    parameter_set_name => "2x Only",
+    keep_species => $lo_coverage,
+    remove_species => $not_mammals
+  };
+  $params = _combine_hashes($base_params,$params);
+  _add_parameter_set($params);
+
+  $params = {
+    parameter_set_name => "No Primates",
+    keep_species => $mammals,
+    remove_species => $primates
+  };
+  $params = _combine_hashes($base_params,$params);
+  _add_parameter_set($params);
+
+  $params = {
+    parameter_set_name => "No Glires",
+    keep_species => $mammals,
+    remove_species => $glires
+  };
+  $params = _combine_hashes($base_params,$params);
+  _add_parameter_set($params);
+
 }
 
 sub node_sets {
@@ -54,121 +157,11 @@ sub node_sets {
   };
   _create_analysis($analysis_id,$logic_name,$module,$params,30,1);
 
+  # Add all root nodes to this analysis.
   $params = {};
-  my $cmd = "SELECT node_id FROM protein_tree_node WHERE parent_id=1 AND root_id=1;";
+  my $cmd = "SELECT node_id FROM protein_tree_node WHERE parent_id=1;";
   my @nodes = _select_node_ids($cmd);
   _add_nodes_to_analysis($analysis_id,$params,\@nodes);  
-}
-
-sub parameter_sets {
-  my $params;
-  my $base_params={};
-  
-  $params = {
-    parameter_set_id => 1,
-    parameter_set_name => "Mammals"
-  };
-  $params = _combine_hashes($base_params,$params);
-  _add_parameter_set($params);
-
-  $params = {
-    parameter_set_id => 2,
-    parameter_set_name => "Primates",
-    keep_species => "9606,9598,9544,9478,30611,30608"
-  };
-  $params = _combine_hashes($base_params,$params);
-  _add_parameter_set($params);
-
-  $params = {
-    parameter_set_id => 3,
-    parameter_set_name => "Glires",
-    keep_species => "10090,10116,43179,10020,10141,9986,9978"
-  };
-  $params = _combine_hashes($base_params,$params);
-  _add_parameter_set($params);
-
-
-  $params = {
-    parameter_set_id => 4,
-    parameter_set_name => "Laurasiatheria",
-    keep_species => "9365,42254,9796,59463,132908,30538,9739,9913,9615,9685"
-  };
-  $params = _combine_hashes($base_params,$params);
-  _add_parameter_set($params);
-
-  $params = {
-    parameter_set_id => 5,
-    parameter_set_name => "Afrotheria",
-    keep_species => "9813,9785,9731"
-  };
-  $params = _combine_hashes($base_params,$params);
-  _add_parameter_set($params);
-
-  $params = {
-    parameter_set_id => 6,
-    parameter_set_name => "No 2x",
-    keep_species => join(",",(9796, # horse
-			      9913, # cow
-			      9615, # dog
-			      9606, # human
-			      9600, # orang
-			      9593, # gorilla
-			      9598, # chimp
-			      9544, # macaque
-			      10090,# mouse
-			      10116,# rat
-			      10141,# guinea pig
-			      # Chicken and tetraodon are hi-Q but are being ignored in all sets.
- 			      ))
-  };
-  $params = _combine_hashes($base_params,$params);
-  _add_parameter_set($params);
-
-  $params = {
-    parameter_set_id => 7,
-    parameter_set_name => "2x Only",
-    keep_species => join(",",(9365,   # hedgehog
-			      42254,  # shrew
-			      59463,  # microbat
-			      132908, # megabat
-			      30538,  # alpaca
-			      9739,   # dolphin
-			      9685,   # cat
-			      9478,   # tarsier
-			      30611,  # bushbaby
-			      30608,  # mouse lemur
-			      43179,  # squirrel
-			      10020,  # kangaroo rat
-			      9986,   # rabbit
-			      9978,   # pika
-			      37347,  # tree shrew
-			      9361,   # armadillo
-			      9358,   # sloth
-			      9813,   # hyrax
-			      9785,   # elephant
-			      9371    # tenrec
-			      ))
-  };
-  $params = _combine_hashes($base_params,$params);
-  _add_parameter_set($params);
-
-  $params = {
-    parameter_set_id => 8,
-    parameter_set_name => "No Primates",
-    remove_species => join(",",(9606,   # human
-				9598,   # chimp
-				9544,   # macaque
-				9478,   # tarsier
-				30611,  # bushbaby
-				30608,  # mouse lemur
-				9593,   # gorilla
-				9600,   # orang
-				9483    # marmoset
-				))
-  };
-  $params = _combine_hashes($base_params,$params);
-  _add_parameter_set($params);
-
 }
 
 sub align {
@@ -197,32 +190,10 @@ sub omegas {
   my $module = "Bio::EnsEMBL::Compara::RunnableDB::Sitewise_dNdS";
   my $base_params = {
     parameter_sets => "all",
-    sequence_quality_filtering => 1,
-    alignment_quality_filtering => 1,
-    remove_species => join(",",(
-				# Outside of Eutheria:
-				9258, # platypus
-  			        13616,# opossum
-				9031, # chicken
-                                9103, # turkey!!
-				59729,# zebra finch
-				28377,# anole lizard
-				8364, # xenopus
-				69293,# stickleback
-				8090, # medaka
-				99883,# tetraodon
-				31033,# fugu
-				7955, # zebrafish
-				7719, # c. intestinalis
-				51511,# c. savignyi
-				7165, # anopheles
-				7159, # aedes
-				7227, # fruitfly
-				6239, # c. elegans
-				4932  # s. cerevisiae
-				))
+    sequence_quality_filtering => 0,
+    alignment_quality_filtering => 0,
     };
-  _create_analysis($analysis_id,$logic_name,$module,$base_params,400,1);
+  _create_analysis($analysis_id,$logic_name,$module,$base_params,500,1);
 
 }
 
@@ -236,12 +207,6 @@ sub mapping {
   _create_analysis($analysis_id,$logic_name,$module,$params,20,1);
 }
 
-sub print_database_tree {
-  my $nhx = Bio::EnsEMBL::Compara::ComparaUtils->get_genome_tree_nhx($dba,{labels => 'mnemonics',
-									   images => 1});
-
-  print $nhx."\n";
-}
 
 sub _combine_hashes {
   my @hashes = @_;
@@ -255,14 +220,16 @@ sub _combine_hashes {
   return $new_hash;
 }
 
-
+our $param_set_counter;
 sub _add_parameter_set {
   my $params = shift;
-  my $parameter_set_id = $params->{'parameter_set_id'};
-  
+
+  $param_set_counter = 1 if (!$param_set_counter);
+  my $parameter_set_id = $params->{'parameter_set_id'} || $param_set_counter++;
+  $params->{'parameter_set_id'} = $parameter_set_id;
+
   if (exists $params->{'parameter_set_name'} ) {
     my $parameter_set_name = $params->{'parameter_set_name'};
-    delete $params->{'parameter_set_name'};
     my $name_cmd = "REPLACE INTO parameter_set VALUES ('$parameter_set_id','name',\"$parameter_set_name\");";
     $dbc->do($name_cmd);
   }
@@ -271,6 +238,22 @@ sub _add_parameter_set {
   my $cmd = "REPLACE INTO parameter_set VALUES ('$parameter_set_id','params',\"$param_string\");";
   $dbc->do($cmd);
 }
+
+sub clean_tables {
+  if ($clean) {    
+    my @truncate_tables = qw^
+      analysis analysis_job analysis_stats dataflow_rule hive
+      parameter_set
+      node_set_member node_set
+      sitewise_omega sitewise_tag sitewise_genome sitewise_pfam
+      go_terms      
+      ^;
+    map {
+      #print "$_\n";
+      eval {$dba->dbc->do("truncate table $_");}} @truncate_tables;
+  }
+}
+
 
 
 ########*********########
@@ -295,10 +278,10 @@ sub _create_analysis {
 		 parameters="$param_string"
 		 ;};
   $dbc->do($cmd);
-  $cmd = qq{UPDATE analysis_stats SET
+  $cmd = qq{REPLACE INTO analysis_stats SET
+	      analysis_id=$analysis_id,
 	      hive_capacity=$hive_capacity,
 	      batch_size=$batch_size
-	      WHERE analysis_id=$analysis_id
 	      ;};
   $dbc->do($cmd);
 }
