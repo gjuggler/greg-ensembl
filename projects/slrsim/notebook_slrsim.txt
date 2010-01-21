@@ -467,3 +467,19 @@ What did I do:
 What did I do:
  - Finished a second run of the simulations. Implemented distributions to approximate Massingham's model from 2005.
    -> Worked on sorting & visualizing the results in Excel using data bar. Very simple to use.
+
+### 2010-01-18 ###
+
+What did I do:
+ - Checked that indelible is simulating properly-scaled trees. Checks out OK to me.
+   -> For the next simulation run, we should remove the Indelible multiplication factor in the PhyloSim module.
+
+### 2010-01-19 ###
+
+What did I do:
+ - Latest simulation run finished. Fixed a couple bugs from last run, and added the anisimova_hi simulations.
+   -> Also included parameter_set_name in the sitewise_stats output.
+   -> Collected data, saved as "all_sims_jan19.Rdata" in the slrsim folder.
+ - Checking on which summary statistics depend on the proportion of pos-sel sites:
+   -> DOES depend: ppv, npv
+   -> DOES NOT depend: spec, sens

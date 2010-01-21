@@ -76,15 +76,19 @@ sub get_data_for_node {
   return if (!$sa_true || !$sa_aln);
   
   my $sim_params = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_tag($tree,"params_slrsim");
+  Bio::EnsEMBL::Compara::ComparaUtils->hash_print($sim_params);
   my $param_set_params = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_param_set($tree->adaptor,$parameter_set_id);
 
   # These two come from alternative sources.
   $sim_params->{'sim_rep'} = $tree->get_tagvalue('sim_rep');
   $sim_params->{'parameter_set_name'} = $param_set_params->{'parameter_set_name'};
 
+  # Put sim_length, tree_mult into tree_length
+  $sim_params->{'tree_length'} = $sim_params->{'sim_length'} || $sim_params->{'tree_mult'} || '';
+
   # Load simulation parameters into our output array.
   my @sim_tags = qw(sim_file simulation_program ins_rate del_rate omega_distribution
-     seq_length sim_length sim_name sim_rep parameter_set_name);
+     seq_length sim_name sim_rep parameter_set_name tree_length);
   my @sim_vals = map {
     if (defined $sim_params->{$_}) {
       $sim_params->{$_};
@@ -124,7 +128,7 @@ sub get_data_for_node {
   # Put the tab-delimited header string into the meta table.
   my $header = join("\t",@sim_tags,
              qw(node_id parameter_set true aln true_type aln_type aln_note ncod true_e aln_e lrt))."\n";
-  my $header_sth = $pta->prepare("INSERT IGNORE INTO meta VALUES (123,1,?,?)");
+  my $header_sth = $pta->prepare("REPLACE INTO meta VALUES (123,1,?,?)");
   $header_sth->execute('slrsim_stats_header',$header);
   $header_sth->finish;
 

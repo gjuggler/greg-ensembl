@@ -470,12 +470,13 @@ sub columns {
 
   #$self->local_mode(1); # Override to turn off local mode.
   unless ($self->local_mode == -1 || $self->local_mode == 1) {
-    my $cmd = "SHOW FIELDS FROM member LIKE '%cdna%';";
+    my $cmd = 'SHOW FIELDS FROM member LIKE "%cdna%";';
     my $sth = $self->dbc->prepare($cmd);
     $sth->execute();
     if ($sth->fetchrow_arrayref) {
       $self->local_mode(1);
     }
+    $sth->finish;
   }
 
   my @cols;

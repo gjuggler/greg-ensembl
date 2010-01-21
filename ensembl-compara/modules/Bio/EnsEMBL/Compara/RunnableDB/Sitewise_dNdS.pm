@@ -88,9 +88,7 @@ sub fetch_input {
   print "INPUT_ID: ".$self->input_id."\n";
 
   # Fetch parameters from the two possible locations. Input_id takes precedence!
-
-  $params = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_string($params,$self->parameters);
-  $params = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_string($params,$self->input_id);
+  $params = Bio::EnsEMBL::Compara::ComparaUtils->replace_params($params,$self->parameters,$self->input_id);
 
   #########################
 
@@ -117,8 +115,9 @@ sub run {
   delete $params->{'parameter_sets'};
   foreach my $param_set (@param_sets) {
     my $param_set_params = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_param_set($dba->dbc,$param_set);
-    my $new_params = Bio::EnsEMBL::Compara::ComparaUtils->replace_params($params,$param_set_params);
-    print "Parameters:\n";
+    my $tree_tag_params = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_tree_tags($dba,$node_id);
+    my $new_params = Bio::EnsEMBL::Compara::ComparaUtils->replace_params($params,$param_set_params,$tree_tag_params);
+
     Bio::EnsEMBL::Compara::ComparaUtils->hash_print($new_params);
 
     # Load the tree. This logic has been delegated to ComparaUtils.
@@ -483,29 +482,32 @@ sub run_sitewise_dNdS
       $rc = 0;
     }
 
+    # Collect SLR's reoptimized tree.
+    my $next_line_is_it = 0;
+    my $new_pt;
+    foreach my $outline (@output) {
+      if ($next_line_is_it) {
+        my $new_tree = $outline;
+        $new_pt = Bio::EnsEMBL::Compara::TreeUtils->from_newick($new_tree);
+        print "Original tree   : ".$tree->newick_format."\n";
+        print "Reoptimised tree: ".$new_pt->newick_format."\n";
+        last;
+      }
+      # We know that the new tree will show up just after the LnL line.
+      $next_line_is_it = 1 if ($outline =~ /lnL =/);
+    }
+
     # Reoptimise action.
     if ($params->{'action'} =~ m/reoptimise/i) {
-      my $next_line_is_it = 0;
-      foreach my $outline (@output) {
-	if ($next_line_is_it) {
-	  my $new_tree = $outline;
-	  my $new_pt = Bio::EnsEMBL::Compara::TreeUtils->from_newick($new_tree);
-	  print "Original tree   : ".$tree->newick_format."\n";
-	  print "Reoptimised tree: ".$new_pt->newick_format."\n";
-	  
-	  # Store new branch lengths back in the original protein_tree_node table.
-	  foreach my $leaf ($tree->leaves) {
-	    my $new_leaf = $new_pt->find_leaf_by_name($leaf->name);
-	    $leaf->distance_to_parent($new_leaf->distance_to_parent);
-	    $leaf->store;
-	  }
-	    print "  -> Branch lengths updated!\n";
-	    $dont_write_output = 1;
-	    return;
-	}
-	# We know that the new tree will show up just after the LnL line.
-	$next_line_is_it = 1 if ($outline =~ /lnL =/);
+      # Store new branch lengths back in the original protein_tree_node table.
+      foreach my $leaf ($tree->leaves) {
+        my $new_leaf = $new_pt->find_leaf_by_name($leaf->name);
+        $leaf->distance_to_parent($new_leaf->distance_to_parent);
+        $leaf->store;
       }
+      print "  -> Branch lengths updated!\n";
+      $dont_write_output = 1;
+      return;
     }
     
     if (!-e "$tmpdir/$outfile") {

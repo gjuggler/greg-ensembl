@@ -108,7 +108,7 @@ sub calculate_omegas {
   my $logic_name = "Omegas";
   my $module = "Bio::EnsEMBL::Compara::RunnableDB::Sitewise_dNdS";
   my $params = {
-    parameter_sets => "1,2,3"
+    parameter_sets => "1,2"
   };
   _create_analysis($analysis_id,$logic_name,$module,$params,400,1);
 
