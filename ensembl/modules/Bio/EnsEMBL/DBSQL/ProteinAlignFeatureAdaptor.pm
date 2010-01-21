@@ -1,11 +1,22 @@
-#
-# Ensembl module for Bio::EnsEMBL::DBSQL::ProteinAlignFeatureAdaptor
-#
-# Copyright Ewan Birney
-#
-# You may distribute this module under the same terms as perl itself
+=head1 LICENSE
 
-# POD documentation - main docs before the code
+  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
+=cut
 
 =head1 NAME
 
@@ -14,19 +25,12 @@ Adaptor for ProteinAlignFeatures
 
 =head1 SYNOPSIS
 
-    $pafa = $dbadaptor->get_ProteinAlignFeatureAdaptor();
+  $pafa =
+    $registry->get_adaptor( 'Human', 'Core', 'ProteinAlignFeature' );
 
-    my @features = @{$pafa->fetch_all_by_Slice($slice)};
+  my @features = @{ $pafa->fetch_all_by_Slice($slice) };
 
-    $pafa->store(@features);
-
-
-=head1 DESCRIPTION
-
-
-=head1 CONTACT
-
-Post questions to the Ensembl development list: ensembl-dev@ebia.ac.uk
+  $pafa->store(@features);
 
 =head1 METHODS
 
@@ -190,13 +194,13 @@ sub _objs_from_sth {
   my ($protein_align_feature_id, $seq_region_id, $seq_region_start,
       $seq_region_end, $analysis_id, $seq_region_strand, $hit_start,
       $hit_end, $hit_name, $cigar_line, $evalue, $perc_ident, $score,
-      $external_db_id, $hcoverage );
+      $external_db_id, $hcoverage, $external_db_name, $external_display_db_name );
 
   $sth->bind_columns(\$protein_align_feature_id, \$seq_region_id,
            \$seq_region_start,\$seq_region_end, \$analysis_id,
            \$seq_region_strand, \$hit_start,\$hit_end, \$hit_name,
            \$cigar_line, \$evalue, \$perc_ident, \$score,
-           \$external_db_id, \$hcoverage );
+           \$external_db_id, \$hcoverage, \$external_db_name, \$external_display_db_name );
 
   my $asm_cs;
   my $cmp_cs;
@@ -294,25 +298,33 @@ sub _objs_from_sth {
       $slice = $dest_slice;
     }
 
-    #finally, create the new dna align feature
-    push @features, Bio::EnsEMBL::DnaPepAlignFeature->new_fast
-      ( { 'slice'         =>  $slice,
-          'start'         =>  $seq_region_start,
-          'end'           =>  $seq_region_end,
-          'strand'        =>  $seq_region_strand,
-          'hseqname'      =>  $hit_name,
-          'hstart'        =>  $hit_start,
-          'hend'          =>  $hit_end,
-          'hstrand'       =>  1, #dna_pep_align features are always hstrand 1
-          'score'         =>  $score,
-          'p_value'       =>  $evalue,
-          'percent_id'    =>  $perc_ident,
-          'cigar_string'  =>  $cigar_line,
-          'analysis'      =>  $analysis,
-          'adaptor'       =>  $self,
-          'dbID'          =>  $protein_align_feature_id, 
-	  'external_db_id'=>  $external_db_id,
-          'hcoverage'     =>  $hcoverage } );
+    # Finally, create the new ProteinAlignFeature.
+    push(
+      @features,
+      $self->_create_feature_fast(
+        'Bio::EnsEMBL::DnaPepAlignFeature', {
+          'slice'        => $slice,
+          'start'        => $seq_region_start,
+          'end'          => $seq_region_end,
+          'strand'       => $seq_region_strand,
+          'hseqname'     => $hit_name,
+          'hstart'       => $hit_start,
+          'hend'         => $hit_end,
+          'hstrand'      => 1,                  # dna_pep_align features
+                                                # are always hstrand 1
+          'score'        => $score,
+          'p_value'      => $evalue,
+          'percent_id'   => $perc_ident,
+          'cigar_string' => $cigar_line,
+          'analysis'     => $analysis,
+          'adaptor'      => $self,
+          'dbID'           => $protein_align_feature_id,
+          'external_db_id' => $external_db_id,
+          'hcoverage'      => $hcoverage,
+	  'dbname'         => $external_db_name,
+	  'db_display_name' => $external_display_db_name
+        } ) );
+
   }
 
   return \@features;
@@ -323,7 +335,7 @@ sub _objs_from_sth {
 sub _tables {
   my $self = shift;
 
-  return ['protein_align_feature', 'paf'];
+  return (['protein_align_feature', 'paf'], ['external_db','exdb']);
 }
 
 
@@ -345,7 +357,13 @@ sub _columns {
              paf.perc_ident
              paf.score
              paf.external_db_id
-             paf.hcoverage );
+             paf.hcoverage
+	     exdb.db_name
+	     exdb.db_display_name);
+}
+
+sub _left_join{
+    return (['external_db',"exdb.external_db_id = paf.external_db_id"]);
 }
 
 =head2 list_dbIDs

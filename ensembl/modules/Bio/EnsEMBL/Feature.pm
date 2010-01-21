@@ -1,8 +1,22 @@
-# Ensembl module for Bio::EnsEMBL::Feature
-#
-# Copyright (c) 2003 Ensembl
-#
+=head1 LICENSE
 
+  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
+=cut
 
 =head1 NAME
 
@@ -10,49 +24,47 @@ Bio::EnsEMBL::Feature - Ensembl specific sequence feature.
 
 =head1 SYNOPSIS
 
-    my $feat = new Bio::EnsEMBL::Feature(-start   => 100,
-                                       -end     => 220,
-                                       -strand  => -1,
-                                       -slice   => $slice
-                                       -analysis => $analysis
-                                      );
+    my $feat = new Bio::EnsEMBL::Feature(
+      -start  => 100,
+      -end    => 220,
+      -strand => -1,
+      -slice  => $slice -analysis => $analysis
+    );
 
-    my $start  = $feat->start;
-    my $end    = $feat->end;
-    my $strand = $feat->strand;
+    my $start  = $feat->start();
+    my $end    = $feat->end();
+    my $strand = $feat->strand();
 
-    #move the feature to the chromosomal coordinate system
+    # Move the feature to the chromosomal coordinate system
     $feature = $feature->transform('chromosome');
 
-    #move the feature to a different slice (possibly on another coord system)
+    # Move the feature to a different slice (possibly on another coord
+    # system)
     $feature = $feature->transfer($new_slice);
 
-    #project the feature onto another coordinate system possibly across
-    #boundaries:
-    @projection = @{$feature->project('contig')};
+    # Project the feature onto another coordinate system possibly across
+    # boundaries:
+    @projection = @{ $feature->project('contig') };
 
-    #change the start, end, and strand of the feature in place
-    $feature->move($new_start, $new_end, $new_strand);
+    # Change the start, end, and strand of the feature in place
+    $feature->move( $new_start, $new_end, $new_strand );
 
 =head1 DESCRIPTION
 
-This is the Base feature class from which all Ensembl features inherit.  It
-provides a bare minimum functionality that all features require.  It basically
-describes a location on a sequence in an arbitrary coordinate system.
-
-=head1 CONTACT
-
-Post questions to the Ensembl development list: ensembl-dev@ebi.ac.uk
+This is the Base feature class from which all Ensembl features inherit.
+It provides a bare minimum functionality that all features require.  It
+basically describes a location on a sequence in an arbitrary coordinate
+system.
 
 =head1 METHODS
 
 =cut
 
 
+package Bio::EnsEMBL::Feature;
+
 use strict;
 use warnings;
-
-package Bio::EnsEMBL::Feature;
 
 use Bio::EnsEMBL::Storable;
 use Bio::EnsEMBL::Utils::Argument qw(rearrange);
@@ -99,11 +111,9 @@ sub new {
   my $caller = shift;
 
   my $class = ref($caller) || $caller;
-
-  my($start, $end, $strand, $slice, $analysis,$seqname, $dbID, $adaptor) =
-    rearrange(['START','END','STRAND','SLICE','ANALYSIS', 'SEQNAME',
-               'DBID', 'ADAPTOR'], @_);
-
+  my ( $start, $end, $strand, $slice, $analysis,$seqname, $dbID, $adaptor ) =
+      rearrange(['START','END','STRAND','SLICE','ANALYSIS', 'SEQNAME',
+		 'DBID', 'ADAPTOR'], @_);   
   if($slice) {
     if(!ref($slice) || !$slice->isa('Bio::EnsEMBL::Slice')) {
       throw('-SLICE argument must be a Bio::EnsEMBL::Slice not '.$slice);
@@ -124,9 +134,13 @@ sub new {
   }
 
   if(defined($start) && defined($end)) {
-    if($end+1 < $start) {
-      throw('Start must be less than or equal to end+1');
-    }
+      if (($start =~ /\d+/) && ($end =~ /\d+/)) {
+	  if($end+1 < $start) {
+	      throw('Start must be less than or equal to end+1');
+	  }
+      } else {
+	      throw('Start and end must be integers');
+      }
   }
 
   return bless({'start'    => $start,
@@ -140,6 +154,23 @@ sub new {
 }
 
 
+=head2 new_fast
+
+  Arg [1]    : hashref to be blessed
+  Description: Construct a new Bio::EnsEMBL::Feature using the hashref.
+  Exceptions : none
+  Returntype : Bio::EnsEMBL::Feature
+  Caller     : general, subclass constructors
+  Status     : Stable
+
+=cut
+
+
+sub new_fast {
+  my $class = shift;
+  my $hashref = shift;
+  return bless $hashref, $class;
+}
 
 =head2 start
 
@@ -774,6 +805,7 @@ sub display_id {
 
 sub feature_Slice {
   my $self = shift;
+  my $flanking = shift || 0;
 
   my $slice = $self->slice();
 
@@ -786,8 +818,8 @@ sub feature_Slice {
     (-seq_region_name   => $slice->seq_region_name,
      -seq_region_length => $slice->seq_region_length,
      -coord_system      => $slice->coord_system,
-     -start             => $self->seq_region_start(),
-     -end               => $self->seq_region_end(),
+     -start             => $self->seq_region_start()-$flanking,
+     -end               => $self->seq_region_end()+$flanking,
      -strand            => $self->seq_region_strand(),
      -adaptor           => $slice->adaptor());
 

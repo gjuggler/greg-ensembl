@@ -1,12 +1,22 @@
-#
-# Ensembl module for Bio::EnsEMBL::Slice
-#
-#
-# Copyright Team Ensembl
-#
-# You may distribute this module under the same terms as perl itself
+=head1 LICENSE
 
-# POD documentation - main docs before the code
+  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
+=cut
 
 =head1 NAME
 
@@ -14,39 +24,32 @@ Bio::EnsEMBL::Slice - Arbitary Slice of a genome
 
 =head1 SYNOPSIS
 
-   $sa = $db->get_SliceAdaptor;
+  $sa = $db->get_SliceAdaptor;
 
-   $slice = $sa->fetch_by_region('chromosome', 'X', 1_000_000, 2_000_000);
+  $slice =
+    $sa->fetch_by_region( 'chromosome', 'X', 1_000_000, 2_000_000 );
 
-   #get some attributes of the slice
-   my $seqname = $slice->seq_region_name();
-   my $start = $slice->start();
-   my $end   = $slice->end();
+  # get some attributes of the slice
+  my $seqname = $slice->seq_region_name();
+  my $start   = $slice->start();
+  my $end     = $slice->end();
 
-   #get the sequence from the slice
-   my $seq = $slice->seq();
+  # get the sequence from the slice
+  my $seq = $slice->seq();
 
-   #get some features from the slice
-   foreach $gene ( @{$slice->get_all_Genes} ) {
-      # do something with a gene
-   }
+  # get some features from the slice
+  foreach $gene ( @{ $slice->get_all_Genes } ) {
+    # do something with a gene
+  }
 
-   foreach my $feature ( @{$slice->get_all_DnaAlignFeatures}) {
-     # do something with dna-dna alignments
-   }
-
+  foreach my $feature ( @{ $slice->get_all_DnaAlignFeatures } ) {
+    # do something with dna-dna alignments
+  }
 
 =head1 DESCRIPTION
 
 A Slice object represents a region of a genome.  It can be used to retrieve
 sequence or features from an area of interest.
-
-=head1 CONTACT
-
-This modules is part of the Ensembl project http://www.ensembl.org
-
-Questions can be posted to the ensembl-dev mailing list:
-ensembl-dev@ebi.ac.uk
 
 =head1 METHODS
 
@@ -191,6 +194,23 @@ sub new {
                 'adaptor'           => $adaptor}, $class;
 }
 
+=head2 new_fast
+
+  Arg [1]    : hashref to be blessed
+  Description: Construct a new Bio::EnsEMBL::Slice using the hashref.
+  Exceptions : none
+  Returntype : Bio::EnsEMBL::Slice
+  Caller     : general
+  Status     : Stable
+
+=cut
+
+
+sub new_fast {
+  my $class = shift;
+  my $hashref = shift;
+  return bless $hashref, $class;
+}
 
 =head2 adaptor
 
@@ -779,8 +799,7 @@ sub project {
           # trim off regions which are not defined
           return $self->_constrain_to_region();
         }
-
-        #create slices for the mapped-to coord system
+	#create slices for the mapped-to coord system
         my $slice = $slice_adaptor->fetch_by_seq_region_id(
                                                     $coord->id(),
                                                     $coord_start,
@@ -1470,9 +1489,10 @@ sub get_all_LD_values{
 
 =head2 get_all_VariationFeatures
 
-    Args       : none
+    Args       : $filter [optional]
     Description :returns all variation features on this slice. This function will only work 
                 correctly if the variation database has been attached to the core database.
+		 If $filter is "genotyped" return genotyped Snps only... (nice likkle hack);
     ReturnType : listref of Bio::EnsEMBL::Variation::VariationFeature
     Exceptions : none
     Caller     : contigview, snpview
@@ -1483,7 +1503,9 @@ sub get_all_LD_values{
 
 sub get_all_VariationFeatures{
   my $self = shift;
+  my $filter = shift;
 
+  $filter ||= '';
   if(!$self->adaptor()) {
     warning('Cannot get variation features without attached adaptor');
     return [];
@@ -1491,7 +1513,11 @@ sub get_all_VariationFeatures{
 
   my $vf_adaptor = Bio::EnsEMBL::DBSQL::MergedAdaptor->new(-species => $self->adaptor()->db()->species, -type => "VariationFeature");
   if( $vf_adaptor ) {
-    return $vf_adaptor->fetch_all_by_Slice($self);
+    if( $filter eq 'genotyped' ) {
+      return $vf_adaptor->fetch_all_genotyped_by_Slice($self);
+    } else {
+      return $vf_adaptor->fetch_all_by_Slice($self);
+    }
   } else {
        warning("Variation database must be attached to core database to " .
  		"retrieve variation information" );
@@ -2573,7 +2599,7 @@ sub get_all_compara_DnaAlignFeatures {
   }
 
   if(!defined($compara_db)){
-    $compara_db = $self->adaptor->db->get_db_adaptor('compara');
+    $compara_db = Bio::EnsEMBL::Registry->get_DBAdaptor("compara", "compara");
   }
   unless($compara_db) {
     warning("Compara database must be attached to core database or passed ".
@@ -2590,8 +2616,8 @@ sub get_all_compara_DnaAlignFeatures {
 
   Arg [1]    : string $query_species e.g. "Mus_musculus" or "Mus musculus"
   Arg [2]    : string $method_link_type, default is "SYNTENY"
-  Arg [3]    : <optional> compara dbadptor to use.
-  Description: gets al the conpara syntenys fro a specfic species
+  Arg [3]    : <optional> compara dbadaptor to use.
+  Description: gets all the compara syntenyies for a specfic species
   Returns    : arrayref of Bio::EnsEMBL::Compara::SyntenyRegion
   Status     : Stable
 
@@ -2614,7 +2640,7 @@ sub get_all_compara_Syntenies {
   }
 
   if(!defined($compara_db)){
-    $compara_db = $self->adaptor->db->get_db_adaptor('compara');
+    $compara_db = Bio::EnsEMBL::Registry->get_DBAdaptor("compara", "compara");
   }
   unless($compara_db) {
     warning("Compara database must be attached to core database or passed ".
@@ -2622,19 +2648,19 @@ sub get_all_compara_Syntenies {
 	    "retrieve compara information");
     return [];
   }
-  my $binomial = $self->adaptor->db->get_MetaContainer->get_Species->binomial;
-  $qy_species =~ tr/_/ /;
-  my $mlssa = $compara_db->get_MethodLinkSpeciesSetAdaptor;
-  my $mlss = $mlssa->fetch_by_method_link_type_registry_aliases
-                    ($method_link_type,
-                     [ $binomial, $qy_species ]);
+  my $gdba = $compara_db->get_GenomeDBAdaptor();
+  my $mlssa = $compara_db->get_MethodLinkSpeciesSetAdaptor();
+  my $dfa = $compara_db->get_DnaFragAdaptor();
+  my $sra = $compara_db->get_SyntenyRegionAdaptor();
 
-  my $gdb = $compara_db->get_GenomeDBAdaptor->fetch_by_name_assembly($binomial);
-  my $dfa = $compara_db->get_DnaFragAdaptor;
-  my ($dnafrag) = @{$dfa->fetch_all_by_GenomeDB_region($gdb, $self->coord_system->name, $self->seq_region_name)};
-  my $sra = $compara_db->get_SyntenyRegionAdaptor;
+  my $this_gdb = $gdba->fetch_by_core_DBAdaptor($self->adaptor()->db());
+  my $query_gdb = $gdba->fetch_by_registry_name($qy_species);
+  my $mlss = $mlssa->fetch_by_method_link_type_GenomeDBs($method_link_type, [$this_gdb, $query_gdb]);
 
-  return $sra->fetch_by_MethodLinkSpeciesSet_DnaFrag($mlss,$dnafrag,$self->start, $self->end);
+  my $cs = $self->coord_system()->name();
+  my $sr = $self->seq_region_name();
+  my ($dnafrag) = @{$dfa->fetch_all_by_GenomeDB_region($this_gdb, $cs, $sr)};
+  return $sra->fetch_by_MethodLinkSpeciesSet_DnaFrag($mlss, $dnafrag, $self->start, $self->end);
 }
 
 =head2 get_all_Haplotypes

@@ -1,44 +1,58 @@
+=head1 LICENSE
 
-=head1 NAME - Bio::EnsEMBL::DBSQL::DBAdaptor
+  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
 
-=head1 SYNOPSIS
+  This software is distributed under a modified Apache license.
+  For license details, please see
 
-    $db = Bio::EnsEMBL::DBSQL::DBAdaptor->new(
-        -user   => 'root',
-        -dbname => 'pog',
-        -host   => 'caldy',
-        -driver => 'mysql'
-        );
-
-    $gene_adaptor = $db->get_GeneAdaptor();
-
-    $gene = $gene_adaptor()->fetch_by_stable_id($stable_id);
-
-    $slice = $db->get_SliceAdaptor()->fetch_by_chr_start_end('X', 1, 10000);
-
-=head1 DESCRIPTION
-
-
-Formerly this class provided database connectivity and a means to retrieve
-object adaptors.  This class is now provided for convenience and backwards
-compatibility, but delegates its connection responsibilities to the
-DBConnection class (no longer inherited from) and its object adaptor
-retrieval to the static Bio::EnsEMBL::Registry.
-
+    http://www.ensembl.org/info/about/code_licence.html
 
 =head1 CONTACT
 
-Post questions to the EnsEMBL development list <ensembl-dev@ebi.ac.uk>
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
+=cut
+
+=head1 NAME
+
+Bio::EnsEMBL::DBSQL::DBAdaptor
+
+=head1 SYNOPSIS
+
+  $db = Bio::EnsEMBL::DBSQL::DBAdaptor->new(
+    -user   => 'root',
+    -dbname => 'pog',
+    -host   => 'caldy',
+    -driver => 'mysql'
+  );
+
+  $gene_adaptor = $db->get_GeneAdaptor();
+
+  $gene = $gene_adaptor->fetch_by_stable_id($stable_id);
+
+  $slice =
+    $db->get_SliceAdaptor()->fetch_by_chr_start_end( 'X', 1, 10000 );
+
+=head1 DESCRIPTION
+
+Formerly this class provided database connectivity and a means
+to retrieve object adaptors.  This class is now provided for
+convenience and backwards compatibility, and delegates its connection
+responsibilities to the DBConnection class (no longer inherited from)
+and its object adaptor retrieval to the static Bio::EnsEMBL::Registry.
+
+Please use Bio::EnsEMBL::Registry to retrieve object adaptors.
 
 =head1 METHODS
-
-The rest of the documentation details each of the object methods. Internal
-methods are usually preceded with a _
 
 =cut
 
 package Bio::EnsEMBL::DBSQL::DBAdaptor;
-
 
 use strict;
 
@@ -55,22 +69,48 @@ my $reg = "Bio::EnsEMBL::Registry";
 =head2 new
 
   Arg [-DNADB]: (optional) Bio::EnsEMBL::DBSQL::DBAdaptor DNADB 
-               All sequence, assembly, contig information etc, will be
-               retrieved from this database instead.
+               All sequence, assembly, contig information etc, will
+               be retrieved from this database instead.
+
+  Arg [-NO_CACHE]: (optional) int 1
+               This option will turn off caching for slice features,
+               so, every time a set of features is retrieved,
+               they will come from the database instead of the
+               cache.  This option is only recommended for advanced
+               users, specially if you need to store and retrieve
+               features.  It might reduce performance when querying
+               the database if not used properly.  If in doubt, do
+               not use it or ask in ensembl-dev.
+
   Arg [..]   : Other args are passed to superclass
                Bio::EnsEMBL::DBSQL::DBConnection
+
   Example    : $db = new Bio::EnsEMBL::DBSQL::DBAdaptor(
-						    -user   => 'root',
-						    -dbname => 'pog',
-						    -host   => 'caldy',
-						    -driver => 'mysql' );
+                -user   => 'root',
+                -dbname => 'pog',
+                -host   => 'caldy',
+                -driver => 'mysql'
+              );
+
   Exmaple2   : $db = new Bio::EnsEMBL::DBSQL::DBAdaptor(
-                                                    -species => 'Homo_sapiens',
-                                                    -group   => 'core'
-						    -user   => 'root',
-						    -dbname => 'pog',
-						    -host   => 'caldy',
-						    -driver => 'mysql');
+                -species => 'Homo_sapiens',
+                -group   => 'core',
+                -user    => 'root',
+                -dbname  => 'pog',
+                -host    => 'caldy',
+                -driver  => 'mysql'
+              );
+
+  Exmaple3   : $db = new Bio::EnsEMBL::DBSQL::DBAdaptor(
+                -species         => 'staphylococcus_aureus',
+                -group           => 'core',
+                -user            => 'root',
+                -dbname          => 'staphylococcus_collection_1_52_1a',
+                -multispecies_db => 1,
+                -host            => 'caldy',
+                -driver          => 'mysql'
+              );
+
   Description: Constructor for DBAdaptor.
   Returntype : Bio::EnsEMBL::DBSQL::DBAdaptor
   Exceptions : none
@@ -80,38 +120,39 @@ my $reg = "Bio::EnsEMBL::Registry";
 =cut
 
 sub new {
-  my($class, @args) = @_;
+  my ( $class, @args ) = @_;
 
-  my $self ={};
-  bless $self,$class;
+  my $self = bless {}, $class;
 
-  
-  my ($species, $group, $con, $dnadb) =
-    rearrange([qw(SPECIES GROUP DBCONN DNADB)], @args);
+  my ( $is_multispecies, $species, $species_id, $group, $con, $dnadb,
+    $no_cache )
+    = rearrange( [
+      'MULTISPECIES_DB', 'SPECIES', 'SPECIES_ID', 'GROUP',
+      'DBCONN',          'DNADB',   'NO_CACHE'
+    ],
+    @args
+    );
 
-  if(defined($con)){
-    $self->dbc($con);
-  }
-  else{
-    $self->dbc(new Bio::EnsEMBL::DBSQL::DBConnection(@args));
-  }
-  
-  if(defined($species)){
-    $self->species($species);
+  if ( defined($con) ) { $self->dbc($con) }
+  else {
+    $self->dbc( new Bio::EnsEMBL::DBSQL::DBConnection(@args) );
   }
 
-  if(defined($group)){
-    $self->group($group);
-  }
+  if ( defined($species) ) { $self->species($species) }
+  if ( defined($group) )   { $self->group($group) }
 
   $self = Bio::EnsEMBL::Utils::ConfigRegistry::gen_load($self);
 
-  if(defined $dnadb) {
-    $self->dnadb($dnadb);
-  }
- 
+  $self->species_id( $species_id || 1 );
+
+  $self->is_multispecies( defined($is_multispecies)
+                          && $is_multispecies == 1 );
+
+  if ( defined($dnadb) )    { $self->dnadb($dnadb) }
+  if ( defined($no_cache) ) { $self->no_cache($no_cache) }
+
   return $self;
-}
+} ## end sub new
 
 
 
@@ -252,40 +293,45 @@ sub get_db_adaptor {
 
 =cut 
 
-sub get_available_adaptors{
-  my %pairs =  ( 
-   # Firstly those that just have an adaptor named after there object in the main DBSQL directory
-    map( { $_ => "Bio::EnsEMBL::DBSQL::${_}Adaptor" } qw( 
-      AffyFeature              AffyArray            AffyProbe
-      Analysis                 ArchiveStableId      Attribute
-      AssemblyExceptionFeature AssemblyMapper       CoordSystem
-      CompressedSequence       DBEntry              DnaAlignFeature
-      DensityFeature           DensityType          Exon
-      Gene                     KaryotypeBand        MiscSet
-      MiscFeature              OligoArray           OligoFeature
-      OligoProbe               PredictionTranscript PredictionExon
-      ProteinFeature           ProteinAlignFeature  RepeatConsensus
-      RepeatFeature            Sequence             SimpleFeature
-      Slice                    SupportingFeature    Transcript
-      TranscriptSupportingFeature Translation       UnmappedObject
-      UnconventionalTranscriptAssociation
-      AssemblySlice
-    ) ),
-   # Those whose adaptors are in Map::DBSQL
+sub get_available_adaptors {
+  my %pairs = (
+    # Firstly those that just have an adaptor named after there object
+    # in the main DBSQL directory.
+    map( { $_ => "Bio::EnsEMBL::DBSQL::${_}Adaptor" } qw(
+        AffyFeature              AffyArray            AffyProbe
+        Analysis                 ArchiveStableId      Attribute
+        AssemblyExceptionFeature AssemblyMapper       CoordSystem
+        CompressedSequence       DBEntry              DnaAlignFeature
+        DensityFeature           DensityType          Exon
+        Gene                     KaryotypeBand        MiscSet
+        MiscFeature              OligoArray           OligoFeature
+        OligoProbe               PredictionTranscript PredictionExon
+        ProteinFeature           ProteinAlignFeature  RepeatConsensus
+        RepeatFeature            Sequence             SimpleFeature
+        Slice                    SupportingFeature    Transcript
+        TranscriptSupportingFeature Translation       UnmappedObject
+        UnconventionalTranscriptAssociation           AssemblySlice
+        SplicingEvent            SplicingEventFeature SplicingTranscriptPair
+        ) ),
+    # Those whose adaptors are in Map::DBSQL
     map( { $_ => "Bio::EnsEMBL::Map::DBSQL::${_}Adaptor" } qw(
-							      Marker                   MarkerFeature        QtlFeature     Qtl         Ditag      DitagFeature
-    ) ),
-   # Finally the exceptions... those that have non-standard mapping between object / adaptor ....
-#    'Blast'                => 'Bio::EnsEMBL::External::BlastAdaptor',
-    'MetaCoordContainer'   => 'Bio::EnsEMBL::DBSQL::MetaCoordContainer',
-    'MetaContainer'        => 'Bio::EnsEMBL::DBSQL::MetaContainer',
-    'SNP'                  => 'Bio::EnsEMBL::DBSQL::ProxySNPAdaptor'
-  );
-  return (\%pairs);
-}
+        Marker MarkerFeature QtlFeature Qtl Ditag DitagFeature
+        ) ),
+    # Finally the exceptions... those that have non-standard mapping
+    # between object / adaptor ....
+    # 'Blast'                => 'Bio::EnsEMBL::External::BlastAdaptor',
+    'MetaCoordContainer' => 'Bio::EnsEMBL::DBSQL::MetaCoordContainer',
+    'MetaContainer'      => 'Bio::EnsEMBL::DBSQL::MetaContainer',
+    'SNP'                => 'Bio::EnsEMBL::DBSQL::ProxySNPAdaptor',
+    # Feature Collections:
+    'GeneCollection'       => 'Bio::EnsEMBL::Collection::Gene',
+    'TranscriptCollection' => 'Bio::EnsEMBL::Collection::Transcript',
+    'ExonCollection'       => 'Bio::EnsEMBL::Collection::Exon',
+    'RepeatFeatureCollection' =>
+      'Bio::EnsEMBL::Collection::RepeatFeature' );
 
-
-
+  return ( \%pairs );
+} ## end sub get_available_adaptors
 
 ###########################################################
 #
@@ -598,10 +644,138 @@ sub add_GenericFeatureAdaptor {
 =cut
 
 sub species {
-  my ($self, $arg ) = @_;
-  ( defined $arg ) &&
-    ( $self->{_species} = $arg );
+  my ( $self, $arg ) = @_;
+
+  if ( defined($arg) ) {
+    $self->{_species} = $arg;
+  }
+
   $self->{_species};
+}
+
+=head2 all_species
+
+  Args       : NONE
+  Example    : @all_species = @{$dba->all_species()};
+  Description: Returns the names of all species contained in the
+               database to which this DBAdaptor is connected.
+  Returntype : array reference
+  Exceptions : none
+  Caller     : general
+  Status     : Stable
+
+=cut
+
+sub all_species {
+  my ($self) = @_;
+
+  if ( !$self->is_multispecies() ) { return [ $self->species() ] }
+
+  if ( exists( $self->{'_all_species'} ) ) {
+    return $self->{'_all_species'};
+  }
+
+  my $statement =
+      "SELECT meta_value "
+    . "FROM meta "
+    . "WHERE meta_key = 'species.db_name'";
+
+  my $sth = $self->dbc()->db_handle()->prepare($statement);
+
+  $sth->execute();
+
+  my $species;
+  $sth->bind_columns( \$species );
+
+  my @all_species;
+  while ( $sth->fetch() ) { push( @all_species, $species ) }
+
+  $self->{'_all_species'} = \@all_species;
+
+  return $self->{'_all_species'};
+} ## end sub all_species
+
+
+=head2 is_multispecies
+
+  Arg [1]    : (optional) boolean $arg
+  Example    : if ($dba->is_multispecies()) { }
+  Description: Getter/Setter for the is_multispecies boolean of
+               to use for this connection.  There is currently no
+               point in setting this value after the connection has
+               already been established by the constructor.
+  Returntype : boolean
+  Exceptions : none
+  Caller     : new
+  Status     : Stable
+
+=cut
+
+sub is_multispecies {
+  my ( $self, $arg ) = @_;
+
+  if ( defined($arg) ) {
+    $self->{_is_multispecies} = $arg;
+  }
+
+  return $self->{_is_multispecies};
+}
+
+
+=head2 species_id
+
+  Arg [1]    : (optional) string $arg
+               The new value of the species_id used by this DBAdaptor
+               when dealing with multi-species databases.
+  Example    : $species_id = $dba->species_id()
+  Description: Getter/Setter for the species_id of to use for this
+               connection.  There is currently no point in setting
+               this value after the connection has already been
+               established by the constructor.
+  Returntype : string
+  Exceptions : none
+  Caller     : new
+  Status     : Stable
+
+=cut
+
+sub species_id {
+  my ( $self, $arg ) = @_;
+
+  if ( defined($arg) ) {
+    $self->{_species_id} = $arg;
+  }
+
+  return $self->{_species_id};
+}
+
+
+=head2 no_cache
+
+  Arg [1]    : (optional) int $arg
+               The new value of the no cache attribute used by this DBAdaptor. 
+  Example    : $no_cache = $dba->no_cache();
+  Description: Getter/Setter for the no_cache to use for 
+               this connection.  There is currently no point in setting 
+               this value after the connection has already been established 
+               by the constructor.
+  Returntype : int
+  Exceptions : none
+  Caller     : new
+  Status     : Stable
+
+=cut
+
+sub no_cache {
+  my ($self, $arg ) = @_;
+
+  if ( defined $arg ){
+      if ($arg != 1 && $arg != 0){
+	  throw("$arg is not allowed for this attribute. Only value 1|0 is allowed");
+      }
+      $self->{_no_cache} = $arg;
+  }
+  $self->{_no_cache};
 }
 
 
@@ -656,6 +830,25 @@ sub get_SeqRegionCache {
 }
 
 
+#convenient method to retrieve the schema_build version for the database being used
+
+sub _get_schema_build{
+  my ($self) = @_;
+
+  #avoided using dnadb by default to avoid obfuscation of behaviour
+  
+  my @dbname = split/_/, $self->dbc->dbname();
+
+  #warn "dbname is $schema_build";
+
+  my $schema_build = pop @dbname;
+  $schema_build = pop(@dbname).'_'.$schema_build;
+
+
+  return $schema_build;
+}
+
+
 =head2 dnadb
 
  Title   : dnadb
@@ -686,34 +879,43 @@ sub dnadb {
 use vars '$AUTOLOAD';
 
 sub AUTOLOAD {
-  my ($self,@args) = @_;
+  my ( $self, @args ) = @_;
 
   my $type;
-  if($AUTOLOAD =~ /^.*::get_(\w+)Adaptor$/){ 
+  if ( $AUTOLOAD =~ /^.*::get_(\w+)Adaptor$/ ) {
     $type = $1;
-  }
-  elsif($AUTOLOAD =~ /^.*::get_(\w+)$/){ 
+  } elsif ( $AUTOLOAD =~ /^.*::get_(\w+)$/ ) {
     $type = $1;
-  }
-  else{
-    throw("Could not work out type for $AUTOLOAD \n");
+  } else {
+    throw( sprintf( "Could not work out type for %s\n", $AUTOLOAD ) );
   }
 
-  my  $ret = $reg->get_adaptor($self->species(),$self->group(),$type);
+  my $ret =
+    $reg->get_adaptor( $self->species(), $self->group(), $type );
 
-  if($ret){
+  if ($ret) {
+
+    return $ret;
+
+  } else {
+    throw(
+      sprintf(
+        "Could not get adaptor %s for %s %s\n",
+        $type, $self->species(), $self->group() ) );
+
+    warning(
+      sprintf(
+        "Could not find %s adaptor in the registry for %s %s\n",
+        $type, $self->species(), $self->group() ) );
+
     return $ret;
   }
-  else{
-    throw( "Couldnt get adaptor $type for ".$self->species." ".$self->group."\n");
-    warning("Could not find $type adaptor in the registry for ".$self->species." ".$self->group."\n");
-    return $ret;
-  }
-  die("No such method: $AUTOLOAD\n");
-}
 
+  die( sprintf( "No such method: %s\n", $AUTOLOAD ) );
 
-sub DESTROY {} # required due to AUTOLOAD
+} ## end sub AUTOLOAD
+
+sub DESTROY { }    # required due to AUTOLOAD
 
 
 #########################

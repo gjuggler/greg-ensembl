@@ -1,4 +1,22 @@
-package Bio::EnsEMBL::DBSQL::AssemblySliceAdaptor;
+=head1 LICENSE
+
+  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
+=cut
 
 =head1 NAME
 
@@ -7,56 +25,42 @@ representing alternative assemblies
 
 =head1 SYNOPSIS
 
-my $slice = $slice_adaptor->fetch_by_region('chromosome', 14, 900000, 950000);
+  my $slice =
+    $slice_adaptor->fetch_by_region( 'chromosome', 14, 900000, 950000 );
 
-my $msc = Bio::EnsEMBL::MappedSliceContainer->new(
-    -SLICE => $slice
-);
+  my $msc = Bio::EnsEMBL::MappedSliceContainer->new( -SLICE => $slice );
 
-my $asa = Bio::EnsEMBL::DBSQL::AssemblySliceAdaptor->new;
+  my $asa = Bio::EnsEMBL::DBSQL::AssemblySliceAdaptor->new;
 
-my ($mapped_slice) = @{ $asa->fetch_by_version($msc, 'NCBIM36') };
+  my ($mapped_slice) = @{ $asa->fetch_by_version( $msc, 'NCBIM36' ) };
 
 =head1 DESCRIPTION
 
-NOTE: this code is under development and not fully functional nor tested yet. 
-Use only for development.
+NOTE: this code is under development and not fully functional nor tested
+yet.  Use only for development.
 
-This adaptor is a factory for creating MappedSlices representing alternative
-assemblies and attaching them to a MappedSliceContainer. A mapper will be
-created to map between the reference slice and the common container slice
-coordinate system.
+This adaptor is a factory for creating MappedSlices representing
+alternative assemblies and attaching them to a MappedSliceContainer. A
+mapper will be created to map between the reference slice and the common
+container slice coordinate system.
 
 =head1 METHODS
 
-new
-fetch_by_version
+  new
+  fetch_by_version
 
 =head1 REALTED MODULES
 
-Bio::EnsEMBL::MappedSlice
-Bio::EnsEMBL::MappedSliceContainer
-Bio::EnsEMBL::Compara::AlignSlice
-Bio::EnsEMBL::Compara::AlignSlice::Slice
-Bio::EnsEMBL::AlignStrainSlice
-Bio::EnsEMBL::StrainSlice
-
-=head1 LICENCE
-
-This code is distributed under an Apache style licence. Please see
-http://www.ensembl.org/info/about/code_licence.html for details.
-
-=head1 AUTHOR
-
-Patrick Meidl <meidl@ebi.ac.uk>, Ensembl core API team
-
-=head1 CONTACT
-
-Please post comments/questions to the Ensembl development list
-<ensembl-dev@ebi.ac.uk>
+  Bio::EnsEMBL::MappedSlice
+  Bio::EnsEMBL::MappedSliceContainer
+  Bio::EnsEMBL::Compara::AlignSlice
+  Bio::EnsEMBL::Compara::AlignSlice::Slice
+  Bio::EnsEMBL::AlignStrainSlice
+  Bio::EnsEMBL::StrainSlice
 
 =cut
 
+package Bio::EnsEMBL::DBSQL::AssemblySliceAdaptor;
 
 use strict;
 use warnings;
@@ -131,12 +135,82 @@ sub fetch_by_version {
   my $mapped_slice = Bio::EnsEMBL::MappedSlice->new(
       -ADAPTOR   => $self,
       -CONTAINER => $container,
-      -NAME      => $slice->name.":mapped_$version",
+      -NAME      => $slice->name."\#mapped_$version",
   );
 
   my $cs_name = $slice->coord_system_name;
 
   foreach my $seg (@{ $slice->project($cs_name, $version) }) {
+  
+    my $proj_slice = $seg->to_Slice;
+    
+    # create a Mapper to map to/from the mapped_slice artificial coord system
+    my $mapper = Bio::EnsEMBL::Mapper->new('mapped_slice', 'native_slice');  
+    
+    # tell the mapper how to map this segment
+    $mapper->add_map_coordinates(
+        'mapped_slice',
+        $seg->from_start,
+        $seg->from_end,
+        ($slice->strand * $proj_slice->strand),
+        $proj_slice->seq_region_name,
+        $proj_slice->start,
+        $proj_slice->end
+    );
+    
+    # add the Slice/Mapper pair to the MappedSlice
+    $mapped_slice->add_Slice_Mapper_pair($proj_slice, $mapper);
+  }
+
+  return [$mapped_slice];
+}
+
+
+=head2 fetch_by_name
+
+  Arg[1]      : Bio::EnsEMBL::MappedSliceContainer $container - the container
+                  to attach MappedSlices to
+  Arg[2]      : String $name - the assembly name to fetch
+  Arg[3]      : (optional) String $version -- the version for the new assembly
+  Example     : my ($mapped_slice) = @{ $msc->fetch_by_name('LRG1','1') };
+  Description : Creates a MappedSlice representing an alternative assembly
+                version of the container's reference slice.
+  Return type : listref of Bio::EnsEMBL::MappedSlice
+  Exceptions  : thrown on wrong or missing arguments
+  Caller      : general, Bio::EnsEMBL::MappedSliceContainer
+  Status      : At Risk
+              : under development
+
+=cut
+
+sub fetch_by_name {
+  my $self = shift;
+  my $container = shift;
+  my $name = shift;
+  my $version = shift; 
+
+  # arguement check
+  unless ($container and ref($container) and
+          $container->isa('Bio::EnsEMBL::MappedSliceContainer')) {
+    throw("Need a MappedSliceContainer.");
+  }
+
+  unless ($name) {
+    throw("Need an assembly name.");
+  }
+
+  $version ||= '';
+  my $slice = $container->ref_slice;
+
+  # project slice onto other assembly and construct MappedSlice for result
+  my $mapped_slice = Bio::EnsEMBL::MappedSlice->new(
+      -ADAPTOR   => $self,
+      -CONTAINER => $container,
+      -NAME      => $slice->name."\#mapped_$name:$version",
+  );
+
+
+  foreach my $seg (@{ $slice->project($name, $version) }) {
   
     my $proj_slice = $seg->to_Slice;
     

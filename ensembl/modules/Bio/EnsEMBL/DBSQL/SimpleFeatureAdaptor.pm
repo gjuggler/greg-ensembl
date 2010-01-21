@@ -1,12 +1,22 @@
-#
-# EnsEMBL module for Bio::EnsEMBL::DBSQL::SimpleFeatureAdaptor
-#
-#
-# Copyright EMBL/EBI
-#
-# You may distribute this module under the same terms as perl itself
+=head1 LICENSE
 
-# POD documentation - main docs before the code
+  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
+=cut
 
 =head1 NAME
 
@@ -14,14 +24,15 @@ Bio::EnsEMBL::DBSQL::SimpleFeatureAdaptor
 
 =head1 SYNOPSIS
 
-my $simple_feature_adaptor = $database_adaptor->get_SimpleFeatureAdaptor();
-@simple_features = @{$simple_feature_adaptor->fetch_all_by_Slice($slice)};
+  my $simple_feature_adaptor =
+    $database_adaptor->get_SimpleFeatureAdaptor();
+
+  @simple_features =
+    @{ $simple_feature_adaptor->fetch_all_by_Slice($slice) };
 
 =head1 DESCRIPTION
 
 Simple Feature Adaptor - database access for simple features
-
-=head1 AUTHOR - Ewan Birney
 
 =head1 METHODS
 
@@ -229,6 +240,8 @@ sub _objs_from_sth {
     my $analysis = $analysis_hash{$analysis_id} ||=
       $aa->fetch_by_dbID($analysis_id);
 
+    #need to get the internal_seq_region, if present
+    $seq_region_id = $self->get_seq_region_id_internal($seq_region_id);
     #get the slice object
     my $slice = $slice_hash{"ID:".$seq_region_id};
 
@@ -290,16 +303,20 @@ sub _objs_from_sth {
       $slice = $dest_slice;
     }
 
-    push @features, Bio::EnsEMBL::SimpleFeature->new_fast(
-      {'start'    => $seq_region_start,
-       'end'      => $seq_region_end,
-       'strand'   => $seq_region_strand,
-       'slice'    => $slice,
-       'analysis' => $analysis,
-       'adaptor'  => $self,
-       'dbID'     => $simple_feature_id,
-       'display_label' => $display_label,
-       'score'    => $score});
+    push( @features,
+          $self->_create_feature_fast(
+                                    'Bio::EnsEMBL::SimpleFeature', {
+                                      'start'    => $seq_region_start,
+                                      'end'      => $seq_region_end,
+                                      'strand'   => $seq_region_strand,
+                                      'slice'    => $slice,
+                                      'analysis' => $analysis,
+                                      'adaptor'  => $self,
+                                      'dbID'     => $simple_feature_id,
+                                      'display_label' => $display_label,
+                                      'score'         => $score
+                                    } ) );
+
     }
 
   return \@features;

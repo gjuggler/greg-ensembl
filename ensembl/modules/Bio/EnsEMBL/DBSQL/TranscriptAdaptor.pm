@@ -1,4 +1,22 @@
-package Bio::EnsEMBL::DBSQL::TranscriptAdaptor;
+=head1 LICENSE
+
+  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
+=cut
 
 =head1 NAME
 
@@ -7,44 +25,40 @@ interaction relating to the storage and retrieval of Transcripts
 
 =head1 SYNOPSIS
 
-  $db = Bio::EnsEMBL::DBSQL::DBAdaptor->new(...);
-  $slice_adaptor = $db->get_SliceAdaptor();
+  use Bio::EnsEMBL::Registry;
 
-  $transcript_adaptor = $db->get_TranscriptAdaptor();
+  Bio::EnsEMBL::Registry->load_registry_from_db(
+    -host => 'ensembldb.ensembl.org',
+    -user => 'anonymous'
+  );
+
+  $transcript_adaptor =
+    Bio::EnsEMBL::Registry->get_adaptor( 'Human', 'Core',
+    'Transcript' );
 
   $transcript = $transcript_adaptor->fetch_by_dbID(1234);
 
-  $transcript = $transcript_adaptor->fetch_by_stable_id('ENST00000201961');
-  
-  $slice = $slice_adaptor->fetch_by_region('chromosome', '3', 1, 1000000);
-  @transcripts = @{$transcript_adaptor->fetch_all_by_Slice($slice)};
+  $transcript =
+    $transcript_adaptor->fetch_by_stable_id('ENST00000201961');
 
-  ($transcript) = @{$transcript_adaptor->fetch_all_by_external_name('NP_065811.1')};
+  $slice =
+    $slice_adaptor->fetch_by_region( 'Chromosome', '3', 1, 1000000 );
+  @transcripts = @{ $transcript_adaptor->fetch_all_by_Slice($slice) };
+
+  ($transcript) =
+    @{ $transcript_adaptor->fetch_all_by_external_name('NP_065811.1') };
 
 =head1 DESCRIPTION
 
-This adaptor provides a means to retrieve and store information related to
-Transcripts. Primarily this involves the retrieval or storage of
-Bio::EnsEMBL::Transcript objects from a database.  
+This adaptor provides a means to retrieve and store information related
+to Transcripts.  Primarily this involves the retrieval or storage of
+Bio::EnsEMBL::Transcript objects from a database.
 
 See Bio::EnsEMBL::Transcript for details of the Transcript class.
 
-=head1 LICENCE
-
-This code is distributed under an Apache style licence. Please see
-http://www.ensembl.org/info/about/code_licence.html for details.
-
-=head1 AUTHOR
-
-Arne Stabenau <stabenau@ebi.ac.uk>, Ensembl core API team
-Based on Elia Stupkas Gene_Obj
-
-=head1 CONTACT
-
-Please post comments/questions to the Ensembl development list
-<ensembl-dev@ebi.ac.uk>
-
 =cut
+
+package Bio::EnsEMBL::DBSQL::TranscriptAdaptor;
 
 use strict;
 
@@ -69,10 +83,11 @@ use vars qw(@ISA);
 #  Status     : Stable
 
 sub _tables {
-  my $self = shift;
-
-  return ([ 'transcript', 't' ], [ 'transcript_stable_id', 'tsi' ],
-	  [ 'xref', 'x' ], [ 'external_db' , 'exdb' ] );
+  return (
+    [ 'transcript',           't' ],
+    [ 'transcript_stable_id', 'tsi' ],
+    [ 'xref',                 'x' ],
+    [ 'external_db',          'exdb' ] );
 }
 
 
@@ -86,27 +101,36 @@ sub _tables {
 #  Status     : Stable
 
 sub _columns {
-  my $self = shift;
+  my ($self) = @_;
 
-  my $created_date = $self->db->dbc->from_date_to_seconds("created_date");
-  my $modified_date = $self->db->dbc->from_date_to_seconds("modified_date");
+  my $created_date =
+    $self->db()->dbc()->from_date_to_seconds("created_date");
+  my $modified_date =
+    $self->db()->dbc()->from_date_to_seconds("modified_date");
 
-  return ( 't.transcript_id', 't.seq_region_id', 't.seq_region_start',
-           't.seq_region_end', 't.seq_region_strand', 't.analysis_id',
-           't.gene_id', 't.is_current',
-	   'tsi.stable_id','tsi.version', $created_date,
-	   $modified_date, 't.description', 't.biotype', 't.status',
-	   'exdb.db_name' ,'exdb.status',
-           'exdb.db_display_name',
-	   'x.xref_id', 'x.display_label', 'x.dbprimary_acc', 'x.version', 
-           'x.description', 'x.info_type', 'x.info_text',);
+  return (
+    't.transcript_id',     't.seq_region_id',
+    't.seq_region_start',  't.seq_region_end',
+    't.seq_region_strand', 't.analysis_id',
+    't.gene_id',           't.is_current',
+    'tsi.stable_id',       'tsi.version',
+    $created_date,         $modified_date,
+    't.description',       't.biotype',
+    't.status',            'exdb.db_name',
+    'exdb.status',         'exdb.db_display_name',
+    'x.xref_id',           'x.display_label',
+    'x.dbprimary_acc',     'x.version',
+    'x.description',       'x.info_type',
+    'x.info_text'
+  );
 }
 
-
 sub _left_join {
-  return ( [ 'transcript_stable_id', "tsi.transcript_id = t.transcript_id" ],
-	   [ 'xref', "x.xref_id = t.display_xref_id" ],
-	   [ 'external_db', "exdb.external_db_id = x.external_db_id" ] ); 
+  return (
+    [ 'transcript_stable_id', "tsi.transcript_id = t.transcript_id" ],
+    [ 'xref',                 "x.xref_id = t.display_xref_id" ],
+    [ 'external_db',          "exdb.external_db_id = x.external_db_id" ]
+  );
 }
 
 
@@ -126,7 +150,10 @@ sub _left_join {
 sub fetch_by_stable_id {
   my ($self, $stable_id) = @_;
 
-  my $constraint = "tsi.stable_id = '$stable_id' AND t.is_current = 1";
+  my $constraint = "tsi.stable_id = ? AND t.is_current = 1";
+
+  $self->bind_param_generic_fetch($stable_id,SQL_VARCHAR);
+
   my ($transcript) = @{ $self->generic_fetch($constraint) };
 
   return $transcript;
@@ -151,7 +178,9 @@ sub fetch_by_stable_id {
 sub fetch_all_versions_by_stable_id {
   my ($self, $stable_id) = @_;
 
-  my $constraint = "tsi.stable_id = '$stable_id'";
+  my $constraint = "tsi.stable_id = ?";
+
+  $self->bind_param_generic_fetch($stable_id,SQL_VARCHAR);
 
   return $self->generic_fetch($constraint);
 }
@@ -433,7 +462,7 @@ sub fetch_all_by_Slice {
                Transcript::transform method can be used to convert them.
                If no transcripts with the external identifier are found,
                a reference to an empty list is returned.
-  Returntype : Listref of Bio::EnsEMBL::Transcript objects
+  Returntype : listref of Bio::EnsEMBL::Transcript
   Exceptions : none
   Caller     : general
   Status     : Stable
@@ -450,6 +479,103 @@ sub fetch_all_by_external_name {
                                                   $external_db_name );
 
   return $self->fetch_all_by_dbID_list( \@ids );
+}
+
+=head2 fetch_all_by_GOTerm
+
+  Arg [1]   : Bio::EnsEMBL::OntologyTerm
+              The GO term for which transcripts should be fetched.
+
+  Example:  @transcripts = @{
+              $transcript_adaptor->fetch_all_by_GOTerm(
+                $go_adaptor->fetch_by_accession('GO:0030326') ) };
+
+  Description   : Retrieves a list of transcripts that are
+                  associated with the given GO term, or with any of
+                  its descendent GO terms.  The transcripts returned
+                  are in their native coordinate system, i.e. in
+                  the coordinate system in which they are stored
+                  in the database.  If another coordinate system
+                  is required then the Transcript::transfer or
+                  Transcript::transform method can be used.
+
+  Return type   : listref of Bio::EnsEMBL::Transcript
+  Exceptions    : Throws of argument is not a GO term
+  Caller        : general
+  Status        : Stable
+
+=cut
+
+sub fetch_all_by_GOTerm {
+  my ( $self, $term ) = @_;
+
+  if ( !ref($term)
+    || !$term->isa('Bio::EnsEMBL::OntologyTerm')
+    || $term->ontology() ne 'GO' )
+  {
+    throw('Argument is not a GO term');
+  }
+
+  my $entryAdaptor = $self->db->get_DBEntryAdaptor();
+
+  my %unique_dbIDs;
+  foreach my $accession ( map { $_->accession() }
+    ( $term, @{ $term->descendants() } ) )
+  {
+    my @ids =
+      $entryAdaptor->list_transcript_ids_by_extids( $accession, 'GO' );
+    foreach my $dbID (@ids) { $unique_dbIDs{$dbID} = 1 }
+  }
+
+  my @result = @{
+    $self->fetch_all_by_dbID_list(
+      [ sort { $a <=> $b } keys(%unique_dbIDs) ] ) };
+
+  return \@result;
+}
+
+=head2 fetch_all_by_GOTerm_accession
+
+  Arg [1]   : String
+              The GO term accession for which genes should be
+              fetched.
+
+  Example   :
+
+    @genes =
+      @{ $gene_adaptor->fetch_all_by_GOTerm_accession(
+        'GO:0030326') };
+
+  Description   : Retrieves a list of genes that are associated with
+                  the given GO term, or with any of its descendent
+                  GO terms.  The genes returned are in their native
+                  coordinate system, i.e. in the coordinate system
+                  in which they are stored in the database.  If
+                  another coordinate system is required then the
+                  Gene::transfer or Gene::transform method can be
+                  used.
+
+  Return type   : listref of Bio::EnsEMBL::Gene
+  Exceptions    : Throws of argument is not a GO term accession
+  Caller        : general
+  Status        : Stable
+
+=cut
+
+sub fetch_all_by_GOTerm_accession {
+  my ( $self, $accession ) = @_;
+
+  if ( $accession !~ /^GO:/ ) {
+    throw('Argument is not a GO term accession');
+  }
+
+  my $goAdaptor =
+    Bio::EnsEMBL::Registry->get_adaptor( 'Multi', 'Ontology',
+    'GOTerm' );
+
+  my $term = $goAdaptor->fetch_by_accession($accession);
+
+  return $self->fetch_all_by_GOTerm($term);
 }
 
 =head2 fetch_by_display_label
@@ -470,7 +596,10 @@ sub fetch_by_display_label {
   my $self = shift;
   my $label = shift;
 
-  my $constraint = "x.display_label = '$label' AND t.is_current = 1";
+  my $constraint = "x.display_label = ? AND t.is_current = 1";
+
+  $self->bind_param_generic_fetch($label,SQL_VARCHAR);
+
   my ($transcript) = @{ $self->generic_fetch($constraint) };
 
   return $transcript;
@@ -706,8 +835,10 @@ sub store {
     }
 
     if(defined($dxref_id)) {
-      my $sth = $self->prepare( "update transcript set display_xref_id = ?".
-                                " where transcript_id = ?");
+      my $sth =
+        $self->prepare(   "UPDATE transcript "
+                        . "SET display_xref_id = ? "
+                        . "WHERE transcript_id = ?" );
       $sth->bind_param(1, $dxref_id, SQL_INTEGER);
       $sth->bind_param(2, $transc_dbID, SQL_INTEGER);
       $sth->execute();
@@ -726,9 +857,9 @@ sub store {
   #
   # Link transcript to exons in exon_transcript table
   #
-  my $etst =
-    $self->prepare("insert into exon_transcript (exon_id,transcript_id,rank)"
-                   ." values (?,?,?)");
+  my $etst = $self->prepare(
+             "INSERT INTO exon_transcript (exon_id,transcript_id,rank) "
+               . "VALUES (?,?,?)" );
   my $rank = 1;
   foreach my $exon ( @{$transcript->get_all_Exons} ) {
     $etst->bind_param(1, $exon->dbID, SQL_INTEGER);
@@ -817,7 +948,7 @@ sub get_Interpro_by_transid {
       WHERE   tsi.stable_id = ?
       AND     tl.transcript_id = tsi.transcript_id
       AND     tl.translation_id = pf.translation_id
-      AND     i.id = pf.hit_id
+      AND     i.id = pf.hit_name
       AND     i.interpro_ac = x.dbprimary_acc
       AND     tsi.transcript_id = t.transcript_id
       AND     t.is_current = 1
@@ -1140,7 +1271,7 @@ sub _objs_from_sth {
        $description, $biotype, $status,
        $external_db, $external_status, $external_db_name,
        $xref_id, $xref_display_label, $xref_primary_acc, $xref_version, 
-       $xref_description, $xref_info_type, $xref_info_text);
+       $xref_description, $xref_info_type, $xref_info_text );
 
   $sth->bind_columns( \$transcript_id, \$seq_region_id, \$seq_region_start,
                       \$seq_region_end, \$seq_region_strand, \$analysis_id,
@@ -1149,7 +1280,7 @@ sub _objs_from_sth {
 		      \$description, \$biotype, \$status,
                       \$external_db, \$external_status, \$external_db_name,
 		      \$xref_id, \$xref_display_label, \$xref_primary_acc, \$xref_version,
-                      \$xref_description, \$xref_info_type, \$xref_info_text);
+                      \$xref_description, \$xref_info_type, \$xref_info_text );
 
   my $asm_cs;
   my $cmp_cs;
@@ -1191,7 +1322,8 @@ sub _objs_from_sth {
     #get the analysis object
     my $analysis = $analysis_hash{$analysis_id} ||=
       $aa->fetch_by_dbID($analysis_id);
-
+    #need to get the internal_seq_region, if present
+    $seq_region_id = $self->get_seq_region_id_internal($seq_region_id);
     my $slice = $slice_hash{"ID:".$seq_region_id};
     my $dest_mapper = $mapper;
 
@@ -1244,23 +1376,25 @@ sub _objs_from_sth {
     # If a destination slice was provided convert the coords
     # If the dest_slice starts at 1 and is foward strand, nothing needs doing
     #
-    if($dest_slice) {
-      if($dest_slice_start != 1 || $dest_slice_strand != 1) {
-        if($dest_slice_strand == 1) {
+    if ($dest_slice) {
+      if ( $dest_slice_start != 1 || $dest_slice_strand != 1 ) {
+        if ( $dest_slice_strand == 1 ) {
           $seq_region_start = $seq_region_start - $dest_slice_start + 1;
-          $seq_region_end   = $seq_region_end   - $dest_slice_start + 1;
+          $seq_region_end   = $seq_region_end - $dest_slice_start + 1;
         } else {
           my $tmp_seq_region_start = $seq_region_start;
           $seq_region_start = $dest_slice_end - $seq_region_end + 1;
-          $seq_region_end   = $dest_slice_end - $tmp_seq_region_start + 1;
+          $seq_region_end = $dest_slice_end - $tmp_seq_region_start + 1;
           $seq_region_strand *= -1;
         }
       }
 
-      #throw away features off the end of the requested slice
-      if($seq_region_end < 1 || $seq_region_start > $dest_slice_length || 
-	( $dest_slice_sr_id ne $seq_region_id )) {
-	next FEATURE;
+      # Throw away features off the end of the requested slice
+      if ( $seq_region_end < 1
+        || $seq_region_start > $dest_slice_length
+        || ( $dest_slice_sr_id ne $seq_region_id ) )
+      {
+        next FEATURE;
       }
 
       $slice = $dest_slice;
@@ -1268,45 +1402,51 @@ sub _objs_from_sth {
 
     my $display_xref;
 
-    if( $xref_id ) {
-      $display_xref = Bio::EnsEMBL::DBEntry->new_fast({
-           'dbID'        => $xref_id,
-           'display_id'  => $xref_display_label,
-           'primary_id'  => $xref_primary_acc,
-           'version'     => $xref_version,
-           'description' => $xref_description,
-           'info_type'   => $xref_info_type,
-           'info_text'   => $xref_info_text,
-           'adaptor' => $dbEntryAdaptor,
-           'db_display_name' => $external_db_name,
-           'dbname' => $external_db						       
-      });
+    if ($xref_id) {
+      $display_xref = Bio::EnsEMBL::DBEntry->new_fast( {
+          'dbID'            => $xref_id,
+          'display_id'      => $xref_display_label,
+          'primary_id'      => $xref_primary_acc,
+          'version'         => $xref_version,
+          'description'     => $xref_description,
+          'info_type'       => $xref_info_type,
+          'info_text'       => $xref_info_text,
+          'adaptor'         => $dbEntryAdaptor,
+          'db_display_name' => $external_db_name,
+          'dbname'          => $external_db
+      } );
     }
-				
 
-    #finally, create the new transcript
-    push @transcripts, Bio::EnsEMBL::Transcript->new(
-        '-analysis'      =>  $analysis,
-        '-start'         =>  $seq_region_start,
-        '-end'           =>  $seq_region_end,
-        '-strand'        =>  $seq_region_strand,
-        '-adaptor'       =>  $self,
-        '-slice'         =>  $slice,
-        '-dbID'          =>  $transcript_id,
-        '-stable_id'     =>  $stable_id,
-        '-version'       =>  $version,
-	'-created_date'  =>  $created_date || undef,
-	'-modified_date' =>  $modified_date || undef,
-        '-external_name' =>  $xref_display_label,
-        '-external_db'   =>  $external_db,
-        '-external_status' => $external_status,
-        '-external_display_name' => $external_db_name, 
-        '-display_xref'  => $display_xref,
-	'-description'   => $description,
-	'-biotype'       => $biotype,
-	'-status'        => $status,
-        '-is_current'    => $is_current
-    );
+
+    # Finally, create the new Transcript.
+    push(
+      @transcripts,
+      $self->_create_feature_fast(
+        'Bio::EnsEMBL::Transcript',
+        {
+          'analysis'              => $analysis,
+          'start'                 => $seq_region_start,
+          'end'                   => $seq_region_end,
+          'strand'                => $seq_region_strand,
+          'adaptor'               => $self,
+          'slice'                 => $slice,
+          'dbID'                  => $transcript_id,
+          'stable_id'             => $stable_id,
+          'version'               => $version,
+          'created_date'          => $created_date || undef,
+          'modified_date'         => $modified_date || undef,
+          'external_name'         => $xref_display_label,
+          'external_db'           => $external_db,
+          'external_status'       => $external_status,
+          'external_display_name' => $external_db_name,
+          'display_xref'          => $display_xref,
+          'description'           => $description,
+          'biotype'               => $biotype,
+          'status'                => $status,
+          'is_current'            => $is_current,
+          'edits_enabled'         => 1
+        } ) );
+
   }
 
   return \@transcripts;
@@ -1387,8 +1527,9 @@ sub fetch_all_by_exon_supporting_evidence {
                one of "dna_align_feature" or "protein_align_feature"
   Arg [3]    : (optional) Bio::Ensembl::Analysis
   Example    : $transcripts = $transcript_adaptor->fetch_all_by_transcript_supporting_evidence('XYZ', 'dna_align_feature');
-  Description: Gets all the transcripts with evidence for a specified hit on a
-               particular type of feature. Optionally filter by analysis.
+  Description: Gets all the transcripts with evidence from a specified hit_name on a particular type of feature, stored in the  
+               transcript_supporting_feature table. Optionally filter by analysis.  For hits stored in the supporting_feature 
+               table (linked to exons) use fetch_all_by_exon_supporting_evidence instead.
   Returntype : Listref of Bio::EnsEMBL::Transcript objects
   Exceptions : If feature_type is not of correct type.
   Caller     : general
@@ -1407,7 +1548,7 @@ sub fetch_all_by_transcript_supporting_evidence {
   my $anal_from = "";
   $anal_from = ", analysis a " if ($analysis);
   my $anal_where = "";
-  $anal_from = "AND a.analysis_id = f.analysis_id AND a.analysis_id=? "
+  $anal_where = "AND a.analysis_id = f.analysis_id AND a.analysis_id=? "
     if ($analysis);
 
   my $sql = qq(

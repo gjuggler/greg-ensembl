@@ -1,7 +1,22 @@
-#
-# EnsEMBL module for Bio::EnsEMBL::DBSQL::CoordSystemAdaptor
-#
-#
+=head1 LICENSE
+
+  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
+=cut
 
 =head1 NAME
 
@@ -9,30 +24,36 @@ Bio::EnsEMBL::DBSQL::CoordSystemAdaptor
 
 =head1 SYNOPSIS
 
-  my $db = Bio::EnsEMBL::DBSQL::DBAdaptor->new(...);
+  use Bio::EnsEMBL::Registry;
 
-  my $csa = $db->get_CoordSystemAdaptor();
+  Bio::EnsEMBL::Registry->load_registry_from_db(
+    -host => 'ensembldb.ensembl.org',
+    -user => 'anonymous'
+  );
+
+  $csa = Bio::EnsEMBL::Registry->get_adaptor( "human", "core",
+    "coordsystem" );
 
   #
   # Get all coord systems in the database:
   #
-  foreach my $cs (@{$csa->fetch_all()}) {
-    print $cs->name, ' ',  $cs->version, "\n";
+  foreach my $cs ( @{ $csa->fetch_all() } ) {
+    print $cs->name, ' ', $cs->version, "\n";
   }
 
   #
   # Fetching by name:
   #
 
-  #use the default version of coord_system 'chromosome' (e.g. NCBI33):
+  # use the default version of coord_system 'chromosome' (e.g. NCBI33):
   $cs = $csa->fetch_by_name('chromosome');
 
-  #get an explicit version of coord_system 'chromosome':
-  $cs = $csa->fetch_by_name('chromsome', 'NCBI34');
+  # get an explicit version of coord_system 'chromosome':
+  $cs = $csa->fetch_by_name( 'chromsome', 'NCBI34' );
 
-  #get all coord_systems of name 'chromosome':
-  foreach $cs (@{$csa->fetch_all_by_name('chromosome')}) {
-     print $cs->name, ' ', $cs->version, "\n";
+  # get all coord_systems of name 'chromosome':
+  foreach $cs ( @{ $csa->fetch_all_by_name('chromosome') } ) {
+    print $cs->name, ' ', $cs->version, "\n";
   }
 
   #
@@ -44,23 +65,23 @@ Bio::EnsEMBL::DBSQL::CoordSystemAdaptor
   # Fetching the pseudo coord system 'toplevel'
   #
 
-  #Get the default top_level coord system:
+  # Get the default top_level coord system:
   $cs = $csa->fetch_top_level();
 
-  #can also use an alias in fetch_by_name:
+  # can also use an alias in fetch_by_name:
   $cs = $csa->fetch_by_name('toplevel');
 
-  #can also request toplevel using rank=0
+  # can also request toplevel using rank=0
   $cs = $csa->fetch_by_rank(0);
 
   #
   # Fetching by sequence level:
   #
 
-  #Get the coord system which is used to store sequence:
+  # Get the coord system which is used to store sequence:
   $cs = $csa->fetch_sequence_level();
 
-  #can also use an alias in fetch_by_name:
+  # can also use an alias in fetch_by_name:
   $cs = $csa->fetch_by_name('seqlevel');
 
   #
@@ -71,33 +92,28 @@ Bio::EnsEMBL::DBSQL::CoordSystemAdaptor
 
 =head1 DESCRIPTION
 
-This adaptor allows the querying of information from the coordinate system
-adaptor.
+This adaptor allows the querying of information from the coordinate
+system adaptor.
 
 Note that many coordinate systems do not have a concept of a version
-for the entire coordinate system (though they may have a per-sequence version).
-The 'chromosome' coordinate system usually has a version (i.e. the
-assembly version) but the clonal coordinate system does not (despite having
-individual sequence versions).  In the case where a coordinate system does
-not have a version an empty string ('') is used instead.
-
-=head1 AUTHOR - Graham McVicker
-
-=head1 CONTACT
-
-Post questions to the EnsEMBL development list ensembl-dev@ebi.ac.uk
+for the entire coordinate system (though they may have a per-sequence
+version).  The 'chromosome' coordinate system usually has a version
+(i.e. the assembly version) but the clonal coordinate system does not
+(despite having individual sequence versions).  In the case where a
+coordinate system does not have a version an empty string ('') is used
+instead.
 
 =head1 METHODS
 
 =cut
 
+package Bio::EnsEMBL::DBSQL::CoordSystemAdaptor;
+
 use strict;
 use warnings;
 
-package Bio::EnsEMBL::DBSQL::CoordSystemAdaptor;
-
 use Bio::EnsEMBL::DBSQL::BaseAdaptor;
-use Bio::EnsEMBL::Utils::Exception qw(throw warning);
+use Bio::EnsEMBL::Utils::Exception qw(throw warning deprecate);
 use Bio::EnsEMBL::CoordSystem;
 
 use vars qw(@ISA);
@@ -120,147 +136,214 @@ use vars qw(@ISA);
 =cut
 
 sub new {
-  my $caller = shift;
+  my ( $proto, @args ) = @_;
 
-  my $class = ref($caller) || $caller;
-
-  my $self = $class->SUPER::new(@_);
+  my $class = ref($proto) || $proto;
+  my $self = $class->SUPER::new(@args);
 
   #
   # Cache the entire contents of the coord_system table cross-referenced
-  # by dbID and name
+  # by dbID and name.
   #
 
-  #keyed on name, list of coord_system value
+  # keyed on name, list of coord_system value
   $self->{'_name_cache'} = {};
 
-  #keyed on id, coord_system value
+  # keyed on id, coord_system value
   $self->{'_dbID_cache'} = {};
 
-  #keyed on rank
+  # keyed on rank
   $self->{'_rank_cache'} = {};
 
-  #keyed on id, 1/undef values
-  $self->{'_is_sequence_level'} = {};
+  # keyed on id, 1/undef values
+  $self->{'_is_sequence_level'}  = {};
   $self->{'_is_default_version'} = {};
 
+  #cache to store the seq_region_mapping information
+  #from internal->external
+  $self->{'_internal_seq_region_mapping'} = {};
+  #from external->internal
+  $self->{'_external_seq_region_mapping'} = {};
+
   my $sth = $self->prepare(
-    'SELECT coord_system_id, name, rank, version, attrib ' .
-    'FROM coord_system');
+                  'SELECT coord_system_id, name, rank, version, attrib '
+                    . 'FROM coord_system '
+                    . 'WHERE species_id = ?' );
+
+  $sth->bind_param( 1, $self->species_id(), SQL_INTEGER );
   $sth->execute();
 
-  my ($dbID, $name, $rank, $version, $attrib);
-  $sth->bind_columns(\$dbID, \$name, \$rank, \$version, \$attrib);
+  my ( $dbID, $name, $rank, $version, $attrib );
+  $sth->bind_columns( \( $dbID, $name, $rank, $version, $attrib ) );
 
-  while($sth->fetch()) {
+  while ( $sth->fetch() ) {
     my $seq_lvl = 0;
     my $default = 0;
-    if($attrib) {
-      foreach my $attrib (split(',', $attrib)) {
+
+    if ( defined($attrib) ) {
+      foreach my $attrib ( split( ',', $attrib ) ) {
         $self->{"_is_$attrib"}->{$dbID} = 1;
-        if($attrib eq 'sequence_level') {
+        if ( $attrib eq 'sequence_level' ) {
           $seq_lvl = 1;
-        } elsif($attrib eq 'default_version') {
+        } elsif ( $attrib eq 'default_version' ) {
           $default = 1;
         }
       }
     }
 
-    my $cs = Bio::EnsEMBL::CoordSystem->new
-      (-DBID           => $dbID,
-       -ADAPTOR        => $self,
-       -NAME           => $name,
-       -VERSION        => $version,
-       -RANK           => $rank,
-       -SEQUENCE_LEVEL => $seq_lvl,
-       -DEFAULT        => $default);
+    my $cs =
+      Bio::EnsEMBL::CoordSystem->new( -DBID           => $dbID,
+                                      -ADAPTOR        => $self,
+                                      -NAME           => $name,
+                                      -VERSION        => $version,
+                                      -RANK           => $rank,
+                                      -SEQUENCE_LEVEL => $seq_lvl,
+                                      -DEFAULT        => $default );
 
     $self->{'_dbID_cache'}->{$dbID} = $cs;
 
-    $self->{'_name_cache'}->{lc($name)} ||= [];
+    $self->{'_name_cache'}->{ lc($name) } ||= [];
     $self->{'_rank_cache'}->{$rank} = $cs;
-    push @{$self->{'_name_cache'}->{lc($name)}}, $cs;
-  }
+
+    push @{ $self->{'_name_cache'}->{ lc($name) } }, $cs;
+
+  } ## end while ( $sth->fetch() )
   $sth->finish();
 
-  $self->_cache_mapping_paths;
+  $self->_cache_mapping_paths();
 
+  $self->_cache_seq_region_mapping();
 
   return $self;
-}
+} ## end sub new
 
-sub _cache_mapping_paths{
+sub _cache_seq_region_mapping {
   #
-  # Retrieve a list of available mappings from the meta table.
-  # this may eventually be moved a table of its own if this proves too
-  # cumbersome
+  # This cache will load the information from the seq_region_table, if
+  # any, to allow mapping between internal and external seq_region_id.
   #
-  my $self = shift;
+
+  my ($self) = @_;
+
+  # For a given core database, will return the schema_build information.
+  my $schema_build = $self->db->_get_schema_build();
+
+  # Prepare the query to get relation for the current database being
+  # used.
+  my $sql = qq(
+  SELECT    s.internal_seq_region_id,
+            s.external_seq_region_id
+  FROM      seq_region_mapping s,
+            mapping_set ms,
+            seq_region sr,
+            coord_system cs
+  WHERE     ms.mapping_set_id = s.mapping_set_id
+    AND     ms.schema_build = ?
+    AND     s.internal_seq_region_id = sr.seq_region_id
+    AND     sr.coord_system_id = cs.coord_system_id
+    AND     cs.species_id = ?);
+
+  my $sth = $self->prepare($sql);
+
+  $sth->bind_param( 1, $schema_build,       SQL_VARCHAR );
+  $sth->bind_param( 2, $self->species_id(), SQL_INTEGER );
+
+  $sth->execute();
+
+  # Load the cache:
+  foreach my $row ( @{ $sth->fetchall_arrayref() } ) {
+    # internal->external
+    $self->{'_internal_seq_region_mapping'}->{ $row->[0] } = $row->[1];
+    # external->internal
+    $self->{'_external_seq_region_mapping'}->{ $row->[1] } = $row->[0];
+  }
+
+  $sth->finish();
+
+} ## end sub _cache_seq_region_mapping
+
+
+sub _cache_mapping_paths {
+  # Retrieve a list of available mappings from the meta table.  This
+  # may eventually be moved a table of its own if this proves too
+  # cumbersome.
+
+  my ($self) = @_;
 
   my %mapping_paths;
   my $mc = $self->db()->get_MetaContainer();
 
- MAP_PATH:
-  foreach my $map_path (@{$mc->list_value_by_key('assembly.mapping')}) {
-    my @cs_strings = split(/[|#]/, $map_path);
+MAP_PATH:
+  foreach
+    my $map_path ( @{ $mc->list_value_by_key('assembly.mapping') } )
+  {
+    my @cs_strings = split( /[|#]/, $map_path );
 
-    if(@cs_strings < 2) {
-      warning("Incorrectly formatted assembly.mapping value in meta " .
-              "table: $map_path");
+    if ( scalar(@cs_strings) < 2 ) {
+      warning(   "Incorrectly formatted assembly.mapping value in meta "
+               . "table: $map_path" );
       next MAP_PATH;
     }
 
     my @coord_systems;
     foreach my $cs_string (@cs_strings) {
-      my($name, $version) = split(/:/, $cs_string);
-      my $cs = $self->fetch_by_name($name, $version);
-      if(!$cs) {
-        warning("Unknown coordinate system specified in meta table " .
-                " assembly.mapping:\n  $name:$version");
+      my ( $name, $version ) = split( /:/, $cs_string );
+
+      my $cs = $self->fetch_by_name( $name, $version );
+
+      if ( !defined($cs) ) {
+        warning(   "Unknown coordinate system specified in meta table "
+                 . " assembly.mapping:\n  $name:$version" );
         next MAP_PATH;
       }
-      push @coord_systems, $cs;
+
+      push( @coord_systems, $cs );
     }
 
-    # if the delimiter is a # we want a special case, multiple parts of the same
-    # componente map to same assembly part. As this looks like the "long" mapping
-    # we just make the path a bit longer :-)
+    # If the delimiter is a '#' we want a special case, multiple parts
+    # of the same component map to the same assembly part.  As this
+    # looks like the "long" mapping, we just make the path a bit longer
+    # :-)
 
-    if( $map_path =~ /\#/ && scalar( @coord_systems ) == 2 ) {
-      splice( @coord_systems, 1, 0, ( undef ));
+    if ( index( $map_path, '#' ) != -1 && scalar(@coord_systems) == 2 )
+    {
+      splice( @coord_systems, 1, 0, (undef) );
     }
 
     my $cs1 = $coord_systems[0];
-    my $cs2  = $coord_systems[$#coord_systems];
+    my $cs2 = $coord_systems[$#coord_systems];
 
-    my $key1 = $cs1->name().':'.$cs1->version();
-    my $key2 = $cs2->name().':'.$cs2->version();
+    my $key1 = $cs1->name() . ':' . $cs1->version();
+    my $key2 = $cs2->name() . ':' . $cs2->version();
 
-    if(exists($mapping_paths{"$key1|$key2"})) {
-      warning("Meta table specifies multiple mapping paths between " .
-              "coord systems $key1 and $key2.\n" .
-              "Choosing shorter path arbitrarily.");
+    if ( exists( $mapping_paths{"$key1|$key2"} ) ) {
+      warning(   "Meta table specifies multiple mapping paths between "
+               . "coord systems $key1 and $key2.\n"
+               . "Choosing shorter path arbitrarily." );
 
-      next MAP_PATH if(@{$mapping_paths{"$key1|$key2"}} < @coord_systems);
+      if ( scalar( @{ $mapping_paths{"$key1|$key2"} } ) <
+           scalar(@coord_systems) )
+      {
+        next MAP_PATH;
+      }
     }
 
     $mapping_paths{"$key1|$key2"} = \@coord_systems;
-  }
+  } ## end foreach my $map_path ( @{ $mc...
 
-  #
-  # Create the pseudo coord system 'toplevel' and cache it so that
-  # only one of these is created for each db...
-  #
-  my $toplevel = Bio::EnsEMBL::CoordSystem->new(-TOP_LEVEL => 1,
-                                                -NAME      => 'toplevel',
-                                                -ADAPTOR   => $self);
-  $self->{'_top_level'} = $toplevel;
+  # Create the pseudo coord system 'toplevel' and cache it so that only
+  # one of these is created for each database.
 
+  my $toplevel =
+    Bio::EnsEMBL::CoordSystem->new( -TOP_LEVEL => 1,
+                                    -NAME      => 'toplevel',
+                                    -ADAPTOR   => $self );
+
+  $self->{'_top_level'}     = $toplevel;
   $self->{'_mapping_paths'} = \%mapping_paths;
 
-  return 1;                           
-}
-
+  return 1;
+} ## end sub _cache_mapping_paths
 
 =head2 fetch_all
 
@@ -765,8 +848,21 @@ sub store_mapping_path{
   return [@retlist];
 }
 
+=head2 fetch_by_attrib
 
-sub _fetch_by_attrib {
+  Arg [1]    : string attrib
+  Arg [2]    : (optional) string version
+  Example    : $csa->fetch_by_attrib('default_version','NCBIM37');
+  Description: Retrieves a CoordSystem object from the database that have the specified
+               attrib and version, if no version is specified, returns the default version
+  Returntype : Bio::EnsEMBL::CoordSystem object
+  Exceptions : throw when attrib not present
+  Caller     : general
+  Status     : Stable
+
+=cut
+
+sub fetch_by_attrib {
   my $self = shift;
   my $attrib = shift;
   my $version = shift;
@@ -802,7 +898,31 @@ sub _fetch_by_attrib {
 }
 
 
-sub _fetch_all_by_attrib {
+sub _fetch_by_attrib{
+    my $self = shift;
+    my $attrib = shift;
+    my $version = shift;
+
+    deprecate("You should be using the public method fetch_by_attrib ".
+	      "(without initial underscore) instead");
+
+    return $self->fetch_by_attrib($attrib,$version);
+}
+
+=head2 fetch_all_by_attrib
+
+  Arg [1]    : string attrib
+  Example    : $csa->fetch_all_by_attrib('default_version');
+  Description: Retrieves all CoordSystem object from the database that have the specified
+               attrib.
+  Returntype : reference to a list of Bio::EnsEMBL::CoordSystem objects
+  Exceptions : throw when attrib not present
+  Caller     : general
+  Status     : Stable
+
+=cut
+
+sub fetch_all_by_attrib {
   my $self = shift;
   my $attrib = shift;
 
@@ -814,6 +934,15 @@ sub _fetch_all_by_attrib {
   return \@coord_systems;
 }
 
+sub _fetch_all_by_attrib{
+    my $self = shift;
+    my $attrib = shift;
+
+    deprecate("You should be using the public method fetch_all_by_attrib ".
+	      "(without initial underscore) instead");
+
+    return $self->fetch_all_by_attrib($attrib);
+}
 
 =head2 store
 
@@ -901,16 +1030,20 @@ sub store {
   # store the coordinate system in the database
   #
 
-  my $sth = $db->dbc->prepare('INSERT INTO coord_system ' .
-                         'SET name    = ?, ' .
-                             'version = ?, ' .
-                             'attrib  = ?,' .
-                             'rank    = ?');
+  my $sth =
+    $db->dbc->prepare(   'INSERT INTO coord_system '
+                       . 'SET name = ?, '
+                       . 'version = ?, '
+                       . 'attrib = ?,'
+                       . 'rank = ?,'
+                       . 'species_id = ?' );
 
-  $sth->bind_param(1,$name,SQL_VARCHAR);
-  $sth->bind_param(2,$version,SQL_VARCHAR);
-  $sth->bind_param(3,$attrib_str,SQL_VARCHAR);
-  $sth->bind_param(4,$rank,SQL_INTEGER);
+  $sth->bind_param( 1, $name,               SQL_VARCHAR );
+  $sth->bind_param( 2, $version,            SQL_VARCHAR );
+  $sth->bind_param( 3, $attrib_str,         SQL_VARCHAR );
+  $sth->bind_param( 4, $rank,               SQL_INTEGER );
+  $sth->bind_param( 5, $self->species_id(), SQL_INTEGER );
+
   $sth->execute();
   my $dbID = $sth->{'mysql_insertid'};
   $sth->finish();

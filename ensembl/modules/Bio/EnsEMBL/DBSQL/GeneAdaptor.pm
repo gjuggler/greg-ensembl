@@ -1,4 +1,22 @@
-package Bio::EnsEMBL::DBSQL::GeneAdaptor;
+=head1 LICENSE
+
+  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
+=cut
 
 =head1 NAME
 
@@ -10,42 +28,37 @@ storage of Gene objects
   use Bio::EnsEMBL::Registry;
 
   Bio::EnsEMBL::Registry->load_registry_from_db(
-              -host => 'ensembldb.ensembl.org',
-              -user => 'anonymous',
+    -host => 'ensembldb.ensembl.org',
+    -user => 'anonymous',
   );
 
-  $gene_adaptor = Bio::EnsEMBL::Registry->get_adaptor("human", "core", "gene");
+  $gene_adaptor =
+    Bio::EnsEMBL::Registry->get_adaptor( "human", "core", "gene" );
 
   $gene = $gene_adaptor->fetch_by_dbID(1234);
 
   $gene = $gene_adaptor->fetch_by_stable_id('ENSG00000184129');
 
-  @genes = @{$gene_adaptor->fetch_all_by_external_name('BRCA2')};
+  @genes = @{ $gene_adaptor->fetch_all_by_external_name('BRCA2') };
 
-  $slice_adaptor = Bio::EnsEMBL::Registry->get_adaptor("human", "core", "slice");;
-  $slice = $slice_adaptor->fetch_by_region('chromosome', '1', 1, 1000000);
-  @genes = @{$gene_adaptor->fetch_all_by_Slice($slice)};
+  $slice_adaptor =
+    Bio::EnsEMBL::Registry->get_adaptor( "human", "core", "slice" );
+
+  $slice =
+    $slice_adaptor->fetch_by_region( 'chromosome', '1', 1, 1000000 );
+
+  @genes = @{ $gene_adaptor->fetch_all_by_Slice($slice) };
 
 =head1 DESCRIPTION
 
-This is a database aware adaptor for the retrieval and storage of gene objects.
+This is a database aware adaptor for the retrieval and storage of gene
+objects.
 
-=head1 LICENCE
-
-This code is distributed under an Apache style licence. Please see
-http://www.ensembl.org/info/about/code_licence.html for details.
-
-=head1 AUTHOR
-
-Arne Stabenau <stabenau@ebi.ac.uk>, Ensembl core API team
-Based on Elia Stupkas Gene_Obj
-
-=head1 CONTACT
-
-Please post comments/questions to the Ensembl development list
-<ensembl-dev@ebi.ac.uk>
+=head1 METHODS
 
 =cut
+
+package Bio::EnsEMBL::DBSQL::GeneAdaptor;
 
 use strict;
 
@@ -69,12 +82,11 @@ use vars '@ISA';
 #  Status     : Stable
 
 sub _tables {
-  my $self = shift;
-
-  return ([ 'gene', 'g' ],
-          [ 'gene_stable_id', 'gsi' ],
-          [ 'xref', 'x' ],
-          [ 'external_db' , 'exdb' ]);
+  return (
+    [ 'gene',           'g' ],
+    [ 'gene_stable_id', 'gsi' ],
+    [ 'xref',           'x' ],
+    [ 'external_db',    'exdb' ] );
 }
 
 
@@ -89,27 +101,37 @@ sub _tables {
 #  Status     : Stable
 
 sub _columns {
-  my $self = shift;
+  my ($self) = @_;
 
-  my $created_date = $self->db->dbc->from_date_to_seconds("gsi.created_date");
-  my $modified_date = $self->db->dbc->from_date_to_seconds("gsi.modified_date");
-  
-  return ( 'g.gene_id', 'g.seq_region_id', 'g.seq_region_start',
-           'g.seq_region_end', 'g.seq_region_strand',
-           'g.analysis_id' ,'g.biotype', 'g.display_xref_id',
-	   'g.description', 'g.status', 'g.source', 'g.is_current',
-	   'g.canonical_transcript_id', 'g.canonical_annotation',
-	   'gsi.stable_id', 'gsi.version',  $created_date, $modified_date,
-	   'x.display_label' ,'x.dbprimary_acc', 'x.description', 'x.version', 
-	   'exdb.db_name', 'exdb.status', 'exdb.db_release',
-           'exdb.db_display_name', 'x.info_type', 'x.info_text');
-}
+  my $created_date =
+    $self->db()->dbc()->from_date_to_seconds("gsi.created_date");
+  my $modified_date =
+    $self->db()->dbc()->from_date_to_seconds("gsi.modified_date");
+
+  return (
+    'g.gene_id',                 'g.seq_region_id',
+    'g.seq_region_start',        'g.seq_region_end',
+    'g.seq_region_strand',       'g.analysis_id',
+    'g.biotype',                 'g.display_xref_id',
+    'g.description',             'g.status',
+    'g.source',                  'g.is_current',
+    'g.canonical_transcript_id', 'g.canonical_annotation',
+    'gsi.stable_id',             'gsi.version',
+    $created_date,               $modified_date,
+    'x.display_label',           'x.dbprimary_acc',
+    'x.description',             'x.version',
+    'exdb.db_name',              'exdb.status',
+    'exdb.db_release',           'exdb.db_display_name',
+    'x.info_type',               'x.info_text'
+  );
+} ## end sub _columns
 
 
 sub _left_join {
-  return ( [ 'gene_stable_id', "gsi.gene_id = g.gene_id" ],
-	   [ 'xref', "x.xref_id = g.display_xref_id" ],
-	   [ 'external_db', "exdb.external_db_id = x.external_db_id" ] );
+  return (
+    [ 'gene_stable_id', "gsi.gene_id = g.gene_id" ],
+    [ 'xref',           "x.xref_id = g.display_xref_id" ],
+    [ 'external_db',    "exdb.external_db_id = x.external_db_id" ] );
 }
 
 
@@ -174,7 +196,8 @@ sub fetch_by_display_label {
   my $self = shift;
   my $label = shift;
 
-  my $constraint = "x.display_label = '$label' AND g.is_current = 1";
+  my $constraint = "x.display_label = ? AND g.is_current = 1";
+  $self->bind_param_generic_fetch($label,SQL_VARCHAR);
   my ($gene) = @{ $self->generic_fetch($constraint) };
 
   return $gene;
@@ -203,7 +226,8 @@ sub fetch_by_display_label {
 sub fetch_by_stable_id {
   my ($self, $stable_id) = @_;
 
-  my $constraint = "gsi.stable_id = '$stable_id' AND g.is_current = 1";
+  my $constraint = "gsi.stable_id = ? AND g.is_current = 1";
+  $self->bind_param_generic_fetch($stable_id,SQL_VARCHAR);
   my ($gene) = @{ $self->generic_fetch($constraint) };
 
   return $gene;
@@ -214,9 +238,12 @@ sub fetch_by_stable_id {
 =head2 fetch_all_by_biotype 
 
   Arg [1]    : String $biotype 
-               The biotype of the gene to retrieve
-  Example    : $gene = $gene_adaptor->fetch_all_by_biotype('protein_coding') ; 
-  Description: Retrieves an array reference of gene objects from the database via its biotype.
+               listref of $biotypes
+               The biotype of the gene to retrieve. You can have as an argument a reference
+               to a list of biotypes
+  Example    : $gene = $gene_adaptor->fetch_all_by_biotype('protein_coding'); 
+               $gene = $gene_adaptor->fetch_all_by_biotypes(['protein_coding', 'sRNA', 'miRNA']);
+  Description: Retrieves an array reference of gene objects from the database via its biotype or biotypes.
                The genes will be retrieved in its native coordinate system (i.e.
                in the coordinate system it is stored in the database). It may
                be converted to a different coordinate system through a call to
@@ -232,7 +259,24 @@ sub fetch_by_stable_id {
 sub fetch_all_by_biotype {
   my ($self, $biotype) = @_;
 
-  my $constraint = "g.biotype = '$biotype' and g.is_current = 1" ;
+  if (!defined $biotype){
+      throw("Biotype or listref of biotypes expected");
+  }
+  my $constraint;
+  if (ref($biotype) eq 'ARRAY'){
+      $constraint = "g.biotype IN (";
+      foreach my $b (@{$biotype}){
+	  $constraint .= "?,";	  
+	  $self->bind_param_generic_fetch($b,SQL_VARCHAR);
+      }
+      chop($constraint); #remove last , from expression
+      $constraint .= ") and g.is_current = 1";
+      
+  }
+  else{
+      $constraint = "g.biotype = ? and g.is_current = 1";
+      $self->bind_param_generic_fetch($biotype,SQL_VARCHAR);
+  }
   my @genes  = @{ $self->generic_fetch($constraint) };
   return \@genes ;
 }
@@ -257,8 +301,8 @@ sub fetch_all_by_biotype {
 sub fetch_all_versions_by_stable_id {
   my ($self, $stable_id) = @_;
 
-  my $constraint = "gsi.stable_id = '$stable_id'";
-
+  my $constraint = "gsi.stable_id = ?";
+  $self->bind_param_generic_fetch($stable_id,SQL_VARCHAR);
   return $self->generic_fetch($constraint);
 }
 
@@ -334,20 +378,26 @@ sub fetch_all_by_domain {
   throw("domain argument is required") unless ($domain);
 
   my $sth = $self->prepare(qq(
-      SELECT tr.gene_id
-      FROM interpro i,
-           protein_feature pf,
-           transcript tr,
-           translation tl
-      WHERE i.interpro_ac = ?
-      AND   i.id = pf.hit_id
-      AND   pf.translation_id = tl.translation_id
-      AND   tr.transcript_id = tl.transcript_id
-      AND   tr.is_current = 1
-      GROUP BY tr.gene_id
-  ));
+  SELECT    tr.gene_id
+  FROM      interpro i,
+            protein_feature pf,
+            transcript tr,
+            translation tl,
+            seq_region sr,
+            coord_system cs
+  WHERE     cs.species_id = ?
+    AND     cs.coord_system_id = sr.coord_system_id
+    AND     sr.seq_region_id = tr.seq_region_id
+    AND     tr.is_current = 1
+    AND     tr.transcript_id = tl.transcript_id
+    AND     tl.translation_id = pf.translation_id
+    AND     pf.hit_name = i.id
+    AND     i.interpro_ac = ?
+  GROUP BY  tr.gene_id));
 
-  $sth->bind_param(1, $domain, SQL_VARCHAR);
+  $sth->bind_param( 1, $self->species_id(), SQL_VARCHAR );
+  $sth->bind_param( 2, $domain,             SQL_VARCHAR );
+
   $sth->execute();
 
   my @array = @{$sth->fetchall_arrayref()};
@@ -452,9 +502,9 @@ sub fetch_all_by_Slice_and_external_dbname_link {
                immediately rather than lazy-loading them later.  This
                is more efficient when there are a lot of genes whose
                transcripts are going to be used.
-  Returntype : reference to list of transcripts
+  Returntype : reference to list of genes 
   Exceptions : thrown if exon cannot be placed on transcript slice
-  Caller     : Slice::get_all_Transcripts
+  Caller     : Slice::get_all_Genes
   Status     : Stable
 
 =cut
@@ -701,7 +751,7 @@ sub fetch_by_translation_stable_id {
                system they are stored in the database in.  If another
                coordinate system is required then the Gene::transfer or
                Gene::transform method can be used.
-  Returntype : listref of Bio::EnsEMBL::Genes
+  Returntype : listref of Bio::EnsEMBL::Gene
   Exceptions : none
   Caller     : goview, general
   Status     : Stable
@@ -725,6 +775,102 @@ sub fetch_all_by_external_name {
   return \@result;
 }
 
+=head2 fetch_all_by_GOTerm
+
+  Arg [1]   : Bio::EnsEMBL::OntologyTerm
+              The GO term for which genes should be fetched.
+
+  Example:  @genes = @{
+              $gene_adaptor->fetch_all_by_GOTerm(
+                $go_adaptor->fetch_by_accession('GO:0030326') ) };
+
+  Description   : Retrieves a list of genes that are associated with
+                  the given GO term, or with any of its descendent
+                  GO terms.  The genes returned are in their native
+                  coordinate system, i.e. in the coordinate system
+                  in which they are stored in the database.  If
+                  another coordinate system is required then the
+                  Gene::transfer or Gene::transform method can be
+                  used.
+
+  Return type   : listref of Bio::EnsEMBL::Gene
+  Exceptions    : Throws of argument is not a GO term
+  Caller        : general
+  Status        : Stable
+
+=cut
+
+sub fetch_all_by_GOTerm {
+  my ( $self, $term ) = @_;
+
+  if ( !ref($term)
+    || !$term->isa('Bio::EnsEMBL::OntologyTerm')
+    || $term->ontology() ne 'GO' )
+  {
+    throw('Argument is not a GO term');
+  }
+
+  my $entryAdaptor = $self->db->get_DBEntryAdaptor();
+
+  my %unique_dbIDs;
+  foreach my $accession ( map { $_->accession() }
+    ( $term, @{ $term->descendants() } ) )
+  {
+    my @ids =
+      $entryAdaptor->list_gene_ids_by_extids( $accession, 'GO' );
+    foreach my $dbID (@ids) { $unique_dbIDs{$dbID} = 1 }
+  }
+
+  my @result = @{
+    $self->fetch_all_by_dbID_list(
+      [ sort { $a <=> $b } keys(%unique_dbIDs) ] ) };
+
+  return \@result;
+}
+
+=head2 fetch_all_by_GOTerm_accession
+
+  Arg [1]   : String
+              The GO term accession for which genes should be
+              fetched.
+
+  Example   :
+
+    @genes =
+      @{ $gene_adaptor->fetch_all_by_GOTerm_accession(
+        'GO:0030326') };
+
+  Description   : Retrieves a list of genes that are associated with
+                  the given GO term, or with any of its descendent
+                  GO terms.  The genes returned are in their native
+                  coordinate system, i.e. in the coordinate system
+                  in which they are stored in the database.  If
+                  another coordinate system is required then the
+                  Gene::transfer or Gene::transform method can be
+                  used.
+
+  Return type   : listref of Bio::EnsEMBL::Gene
+  Exceptions    : Throws of argument is not a GO term accession
+  Caller        : general
+  Status        : Stable
+
+=cut
+
+sub fetch_all_by_GOTerm_accession {
+  my ( $self, $accession ) = @_;
+
+  if ( $accession !~ /^GO:/ ) {
+    throw('Argument is not a GO term accession');
+  }
+
+  my $goAdaptor =
+    Bio::EnsEMBL::Registry->get_adaptor( 'Multi', 'Ontology',
+    'GOTerm' );
+
+  my $term = $goAdaptor->fetch_by_accession($accession);
+
+  return $self->fetch_all_by_GOTerm($term);
+}
 
 =head2 fetch_all_alt_alleles
 
@@ -899,6 +1045,8 @@ sub store_alt_alleles {
 
   Arg [1]    : Bio::EnsEMBL::Gene $gene
                The gene to store in the database
+  Arg [2]    : ignore_release in xrefs [default 1] set to 0 to use release info 
+               in external database references
   Example    : $gene_adaptor->store($gene);
   Description: Stores a gene in the database.
   Returntype : the database identifier (dbID) of the newly stored gene
@@ -910,12 +1058,14 @@ sub store_alt_alleles {
 =cut
 
 sub store {
-  my ($self, $gene) = @_;
+  my ($self, $gene, $ignore_release) = @_;
 
   if (!ref $gene || !$gene->isa('Bio::EnsEMBL::Gene') ) {
     throw("Must store a gene object, not a $gene");
   }
-
+  if(!defined($ignore_release)){
+    $ignore_release = 1;
+  }
   my $db = $self->db();
 
   if ($gene->is_stored($db)) {
@@ -954,25 +1104,36 @@ sub store {
                seq_region_start = ?,
                seq_region_end = ?,
                seq_region_strand = ?,
-	       description = ?,
+               description = ?,
                source = ?,
                status = ?,
-               is_current = ?
+               is_current = ?,
+               canonical_transcript_id = ?,
+               canonical_annotation = ?
   );
   # column status is used from schema version 34 onwards (before it was
   # confidence)
 
-  my $sth = $self->prepare( $store_gene_sql );
-  $sth->bind_param(1, $type, SQL_VARCHAR);
-  $sth->bind_param(2, $analysis_id, SQL_INTEGER);
-  $sth->bind_param(3, $seq_region_id, SQL_INTEGER);
-  $sth->bind_param(4, $gene->start, SQL_INTEGER);
-  $sth->bind_param(5, $gene->end, SQL_INTEGER);
-  $sth->bind_param(6, $gene->strand, SQL_TINYINT);
-  $sth->bind_param(7, $gene->description, SQL_LONGVARCHAR);
-  $sth->bind_param(8, $gene->source, SQL_VARCHAR);
-  $sth->bind_param(9, $gene->status, SQL_VARCHAR);
-  $sth->bind_param(10, $is_current, SQL_TINYINT);
+  my $sth = $self->prepare($store_gene_sql);
+  $sth->bind_param( 1,  $type,                SQL_VARCHAR );
+  $sth->bind_param( 2,  $analysis_id,         SQL_INTEGER );
+  $sth->bind_param( 3,  $seq_region_id,       SQL_INTEGER );
+  $sth->bind_param( 4,  $gene->start(),       SQL_INTEGER );
+  $sth->bind_param( 5,  $gene->end(),         SQL_INTEGER );
+  $sth->bind_param( 6,  $gene->strand(),      SQL_TINYINT );
+  $sth->bind_param( 7,  $gene->description(), SQL_LONGVARCHAR );
+  $sth->bind_param( 8,  $gene->source(),      SQL_VARCHAR );
+  $sth->bind_param( 9,  $gene->status(),      SQL_VARCHAR );
+  $sth->bind_param( 10, $is_current,          SQL_TINYINT );
+
+  if ( defined( $gene->canonical_transcript() ) ) {
+    $sth->bind_param( 11, $gene->canonical_transcript()->dbID(),
+      SQL_TINYINT );
+  } else {
+    $sth->bind_param( 11, 0, SQL_TINYINT );
+  }
+
+  $sth->bind_param( 12, $gene->canonical_annotation(), SQL_VARCHAR );
 
   $sth->execute();
   $sth->finish();
@@ -980,21 +1141,22 @@ sub store {
   my $gene_dbID = $sth->{'mysql_insertid'};
 
   # store stable ids if they are available
-  if (defined($gene->stable_id)) {
-
-    my $statement = "INSERT INTO gene_stable_id
-                        SET gene_id = ?,
-                            stable_id = ?,
-                            version = ?, ";
-    $statement .= "created_date = " .
-      $self->db->dbc->from_seconds_to_date($gene->created_date()) . ",";
-    $statement .= "modified_date = " .
-      $self->db->dbc->from_seconds_to_date($gene->modified_date());
+  if ( defined( $gene->stable_id() ) ) {
+    my $statement = sprintf(
+      "INSERT INTO gene_stable_id SET "
+        . "gene_id = ?, "
+        . "stable_id = ?, "
+        . "version = ?, "
+        . "created_date = %s, "
+        . "modified_date = %s",
+      $self->db()->dbc()->from_seconds_to_date( $gene->created_date() ),
+      $self->db()->dbc()->from_seconds_to_date( $gene->modified_date() )
+    );
 
     $sth = $self->prepare($statement);
-    $sth->bind_param(1, $gene_dbID, SQL_INTEGER);
-    $sth->bind_param(2, $gene->stable_id, SQL_VARCHAR);
-    $sth->bind_param(3, $gene->version, SQL_INTEGER);
+    $sth->bind_param( 1, $gene_dbID,         SQL_INTEGER );
+    $sth->bind_param( 2, $gene->stable_id(), SQL_VARCHAR );
+    $sth->bind_param( 3, $gene->version(),   SQL_INTEGER );
     $sth->execute();
     $sth->finish();
   }
@@ -1003,7 +1165,7 @@ sub store {
   my $dbEntryAdaptor = $db->get_DBEntryAdaptor();
   
   foreach my $dbe ( @{$gene->get_all_DBEntries} ) {
-    $dbEntryAdaptor->store($dbe, $gene_dbID, "Gene", 1);
+    $dbEntryAdaptor->store($dbe, $gene_dbID, "Gene", $ignore_release);
   }
   
   # we allow transcripts not to share equal exons and instead have copies
@@ -1129,8 +1291,8 @@ sub remove {
   }
 
   # remove all alternative allele entries associated with this gene
-  my $sth = $self->prepare("delete from alt_allele where gene_id = ?");
-  $sth->bind_param(1, $gene->dbID, SQL_INTEGER);
+  my $sth = $self->prepare("DELETE FROM alt_allele WHERE gene_id = ?");
+  $sth->bind_param( 1, $gene->dbID, SQL_INTEGER );
   $sth->execute();
   $sth->finish();
 
@@ -1146,22 +1308,25 @@ sub remove {
 
   # remove the gene stable identifier
 
-  $sth = $self->prepare( "delete from gene_stable_id where gene_id = ? " );
-  $sth->bind_param(1, $gene->dbID, SQL_INTEGER);
+  $sth =
+    $self->prepare("DELETE FROM gene_stable_id WHERE gene_id = ? ");
+  $sth->bind_param( 1, $gene->dbID, SQL_INTEGER );
   $sth->execute();
   $sth->finish();
 
   # remove any unconventional transcript associations involving this gene
 
-  $sth = $self->prepare( "delete from unconventional_transcript_association where gene_id = ? " );
-  $sth->bind_param(1, $gene->dbID, SQL_INTEGER);
+  $sth =
+    $self->prepare( "DELETE FROM unconventional_transcript_association "
+                    . "WHERE gene_id = ? " );
+  $sth->bind_param( 1, $gene->dbID, SQL_INTEGER );
   $sth->execute();
   $sth->finish();
 
   # remove this gene from the database
 
-  $sth = $self->prepare( "delete from gene where gene_id = ? " );
-  $sth->bind_param(1, $gene->dbID, SQL_INTEGER);
+  $sth = $self->prepare("DELETE FROM gene WHERE gene_id = ? ");
+  $sth->bind_param( 1, $gene->dbID, SQL_INTEGER );
   $sth->execute();
   $sth->finish();
 
@@ -1190,26 +1355,28 @@ sub remove {
 
 sub get_Interpro_by_geneid {
   my ($self, $gene_stable_id) = @_;
-  
+ 
   my $sql = qq(
-	SELECT	i.interpro_ac, 
-		x.description 
-        FROM	transcript t,
-                translation tl, 
-		protein_feature pf, 
-		interpro i, 
-                xref x,
-		gene_stable_id gsi
-	WHERE	gsi.stable_id = '$gene_stable_id' 
-	  AND	t.gene_id = gsi.gene_id
-          AND   t.is_current = 1
-          AND   tl.transcript_id = t.transcript_id
-	  AND	tl.translation_id = pf.translation_id 
-	  AND	i.id = pf.hit_id 
-	  AND	i.interpro_ac = x.dbprimary_acc
-  );
-   
+  SELECT    i.interpro_ac,
+            x.description
+  FROM      transcript t,
+            translation tl,
+            protein_feature pf,
+            interpro i,
+            xref x,
+            gene_stable_id gsi
+  WHERE     gsi.stable_id = ?
+    AND     t.gene_id = gsi.gene_id
+    AND     t.is_current = 1
+    AND     tl.transcript_id = t.transcript_id
+    AND     tl.translation_id = pf.translation_id
+    AND     i.id = pf.hit_name
+    AND     i.interpro_ac = x.dbprimary_acc);
+
   my $sth = $self->prepare($sql);
+
+  $sth->bind_param( 1, $gene_stable_id, SQL_VARCHAR );
+
   $sth->execute;
 
   my @out;
@@ -1254,7 +1421,9 @@ sub update {
               display_xref_id = ?,
               status = ?,
               description = ?,
-              is_current = ?
+              is_current = ?,
+              canonical_transcript_id = ?,
+              canonical_annotation = ?
         WHERE gene_id = ?
   );
 
@@ -1269,13 +1438,22 @@ sub update {
 
   my $sth = $self->prepare( $update_gene_sql );
 
-  $sth->bind_param(1, $gene->biotype, SQL_VARCHAR);
-  $sth->bind_param(2, $gene->analysis->dbID, SQL_INTEGER);
-  $sth->bind_param(3, $display_xref_id, SQL_INTEGER);
-  $sth->bind_param(4, $gene->status, SQL_VARCHAR);
-  $sth->bind_param(5, $gene->description, SQL_VARCHAR);
-  $sth->bind_param(6, $gene->is_current, SQL_TINYINT);
-  $sth->bind_param(7, $gene->dbID, SQL_INTEGER);
+  $sth->bind_param( 1, $gene->biotype(),        SQL_VARCHAR );
+  $sth->bind_param( 2, $gene->analysis->dbID(), SQL_INTEGER );
+  $sth->bind_param( 3, $display_xref_id,        SQL_INTEGER );
+  $sth->bind_param( 4, $gene->status(),         SQL_VARCHAR );
+  $sth->bind_param( 5, $gene->description(),    SQL_VARCHAR );
+  $sth->bind_param( 6, $gene->is_current(),     SQL_TINYINT );
+
+  if ( defined( $gene->canonical_transcript() ) ) {
+    $sth->bind_param( 7, $gene->canonical_transcript()->dbID(),
+      SQL_INTEGER );
+  } else {
+    $sth->bind_param( 7, 0, SQL_INTEGER );
+  }
+
+  $sth->bind_param( 8, $gene->canonical_annotation(), SQL_VARCHAR );
+  $sth->bind_param( 9, $gene->dbID(), SQL_INTEGER );
 
   $sth->execute();
 
@@ -1304,9 +1482,8 @@ sub _objs_from_sth {
   # a fair bit of gymnastics is used.
   #
 
-  my $sa = $self->db()->get_SliceAdaptor();
-  my $aa = $self->db->get_AnalysisAdaptor();
-  my $ta = $self->db->get_TranscriptAdaptor();
+  my $sa             = $self->db()->get_SliceAdaptor();
+  my $aa             = $self->db()->get_AnalysisAdaptor();
   my $dbEntryAdaptor = $self->db()->get_DBEntryAdaptor();
 
   my @genes;
@@ -1315,27 +1492,40 @@ sub _objs_from_sth {
   my %sr_name_hash;
   my %sr_cs_hash;
 
-  my ( $gene_id, $seq_region_id, $seq_region_start, $seq_region_end, 
-       $seq_region_strand, $analysis_id, $biotype, $display_xref_id, 
-       $gene_description, $stable_id, $version, $created_date, 
-       $modified_date, $xref_display_id, $status, $source, $is_current, 
-       $canonical_transcript_id, $canonical_annotation,
-       $xref_primary_acc, $xref_desc, $xref_version, $external_name, 
-       $external_db, $external_status, $external_release, $external_db_name,
-       $info_type, $info_text);
+  my (
+    $gene_id,                 $seq_region_id,
+    $seq_region_start,        $seq_region_end,
+    $seq_region_strand,       $analysis_id,
+    $biotype,                 $display_xref_id,
+    $gene_description,        $status,
+    $source,                  $is_current,
+    $canonical_transcript_id, $canonical_annotation,
+    $stable_id,               $version,
+    $created_date,            $modified_date,
+    $xref_display_id,         $xref_primary_acc,
+    $xref_desc,               $xref_version,
+    $external_db,             $external_status,
+    $external_release,        $external_db_name,
+    $info_type,               $info_text
+  );
 
-  $sth->bind_columns( \$gene_id, \$seq_region_id, \$seq_region_start,
-		      \$seq_region_end, \$seq_region_strand, \$analysis_id,
-                      \$biotype, \$display_xref_id, \$gene_description,
-                      \$status, \$source, \$is_current,
-		      \$canonical_transcript_id, \$canonical_annotation,
-		      \$stable_id, \$version,
-		      \$created_date, \$modified_date, 
-		      \$xref_display_id, \$xref_primary_acc, \$xref_desc,
-                      \$xref_version,
-		      \$external_db, \$external_status,
-		      \$external_release, \$external_db_name,
-		      \$info_type, \$info_text);
+  $sth->bind_columns(
+    \(
+      $gene_id,                 $seq_region_id,
+      $seq_region_start,        $seq_region_end,
+      $seq_region_strand,       $analysis_id,
+      $biotype,                 $display_xref_id,
+      $gene_description,        $status,
+      $source,                  $is_current,
+      $canonical_transcript_id, $canonical_annotation,
+      $stable_id,               $version,
+      $created_date,            $modified_date,
+      $xref_display_id,         $xref_primary_acc,
+      $xref_desc,               $xref_version,
+      $external_db,             $external_status,
+      $external_release,        $external_db_name,
+      $info_type,               $info_text
+    ) );
 
   my $asm_cs;
   my $cmp_cs;
@@ -1374,9 +1564,8 @@ sub _objs_from_sth {
     my $analysis = $analysis_hash{$analysis_id} ||=
       $aa->fetch_by_dbID($analysis_id);
 
-    #get the canonical_transcript object
-    my $canonical_transcript = $ta->fetch_by_dbID($canonical_transcript_id);
-
+    #need to get the internal_seq_region, if present
+    $seq_region_id = $self->get_seq_region_id_internal($seq_region_id);
     my $slice = $slice_hash{"ID:".$seq_region_id};
 
     if(!$slice) {
@@ -1442,47 +1631,53 @@ sub _objs_from_sth {
 
     my $display_xref;
 
-    if( $display_xref_id ) {
-     $display_xref = Bio::EnsEMBL::DBEntry->new_fast
-     	 ({ 'dbID' => $display_xref_id,
-     	    'adaptor' => $dbEntryAdaptor,
-     	    'display_id' => $xref_display_id,
-     	    'primary_id' => $xref_primary_acc,
-     	    'version'    => $xref_version,
-     	    'description' => $xref_desc,
-     	    'release' => $external_release,
-     	    'dbname' => $external_db,
-     	    'db_display_name' => $external_db_name,
-     	    'info_type' => $info_type,
-     	    'info_text' => $info_text
-     	  });
-      $display_xref->status( $external_status );
-    }				
+    if ($display_xref_id) {
+      $display_xref = Bio::EnsEMBL::DBEntry->new_fast( {
+          'dbID'            => $display_xref_id,
+          'adaptor'         => $dbEntryAdaptor,
+          'display_id'      => $xref_display_id,
+          'primary_id'      => $xref_primary_acc,
+          'version'         => $xref_version,
+          'description'     => $xref_desc,
+          'release'         => $external_release,
+          'dbname'          => $external_db,
+          'db_display_name' => $external_db_name,
+          'info_type'       => $info_type,
+          'info_text'       => $info_text
+      } );
+      $display_xref->status($external_status);
+    }
 
     # Finally, create the new Gene.
-    push @genes, Bio::EnsEMBL::Gene->new('-analysis'     => $analysis,
-					 '-biotype'      => $biotype,
-					 '-start'        => $seq_region_start,
-					 '-end'          => $seq_region_end,
-					 '-strand'       => $seq_region_strand,
-					 '-adaptor'      => $self,
-					 '-slice'        => $slice,
-					 '-dbID'         => $gene_id,
-					 '-stable_id'    => $stable_id,
-					 '-version'      => $version,
-					 '-created_date' => $created_date || undef,
-					 '-modified_date' => $modified_date
-					 || undef,
-					 '-description'     => $gene_description,
-					 '-external_name'   => $external_name,
-					 '-external_db'     => $external_db,
-					 '-external_status' => $external_status,
-					 '-display_xref'    => $display_xref,
-					 '-status'          => $status,
-					 '-source'          => $source,
-					 '-is_current'      => $is_current,
-					 '-canonical_transcript' => $canonical_transcript,
-					 '-canonical_annotation' => $canonical_annotation);
+    push(
+      @genes,
+      $self->_create_feature_fast(
+        'Bio::EnsEMBL::Gene',
+        {
+          'analysis'      => $analysis,
+          'biotype'       => $biotype,
+          'start'         => $seq_region_start,
+          'end'           => $seq_region_end,
+          'strand'        => $seq_region_strand,
+          'adaptor'       => $self,
+          'slice'         => $slice,
+          'dbID'          => $gene_id,
+          'stable_id'     => $stable_id,
+          'version'       => $version,
+          'created_date'  => $created_date || undef,
+          'modified_date' => $modified_date || undef,
+          'description'   => $gene_description,
+          'external_name'   => undef,              # will use display_id
+                                                   # from display_xref
+          'external_db'     => $external_db,
+          'external_status' => $external_status,
+          'display_xref'    => $display_xref,
+          'status'          => $status,
+          'source'          => $source,
+          'is_current'      => $is_current,
+          'canonical_transcript_id' => $canonical_transcript_id,
+          'canonical_annotation'    => $canonical_annotation
+        } ) );
 
   }
 
@@ -1502,22 +1697,23 @@ sub _objs_from_sth {
 
 =cut
 
-sub cache_gene_seq_mappings{
+sub cache_gene_seq_mappings {
   my ($self) = @_;
 
   # get the sequence level to map too
 
-  my $sql = qq(
-    SELECT	name 
-    FROM	coord_system 
-    WHERE attrib like "%sequence_level%"
-  );
+  my $sql =
+      'SELECT name '
+    . 'FROM coord_system '
+    . 'WHERE attrib like "%%sequence_level%%"'
+    . 'AND species_id = ?';
 
   my $sth = $self->prepare($sql);
+  $sth->bind_param( 1, $self->species_id(), SQL_INTEGER );
   $sth->execute();
-  
+
   my $sequence_level = $sth->fetchrow_array();
-  
+
   $sth->finish();
 
   my $csa = $self->db->get_CoordSystemAdaptor();
@@ -1527,14 +1723,15 @@ sub cache_gene_seq_mappings{
 
   # get level to map to two
 
-  my $mcc =  $self->db->get_MetaCoordContainerAdaptor();
+  my $mcc   = $self->db->get_MetaCoordContainerAdaptor();
   my $csnew = $mcc->fetch_all_CoordSystems_by_feature_type('gene');
 
   foreach my $cs2 (@$csnew) {
-    my $am = $ama->fetch_by_CoordSystems($cs1, $cs2);
-    $am->register_all();    
+    my $am = $ama->fetch_by_CoordSystems( $cs1, $cs2 );
+    $am->register_all();
   }
-}
+
+} ## end sub cache_gene_seq_mappings
 
 
 =head2 fetch_all_by_exon_supporting_evidence

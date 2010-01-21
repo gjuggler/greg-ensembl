@@ -1,31 +1,43 @@
-# EnsEMBL Adaptor for retrieving SupportingFeatures
-#
-# Author: Graham McVicker
-# 
-# Date : 11-Oct-2002
-#
+=head1 LICENSE
 
-=head1 NAME
+  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
 
-Bio::EnsEMBL::DBSQL::TranscriptSupportingFeatureAdaptor - Retrieves supporting features 
-                                                from the database.
+  This software is distributed under a modified Apache license.
+  For license details, please see
 
-=head1 SYNOPSIS
-
-$supporting_feature_adaptor = $database_adaptor->get_TranscriptSupportingFeatureAdaptor;
-@supporting_feats = @{$supporting_feat_adaptor->fetch_all_by_Transcript($transcript)};
+    http://www.ensembl.org/info/about/code_licence.html
 
 =head1 CONTACT
 
-Post questions to ensembl developer mailing list : <ensembl-dev@ebi.ac.uk>
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
 
 =cut
 
+=head1 NAME
 
-use strict;
+Bio::EnsEMBL::DBSQL::TranscriptSupportingFeatureAdaptor - Retrieves
+supporting features from the database.
+
+=head1 SYNOPSIS
+
+  $supporting_feature_adaptor =
+    $database_adaptor->get_TranscriptSupportingFeatureAdaptor;
+
+  @supporting_feats =
+    @{ $supporting_feat_adaptor->fetch_all_by_Transcript($transcript) };
+
+=head1 METHODS
+
+=cut
 
 package Bio::EnsEMBL::DBSQL::TranscriptSupportingFeatureAdaptor;
 
+use strict;
 use Bio::EnsEMBL::DBSQL::BaseAdaptor;
 
 use Bio::EnsEMBL::Utils::Exception qw(throw warning);
@@ -127,7 +139,8 @@ sub store {
       "AND   hit_start = ? " . 
       "AND   hit_end   = ? " . 
       "AND   analysis_id = ? " . 
-      "AND   cigar_line = ? ";
+      "AND   cigar_line = ? " .
+      "AND   hcoverage = ? ";
 
   my $dna_check_sql = 
       "SELECT dna_align_feature_id " . 
@@ -140,7 +153,8 @@ sub store {
       "AND   hit_start = ? " . 
       "AND   hit_end   = ? " . 
       "AND   analysis_id = ? " . 
-      "AND   cigar_line = ? " . 
+      "AND   cigar_line = ? " .
+      "AND   hcoverage = ? " . 
       "AND   hit_strand = ? ";
 
   my $assoc_check_sql = 
@@ -185,7 +199,7 @@ sub store {
       throw("$f must be an align feature otherwise" .
             "it can't be stored");
     }
-    
+       
     my ($sf_dbID, $type, $adap, $check_sth);
     
     my @check_args = ($self->db->get_SliceAdaptor->get_seq_region_id($f->slice),
@@ -196,7 +210,8 @@ sub store {
                       $f->hstart,
                       $f->hend,
                       $f->analysis->dbID,
-                      $f->cigar_string);
+                      $f->cigar_string,
+		      $f->hcoverage);
     
     if($f->isa("Bio::EnsEMBL::DnaDnaAlignFeature")){
       $adap = $dna_adaptor;      
@@ -214,7 +229,9 @@ sub store {
 
     $check_sth->execute(@check_args);
     $sf_dbID = $check_sth->fetchrow_array;
+    
     if (not $sf_dbID) {
+ 
       $adap->store($f);
       $sf_dbID = $f->dbID;
     }

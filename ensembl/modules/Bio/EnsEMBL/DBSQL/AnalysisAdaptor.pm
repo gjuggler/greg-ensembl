@@ -1,13 +1,22 @@
-# Perl module for Bio::EnsEMBL::DBSQL::AnalysisAdaptor
-#
-# Creator: Arne Stabenau <stabenau@ebi.ac.uk>
-# Date of creation: 25.01.2001
-# Last modified : 25.01.2001 by Arne Stabenau
-#
-# Copyright Ensembl 2000-2004
-#
-# You may distribute this module under the same terms as perl itself
-# POD documentation - main docs before the code
+=head1 LICENSE
+
+  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
+=cut
 
 =head1 NAME
 
@@ -15,24 +24,22 @@ Bio::EnsEMBL::DBSQL::AnalysisAdaptor
 
 =head1 SYNOPSIS
 
-  use Bio::EnsEMBL::DBSQL::DBAdaptor;
+  use Bio::EnsEMBL::Registry;
 
-  $db = Bio::EnsEMBL::DBSQL::DBAdaptor->new(...);
+  Bio::EnsEMBL::Registry->load_registry_from_db(
+    -host => 'ensembldb.ensembl.org',
+    -user => 'anonymous'
+  );
 
-  $analysis_adaptor = $db_adaptor->get_AnalysisAdaptor;
+  $analysis_adaptor =
+    Bio::EnsEMBL::Registry->get_adaptor( "human", "core", "analysis" );
 
   my $analysis = $analysis_adaptor->fetch_by_logic_name('genscan');
-
 
 =head1 DESCRIPTION
 
   Module to encapsulate all db access for persistent class Analysis.
   There should be just one per application and database connection.
-
-=head1 CONTACT
-
-  Post questions/comments to the EnsEMBL development list:
-  ensembl-dev@ebi.ac.uk
 
 =head1 METHODS
 
@@ -264,45 +271,57 @@ sub fetch_by_dbID {
 =cut
 
 sub fetch_by_logic_name {
-  my $self = shift;
-  my $logic_name = shift;
+  my ( $self, $logic_name ) = @_;
+
   my $analysis;
   my $rowHash;
 
-  #check the cache for the logic name
-  if(defined $self->{_logic_name_cache}{lc($logic_name)}) {
-    return $self->{_logic_name_cache}{lc($logic_name)};
+  # Check the cache for the logic name
+  if ( defined( $self->{_logic_name_cache}{ lc($logic_name) } ) ) {
+    return $self->{_logic_name_cache}{ lc($logic_name) };
   }
 
-  my $sth = $self->prepare( "
-    SELECT analysis.analysis_id, logic_name,
-           program, program_version, program_file,
-           db, db_version, db_file,
-           module, module_version,
-           gff_source, gff_feature,
-           created, parameters, description, display_label, displayable, web_data
-    FROM   analysis
-    LEFT JOIN analysis_description
-    ON analysis.analysis_id = analysis_description.analysis_id
-    WHERE  logic_name = ?" );
+  my $sth = $self->prepare(
+    qq(
+SELECT  analysis.analysis_id,
+        logic_name,
+        program,
+        program_version,
+        program_file,
+        db,
+        db_version,
+        db_file,
+        module,
+        module_version,
+        gff_source,
+        gff_feature,
+        created,
+        parameters,
+        description,
+        display_label,
+        displayable,
+        web_data
+FROM    analysis
+  LEFT JOIN analysis_description
+    ON  ( analysis.analysis_id = analysis_description.analysis_id )
+WHERE  LOWER(logic_name) = ?)
+  );
 
-  $sth->bind_param(1,$logic_name,SQL_VARCHAR);
+  $sth->bind_param( 1, lc($logic_name), SQL_VARCHAR );
   $sth->execute();
-  my $rowHashRef;
-  $rowHashRef = $sth->fetchrow_hashref;
+  my $rowHashRef = $sth->fetchrow_hashref();
 
-  unless(defined $rowHashRef) {
-    return undef;
-  }
+  if ( !defined($rowHashRef) ) { return undef }
 
-  $analysis = $self->_objFromHashref( $rowHashRef );
+  $analysis = $self->_objFromHashref($rowHashRef);
 
-  #place the analysis in the caches, cross referenced by dbID and logic_name
-  $self->{_cache}->{$analysis->dbID()} = $analysis;
-  $self->{_logic_name_cache}->{lc($logic_name)} = $analysis;
+  # place the analysis in the caches, cross referenced by dbID and
+  # logic_name
+  $self->{_cache}->{ $analysis->dbID() } = $analysis;
+  $self->{_logic_name_cache}->{ lc($logic_name) } = $analysis;
 
   return $analysis;
-}
+} ## end sub fetch_by_logic_name
 
 
 =head2 store
@@ -338,6 +357,7 @@ sub store {
     throw("Analysis cannot be stored without a valid logic_name");
   }
     
+
   my $rows_inserted = 0;
   my $sth;
 
@@ -414,7 +434,6 @@ sub store {
   }
 
   my $dbID;
-
   # if we need to fetch the timestamp, or the insert failed due to existance
   # of an existing entry, we need to retrieve the entry from the db
   # note: $sth->execute can return 0E0 on error which is zero, but true
@@ -427,35 +446,30 @@ sub store {
             "Possibly incorrect db permissions or missing analysis table\n");
     }
 
-    # GJ1 2008-12-14: We want to update the SQL record with the current analysis object's properties.
     $dbID = $new_analysis->dbID();
-    $analysis->adaptor( $self );
-    $analysis->dbID( $dbID );
-    $self->update($analysis);
-
     $analysis->created($new_analysis->created());
-    $sth->finish();
-  } else {
-    $dbID = $sth->{'mysql_insertid'};
-    $sth->finish();
+  } 
+  
+  $dbID ||= $sth->{'mysql_insertid'};
+  $sth->finish();
 
-    # store description and display_label
-    if( defined( $analysis->description() ) ||
-	defined( $analysis->display_label() )) {
-
-
+  # store description and display_label
+  if( defined( $analysis->description() ) || defined( $analysis->display_label() )|| defined( $analysis->web_data() )) {
       $sth = $self->prepare( "INSERT IGNORE INTO analysis_description (analysis_id, display_label, description, displayable, web_data) VALUES (?,?,?,?, ?)");
 
       $sth->bind_param(1,$dbID,SQL_INTEGER);
       $sth->bind_param(2,$analysis->display_label(),SQL_VARCHAR);
       $sth->bind_param(3,$analysis->description,SQL_LONGVARCHAR);
       $sth->bind_param(4,$analysis->displayable,SQL_TINYINT);
-      $sth->bind_param(5,$analysis->web_data(),SQL_LONGVARCHAR);
+      #$sth->bind_param(5,$analysis->web_data(),SQL_LONGVARCHAR);
+      my $web_data;
+      $web_data = $self->dump_data($analysis->web_data()) if ($analysis->web_data());
+      $sth->bind_param(5,$web_data,SQL_LONGVARCHAR);
       $sth->execute();
 
       $sth->finish();
-    }
   }
+  
 
 
   $self->{_cache}->{$dbID} = $analysis;
@@ -526,20 +540,33 @@ sub update {
   # not already there
   $sth = $self->prepare("SELECT description FROM analysis_description WHERE analysis_id= ?");
   $sth->execute($a->dbID);
-
+  my $web_data; #this is an anonymous reference to a hash, will have to be dumped into string before writing to db
   if ($sth->fetchrow_hashref) { # update if exists
-
-    $sth = $self->prepare
+      $web_data = $self->dump_data($a->web_data()) if ($a->web_data());
+      $sth = $self->prepare
       ("UPDATE analysis_description SET description = ?, display_label = ?, displayable = ?, web_data = ? WHERE analysis_id = ?");
-
-    $sth->execute($a->description(), $a->display_label(), $a->displayable(), $a->web_data(), $a->dbID);
+      $sth->bind_param(1,$a->description,SQL_LONGVARCHAR);     
+      $sth->bind_param(2,$a->display_label(),SQL_VARCHAR);
+      $sth->bind_param(3,$a->displayable,SQL_TINYINT);
+      #      print "after $web_data\n";
+      $sth->bind_param(4,$web_data,SQL_LONGVARCHAR);
+      $sth->bind_param(5,$a->dbID,SQL_INTEGER);
+      $sth->execute();
 
   } else { # create new entry
 
-    if( $a->description() || $a->display_label()) {
+    if( $a->description() || $a->display_label() || $a->web_data) {
+	$web_data = $self->dump_data($a->web_data()) if ($a->web_data());
+      #my $web_data = $self->dump_data($a->web_data());
       $sth = $self->prepare( "INSERT IGNORE INTO analysis_description (analysis_id, display_label, description, displayable, web_data) VALUES (?,?,?,?,?)");
-      $sth->execute( $a->dbID(), $a->display_label(), $a->description(), $a->displayable(), $a->web_data() );
-      $sth->finish();
+	$sth->bind_param(1,$a->dbID,SQL_INTEGER);	
+	$sth->bind_param(2,$a->display_label(),SQL_VARCHAR);
+	$sth->bind_param(3,$a->description,SQL_LONGVARCHAR);     
+	$sth->bind_param(4,$a->displayable,SQL_TINYINT);
+	#my $web_data = $self->dump_data($a->web_data());
+	$sth->bind_param(5,$web_data,SQL_LONGVARCHAR);
+	$sth->execute();
+
     }
 
   }
@@ -663,6 +690,7 @@ sub _objFromHashref {
   my $self = shift;
   my $rowHash = shift;
 
+  my $web_data = $rowHash->{web_data} ? $self->get_dumped_data($rowHash->{web_data}) : '';
   my $analysis = Bio::EnsEMBL::Analysis->new(
       -id              => $rowHash->{analysis_id},
       -adaptor         => $self,
@@ -682,7 +710,7 @@ sub _objFromHashref {
       -description     => $rowHash->{description},
       -display_label   => $rowHash->{display_label},
       -displayable     => $rowHash->{displayable},
-      -web_data        => $rowHash->{web_data}
+					     -web_data        => $web_data,
     );
 
   return $analysis;

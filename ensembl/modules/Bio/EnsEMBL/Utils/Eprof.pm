@@ -1,13 +1,22 @@
-#
-# BioPerl module for Bio::EnsEMBL::Utils::Eprof
-#
-# Cared for by Ewan Birney <birney@ebi.ac.uk>
-#
-# Copyright EBI and GRL
-#
-# You may distribute this module under the same terms as perl itself
+=head1 LICENSE
 
-# POD documentation - main docs before the code
+  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
+=cut
 
 =head1 NAME
 
@@ -15,59 +24,47 @@ Bio::EnsEMBL::Utils::Eprof - Bespoke Ensembl profiler
 
 =head1 SYNOPSIS
 
-    use Bio::EnsEMBL::Utils::Eprof('eprof_start','eprof_end','eprof_dump');
+  use Bio::EnsEMBL::Utils::Eprof( 'eprof_start', 'eprof_end',
+    'eprof_dump' );
 
-    &eprof_start('function-a');
-    ... do something
-    &eprof_end('function-a');
+  &eprof_start('function-a');
+  # ... do something
+  &eprof_end('function-a');
 
+  &eprof_dump( \*STDERR );
 
-    &eprof_dump(\*STDERR);
-
-    # there is an object based set for above as well, for running
-    # multiple concurrent profilers
-
+  # there is an object based set for above as well, for running
+  # multiple concurrent profilers
 
 =head1 DESCRIPTION
 
 This is an Ensembl profiler as we broke the Perl profilers.
 
-=head1 CONTACT
-
-Describe contact details here
-
-=head1 APPENDIX
-
-The rest of the documentation details each of the object methods. Internal methods are usually preceded with a _
+=head1 METHODS
 
 =cut
 
-
-# Let the code begin...
-
-
 package Bio::EnsEMBL::Utils::Eprof;
-use vars qw(@ISA @EXPORT_OK);
+
 use strict;
-use Exporter;
+use warnings;
+
+use Bio::EnsEMBL::Utils::Exception ('throw');
 use Bio::EnsEMBL::Utils::EprofStack;
 
-# Object preamble - inheriets from Bio::Root::Object
-
-use Bio::EnsEMBL::Root;
-
-@ISA = qw(Bio::EnsEMBL::Root Exporter);
-@EXPORT_OK = qw(eprof_start eprof_end eprof_dump eprof_reset);
+use base('Exporter');
+our @EXPORT_OK =
+  ( 'eprof_start', 'eprof_end', 'eprof_dump', 'eprof_reset' );
 
 my $global;
 
-sub new { 
-    my ($class) = shift;
-    my $self = {};
-    $self->{'_tags'} = {};
-    bless $self,$class;
+sub new {
+  my ($proto) = @_;
 
-    return $self;
+  my $class = ref($proto) || $proto;
+  my $self = bless( { '_tags' => {} }, $class );
+
+  return $self;
 }
 
 =head2 eprof_start
@@ -82,10 +79,14 @@ sub new {
 
 =cut
 
-sub eprof_start{
-   my ($tag) = @_;
-   $global = Bio::EnsEMBL::Utils::Eprof->new() unless defined $global;
-   $global->start($tag);
+sub eprof_start {
+  my ($tag) = @_;
+
+  if ( !defined($global) ) {
+    $global = Bio::EnsEMBL::Utils::Eprof->new();
+  }
+
+  $global->start($tag);
 }
 
 =head2 eprof_end
@@ -101,19 +102,21 @@ sub eprof_start{
 =cut
 
 sub eprof_end {
-   my ($tag) = @_;
-   $global = Bio::EnsEMBL::Utils::Eprof->new() unless defined $global;
-   $global->end($tag);
+  my ($tag) = @_;
+
+  if ( !defined($global) ) {
+    $global = Bio::EnsEMBL::Utils::Eprof->new();
+  }
+
+  $global->end($tag);
 }
 
 sub eprof_dump {
-    my $fh = shift;
+  my ($fh) = @_;
 
-    if( !defined $global ) {
-	return;
-    }
+  if ( !defined($global) ) { return }
 
-    $global->dump($fh);
+  $global->dump($fh);
 }
 
 =head2 eprof_reset
@@ -128,9 +131,7 @@ sub eprof_dump {
 
 =cut
 
-sub eprof_reset{
-  undef($global);
-}
+sub eprof_reset { undef($global) }
 
 =head2 dump
 
@@ -144,23 +145,40 @@ sub eprof_reset{
 
 =cut
 
-sub dump{
-  my ($self,$fh) = @_;
+sub dump {
+  my ( $self, $fh ) = @_;
 
-  my @tags = sort {  $self->_tags->{$a}->total_time <=> $self->_tags->{$b}->total_time } keys %{$self->_tags};
-   
-  foreach my $tag ( @tags ) {
+  my @tags = sort {
+    $self->_tags()->{$a}->total_time()
+      <=> $self->_tags()->{$b}->total_time()
+  } keys %{ $self->_tags() };
+
+  foreach my $tag (@tags) {
     my $st = $self->_tags->{$tag};
-    next if $st->number == 0;
-    my $STD = '---';
-    if($st->number>1) {
-      my $SS = $st->total_time_time - $st->total_time*$st->total_time/$st->number;
-      $STD = sprintf "%6f", sqrt( $SS/$st->number/($st->number-1) ) if $SS>0;
-    }
-    print $fh sprintf("Eprof: %20s  %6f  %6f  %d  %s  [%6f,%6f]\n",$st->tag,$st->total_time,$st->total_time/$st->number,$st->number,$STD,$st->min_time,$st->max_time);
-  }
-}
 
+    if ( $st->number() == 0 ) { next }
+
+    my $STD = '---';
+
+    if ( $st->number() > 1 ) {
+      my $SS =
+        $st->total_time_time() -
+        $st->total_time()*$st->total_time()/$st->number();
+
+      if ( $SS > 0 ) {
+        $STD = sprintf( "%6f",
+                        sqrt( $SS/$st->number()/( $st->number() - 1 ) )
+        );
+      }
+    }
+
+    print( $fh sprintf( "Eprof: %20s  %6f  %6f  %d  %s  [%6f,%6f]\n",
+                        $st->tag(), $st->total_time(),
+                        $st->total_time()/$st->number(), $st->number(),
+                        $STD, $st->min_time(),
+                        $st->max_time() ) );
+  } ## end foreach my $tag (@tags)
+} ## end sub dump
 
 =head2 start
 
@@ -174,11 +192,18 @@ sub dump{
 
 =cut
 
-sub start{
-  my ($self,$tag) = @_;
-  $self->throw("Must start on tag")                                 unless defined $tag;
-  $self->_tags->{$tag} = Bio::EnsEMBL::Utils::EprofStack->new($tag) unless defined $self->_tags->{$tag};
-  $self->_tags->{$tag}->push_stack();
+sub start {
+  my ( $self, $tag ) = @_;
+
+  if ( !defined($tag) ) {
+    $self->throw("No tag, can't start.");
+  }
+
+  if ( !defined( $self->_tags()->{$tag} ) ) {
+    $self->_tags()->{$tag} = Bio::EnsEMBL::Utils::EprofStack->new($tag);
+  }
+
+  $self->_tags()->{$tag}->push_stack();
 }
 
 =head2 end
@@ -193,13 +218,20 @@ sub start{
 
 =cut
 
-sub end{
-  my ($self,$tag) = @_;
-  $self->throw("Must end on tag")               unless defined $tag;
-  $self->throw("Ending with a nonexistant tag") unless defined $self->_tags->{$tag};
+sub end {
+  my ( $self, $tag ) = @_;
+
+  if ( !defined($tag) ) {
+    $self->throw("No tag, can't end.");
+  }
+
+  if ( !defined( $self->_tags()->{$tag} ) ) {
+    $self->throw(
+                sprintf( "Ending with a nonexistant tag '%s'", $tag ) );
+  }
+
   $self->_tags->{$tag}->pop_stack();
 }
-
 
 =head2 _tags
 
@@ -212,8 +244,8 @@ sub end{
 
 =cut
 
-sub _tags{
-  my $obj = shift;
+sub _tags {
+  my ($obj) = @_;
   return $obj->{'_tags'};
 }
 

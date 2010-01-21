@@ -1,32 +1,41 @@
-#
-# EnsEMBL module for Bio::EnsEMBL::DBSQL::MetaContainer
-#
-# Cared for by Arne Stabenau
-#
-#
-# You may distribute this module under the same terms as perl itself
+=head1 LICENSE
 
-# POD documentation - main docs before the code
+  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
+=cut
 
 =head1 NAME
 
-  Bio::EnsEMBL::DBSQL::MetaContainer - 
-  Encapsulates all access to core database meta information
+Bio::EnsEMBL::DBSQL::MetaContainer - Encapsulates all access to core
+database meta information
 
 =head1 SYNOPSIS
 
-  my $meta_container = $db_adaptor->get_MetaContainer();
+  my $meta_container =
+    $registry->get_adaptor( 'Human', 'Core', 'MetaContainer' );
+
   my $species = $meta_container->get_Species();
 
-  my @mapping_info = @{$meta_container->list_value_by_key('assembly.mapping')};
+  my @mapping_info =
+    @{ $meta_container->list_value_by_key('assembly.mapping') };
 
 =head1 DESCRIPTION
 
   An object that encapsulates specific access to core db meta data
-
-=head1 CONTACT
-
-  Post questions to the EnsEMBL development list: ensembl-dev@ebi.ac.uk
 
 =head1 METHODS
 
@@ -166,12 +175,12 @@ sub get_max_assembly_contig {
 sub get_genebuild {
   my $self = shift;
 
-  my $arrRef = $self->list_value_by_key( 'genebuild.version' );
+  my $arrRef = $self->list_value_by_key( 'genebuild.start_date' );
 
   if( @$arrRef ) {
     return $arrRef->[0];
   } else {
-    warning("Please insert meta_key 'genebuild.version' " .
+    warning("Please insert meta_key 'genebuild.start_date' " .
             "in meta table at core db.\n");
   }
 }

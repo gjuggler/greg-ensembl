@@ -1,55 +1,63 @@
-#
-# Ensembl module for Bio::EnsEMBL::StrainSlice
-#
-#
-# Copyright Team Ensembl
-#
-# You may distribute this module under the same terms as perl itself
+=head1 LICENSE
 
-# POD documentation - main docs before the code
+  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
 
-=head1 NAME
+  This software is distributed under a modified Apache license.
+  For license details, please see
 
-Bio::EnsEMBL::StrainSlice - SubClass of the Slice. Represents the slice of the genome for a certain strain (applying the variations)
-
-=head1 SYNOPSIS
-
-   $sa = $db->get_SliceAdaptor;
-
-   $slice = $sa->fetch_by_region('chromosome', 'X', 1_000_000, 2_000_000);
-
-   $strainSlice = $slice->get_by_strain($strain_name);
-
-   #get the sequence from the Strain Slice
-   my $seq = $strainSlice->seq();
-   print $seq;
-
-   #get allele features between this StrainSlice and the reference
-   my $afs = $strainSlice->get_all_AlleleFeatures_Slice();
-   foreach my $af (@{$afs}){
-      print "AlleleFeature in position ", $af->start,"-",$af->end," in strain with allele ", $af->allele_string,"\n";
-   }
-   #compare a strain against another strain
-   my $strainSlice_2 = $slice->get_by_strain($strain_name_2);
-   my $differences = $strainSlice->get_all_differences_StrainSlice($strainSlice_2);
-   foreach my $difference (@{$differences}){
-      print "Difference in position ", $difference->start,"-",$difference->end," in strain with allele ", $difference->allele_string,"\n";
-   }
-
-
-
-
-=head1 DESCRIPTION
-
-A StrainSlice object represents a region of a genome for a certain strain.  It can be used to retrieve
-sequence or features from a strain.
+    http://www.ensembl.org/info/about/code_licence.html
 
 =head1 CONTACT
 
-This modules is part of the Ensembl project http://www.ensembl.org
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
 
-Questions can be posted to the ensembl-dev mailing list:
-ensembl-dev@ebi.ac.uk
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
+=cut
+
+=head1 NAME
+
+Bio::EnsEMBL::StrainSlice - SubClass of the Slice. Represents the slice
+of the genome for a certain strain (applying the variations)
+
+=head1 SYNOPSIS
+
+  $sa = $db->get_SliceAdaptor;
+
+  $slice =
+    $sa->fetch_by_region( 'chromosome', 'X', 1_000_000, 2_000_000 );
+
+  $strainSlice = $slice->get_by_strain($strain_name);
+
+  # get the sequence from the Strain Slice
+  my $seq = $strainSlice->seq();
+  print $seq;
+
+  # get allele features between this StrainSlice and the reference
+  my $afs = $strainSlice->get_all_AlleleFeatures_Slice();
+  foreach my $af ( @{$afs} ) {
+    print "AlleleFeature in position ", $af->start, "-", $af->end,
+      " in strain with allele ", $af->allele_string, "\n";
+  }
+
+  # compare a strain against another strain
+  my $strainSlice_2 = $slice->get_by_strain($strain_name_2);
+  my $differences =
+    $strainSlice->get_all_differences_StrainSlice($strainSlice_2);
+
+  foreach my $difference ( @{$differences} ) {
+    print "Difference in position ", $difference->start, "-",
+      $difference->end(),           " in strain with allele ",
+      $difference->allele_string(), "\n";
+  }
+
+=head1 DESCRIPTION
+
+A StrainSlice object represents a region of a genome for a certain
+strain.  It can be used to retrieve sequence or features from a strain.
 
 =head1 METHODS
 
@@ -115,11 +123,14 @@ sub new{
 	if ($ind_adaptor){
 	    my $individual = shift @{$ind_adaptor->fetch_all_by_name($self->{'strain_name'})}; #the name should be unique for a strain
 	    #check that the individua returned isin the database
-	    if (defined $individual){
-		my $allele_features = $af_adaptor->fetch_all_by_Slice($self,$individual);
-		my $vf_ids = {}; #hash containing the relation vf_id->af
+
+            if (defined $individual){
+                my $allele_features = $af_adaptor->fetch_all_by_Slice($self,$individual);
+                warning("No strain genotype data available for Slice ".$self->name." and Strain ".$individual->name) if ! defined $allele_features->[0];
+                my $vf_ids = {}; #hash containing the relation vf_id->af
 		$self->{'_strain'} = $individual;		
-		map {$vf_ids->{$_->{'_variation_feature_id'}} = $_} @{$allele_features};
+		map {defined $_->{'_variation_feature_id'} ? $vf_ids->{$_->{'_variation_feature_id'}} = $_ : ''
+} @{$allele_features};
 #		my $new_allele_features = $self->_filter_af_by_coverage($allele_features);
 #		$self->{'alleleFeatures'} = $new_allele_features;
 		$self->{'alleleFeatures'} = $allele_features;
@@ -127,7 +138,7 @@ sub new{
 		return $self;
 	    }
 	    else{ 
-		#warning("Strain not in the database");
+		warning("Strain ($self->{strain_name}) not in the database");
 		return $self;
 	    }
 	}
@@ -166,7 +177,12 @@ sub _filter_af_by_coverage{
     
     my $rc_adaptor = $variation_db->get_ReadCoverageAdaptor();
     #this is ugly, but ReadCoverage is always defined in the positive strand
-    my $rcs = $rc_adaptor->fetch_all_by_Slice_Sample_depth($self,$self->{'_strain'},1);
+
+### EK : - it looks like the arguments to fetch_all_by_Slice_Sample_depth have changed
+###  passing 1 will only get you the coverage of level 1
+###  by omitting the parameter we take into account all coverage regions 
+#    my $rcs = $rc_adaptor->fetch_all_by_Slice_Sample_depth($self,$self->{'_strain'},1);
+    my $rcs = $rc_adaptor->fetch_all_by_Slice_Sample_depth($self,$self->{'_strain'});
     my $new_af;
     foreach my $af (@{$allele_features}){
 	foreach my $rc (@{$rcs}){
@@ -288,7 +304,11 @@ sub _add_coverage_information{
     }
     
     my $rc_adaptor = $variation_db->get_ReadCoverageAdaptor();
-    my $rcs = $rc_adaptor->fetch_all_by_Slice_Sample_depth($self,$self->{'_strain'},1);
+### EK : - it looks like the arguments to fetch_all_by_Slice_Sample_depth have changed
+###  passing 1 will only get you the coverage of level 1
+###  by omitting the parameter we take into account all coverage regions 
+#    my $rcs = $rc_adaptor->fetch_all_by_Slice_Sample_depth($self,$self->{'_strain'},1);
+    my $rcs = $rc_adaptor->fetch_all_by_Slice_Sample_depth($self,$self->{'_strain'});
     my $rcs_sorted;
     @{$rcs_sorted} = sort {$a->start <=> $b->start} @{$rcs} if ($self->strand == -1);
     $rcs = $rcs_sorted if ($self->strand == -1);
@@ -296,8 +316,9 @@ sub _add_coverage_information{
     foreach my $rc (@{$rcs}){
 	$rc->start(1) if ($rc->start < 0); #if the region lies outside the boundaries of the slice
 	$rc->end($self->end - $self->start + 1) if ($rc->end + $self->start > $self->end); 
-	substr($$reference_sequence, $start,($rc->start - $start - 1),'~' x ($rc->start - $start - 1)) if ($rc->start - 1 > $start); 
-	$start = $rc->end - 1;
+        substr($$reference_sequence, $start-1,($rc->start - $start - 1),'~' x ($rc->start - $start - 1)) if ($rc->start - 1 > $start);
+        $start = $rc->end;
+
     }
     substr($$reference_sequence, $start, ($self->length - $start) ,'~' x ($self->length - $start)) if ($self->length -1 > $start); 
 }
@@ -341,6 +362,16 @@ sub get_all_AlleleFeatures_Slice{
     my $self = shift;
     my $with_coverage = shift;
 
+    my $variation_db = $self->adaptor->db->get_db_adaptor('variation');
+
+    unless($variation_db) {
+	warning("Variation database must be attached to core database to " .
+		"retrieve variation information" );
+	return '';
+    }
+    my $indAdaptor = $variation_db->get_IndividualAdaptor();
+    my $ref_name =  $indAdaptor->get_reference_strain_name;
+    return [] if ($self->strain_name eq $ref_name);
     $with_coverage ||= 0; #by default, get all AlleleFeatures
     if ($with_coverage == 1){
 	my $new_allele_features = $self->_filter_af_by_coverage($self->{'alleleFeatures'});
@@ -709,19 +740,14 @@ sub get_all_VariationFeatures {
 
   Arg  [1]   : int $position
                relative to start of slice, which is 1.
-  Description: This Slice is made of several Bio::EnsEMBL::Slices mapped
-               on it with gaps inside and regions with no matching
-               sequence. This method returns the original seq_region_position
-               in the original Slice of the requested position in AlignSlice
-               coordinates
-  Example    : my ($strainSlice, $seq_region_position) = $as_slice->
-                   get_original_seq_region_position(100);
+  Description: Placeholder method - this method has no explicit use beyond
+			   providiing compatibility with AlignSlice. To map positions
+			   between the StrainSlice and the reference slice, use the
+			   mapper and its methods.
   Returntype : ($strainSlice, $seq_region_position), an array where the first
                element is a Bio::EnsEMBL::StrainSlice and the second one is the
                requested seq_region_position.
-  Exceptions : if the position corresponds to a gap, the slice will be a fake GAP
-               slice and the position will be the requested one (in AlignSlice
-               coordinates)
+  Exceptions : none
   Caller     : general
 
 =cut
@@ -732,6 +758,27 @@ sub get_original_seq_region_position {
     #coordinates in the AlignSlice and Slice are the same, so far will return the same Slice
     #and coordinate
     return ($self,$position);
+}
+
+
+=head2 remove_indels
+
+    Args        : none
+    Example     : $strainSlice->remove_indels();
+    Description : Removes insertions and deletions from the allele features
+				  of this object
+    ReturnType  : none
+    Exceptions  : none
+    Caller      : webteam
+
+=cut
+
+sub remove_indels {
+	my $self = shift;
+	
+	my @new_afs = grep { $_->variation->var_class ne 'in-del' } @{$self->{'alleleFeatures'}};
+	
+	$self->{'alleleFeatures'} = \@new_afs;
 }
 
 1;

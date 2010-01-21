@@ -1,9 +1,22 @@
-# EnsEMBL Exon reading writing adaptor for mySQL
-#
-# Author: Arne Stabenau
-# 
-# Date : 22.11.2001
-#
+=head1 LICENSE
+
+  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
+=cut
 
 =head1 NAME
 
@@ -12,20 +25,18 @@ Performs database interaction related to PredictionTranscripts
 
 =head1 SYNOPSIS
 
-#get a prediction transcript adaptor from the database
-$pta = $database_adaptor->get_PredictionTranscriptAdaptor();
+  # get a prediction transcript adaptor from the database
+  $pta = $database_adaptor->get_PredictionTranscriptAdaptor();
 
-#get a slice on a region of chromosome 1
-$sa = $database_adaptor->get_SliceAdaptor();
+  # get a slice on a region of chromosome 1
+  $sa = $database_adaptor->get_SliceAdaptor();
 
-$slice = $sa->fetch_by_region('chromosome','x', 100000, 200000);
+  $slice = $sa->fetch_by_region( 'chromosome', 'x', 100000, 200000 );
 
-#get all the prediction transcripts from the slice region
-$prediction_transcripts = @{$pta->fetch_all_by_Slice($slice)};
+  # get all the prediction transcripts from the slice region
+  $prediction_transcripts = @{ $pta->fetch_all_by_Slice($slice) };
 
-=head1 CONTACT
-
-Email questions to the EnsEMBL developer list: <ensembl-dev@ebi.ac.uk>
+=head1 METHODS
 
 =cut
 
@@ -109,7 +120,8 @@ sub fetch_by_stable_id {
 
   my $syn = $self->_tables()->[1];
 
-  my $pts = $self->generic_fetch("$syn.display_label = '$stable_id'");
+  $self->bind_param_generic_fetch($stable_id,SQL_VARCHAR);
+  my $pts = $self->generic_fetch("$syn.display_label = ?");
 
   return (@$pts) ? $pts->[0] : undef;
 }
@@ -154,16 +166,17 @@ sub fetch_all_by_Slice {
   # get extent of region spanned by transcripts
   my ($min_start, $max_end);
   foreach my $tr (@$transcripts) {
-    if(!defined($min_start) || $tr->start() < $min_start) {
-      $min_start = $tr->start();
+    if(!defined($min_start) || $tr->seq_region_start() < $min_start) {
+      $min_start = $tr->seq_region_start();
     }
-    if(!defined($max_end) || $tr->end() > $max_end) {
-      $max_end   = $tr->end();
+    if(!defined($max_end) || $tr->seq_region_end() > $max_end) {
+      $max_end   = $tr->seq_region_end();
     }
   }
 
-  $min_start += $slice->start() - 1;
-  $max_end   += $slice->start() - 1;
+#  mades no sense, the limit for the slice will be defined by the transcripts
+#  $min_start += $slice->start() - 1;
+#  $max_end   += $slice->start() - 1;
 
   my $ext_slice;
 
@@ -319,7 +332,8 @@ sub _objs_from_sth {
     #get the analysis object
     my $analysis = $analysis_hash{$analysis_id} ||=
       $aa->fetch_by_dbID($analysis_id);
-
+    #need to get the internal_seq_region, if present
+    $seq_region_id = $self->get_seq_region_id_internal($seq_region_id);
     my $slice = $slice_hash{"ID:".$seq_region_id};
 
     if(!$slice) {
@@ -382,16 +396,19 @@ sub _objs_from_sth {
       $slice = $dest_slice;
     }
 
-    #finally, create the new repeat feature
-    push @ptranscripts, Bio::EnsEMBL::PredictionTranscript->new
-      ( '-start'         =>  $seq_region_start,
-        '-end'           =>  $seq_region_end,
-        '-strand'        =>  $seq_region_strand,
-        '-adaptor'       =>  $self,
-        '-slice'         =>  $slice,
-        '-analysis'      =>  $analysis,
-        '-dbID'          =>  $prediction_transcript_id,
-        '-display_label' =>  $display_label);
+    # Finally, create the new PredictionTranscript.
+    push( @ptranscripts,
+          $self->_create_feature('Bio::EnsEMBL::PredictionTranscript', {
+                                   '-start'    => $seq_region_start,
+                                   '-end'      => $seq_region_end,
+                                   '-strand'   => $seq_region_strand,
+                                   '-adaptor'  => $self,
+                                   '-slice'    => $slice,
+                                   '-analysis' => $analysis,
+                                   '-dbID' => $prediction_transcript_id,
+                                   '-display_label' => $display_label
+                                 } ) );
+
   }
 
   return \@ptranscripts;

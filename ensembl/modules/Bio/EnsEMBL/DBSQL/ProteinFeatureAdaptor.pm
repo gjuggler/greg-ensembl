@@ -1,13 +1,22 @@
-#
-# EnsEMBL module for Bio::EnsEMBL::DBSQL::ProteinFeatureAdaptor
-#
-# Cared for by Emmanuel Mongin <mongin@ebi.ac.uk>
-#
-# Copyright Emmanuel Mongin
-#
-# You may distribute this module under the same terms as perl itself
+=head1 LICENSE
 
-# POD documentation - main docs before the code
+  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
+=cut
 
 =head1 NAME
 
@@ -15,27 +24,19 @@ Bio::EnsEMBL::DBSQL::ProteinFeatureAdaptor
 
 =head1 SYNOPSIS
 
-  use Bio::EnsEMBL::DBSQL::DBAdaptor;
-  use Bio::EnsEMBL::DBSQL::ProteinFeatureAdaptor;
+  use Bio::EnsEMBL::Registry;
 
-  $db = new Bio::EnsEMBL::DBSQL::DBAdaptor( -user => 'root', 
-                                            -db => 'pog' ,
-                                            -host => 'caldy' ,
-                                            -driver => 'mysql' );
-  my $pfa = $db->get_ProteinFeatureAdaptor();
+  Bio::EnsEMBL::Registry->load_registry_from_db(
+    -host => 'ensembldb.ensembl.org',
+    -user => 'anonymous'
+  );
 
-  my @prot_feats = @{$pfa->fetch_all_by_translation_id(1231)};
+  $pfa = Bio::EnsEMBL::Registry->get_adaptor( "human", "core",
+    "proteinfeature" );
+
+  my @prot_feats = @{ $pfa->fetch_all_by_translation_id(1231) };
 
   my $prot_feat = $pfa->fetch_by_dbID(523);
-
-  
-=head1 DESCRIPTION
-
-
-=head1 CONTACT
-
-  Post questions to the EnsEMBl development mailing list : 
-  ensembl-dev@ebi.ac.uk
 
 =head1 METHODS
 
@@ -49,7 +50,7 @@ use strict;
 use Bio::EnsEMBL::DBSQL::BaseAdaptor;
 use Bio::EnsEMBL::ProteinFeature;
 use Bio::EnsEMBL::Utils::Exception qw(throw deprecate warning);
-
+use Data::Dumper;
 
 use vars qw(@ISA);
 @ISA = qw(Bio::EnsEMBL::DBSQL::BaseAdaptor);
@@ -245,7 +246,7 @@ sub store {
                    "            analysis_id    = ?, ".
                    "            hit_start      = ?, ".
                    "            hit_end        = ?, ".
-                   "            hit_name         = ?, ".
+                   "            hit_name       = ?, ".
                    "            score          = ?, ".
                    "            perc_ident     = ?, ".
                    "            evalue         = ?");
@@ -299,6 +300,72 @@ sub fetch_all_by_feature_and_dbID {
 
   return \@out;
 }
+
+
+sub save {
+    
+  my ($self, $features) = @_;
+
+  my @feats = @$features;
+  throw("Must call save with features") if( scalar(@feats) == 0 );
+
+#  my @tabs = $self->_tables;
+#  my ($tablename) = @{$tabs[0]};
+  my $tablename = 'protein_feature';
+
+  my $db = $self->db();
+  my $analysis_adaptor = $db->get_AnalysisAdaptor();
+
+  my $sql = qq{INSERT INTO $tablename (translation_id, seq_start, seq_end, hit_start, hit_end, hit_name, analysis_id, score, evalue, perc_ident, external_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)};
+
+  my $sth = $self->prepare($sql);
+     
+  foreach my $feat ( @feats ) {
+     if( !ref $feat || !$feat->isa("Bio::EnsEMBL::ProteinFeature") ) {
+	 throw("feature must be a Bio::EnsEMBL::ProteinFeature,". " not a [".ref($feat)."].");
+     }
+
+     if($feat->is_stored($db)) {
+	 warning("ProteinFeature [".$feat->dbID."] is already stored" .
+		 " in this database.");
+	 next;
+     }
+
+     my $hstart = defined $feat->hstart ? $feat->hstart : $feat->start ;
+     my $hend   = defined $feat->hend ? $feat->hend : $feat->end;
+
+     if(!defined($feat->analysis)) {
+	 throw("An analysis must be attached to the features to be stored.");
+     }
+
+     #store the analysis if it has not been stored yet
+     if(!$feat->analysis->is_stored($db)) {
+	 $analysis_adaptor->store($feat->analysis());
+     }
+
+     my $original = $feat;
+     my $extra_data = $feat->extra_data ? $self->dump_data($feat->extra_data) : '';
+
+     $sth->bind_param(1,$feat->translation_id,SQL_INTEGER);
+     $sth->bind_param(2,$feat->start,SQL_INTEGER);
+     $sth->bind_param(3,$feat->end,SQL_INTEGER);
+     $sth->bind_param(4,$hstart,SQL_INTEGER);
+     $sth->bind_param(5,$hend,SQL_INTEGER);
+     $sth->bind_param(6,$feat->hseqname,SQL_VARCHAR);
+     $sth->bind_param(7,$feat->analysis->dbID,SQL_INTEGER);
+     $sth->bind_param(8,$feat->score,SQL_DOUBLE);
+     $sth->bind_param(9,$feat->p_value,SQL_DOUBLE);
+     $sth->bind_param(10,$feat->percent_id,SQL_FLOAT);
+     $sth->bind_param(11,$extra_data,SQL_LONGVARCHAR);
+     
+     $sth->execute();
+     $original->dbID($sth->{'mysql_insertid'});
+     $original->adaptor($self);
+ }
+
+  $sth->finish();
+}
+
 
 1;
 

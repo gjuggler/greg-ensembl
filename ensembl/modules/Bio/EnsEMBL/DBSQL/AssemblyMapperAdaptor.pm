@@ -1,61 +1,73 @@
+=head1 LICENSE
 
-#
-# Ensembl module for Bio::EnsEMBL::DBSQL::AssemblyMapperAdaptor
-#
-#
-# Copyright Ensembl
-#
-# You may distribute this module under the same terms as perl itself
+  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
 
-# POD documentation - main docs before the code
+  This software is distributed under a modified Apache license.
+  For license details, please see
 
-=Head1 NAME
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
+=cut
+
+=head1 NAME
+
+Bio::EnsEMBL::DBSQL::AssemblyMapperAdaptor
 
 =head1 SYNOPSIS
 
-  my $db = Bio::EnsEMBL::DBSQL::DBAdaptor->new(...);
+  use Bio::EnsEMBL::Registry;
 
-  my $asma = $dba->get_AssemblyMapperAdaptor();
-  my $csa  = $dba->get_CoordSystemAdaptor();
+  Bio::EnsEMBL::Registry->load_registry_from_db(
+    -host => 'ensembldb.ensembl.org',
+    -user => 'anonymous'
+  );
 
-  my $chr33_cs   = $csa->fetch_by_name('chromosome', 'NCBI33');
-  my $chr34_cs   = $csa->fetch_by_name('chromosome', 'NCBI34');
-  my $ctg_cs     = $csa->fetch_by_name('contig');
-  my $clone_cs   = $csa->fetch_by_name('clone');
+  $asma = Bio::EnsEMBL::Registry->get_adaptor( "human", "core",
+    "assemblymapper" );
+
+  $csa = Bio::EnsEMBL::Registry->get_adaptor( "human", "core",
+    "coordsystem" );
+
+  my $chr33_cs = $csa->fetch_by_name( 'chromosome', 'NCBI33' );
+  my $chr34_cs = $csa->fetch_by_name( 'chromosome', 'NCBI34' );
+  my $ctg_cs   = $csa->fetch_by_name('contig');
+  my $clone_cs = $csa->fetch_by_name('clone');
 
   my $chr_ctg_mapper =
-    $asma->fetch_by_CoordSystems($chr33_cs, $ctg_cs);
+    $asma->fetch_by_CoordSystems( $chr33_cs, $ctg_cs );
 
   my $ncbi33_ncbi34_mapper =
-    $asm_adptr->fetch_by_CoordSystems($chr33,$chr34);
+    $asm_adptr->fetch_by_CoordSystems( $chr33, $chr34 );
 
   my $ctg_clone_mapper =
-    $asm_adptr->fetch_by_CoordSystems($ctg_cs,$clone_cs);
+    $asm_adptr->fetch_by_CoordSystems( $ctg_cs, $clone_cs );
 
 
 =head1 DESCRIPTION
 
-Adaptor for handling Assembly mappers.  This is a
-I<Singleton> class.  ie: There is only one per
-database (C<DBAdaptor>).
+Adaptor for handling Assembly mappers.  This is a I<Singleton> class.
+ie: There is only one per database (C<DBAdaptor>).
 
-This is used to retrieve mappers between any two coordinate systems whose
-makeup is described by the assembly table.  Currently one step (explicit) and
-two step (implicit) pairwise mapping is supported.  In one-step mapping
-an explicit relationship between the coordinate systems is defined in the
-assembly table.  In two-step 'chained' mapping no explicit mapping is present
-but the coordinate systems must share a common mapping to an intermediate
-coordinate system.
-
-=head1 CONTACT
-
-This module is part of the Ensembl project: www.ensembl.org
-Post general queries to B<ensembl-dev@ebi.ac.uk>
+This is used to retrieve mappers between any two coordinate systems
+whose makeup is described by the assembly table.  Currently one step
+(explicit) and two step (implicit) pairwise mapping is supported.  In
+one-step mapping an explicit relationship between the coordinate systems
+is defined in the assembly table.  In two-step 'chained' mapping no
+explicit mapping is present but the coordinate systems must share a
+common mapping to an intermediate coordinate system.
 
 =head1 METHODS
 
 =cut
-
 
 package Bio::EnsEMBL::DBSQL::AssemblyMapperAdaptor;
 use vars qw(@ISA);
@@ -129,13 +141,21 @@ sub cache_seq_ids_with_mult_assemblys{
 
   $self->{'multi_seq_ids'} = {};
 
-  my $sql=(<<SQL);  
-    SELECT seq_region_id 
-      FROM seq_region_attrib sra, attrib_type at
-	WHERE sra.attrib_type_id = at.attrib_type_id and code = "MultAssem"
-SQL
+  my $sql = qq(
+  SELECT    sra.seq_region_id
+  FROM      seq_region_attrib sra,
+            attrib_type at,
+            seq_region sr,
+            coord_system cs
+  WHERE     sra.attrib_type_id = at.attrib_type_id
+    AND     code = "MultAssem"
+    AND     sra.seq_region_id = sr.seq_region_id
+    AND     sr.coord_system_id = cs.coord_system_id
+    AND     cs.species_id = ?);
 
   my $sth = $self->prepare($sql);
+
+  $sth->bind_param( 1, $self->species_id(), SQL_INTEGER );
 
   $sth->execute();
 
@@ -202,9 +222,11 @@ sub fetch_by_CoordSystems {
   my @mapping_path = @{$csa->get_mapping_path($cs1,$cs2)};
 
   if(!@mapping_path) {
-    warn("There is no mapping defined between these coord systems:\n" .
-          $cs1->name() . " " . $cs1->version() . " and " . $cs2->name() . " " .
-          $cs2->version());
+    warning(
+      "There is no mapping defined between these coord systems:\n" .
+      $cs1->name() . " " . $cs1->version() . " and " . $cs2->name() . " " .
+      $cs2->version()
+    );
     return undef;
   }
 

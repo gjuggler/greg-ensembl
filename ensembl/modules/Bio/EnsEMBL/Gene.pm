@@ -1,4 +1,22 @@
-package Bio::EnsEMBL::Gene;
+=head1 LICENSE
+
+  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
+=cut
 
 =head1 NAME
 
@@ -7,15 +25,16 @@ Bio::EnsEMBL::Gene - Object representing a genes
 =head1 SYNOPSIS
 
   my $gene = Bio::EnsEMBL::Gene->new(
-      -START    => 123,
-      -END      => 1045,
-      -STRAND   => 1,
-      -SLICE    => $slice
+    -START  => 123,
+    -END    => 1045,
+    -STRAND => 1,
+    -SLICE  => $slice
   );
 
   # print gene information
-  print "gene start:end:strand is " . join(":", map { $gene->$_ }
-    qw(start end strand)) . "\n";
+  print("gene start:end:strand is "
+      . join( ":", map { $gene->$_ } qw(start end strand) )
+      . "\n" );
 
   # set some additional attributes
   $gene->stable_id('ENSG000001');
@@ -26,21 +45,11 @@ Bio::EnsEMBL::Gene - Object representing a genes
 A representation of a Gene within the Ensembl system. A gene is a set of one or
 more alternative transcripts.
 
-=head1 LICENCE
-
-This code is distributed under an Apache style licence. Please see
-http://www.ensembl.org/info/about/code_licence.html for details.
-
-=head1 AUTHOR
-
-Ensembl core API team
-
-=head1 CONTACT
-
-Please post comments/questions to the Ensembl development list
-<ensembl-dev@ebi.ac.uk>
+=head1 METHODS
 
 =cut
+
+package Bio::EnsEMBL::Gene;
 
 use strict;
 
@@ -106,48 +115,71 @@ sub new {
 
   my $class = ref($caller) || $caller;
   my $self = $class->SUPER::new(@_);
-
-  my ( $stable_id, $version, $external_name, $type, $external_db, 
-       $external_status, $display_xref, $description, $transcripts,
-       $created_date, $modified_date, $confidence, $biotype, $source,
-       $status, $is_current, $canonical_transcript, $canonical_annotation ) = 
-    rearrange( [ 'STABLE_ID', 'VERSION', 'EXTERNAL_NAME', 'TYPE',
-		 'EXTERNAL_DB', 'EXTERNAL_STATUS', 'DISPLAY_XREF',
-                 'DESCRIPTION',
-                 'TRANSCRIPTS', 'CREATED_DATE', 'MODIFIED_DATE', 
-	         'CONFIDENCE', 'BIOTYPE', 'SOURCE', 'STATUS', 'IS_CURRENT',
-		 'CANONICAL_TRANSCRIPT', 'CANONICAL_ANNOTATION'
-		 ],
-                 @_ );
+  my (
+    $stable_id,               $version,
+    $external_name,           $type,
+    $external_db,             $external_status,
+    $display_xref,            $description,
+    $transcripts,             $created_date,
+    $modified_date,           $confidence,
+    $biotype,                 $source,
+    $status,                  $is_current,
+    $canonical_transcript_id, $canonical_transcript,
+    $canonical_annotation
+    )
+    = rearrange( [
+      'STABLE_ID',               'VERSION',
+      'EXTERNAL_NAME',           'TYPE',
+      'EXTERNAL_DB',             'EXTERNAL_STATUS',
+      'DISPLAY_XREF',            'DESCRIPTION',
+      'TRANSCRIPTS',             'CREATED_DATE',
+      'MODIFIED_DATE',           'CONFIDENCE',
+      'BIOTYPE',                 'SOURCE',
+      'STATUS',                  'IS_CURRENT',
+      'CANONICAL_TRANSCRIPT_ID', 'CANONICAL_TRANSCRIPT',
+      'CANONICAL_ANNOTATION'
+    ],
+    @_
+    );
 
   if ($transcripts) {
     $self->{'_transcript_array'} = $transcripts;
     $self->recalculate_coordinates();
   }
 
-  $self->stable_id( $stable_id );
-  $self->version( $version );
-  $self->{'created_date'} = $created_date;
+  $self->stable_id($stable_id);
+  $self->version($version);
+  $self->{'created_date'}  = $created_date;
   $self->{'modified_date'} = $modified_date;
 
-  $self->external_name( $external_name ) if( defined $external_name );
-  $self->external_db( $external_db ) if( defined $external_db );
-  $self->external_status( $external_status ) if( defined $external_status );
-  $self->display_xref( $display_xref ) if( defined $display_xref );
-  $self->biotype( $type ) if( defined $type );
-  $self->biotype( $biotype ) if( defined $biotype );
+  $self->external_name($external_name) if ( defined $external_name );
+  $self->external_db($external_db)     if ( defined $external_db );
+  $self->external_status($external_status)
+    if ( defined $external_status );
+  $self->display_xref($display_xref) if ( defined $display_xref );
+  $self->biotype($type)              if ( defined $type );
+  $self->biotype($biotype)           if ( defined $biotype );
   $self->description($description);
-  $self->status( $confidence ); # incase old naming is used.
-                                # kept to ensure routine is backwards compatible.
-  $self->status( $status);      # add new naming
-  $self->source( $source );
+  $self->status($confidence);    # incase old naming is used.
+      # kept to ensure routine is backwards compatible.
+  $self->status($status);    # add new naming
+  $self->source($source);
 
   # default to is_current
   $is_current = 1 unless (defined($is_current));
   $self->{'is_current'} = $is_current;
 
-  $self->canonical_transcript($canonical_transcript) if(defined $canonical_transcript);
-  $self->canonical_annotation($canonical_annotation) if (defined $canonical_annotation);
+  # Add the canonical transcript if we were given one, otherwise add the
+  # canonical transcript internal ID if we were given one.
+  if ( defined($canonical_transcript) ) {
+    $self->canonical_transcript($canonical_transcript);
+  } elsif ( defined($canonical_transcript_id) ) {
+    $self->{'canonical_transcript_id'} = $canonical_transcript_id;
+  }
+
+  $self->canonical_annotation($canonical_annotation)
+    if ( defined $canonical_annotation );
+
   return $self;
 }
 
@@ -187,7 +219,7 @@ sub external_name {
 
   $self->{'external_name'} = shift if (@_);
 
-  if (exists $self->{'external_name'}) {
+  if (defined $self->{'external_name'}) {
     return $self->{'external_name'};
   }
 
@@ -325,29 +357,57 @@ sub description {
   Example    : $gene->canonical_transcript($canonical_transcript);
   Description: Getter/setter for the canonical_transcript
   Returntype : Bio::EnsEMBL::Transcript
-  Exceptions : none
+  Exceptions : Throws if argument is not a transcript object.
   Caller     : general
   Status     : Stable
 
 =cut
 
 sub canonical_transcript {
-    my $self = shift;
-    if (@_){
-	my $tr = shift;
-	if(defined($tr) && (!ref($tr) || !$tr->isa('Bio::EnsEMBL::Transcript'))) {
-	    throw('analysis argument must be a Bio::EnsEMBL::Transcript');
-	}
-	$self->{'canonical_transcript'} = $tr;
+  my ( $self, $transcript ) = @_;
+
+  if ( defined($transcript) ) {
+    # We're attaching a new canonical transcript.
+
+    if (
+      !(
+        ref($transcript)
+        && $transcript->isa('Bio::EnsEMBL::Transcript') ) )
+    {
+      throw('Argument must be a Bio::EnsEMBL::Transcript');
     }
-    return $self->{'canonical_transcript'};
-}
+
+    $self->{'canonical_transcript'}    = $transcript;
+    $self->{'canonical_transcript_id'} = $transcript->dbID();
+
+  } elsif ( !defined( $self->{'canonical_transcript'} )
+    && defined( $self->{'canonical_transcript_id'} ) )
+  {
+    # We have not attached a canoncical transcript, but we have the dbID
+    # of one.
+
+    if ( defined( $self->adaptor() ) ) {
+      my $transcript_adaptor =
+        $self->adaptor()->db()->get_TranscriptAdaptor();
+
+      $self->{'canonical_transcript'} =
+        $transcript_adaptor->fetch_by_dbID(
+        $self->{'canonical_transcript_id'} );
+    } else {
+      warning( "Gene has no adaptor "
+          . "when trying to fetch canonical transcript." );
+    }
+
+  }
+
+  return $self->{'canonical_transcript'};
+} ## end sub canonical_transcript
 
 
 =head2 canonical_annotation
 
   Arg [1]    : (optional) String - canonical_annotation
-  Example    : $gene->canonical_transcript('This is the canonical_annotation');
+  Example    : $gene->canonical_annotation('This is the canonical_annotation');
   Description: Getter/setter for the canonical_annotation
   Returntype : String
   Exceptions : none
@@ -358,7 +418,7 @@ sub canonical_transcript {
 
 sub canonical_annotation {
     my $self = shift;
-    $self->{'cannonical_annotation'} = shift if( @_ );
+    $self->{'canonical_annotation'} = shift if( @_ );
     return $self->{'canonical_annotation'};
 }
 

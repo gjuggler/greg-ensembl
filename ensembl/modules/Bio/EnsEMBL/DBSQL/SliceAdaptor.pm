@@ -1,13 +1,22 @@
+=head1 LICENSE
 
-#
-# Ensembl module for Bio::EnsEMBL::DBSQL::SliceAdaptor
-#
-#
-# Copyright (c) 2004 Ensembl
-#
-# You may distribute this module under the same terms as perl itself
+  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
 
-# POD documentation - main docs before the code
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
+=cut
 
 =head1 NAME
 
@@ -16,68 +25,65 @@ the creation of Slice objects.
 
 =head1 SYNOPSIS
 
-  use Bio::EnsEMBL::DBSQL::DBAdaptor;
   use Bio::EnsEMBL::Utils::Slice qw(split_Slices);
+  use Bio::EnsEMBL::Registry;
 
-  $db = Bio::EnsEMBL::DBSQL::DBAdaptor->new(...);
+  Bio::EnsEMBL::Registry->load_registry_from_db(
+    -host => 'ensembldb.ensembl.org',
+    -user => 'anonymous'
+  );
 
-  $slice_adaptor = $db->get_SliceAdaptor();
+  $slice_adaptor =
+    Bio::EnsEMBL::Registry->get_adaptor( "human", "core", "slice" );
 
   # get a slice on the entire chromosome X
-  $chr_slice = $slice_adaptor->fetch_by_region('chromosome','X');
+  $chr_slice = $slice_adaptor->fetch_by_region( 'chromosome', 'X' );
 
   # get a slice for each clone in the database
-  foreach $cln_slice (@{$slice_adaptor->fetch_all('clone')}) {
-    #do something with clone
+  foreach $cln_slice ( @{ $slice_adaptor->fetch_all('clone') } ) {
+    # do something with clone
   }
 
   # get a slice which is part of NT_004321
-  $spctg_slice = $slice_adaptor->fetch_by_region('supercontig','NT_004321',
-                                                    200_000, 600_000);
+  $spctg_slice =
+    $slice_adaptor->fetch_by_region( 'supercontig', 'NT_004321',
+    200_000, 600_000 );
 
-
-  # get all non-redundant slices from the highest possible coordinate systems
+  # get all non-redundant slices from the highest possible coordinate
+  # systems
   $slices = $slice_adaptor->fetch_all('toplevel');
 
   # include non-reference regions
-  $slices = $slice_adaptor->fetch_all('toplevel',undef,1);
+  $slices = $slice_adaptor->fetch_all( 'toplevel', undef, 1 );
 
   # include non-duplicate regions
-  $slices = $slice_adaptor->fetch_all('toplevel', undef, 0, 1);
+  $slices = $slice_adaptor->fetch_all( 'toplevel', undef, 0, 1 );
 
   # split up a list of slices into smaller slices
-  $overlap = 1000;
+  $overlap    = 1000;
   $max_length = 1e6;
-  $slices = split_Slices($slices, $max_length, $overlap);
-
+  $slices     = split_Slices( $slices, $max_length, $overlap );
 
   # store a list of slice names in a file
-  open(FILE, ">$filename") or die("Could not open file $filename");
+  open( FILE, ">$filename" ) or die("Could not open file $filename");
   foreach my $slice (@$slices) {
     print FILE $slice->name(), "\n";
   }
   close FILE;
 
   # retreive a list of slices from a file
-  open(FILE, $filename) or die("Could not open file $filename");
-  while($name = <FILE>) {
+  open( FILE, $filename ) or die("Could not open file $filename");
+  while ( $name = <FILE> ) {
     chomp($name);
     $slice = $slice_adaptor->fetch_by_name($name);
-
     # do something with slice
   }
 
 =head1 DESCRIPTION
 
-This module is responsible for fetching Slices representing genomic regions
-from a database.  A Details on how slices can be used are in the
+This module is responsible for fetching Slices representing genomic
+regions from a database.  A Details on how slices can be used are in the
 Bio::EnsEMBL::Slice module.
-
-=head1 CONTACT
-
-This module is part of the Ensembl project http://www.ensembl.org
-
-For more information email <ensembl-dev@ebi.ac.uk>
 
 =head1 METHODS
 
@@ -182,16 +188,18 @@ sub fetch_by_region {
        $strand, $version, $no_fuzz )
     = @_;
 
-  $start  = 1 if (!defined($start));
-  $strand = 1 if (!defined($strand));
+  if ( !defined($start) )  { $start  = 1 }
+  if ( !defined($strand) ) { $strand = 1 }
 
-  throw('seq_region_name argument is required') if (!defined($seq_region_name));
+  if ( !defined($seq_region_name) ) {
+    throw('seq_region_name argument is required');
+  }
 
   my $cs;
   my $csa = $self->db->get_CoordSystemAdaptor();
 
-  if ($coord_system_name) {
-    $cs = $csa->fetch_by_name($coord_system_name,$version);
+  if ( defined($coord_system_name) ) {
+    $cs = $csa->fetch_by_name( $coord_system_name, $version );
 
     ## REMOVE THESE THREE LINES WHEN STICKLEBACK DB IS FIXED!
     ## Anne/ap5 (2007-10-09):
@@ -201,167 +209,195 @@ sub fetch_by_region {
     # 'groups' in the stickleback community, even though they really are
     # chromosomes!
 
-    if( !$cs && $coord_system_name eq 'chromosome' ) {
-      $cs = $csa->fetch_by_name('group',$version);
+    if ( !defined($cs) && $coord_system_name eq 'chromosome' ) {
+      $cs = $csa->fetch_by_name( 'group', $version );
     }
 
-    if (!$cs) {
-      throw("Unknown coordinate system:\n name='$coord_system_name' " .
-            "version='$version'\n");
+    if ( !defined($cs) ) {
+      throw(
+             sprintf( "Unknown coordinate system:\n"
+                        . "name='%s' version='%s'\n",
+                      $coord_system_name, $version
+             ) );
     }
+
     # fetching by toplevel is same as fetching w/o name or version
-    if ($cs->is_top_level()) {
-      $cs = undef;
+    if ( $cs->is_top_level() ) {
+      $cs      = undef;
       $version = undef;
     }
 
-  }
+  } ## end if ( defined($coord_system_name...
 
   my $constraint;
   my $sql;
-  my @bind_vals;
+  my @bind_params;
   my $key;
 
-  if ($cs) {
- 
-    push @bind_vals, $cs->dbID();
-    $sql = "SELECT sr.name, sr.seq_region_id, sr.length, " .
-           $cs->dbID() ." FROM seq_region sr ";
+  if ( defined($cs) ) {
+    $sql = sprintf( "SELECT sr.name, sr.seq_region_id, sr.length, %d "
+                      . "FROM seq_region sr ",
+                    $cs->dbID() );
 
-	      $constraint = "sr.coord_system_id = ?";
+    $constraint = "AND sr.coord_system_id = ?";
+    push( @bind_params, [ $cs->dbID(), SQL_INTEGER ] );
 
-    $key = "$seq_region_name:".$cs->dbID();
+    $key = "$seq_region_name:" . $cs->dbID();
   } else {
-    $sql = "SELECT sr.name, sr.seq_region_id, sr.length, " .
-           "       cs.coord_system_id " .
-           "FROM   seq_region sr, coord_system cs ";
+    $sql =
+      "SELECT sr.name, sr.seq_region_id, sr.length, cs.coord_system_id "
+      . "FROM seq_region sr, coord_system cs ";
 
-    $constraint = "sr.coord_system_id = cs.coord_system_id ";
-    if($version) {
+    $constraint = "AND sr.coord_system_id = cs.coord_system_id "
+      . "AND cs.species_id = ? ";
+    push( @bind_params, [ $self->species_id(), SQL_INTEGER ] );
+
+    if ( defined($version) ) {
       $constraint .= "AND cs.version = ? ";
-      push @bind_vals, $version;
+      push( @bind_params, [ $version, SQL_VARCHAR ] );
     }
+
     $constraint .= "ORDER BY cs.rank ASC";
   }
 
   # check the cache so we only go to the db if necessary
   my $length;
   my $arr;
-  if ($key) {
-    $arr = $self->{'sr_name_cache'}->{$key};
-  }
 
-  if ($arr) {
+  if ( defined($key) ) { $arr = $self->{'sr_name_cache'}->{$key} }
+
+  if ( defined($arr) ) {
     $length = $arr->[3];
   } else {
-    my $sth = $self->prepare($sql . " WHERE sr.name = ? AND " . $constraint);
-    $sth->bind_param(1, $seq_region_name, SQL_VARCHAR);
-    if ($cs){
-	$sth->bind_param(2, $cs->dbID, SQL_INTEGER);
-    }
-    else{
-	$sth->bind_param(2, $version, SQL_VARCHAR)  if ($version);	
+    my $sth =
+      $self->prepare( $sql . "WHERE sr.name = ? " . $constraint );
+
+    unshift( @bind_params, [ $seq_region_name, SQL_VARCHAR ] );
+
+    my $pos = 0;
+    foreach my $param (@bind_params) {
+      $sth->bind_param( ++$pos, $param->[0], $param->[1] );
     }
 
     $sth->execute();
 
-    if ($sth->rows() == 0) {
+    if ( $sth->rows() == 0 ) {
       $sth->finish();
 
       if ($no_fuzz) { return undef }
 
-      # do fuzzy matching, assuming that we are just missing a version on
-      # the end of the seq_region name
-      
-      $sth = $self->prepare($sql . " WHERE sr.name LIKE ? AND " . $constraint);
+      # Do fuzzy matching, assuming that we are just missing a version
+      # on the end of the seq_region name.
 
-      $sth->bind_param(1, "$seq_region_name.%", SQL_VARCHAR);
+      $sth =
+        $self->prepare( $sql . " WHERE sr.name LIKE ? " . $constraint );
 
-      if ($cs){
-	  $sth->bind_param(2, $cs->dbID, SQL_INTEGER);
+      $bind_params[0] =
+        [ sprintf( '%s.%%', $seq_region_name ), SQL_VARCHAR ];
+
+      $pos = 0;
+      foreach my $param (@bind_params) {
+        $sth->bind_param( ++$pos, $param->[0], $param->[1] );
       }
-      else{
-	  $sth->bind_param(2, $version, SQL_VARCHAR) if ($version);	
-      }
+
       $sth->execute();
 
       my $prefix_len = length($seq_region_name) + 1;
-      my $high_ver = undef;
-      my $high_cs = $cs;
+      my $high_ver   = undef;
+      my $high_cs    = $cs;
 
-      # find the fuzzy-matched seq_region with the highest postfix (which ought
-      # to be a version)
+      # Find the fuzzy-matched seq_region with the highest postfix
+      # (which ought to be a version).
 
-      my ($tmp_name, $id, $tmp_length, $cs_id);
-      $sth->bind_columns(\$tmp_name, \$id, \$tmp_length, \$cs_id);
+      my ( $tmp_name, $id, $tmp_length, $cs_id );
+      $sth->bind_columns( \( $tmp_name, $id, $tmp_length, $cs_id ) );
 
       my $i = 0;
 
-      while ($sth->fetch) {
-        my $tmp_cs = ($cs) ? $cs : $csa->fetch_by_dbID($cs_id);
+      while ( $sth->fetch ) {
+        my $tmp_cs =
+          ( defined($cs) ? $cs : $csa->fetch_by_dbID($cs_id) );
 
         # cache values for future reference
         my $arr = [ $id, $tmp_name, $cs_id, $tmp_length ];
         $self->{'sr_name_cache'}->{"$tmp_name:$cs_id"} = $arr;
-        $self->{'sr_id_cache'}->{"$id"} = $arr;
+        $self->{'sr_id_cache'}->{"$id"}                = $arr;
 
-        my $tmp_ver = substr($tmp_name, $prefix_len);
+        my $tmp_ver = substr( $tmp_name, $prefix_len );
 
-        # skip versions which are non-numeric and apparently not versions
-        next if($tmp_ver !~ /^\d+$/);
+        # skip versions which are non-numeric and apparently not
+        # versions
+        if ( $tmp_ver !~ /^\d+$/ ) { next }
 
-        # take version with highest num, if two versions match take one with
-        # highest ranked coord system (lowest num)
-        if(!defined($high_ver) || $tmp_ver > $high_ver ||
-           ($tmp_ver == $high_ver && $tmp_cs->rank < $high_cs->rank)) {
-            $seq_region_name = $tmp_name;
-            $length          = $tmp_length;
-            $high_ver        = $tmp_ver;
-            $high_cs         = $tmp_cs;
+        # take version with highest num, if two versions match take one
+        # with highest ranked coord system (lowest num)
+        if ( !defined($high_ver)
+          || $tmp_ver > $high_ver
+          || ( $tmp_ver == $high_ver && $tmp_cs->rank < $high_cs->rank )
+          )
+        {
+          $seq_region_name = $tmp_name;
+          $length          = $tmp_length;
+          $high_ver        = $tmp_ver;
+          $high_cs         = $tmp_cs;
         }
 
         $i++;
-      }
+      } ## end while ( $sth->fetch )
       $sth->finish();
 
       # warn if fuzzy matching found more than one result
-      if ($i > 1) {
-        warning("Fuzzy matching of seq_region_name returned more than one result.\nYou might want to check whether the returned seq_region\n(".$high_cs->name.":$seq_region_name) is the one you intended to fetch.\n");
+      if ( $i > 1 ) {
+        warning(
+          sprintf(
+            "Fuzzy matching of seq_region_name "
+              . "returned more than one result.\n"
+              . "You might want to check whether the returned seq_region\n"
+              . "(%s:%s) is the one you intended to fetch.\n",
+            $high_cs->name(), $seq_region_name
+          ) );
       }
 
       $cs = $high_cs;
 
-      #return if we did not find any appropriate match:
-      return undef if (!defined($high_ver));
+      # return if we did not find any appropriate match:
+      if ( !defined($high_ver) ) { return undef }
 
     } else {
 
-      my ($id, $cs_id);
-      ($seq_region_name, $id, $length, $cs_id) = $sth->fetchrow_array();
+      my ( $id, $cs_id );
+      ( $seq_region_name, $id, $length, $cs_id ) =
+        $sth->fetchrow_array();
       $sth->finish();
 
-      # cahce to speed up for future queries
+      # cache to speed up for future queries
       my $arr = [ $id, $seq_region_name, $cs_id, $length ];
       $self->{'sr_name_cache'}->{"$seq_region_name:$cs_id"} = $arr;
-      $self->{'sr_id_cache'}->{"$id"} = $arr;
-      $cs = $csa->fetch_by_dbID( $cs_id );
+      $self->{'sr_id_cache'}->{"$id"}                       = $arr;
+      $cs = $csa->fetch_by_dbID($cs_id);
     }
+  } ## end else [ if ( defined($arr) )
+
+  if ( !defined($end) ) { $end = $length }
+
+  if ( $end + 1 < $start ) {
+    throw(
+           sprintf(
+                  "start [%d] must be less than or equal to end+1 [%d]",
+                  $start, $end + 1
+           ) );
   }
 
-  $end = $length if(!defined($end));
-
-  if($end+1 < $start) {
-    throw("start [$start] must be less than or equal to end+1 [$end+1]");
-  }
-
-  return Bio::EnsEMBL::Slice->new(-COORD_SYSTEM      => $cs,
-                                  -SEQ_REGION_NAME   => $seq_region_name,
-                                  -SEQ_REGION_LENGTH => $length,
-                                  -START             => $start,
-                                  -END               => $end,
-                                  -STRAND            => $strand,
-                                  -ADAPTOR           => $self);
-}
+  return
+    Bio::EnsEMBL::Slice->new_fast({ 
+	                      'coord_system'      => $cs,
+                              'seq_region_name'   => $seq_region_name,
+                              'seq_region_length' => $length,
+                              'start'             => $start,
+                              'end'               => $end,
+                              'strand'            => $strand,
+                              'adaptor'           => $self} );
+} ## end sub fetch_by_region
 
 
 
@@ -439,27 +475,26 @@ sub fetch_by_name {
 =cut
 
 sub fetch_by_seq_region_id {
-  my ($self, $seq_region_id,$start,$end,$strand) = @_;
+  my ( $self, $seq_region_id, $start, $end, $strand ) = @_;
 
-  my $arr = $self->{'sr_id_cache'}->{ $seq_region_id };
-  my ($name, $length, $cs);
+  my $arr = $self->{'sr_id_cache'}->{$seq_region_id};
+  my ( $name, $length, $cs, $cs_id );
 
-  if( $arr &&  defined($arr->[2])) {
-    my $cs_id;
-    ($name, $cs_id, $length ) = ( $arr->[1], $arr->[2], $arr->[3] );
+  if ( $arr && defined( $arr->[2] ) ) {
+    ( $name, $cs_id, $length ) = ( $arr->[1], $arr->[2], $arr->[3] );
     $cs = $self->db->get_CoordSystemAdaptor->fetch_by_dbID($cs_id);
   } else {
-    my $sth = $self->prepare("SELECT name, length, coord_system_id " .
-                             "FROM seq_region " .
-                             "WHERE seq_region_id = ?");
+    my $sth =
+      $self->prepare(   "SELECT sr.name, sr.coord_system_id, sr.length "
+                      . "FROM seq_region sr "
+                      . "WHERE sr.seq_region_id = ? " );
 
-    $sth->bind_param(1,$seq_region_id,SQL_INTEGER);
+    $sth->bind_param( 1, $seq_region_id, SQL_INTEGER );
     $sth->execute();
 
-    return undef if($sth->rows() == 0);
+    if ( $sth->rows() == 0 ) { return undef }
 
-    my $cs_id;
-    ($name, $length, $cs_id) = $sth->fetchrow_array();
+    ( $name, $cs_id, $length ) = $sth->fetchrow_array();
     $sth->finish();
 
     $cs = $self->db->get_CoordSystemAdaptor->fetch_by_dbID($cs_id);
@@ -471,14 +506,16 @@ sub fetch_by_seq_region_id {
     $self->{'sr_id_cache'}->{"$seq_region_id"} = $arr;
   }
 
-  return Bio::EnsEMBL::Slice->new(-COORD_SYSTEM      => $cs,
-                                  -SEQ_REGION_NAME   => $name,
-                                  -SEQ_REGION_LENGTH => $length,
-                                  -START             => $start || 1,
-                                  -END               => $end || $length,
-                                  -STRAND            => $strand || 1,
-                                  -ADAPTOR           => $self);
-}
+  return
+    Bio::EnsEMBL::Slice->new_fast({ 
+	                      'coord_system'     => $cs,
+                              'seq_region_name'  => $name,
+                              'seq_region_length'=> $length,
+                              'start'            => $start || 1,
+                              'end'              => $end || $length,
+                              'strand'           => $strand || 1,
+                              'adaptor'           => $self} );
+} ## end sub fetch_by_seq_region_id
 
 
 
@@ -616,48 +653,64 @@ sub fetch_all {
   my $sth;
 
   my %bad_vals=();
+
   #
   # Get a hash of non reference seq regions
   #
-  if(!$include_non_reference){
-    my $sth2 = $self->prepare(
-			      "SELECT sr.seq_region_id ".
-			      "FROM seq_region sr, seq_region_attrib sra, attrib_type at ".
-			      " WHERE at.code='non_ref'".
-			      "  AND sra.seq_region_id=sr.seq_region_id ".
-			      "  AND at.attrib_type_id=sra.attrib_type_id " );
+  if ( !$include_non_reference ) {
+    my $sth2 =
+      $self->prepare(   'SELECT sr.seq_region_id '
+                      . 'FROM seq_region sr, seq_region_attrib sra, '
+                      . 'attrib_type at, coord_system cs '
+                      . 'WHERE at.code = "non_ref" '
+                      . 'AND sra.seq_region_id = sr.seq_region_id '
+                      . 'AND at.attrib_type_id = sra.attrib_type_id '
+                      . 'AND sr.coord_system_id = cs.coord_system_id '
+                      . 'AND cs.species_id = ?' );
+
+    $sth2->bind_param( 1, $self->species_id(), SQL_INTEGER );
     $sth2->execute();
+
     my ($seq_region_id);
-    $sth2->bind_columns(\$seq_region_id);
-    while($sth2->fetch()) {
+    $sth2->bind_columns( \$seq_region_id );
+
+    while ( $sth2->fetch() ) {
       $bad_vals{$seq_region_id} = 1;
     }
+
     $sth2->finish();
   }
+
   #
   # Retrieve the seq_regions from the database
   #
-  if($orig_cs->is_top_level()) {
-   $sth =
-       $self->prepare("SELECT sr.seq_region_id, sr.name, sr.length, " .
-                      "       sr.coord_system_id " .
-                      "FROM seq_region sr, " .
-                      "     seq_region_attrib sra, attrib_type at " .
-                      "WHERE at.code='toplevel' " .
-                      "AND   at.attrib_type_id=sra.attrib_type_id " .
-                      "AND   sra.seq_region_id=sr.seq_region_id");
+  if ( $orig_cs->is_top_level() ) {
+    $sth =
+      $self->prepare(   'SELECT sr.seq_region_id, sr.name, '
+                      . 'sr.length, sr.coord_system_id '
+                      . 'FROM seq_region sr, seq_region_attrib sra, '
+                      . 'attrib_type at, coord_system cs '
+                      . 'WHERE at.code = "toplevel" '
+                      . 'AND at.attrib_type_id = sra.attrib_type_id '
+                      . 'AND sra.seq_region_id = sr.seq_region_id '
+                      . 'AND sr.coord_system_id = cs.coord_system_id '
+                      . 'AND cs.species_id = ?' );
+
+    $sth->bind_param( 1, $self->species_id(), SQL_INTEGER );
     $sth->execute();
   } else {
-     $sth =
-       $self->prepare('SELECT seq_region_id, name, length, coord_system_id ' .
-                      'FROM   seq_region ' .
-                      'WHERE  coord_system_id =?');
-     $sth->bind_param(1,$orig_cs->dbID,SQL_INTEGER);
-     $sth->execute();
+    $sth =
+      $self->prepare(   'SELECT sr.seq_region_id, sr.name, '
+                      . 'sr.length, sr.coord_system_id '
+                      . 'FROM seq_region sr '
+                      . 'WHERE sr.coord_system_id = ?' );
+
+    $sth->bind_param( 1, $orig_cs->dbID, SQL_INTEGER );
+    $sth->execute();
   }
 
-  my ($seq_region_id, $name, $length, $cs_id);
-  $sth->bind_columns(\$seq_region_id, \$name, \$length, \$cs_id);
+  my ( $seq_region_id, $name, $length, $cs_id );
+  $sth->bind_columns( \( $seq_region_id, $name, $length, $cs_id ) );
 
   my $cache_count = 0;
 
@@ -681,14 +734,14 @@ sub fetch_all {
         $cache_count++;
       }
 
-      my $slice = Bio::EnsEMBL::Slice->new
-        (-START             => 1,
-         -END               => $length,
-         -STRAND            => 1,
-         -SEQ_REGION_NAME   => $name,
-         -SEQ_REGION_LENGTH => $length,
-         -COORD_SYSTEM      => $cs,
-         -ADAPTOR           => $self);
+      my $slice = Bio::EnsEMBL::Slice->new_fast({
+	  'start'           => 1,
+          'end'             => $length,
+          'strand'          => 1,
+         'seq_region_name'  => $name,
+         'seq_region_length'=> $length,
+         'coord_system'     => $cs,
+         'adaptor'          => $self});
 
       if(!defined($include_duplicates) or !$include_duplicates){
         # test if this slice *could* have a duplicate (exception) region
@@ -729,20 +782,27 @@ sub fetch_all {
 
 =cut
 
-sub is_toplevel{
+sub is_toplevel {
   my $self = shift;
-  my $id = shift;
+  my $id   = shift;
 
-  my $sth = $self->prepare("SELECT at.code from seq_region_attrib sra, attrib_type at WHERE sra.seq_region_id = $id AND  at.attrib_type_id = sra.attrib_type_id AND at.code = 'toplevel'");
-  
+  my $sth = $self->prepare(
+            "SELECT at.code from seq_region_attrib sra, attrib_type at "
+              . "WHERE sra.seq_region_id = ? "
+              . "AND at.attrib_type_id = sra.attrib_type_id "
+              . "AND at.code = 'toplevel'" );
+
+  $sth->bind_param( 1, $id, SQL_INTEGER );
   $sth->execute();
-  
-  my $code = undef;
-  $sth->bind_columns(\$code);
-  while($sth->fetch){
+
+  my $code;
+  $sth->bind_columns( \$code );
+
+  while ( $sth->fetch ) {
     $sth->finish;
     return 1;
   }
+
   $sth->finish;
   return 0;
 }
@@ -792,27 +852,32 @@ sub fetch_by_band {
 =cut
 
 sub fetch_by_chr_band {
-  my ($self,$chr,$band) = @_;
+  my ( $self, $chr, $band ) = @_;
 
-  my $chr_slice = $self->fetch_by_region('toplevel', $chr);
+  my $chr_slice = $self->fetch_by_region( 'toplevel', $chr );
   my $seq_region_id = $self->get_seq_region_id($chr_slice);
 
-  my $sth = $self->dbc->prepare
-        ("select min(k.seq_region_start), max(k.seq_region_end) " .
-         "from karyotype as k " .
-         "where k.seq_region_id = ? and k.band like ?");
+  my $sth =
+    $self->prepare(   'SELECT MIN(k.seq_region_start), '
+                    . 'MAX(k.seq_region_end) '
+                    . 'FROM karyotype k '
+                    . 'WHERE k.seq_region_id = ? '
+                    . 'AND k.band LIKE ?' );
 
-  $sth->bind_param(1,$seq_region_id,SQL_INTEGER);
-  $sth->bind_param(2,"$band%",SQL_VARCHAR);
+  $sth->bind_param( 1, $seq_region_id, SQL_INTEGER );
+  $sth->bind_param( 2, "$band%",       SQL_VARCHAR );
   $sth->execute();
-  my ( $slice_start, $slice_end) = $sth->fetchrow_array;
 
-  if(defined $slice_start) {
-    return $self->fetch_by_region('toplevel',$chr,$slice_start,$slice_end);
+  my ( $slice_start, $slice_end ) = $sth->fetchrow_array;
+
+  if ( defined $slice_start ) {
+    return
+      $self->fetch_by_region( 'toplevel',   $chr,
+                              $slice_start, $slice_end );
   }
 
   throw("Band not recognised in database");
-}
+} ## end sub fetch_by_chr_band
 
 
 
@@ -1022,14 +1087,14 @@ sub fetch_by_Feature{
   $size = int( ($1-100)/200 * ($fend-$fstart+1) ) if( $size =~/([\d+\.]+)%/ );
 
   #return a new slice covering the region of the feature
-  my $S = Bio::EnsEMBL::Slice->new
-    (-seq_region_name   => $slice->seq_region_name,
-     -seq_region_length => $slice->seq_region_length,
-     -coord_system      => $slice->coord_system,
-     -start             => $fstart - $size,
-     -end               => $fend + $size,
-     -strand            => 1,
-     -adaptor           => $self);
+  my $S = Bio::EnsEMBL::Slice->new_fast({
+    'seq_region_name'   => $slice->seq_region_name,
+    'seq_region_length' => $slice->seq_region_length,
+    'coord_system'      => $slice->coord_system,
+    'start'             => $fstart - $size,
+    'end'               => $fend + $size,
+    'strand'            => 1,
+     'adaptor'          => $self});
   $S->{'_raw_feature_strand'}  = $feature->strand * $slice_strand if $feature->can('strand');
   return $S;
 }
@@ -1195,28 +1260,28 @@ sub fetch_normalized_slice_projection {
   my @out;
   for my $coord ( @linked ) {
     if( $coord->isa( "Bio::EnsEMBL::Mapper::Gap" )) {
-      my $exc_slice = Bio::EnsEMBL::Slice->new
-        (-START             => $coord->start(),
-         -END               => $coord->end(),
-         -STRAND            => $slice->strand(),
-         -COORD_SYSTEM      => $slice->coord_system(),
-         -ADAPTOR           => $self,
-         -SEQ_REGION_NAME   => $slice->seq_region_name(),
-         -SEQ_REGION_LENGTH => $slice->seq_region_length());
+	my $exc_slice = Bio::EnsEMBL::Slice->new_fast({
+        'start'             => $coord->start(),
+        'end'               => $coord->end(),
+        'strand'            => $slice->strand(),
+        'coord_system'      => $slice->coord_system(),
+         'adaptor'          => $self,
+         'seq_region_name'  => $slice->seq_region_name(),
+         'seq_region_length' => $slice->seq_region_length()});
       push( @out, bless ( [ $rel_start, $coord->length()+$rel_start-1,
                         $exc_slice ], "Bio::EnsEMBL::ProjectionSegment") );
     } else {
       my $exc_slice = $self->fetch_by_seq_region_id( $coord->id() );
-      my $exc2_slice = Bio::EnsEMBL::Slice->new
-        (
-         -START             => $coord->start(),
-         -END               => $coord->end(),
-         -STRAND            => $coord->strand(),
-         -SEQ_REGION_NAME   => $exc_slice->seq_region_name(),
-         -SEQ_REGION_LENGTH => $exc_slice->seq_region_length(),
-         -COORD_SYSTEM      => $exc_slice->coord_system(),
-         -ADAPTOR           => $self
-        );
+      my $exc2_slice = Bio::EnsEMBL::Slice->new_fast({
+        
+         'start'             => $coord->start(),
+         'end'               => $coord->end(),
+         'strand'            => $coord->strand(),
+         'seq_region_name'   => $exc_slice->seq_region_name(),
+         'seq_region_length' => $exc_slice->seq_region_length(),
+         'coord_system'      => $exc_slice->coord_system(),
+         'adaptor'           => $self
+        });
 	
       push( @out, bless( [ $rel_start, $coord->length() + $rel_start - 1,
                     $exc2_slice ], "Bio::EnsEMBL::ProjectionSegment") );
@@ -1481,13 +1546,9 @@ sub store_assembly{
 
 =cut
 
-
-
 sub prepare {
-  my $self = shift;
-  my $sql = shift;
-
-  return $self->db()->dnadb()->dbc->prepare( $sql );
+  my ( $self, $sql ) = @_;
+  return $self->db()->dnadb()->dbc->prepare($sql);
 }
 
 sub _build_exception_cache {
@@ -1495,27 +1556,30 @@ sub _build_exception_cache {
 
   # build up a cache of the entire assembly exception table
   # it should be small anyway
-  my $sth = $self->prepare
-    ("SELECT seq_region_id, seq_region_start, seq_region_end,
-             exc_type, exc_seq_region_id, exc_seq_region_start,
-             exc_seq_region_end
-        FROM assembly_exception");
+  my $sth =
+    $self->prepare( 'SELECT ae.seq_region_id, ae.seq_region_start, '
+              . 'ae.seq_region_end, ae.exc_type, ae.exc_seq_region_id, '
+              . 'ae.exc_seq_region_start, ae.exc_seq_region_end '
+              . 'FROM assembly_exception ae, '
+              . 'seq_region sr, coord_system cs '
+              . 'WHERE sr.seq_region_id = ae.seq_region_id '
+              . 'AND sr.coord_system_id = cs.coord_system_id '
+              . 'AND cs.species_id = ?' );
 
+  $sth->bind_param( 1, $self->species_id(), SQL_INTEGER );
   $sth->execute();
 
   my %hash;
   $self->{'asm_exc_cache'} = \%hash;
 
   my $row;
-  while($row = $sth->fetchrow_arrayref()) {
+  while ( $row = $sth->fetchrow_arrayref() ) {
     my @result = @$row;
-    $hash{$result[0]} ||= [];
-    push(@{$hash{$result[0]}}, \@result);
+    $hash{ $result[0] } ||= [];
+    push( @{ $hash{ $result[0] } }, \@result );
   }
   $sth->finish();
-
-  return;
-}
+} ## end sub _build_exception_cache
 
 =head2 cache_toplevel_seq_mappings
 
@@ -1530,53 +1594,58 @@ sub _build_exception_cache {
 
 =cut
 
-sub cache_toplevel_seq_mappings{
+sub cache_toplevel_seq_mappings {
   my ($self) = @_;
 
-  #get the sequence level to map too
+  # Get the sequence level to map too
 
   my $sql = (<<SSQL);
-  SELECT	name 
-   FROM	coord_system 
-    WHERE attrib like "%sequence_level%"
+  SELECT    name
+  FROM  coord_system
+  WHERE attrib like "%sequence_level%"
+  AND   species_id = ?
 SSQL
+
   my $sth = $self->prepare($sql);
+  $sth->bind_param( 1, $self->species_id(), SQL_INTEGER );
   $sth->execute();
-  
+
   my $sequence_level = $sth->fetchrow_array();
-  
+
   $sth->finish();
 
   my $csa = $self->db->get_CoordSystemAdaptor();
   my $ama = $self->db->get_AssemblyMapperAdaptor();
 
   my $cs1 = $csa->fetch_by_name($sequence_level);
-  
 
   #get level to map too.
-  
-  $sql = (<<LSQL); 
-  SELECT DISTINCT(cs.name) 
-    FROM seq_region sr, seq_region_attrib sra, attrib_type at, coord_system cs 
-      WHERE sra.seq_region_id = sr.seq_region_id AND 
-            sra.attrib_type_id = at.attrib_type_id AND 
-            at.code like "toplevel" AND 
-            cs.coord_system_id = sr.coord_system_id;
+
+  $sql = (<<LSQL);
+  SELECT DISTINCT(cs.name)
+  FROM  seq_region sr,
+        seq_region_attrib sra,
+        attrib_type at,
+        coord_system cs
+  WHERE sra.seq_region_id = sr.seq_region_id
+  AND   sra.attrib_type_id = at.attrib_type_id
+  AND   at.code = "toplevel"
+  AND   cs.coord_system_id = sr.coord_system_id
+  AND   cs.species_id = ?
 LSQL
 
-
   $sth = $self->prepare($sql);
+  $sth->bind_param( 1, $self->species_id(), SQL_INTEGER );
   $sth->execute();
-  
-  while(my $csn = $sth->fetchrow_array()){
-    if($csn eq $sequence_level){
-      next;
-    }
+
+  while ( my $csn = $sth->fetchrow_array() ) {
+    if ( $csn eq $sequence_level ) { next }
     my $cs2 = $csa->fetch_by_name($csn);
-    my $am = $ama->fetch_by_CoordSystems($cs1,$cs2);
-    $am->register_all();    
-  };
-}
+    my $am = $ama->fetch_by_CoordSystems( $cs1, $cs2 );
+    $am->register_all();
+  }
+
+} ## end sub cache_toplevel_seq_mappings
 
 
 
@@ -1675,12 +1744,17 @@ sub fetch_by_clone_accession{
 
   #this unfortunately needs a version on the end to work
   if(! ($name =~ /\./)) {
-    my $sth = $self->prepare("SELECT sr.name " .
-                             "FROM   seq_region sr, coord_system cs " .
-                             "WHERE  cs.name = 'clone' " .
-                             "AND    cs.coord_system_id = sr.coord_system_id ".
-                             "AND    sr.name LIKE '$name.%'");
+    my $sth =
+      $self->prepare(  "SELECT sr.name "
+                     . "FROM   seq_region sr, coord_system cs "
+                     . "WHERE  cs.name = 'clone' "
+                     . "AND    cs.coord_system_id = sr.coord_system_id "
+                     . "AND    sr.name LIKE '$name.%'"
+                     . "AND    cs.species_id = ?" );
+
+    $sth->bind_param( 1, $self->species_id(), SQL_INTEGER );
     $sth->execute();
+
     if(!$sth->rows()) {
       $sth->finish();
       throw("Clone $name not found in database");

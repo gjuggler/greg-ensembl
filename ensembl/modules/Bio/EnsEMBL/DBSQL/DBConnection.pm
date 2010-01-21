@@ -1,41 +1,55 @@
-=head1 NAME - Bio::EnsEMBL::DBSQL::DBConnection
+=head1 LICENSE
 
-=head1 SYNOPSIS
+  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
 
-    $dbc = Bio::EnsEMBL::DBSQL::DBConnection->new(
-        -user    => 'anonymous',
-        -dbname  => 'homo_sapiens_core_20_34c',
-        -host    => 'ensembldb.ensembl.org',
-        -driver  => 'mysql',
-        );
+  This software is distributed under a modified Apache license.
+  For license details, please see
 
-
-   SQL statements should be created/executed through
-   this modules prepare() and do() methods.
-
-   $sth = $dbc->prepare( "SELECT something FROM yourtable" );
-
-   $sth->execute();
-
-   # do something with rows returned ...
-
-   $sth->finish();
-
-=head1 DESCRIPTION
-
-  This class is a wrapper around DBIs datbase handle.  It provides some
-  additional functionality such as the ability to automatically disconnect
-  when inactive and reconnect when needed.
-
-  Generally this class will be used through one of the object adaptors or the
-  Bio::EnsEMBL::Registry and will not be instantiated directly.
-
+    http://www.ensembl.org/info/about/code_licence.html
 
 =head1 CONTACT
 
-  This module is part of the Ensembl project: www.ensembl.org
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
 
-  Ensembl development mailing list: <ensembl-dev@ebi.ac.uk>
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
+=cut
+
+=head1 NAME
+
+Bio::EnsEMBL::DBSQL::DBConnection
+
+=head1 SYNOPSIS
+
+  $dbc = Bio::EnsEMBL::DBSQL::DBConnection->new(
+    -user   => 'anonymous',
+    -dbname => 'homo_sapiens_core_20_34c',
+    -host   => 'ensembldb.ensembl.org',
+    -driver => 'mysql',
+  );
+
+  # SQL statements should be created/executed through this modules
+  # prepare() and do() methods.
+
+  $sth = $dbc->prepare("SELECT something FROM yourtable");
+
+  $sth->execute();
+
+  # do something with rows returned ...
+
+  $sth->finish();
+
+=head1 DESCRIPTION
+
+This class is a wrapper around DBIs datbase handle.  It provides some
+additional functionality such as the ability to automatically disconnect
+when inactive and reconnect when needed.
+
+Generally this class will be used through one of the object adaptors or
+the Bio::EnsEMBL::Registry and will not be instantiated directly.
 
 =head1 METHODS
 
@@ -48,7 +62,6 @@ use vars qw(@ISA);
 use strict;
 
 use Bio::EnsEMBL::Registry;
-my $reg = "Bio::EnsEMBL::Registry";
 use Bio::EnsEMBL::Root;
 use DBI;
 
@@ -59,6 +72,7 @@ use Bio::EnsEMBL::Utils::Argument qw(rearrange);
 
 @ISA = qw(Bio::EnsEMBL::Root); # for backwards compatibility
 
+my $reg = "Bio::EnsEMBL::Registry";
 
 =head2 new
 
@@ -190,62 +204,106 @@ sub new {
 =cut
 
 sub connect {
-  my $self = shift;
+  my ($self) = @_;
 
-  return if($self->connected);
+  if ( $self->connected() ) { return }
+
   $self->connected(1);
 
-  if(defined($self->db_handle()) and $self->db_handle()->ping()) {
-    warning("unconnected db_handle is still pingable, reseting connected boolean\n");
+  if ( defined( $self->db_handle() ) and $self->db_handle()->ping() ) {
+    warning( "unconnected db_handle is still pingable, "
+        . "reseting connected boolean\n" );
   }
 
-  my ($dsn, $dbh);
+  my ( $dsn, $dbh );
+
   if ( $self->driver() eq "Oracle" ) {
-    $dsn = "DBI:" . $self->driver . ":";
-    eval { $dbh = DBI->connect($dsn,
-                               $self->username . "\@" . $self->dbname,
-                               $self->password,
-                               {'RaiseError' => 1, 'PrintError' => 0});
-    };
-  } elsif ( $self->driver() eq "ODBC" ) {
-    $dsn = "DBI:" . $self->driver() . ":" . $self->dbname();
-    eval{ $dbh = DBI->connect($dsn,
-                              $self->username(),
-                              $self->password(),
-                              {'LongTruncOk' => 1,
-                               'LongReadLen' => 2**16 - 8,
-                               'RaiseError' => 1,
-                               'PrintError' => 0,
-                               'odbc_cursortype' => 2});
-    };
-  }
-  else{ 
-    $dsn = "DBI:" . $self->driver() .
-           ":database=". $self->dbname() .
-           ";host=" . $self->host() .
-           ";port=" . $self->port();
-    eval{ $dbh = DBI->connect($dsn,
-                              $self->username(),
-                              $self->password(),
-                              {'RaiseError' => 1});
-    };
-}
 
-  if(!$dbh || $@ || !$dbh->ping()) {
-    warn("Could not connect to database " . $self->dbname() .
-         " as user " . $self->username() . 
-         " using [$dsn] as a locator:\n" . $DBI::errstr);
+    $dsn = "DBI:Oracle:";
+
+    eval {
+      $dbh =
+        DBI->connect( $dsn,
+        sprintf( "%s@%s", $self->username(), $self->dbname() ),
+        $self->password(), { 'RaiseError' => 1, 'PrintError' => 0 } );
+    };
+
+  } elsif ( $self->driver() eq "ODBC" ) {
+
+    $dsn = sprintf( "DBI:ODBC:%s", $self->dbname() );
+
+    eval {
+      $dbh = DBI->connect(
+        $dsn,
+        $self->username(),
+        $self->password(),
+        {
+          'LongTruncOk'     => 1,
+          'LongReadLen'     => 2**16 - 8,
+          'RaiseError'      => 1,
+          'PrintError'      => 0,
+          'odbc_cursortype' => 2
+        } );
+    };
+
+  } elsif ( $self->driver() eq "Sybase" ) {
+
+    $dsn =
+      sprintf( "DBI:Sybase:server=%s;database=%s;tdsLevel=CS_TDS_495",
+      $self->host(), $self->dbname() );
+
+    eval {
+      $dbh = DBI->connect(
+        $dsn,
+        $self->username(),
+        $self->password(),
+        {
+          'LongTruncOk' => 1,
+          'RaiseError'  => 1,
+          'PrintError'  => 0
+        } );
+    };
+
+  } else {
+
+    $dsn = sprintf(
+      "DBI:%s:database=%s;host=%s;port=%s",
+      $self->driver(), $self->dbname(),
+      $self->host(),   $self->port() );
+
+    eval {
+      $dbh =
+        DBI->connect( $dsn, $self->username(), $self->password(),
+        { 'RaiseError' => 1 } );
+    };
+  }
+
+  if ( !$dbh || $@ || !$dbh->ping() ) {
+    warn( "Could not connect to database "
+        . $self->dbname()
+        . " as user "
+        . $self->username()
+        . " using [$dsn] as a locator:\n"
+        . $DBI::errstr );
+
     $self->connected(0);
-    throw("Could not connect to database " . $self->dbname() .
-          " as user " . $self->username() .
-          " using [$dsn] as a locator:\n" . $DBI::errstr);
+
+    throw("Could not connect to database "
+        . $self->dbname()
+        . " as user "
+        . $self->username()
+        . " using [$dsn] as a locator:\n"
+        . $DBI::errstr );
   }
+
   $self->db_handle($dbh);
-  if($self->timeout()){
-    $dbh->do("SET SESSION wait_timeout=".$self->timeout());
+
+  if ( $self->timeout() ) {
+    $dbh->do( "SET SESSION wait_timeout=" . $self->timeout() );
   }
+
   #print("CONNECT\n");
-}
+} ## end sub connect
 
 
 =head2 connected

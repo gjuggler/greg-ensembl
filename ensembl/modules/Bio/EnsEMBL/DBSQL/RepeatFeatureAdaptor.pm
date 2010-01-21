@@ -1,11 +1,22 @@
-#
-# EnsEMBL module for Bio::EnsEMBL::DBSQL::RepeatFeatureAdaptor
-#
-# Copyright EMBL/EBI
-#
-# You may distribute this module under the same terms as perl itself
+=head1 LICENSE
 
-# POD documentation - main docs before the code
+  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
+=cut
 
 =head1 NAME
 
@@ -13,22 +24,16 @@ Bio::EnsEMBL::DBSQL::RepeatFeatureAdaptor
 
 =head1 SYNOPSIS
 
-$rfa = $database_adaptor->get_RepeatFeatureAdaptor();
+  $rfa = $database_adaptor->get_RepeatFeatureAdaptor();
 
-my $repeat = $rfa->fetch_by_dbID(1234);
-my @repeats = @{$rfa->fetch_all_by_Slice($slice)};
+  my $repeat  = $rfa->fetch_by_dbID(1234);
+  my @repeats = @{ $rfa->fetch_all_by_Slice($slice) };
 
 =head1 DESCRIPTION
 
-This is an adaptor for the retrieval and storage of RepeatFeature objects
-from the database.  Most of the implementation is in the
+This is an adaptor for the retrieval and storage of RepeatFeature
+objects from the database.  Most of the implementation is in the
 superclass BaseFeatureAdaptor.
-
-=head1 AUTHOR - James Gilbert
-
-=head1 CONTACT
-
-Post questions to the EnsEMBL developer list: ensembl-dev@ebi.ac.uk
 
 =head1 METHODS
 
@@ -242,7 +247,8 @@ sub _objs_from_sth {
     #get the analysis object
     my $analysis = $analysis_hash{$analysis_id} ||=
       $aa->fetch_by_dbID($analysis_id);
-
+    #need to get the internal_seq_region, if present
+    $seq_region_id = $self->get_seq_region_id_internal($seq_region_id);
     my $slice = $slice_hash{"ID:".$seq_region_id};
 
     if(!$slice) {
@@ -303,19 +309,21 @@ sub _objs_from_sth {
       $slice = $dest_slice;
     }
 
-    #finally, create the new repeat feature
-    push @features, Bio::EnsEMBL::RepeatFeature->new_fast
-      ( { 'analysis'      =>  $analysis,
-          'start'         =>  $seq_region_start,
-          'end'           =>  $seq_region_end,
-          'strand'        =>  $seq_region_strand,
-          'score'         =>  $score,
-          'hstart'        =>  $repeat_start,
-          'hend'          =>  $repeat_end,
-          'repeat_consensus' => $rc,
-          'adaptor'       =>  $self,
-          'slice'         =>  $slice,
-          'dbID'          =>  $repeat_feature_id } );
+    # Finally, create the new RepeatFeature.
+    push( @features,
+          $self->_create_feature_fast( 'Bio::EnsEMBL::RepeatFeature', {
+                                         'dbID' => $repeat_feature_id,
+                                         'analysis' => $analysis,
+                                         'start'  => $seq_region_start,
+                                         'end'    => $seq_region_end,
+                                         'strand' => $seq_region_strand,
+                                         'score'  => $score,
+                                         'hstart' => $repeat_start,
+                                         'hend'   => $repeat_end,
+                                         'repeat_consensus' => $rc,
+                                         'adaptor'          => $self,
+                                         'slice'            => $slice
+                                       } ) );
 
   }
 
@@ -379,7 +387,7 @@ sub store {
     if ($cons->repeat_class eq 'trf') {
 
       # Look for matches already stored
-      my @match = @{$rca->fetch_by_class_seq('trf', $cons->repeat_consensus)};
+      my @match = @{$rca->fetch_all_by_class_seq('trf', $cons->repeat_consensus)};
       if (@match) {
         $cons->dbID($match[0]->dbID());
       }

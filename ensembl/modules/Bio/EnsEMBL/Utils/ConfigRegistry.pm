@@ -1,11 +1,22 @@
-#
-# Ensembl module for Registry
-#
-# Copyright EMBL/EBI
-##
-# You may distribute this module under the same terms as perl itself
+=head1 LICENSE
 
-# POD documentation - main docs before the code
+  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
+=cut
 
 =head1 NAME
 
@@ -14,28 +25,22 @@ Bio::EnsEMBL::Utils::ConfigRegistry;
 =head1 SYNOPSIS
 
 
-Bio::EnsEMBL::Utils::ConfigRegistry->load_core($dba );
- 
+  Bio::EnsEMBL::Utils::ConfigRegistry->load_core($dba);
+
 
 =head1 DESCRIPTION
 
-The ConfigRegistry will "Register" a set of adaptors based on the type of
-database that is being loaded.
-
-=head1 CONTACT
-
-Post questions to the Ensembl developer list: <ensembl-dev@ebi.ac.uk>
-
+The ConfigRegistry will "Register" a set of adaptors based on the type
+of database that is being loaded.
 
 =head1 METHODS
 
 =cut
 
+package Bio::EnsEMBL::Utils::ConfigRegistry;
 
 use strict;
 use warnings;
-
-package Bio::EnsEMBL::Utils::ConfigRegistry;
 
 use Bio::EnsEMBL::Registry;
 my $reg = "Bio::EnsEMBL::Registry";
@@ -120,6 +125,12 @@ sub gen_load{
   }
     $config_sub =  \&Bio::EnsEMBL::Utils::ConfigRegistry::load_funcgen;
   }
+  elsif ( $dba->isa('Bio::Ensembl::DBSQL::OntologyTermAdaptor') ) {
+    if ( !defined( $dba->group() ) ) {
+      $dba->group('ontology');
+    }
+    $config_sub = \&Bio::EnsEMBL::Utils::ConfigRegistry::load_ontology;
+  }
   elsif($dba->isa('Bio::EnsEMBL::DBSQL::DBAdaptor')){
     #vega uses the core DBAdaptor so test if vega is in the dbname
     if(!defined($dba->group())){
@@ -151,28 +162,33 @@ sub gen_load{
   # return if the connection and species, group are the same
 
 
-  if(defined($dba->species)){
-    my $db_reg = $reg->get_DBAdaptor($dba->species,$dba->group);
-    if(defined($db_reg)){
-      if($dba->dbc->equals($db_reg->dbc)){
-	return $db_reg;
-      }
-      else{
-	warn "WARN: Species and group same for two seperate databases\nModify species name for one of these\n";
-	$dba->species(find_unique_species($dba->species,$dba->group));
-      }
-    }
-  }
-  else{  # no species 
-    my @db_reg = @{$reg->get_all_DBAdaptors_by_connection($dba->dbc)};
-    foreach my $db_adaptor (@db_reg){
-      if($db_adaptor->group eq $dba->group){ # found same db connection and group
-	return $db_adaptor;
+  if ( defined( $dba->species ) ) {
+    my $db_reg = $reg->get_DBAdaptor( $dba->species, $dba->group );
+    if ( defined($db_reg) ) {
+      if ( $dba->dbc->equals( $db_reg->dbc ) ) { return $db_reg }
+      else {
+        warn "WARN: Species and group same for two seperate databases\n"
+          . "Modify species name for one of these\n";
+
+        $dba->species(
+          find_unique_species( $dba->species, $dba->group ) );
       }
     }
-    $dba->species(find_unique_species("DEFAULT",$dba->group));      
-    if($dba->species ne "DEFAULT"){
-      warn "WARN: For multiple species use species attribute in DBAdaptor->new\n" 
+  } else {    # no species
+    my @db_reg =
+      @{ $reg->get_all_DBAdaptors_by_connection( $dba->dbc ) };
+
+    foreach my $db_adaptor (@db_reg) {
+      if ( $db_adaptor->group eq $dba->group ) {
+        # found same db connection and group
+        return $db_adaptor;
+      }
+    }
+
+    $dba->species( find_unique_species( "DEFAULT", $dba->group ) );
+    if ( $dba->species ne "DEFAULT" ) {
+      warn "WARN: For multiple species "
+        . "use species attribute in DBAdaptor->new()\n";
     }
   }
 
@@ -187,129 +203,94 @@ sub gen_load{
 
 
 
-sub find_unique_species{
-  my ($species, $group) = @_;
+sub find_unique_species {
+  my ( $species, $group ) = @_;
 
-  $reg->add_alias($species,$species);
+  $reg->add_alias( $species, $species );
 
-  my $i = 0;
-  my $free =0;
-  while(!$free){
-    if($i == 0){
-      if(!defined($reg->get_DBAdaptor($species, $group))){
-	$free =1;
-	$i ="";
+  my $i    = 0;
+  my $free = 0;
+
+  while ( !$free ) {
+    if ( $i == 0 ) {
+      if ( !defined( $reg->get_DBAdaptor( $species, $group ) ) ) {
+        $free = 1;
+        $i    = "";
+      } else {
+        $i = 1;
       }
-      else{
-	$i = 1;
-      }
-    }
-    else{
-      $reg->add_alias($species.$i,$species.$i); #set needed self alias
-      if(!defined($reg->get_DBAdaptor($species.$i, $group))){
-	$free =1;
-      }
-      else{
-	$i++;
+    } else {
+      # set needed self alias
+      $reg->add_alias( $species . $i, $species . $i );
+
+      if ( !defined( $reg->get_DBAdaptor( $species . $i, $group ) ) ) {
+        $free = 1;
+      } else {
+        $i++;
       }
     }
   }
-  
+
   $species .= $i;
   return ($species);
-}
+} ## end sub find_unique_species
 
 
 
-sub load_adaptors{
+sub load_adaptors {
   my ($dba) = @_;
 
-  my %pairs = %{$dba->get_available_adaptors()};
-  
-  foreach my $key (keys %pairs){
-    Bio::EnsEMBL::Registry->add_adaptor($dba->species, $dba->group, $key, $pairs{$key});
+  my %pairs = %{ $dba->get_available_adaptors() };
+
+  while ( my ( $key, $value ) = each(%pairs) ) {
+    Bio::EnsEMBL::Registry->add_adaptor( $dba->species(), $dba->group(),
+      $key, $value );
   }
-
 }
 
-sub load_and_attach_dnadb_to_core{
+sub load_and_attach_dnadb_to_core {
   my ($dba) = @_;
 
   load_adaptors($dba);
-  
-  $reg->add_DNAAdaptor($dba->species,$dba->group,$dba->species,"core"); 
+  $reg->add_DNAAdaptor( $dba->species(), $dba->group(), $dba->species(),
+    'core' );
 }
 
 
-sub load_core{
-  my ($dba) = @_;
-
-  load_adaptors($dba);
-}
-
-sub load_compara{
-  load_adaptors(@_);
-}
-
-sub load_hive{
-  load_adaptors(@_);
-}
-
-sub load_pipeline{
-  load_adaptors(@_);
-}
-
-sub load_lite{
-  load_adaptors(@_);
-}
-
-sub load_SNP{
-  load_adaptors(@_);
-}
-
-sub load_variation{
-  load_and_attach_dnadb_to_core(@_);
-}
-
-sub load_funcgen{
-  load_and_attach_dnadb_to_core(@_);
-}
-
-sub load_haplotype{
-  load_adaptors(@_);
-}
+sub load_core      { load_adaptors(@_) }
+sub load_compara   { load_adaptors(@_) }
+sub load_hive      { load_adaptors(@_) }
+sub load_pipeline  { load_adaptors(@_) }
+sub load_lite      { load_adaptors(@_) }
+sub load_SNP       { load_adaptors(@_) }
+sub load_variation { load_and_attach_dnadb_to_core(@_) }
+sub load_funcgen   { load_and_attach_dnadb_to_core(@_) }
+sub load_haplotype { load_adaptors(@_) }
+sub load_ontology  { load_adaptors(@_) }
 
 
 # these that need to attach to the core to get the sequense data
 
-sub load_estgene{
-  load_and_attach_dnadb_to_core(@_);
-}
-
-sub load_otherfeatures{
-  load_and_attach_dnadb_to_core(@_);
-}
-
-sub load_vega{
-  load_and_attach_dnadb_to_core(@_);
-}
+sub load_estgene       { load_and_attach_dnadb_to_core(@_) }
+sub load_otherfeatures { load_and_attach_dnadb_to_core(@_) }
+sub load_vega          { load_and_attach_dnadb_to_core(@_) }
 
 
+sub add_alias {
+  my ( $class, @args ) = @_;
 
-sub add_alias{
-  my ($class, @args) = @_;
-  my ($species, $aliases) = rearrange([qw(SPECIES ALIAS)],@args);
+  my ( $species, $aliases ) = rearrange( [qw(SPECIES ALIAS)], @args );
 
- #make sure it exists itself
-  Bio::EnsEMBL::Registry->add_alias($species,$species);
+  # Make sure it exists itself
+  Bio::EnsEMBL::Registry->add_alias( $species, $species );
 
-  if($aliases){
-    foreach my $ali (@$aliases){
-      Bio::EnsEMBL::Registry->add_alias($species,$ali);
+  if ( defined($aliases) ) {
+    foreach my $ali (@$aliases) {
+      Bio::EnsEMBL::Registry->add_alias( $species, $ali );
     }
   }
-
 }
+
 #
 # overwrite/load new types. Done this way to enable no changes to CVS for
 # external users. External users should add there own "GROUPS" in the file

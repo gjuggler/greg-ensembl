@@ -1,10 +1,22 @@
-#
-# EnsEMBL module for Bio::EnsEMBL::DBSQL::DensityTypeAdaptor
-#
-#
-# Copyright EMBL/EBI
-#
-# You may distribute this module under the same terms as perl itself
+=head1 LICENSE
+
+  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
+=cut
 
 =head1 NAME
 
@@ -12,11 +24,12 @@ Bio::EnsEMBL::DBSQL::DensityTypeAdaptor
 
 =head1 SYNOPSIS
 
-my $density_type_adaptor = $database_adaptor->get_DensityTypeAdaptor();
-@density_types = @{$density_type_adaptor->fetch_all()};
+  my $density_type_adaptor =
+    $registry->get_adaptor( 'Human', 'Core', 'DensityType' );
 
-my $dt = $density_type_adaptor->fetch_by_dbID(12);
+  my @density_types = @{ $density_type_adaptor->fetch_all() };
 
+  my $dt = $density_type_adaptor->fetch_by_dbID(12);
 
 =head1 DESCRIPTION
 
@@ -68,7 +81,10 @@ sub new {
 
   Arg [1]    : none
   Example    : my @density_types = @{$density_type_adaptor->fetch_all};
-  Description: Retrieves every density type in the database
+  Description: Retrieves every density type in the database.
+               NOTE:  In a multi-species database, this method will
+               return all the entries, not just the ones associated with
+               the current species.
   Returntype : reference to list of Bio::EnsEMBL::DensityType objects
   Exceptions : none
   Caller     : general, new
@@ -148,7 +164,10 @@ sub fetch_by_dbID {
 
   Arg [1]    : string $logic_name
   Example    : my @dts = @{$dtype_adaptor->fetch_all('repeat_coverage')};
-  Description: Retrieves all density types with a given logic name
+  Description: Retrieves all density types with a given logic name.
+               NOTE:  In a multi-species database, this method will
+               return all the entries matching the search criteria, not
+               just the ones associated with the current species.
   Returntype : reference to list of Bio::EnsEMBL::DensityTypes
   Exceptions : thrown if logic_name argument is not provided
   Caller     : general

@@ -1,11 +1,22 @@
-#
-# EnsEMBL module for Bio::EnsEMBL::DBSQL::MiscFeatureAdaptor
-#
-# Copyright EMBL/EBI
-#
-# You may distribute this module under the same terms as perl itself
+=head1 LICENSE
 
-# POD documentation - main docs before the code
+  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Genome Research Limited.  All rights reserved.
+
+  This software is distributed under a modified Apache license.
+  For license details, please see
+
+    http://www.ensembl.org/info/about/code_licence.html
+
+=head1 CONTACT
+
+  Please email comments or questions to the public Ensembl
+  developers list at <ensembl-dev@ebi.ac.uk>.
+
+  Questions may also be sent to the Ensembl help desk at
+  <helpdesk@ensembl.org>.
+
+=cut
 
 =head1 NAME
 
@@ -13,35 +24,31 @@ Bio::EnsEMBL::DBSQL::MiscFeatureAdaptor
 
 =head1 SYNOPSIS
 
-$mfa = $database_adaptor->get_MiscFeatureAdaptor();
+  $mfa = $database_adaptor->get_MiscFeatureAdaptor();
 
-# retrieve a misc feature by its dbID
-my $misc_feat = $mfa->fetch_by_dbID(1234);
+  # retrieve a misc feature by its dbID
+  my $misc_feat = $mfa->fetch_by_dbID(1234);
 
-# retrieve all misc features in a given region
-my @misc_feats = @{$mfa->fetch_all_by_Slice($slice)};
+  # retrieve all misc features in a given region
+  my @misc_feats = @{ $mfa->fetch_all_by_Slice($slice) };
 
-# retrieve all misc features in a given region with a given set code
-my @misc_clones = @{$mfa->fetch_all_by_Slice_and_set_code('cloneset')};
+  # retrieve all misc features in a given region with a given set code
+  my @misc_clones =
+    @{ $mfa->fetch_all_by_Slice_and_set_code('cloneset') };
 
-# store some misc features in the database
-$mfa->store(@misc_features);
+  # store some misc features in the database
+  $mfa->store(@misc_features);
 
 =head1 DESCRIPTION
 
-This is an adaptor for the retrieval and storage of MiscFeatures.  Misc
-Features are extremely generic features that can be added with minimal
-effort to the database.  Currently misc features are used to describe
-the locations of clone sets and tiling path information, but arbitrary
-features can be stored.  Misc features are grouped into sets and can be
-fetched according to their grouping using the fetch_all_by_Slice_and_set_code
-and fetch_all_by_set_code methods.  MiscFeatures may belong to more
-than one set.
-
-
-=head1 CONTACT
-
-Post questions to the EnsEMBL developer list: ensembl-dev@ebi.ac.uk
+This is an adaptor for the retrieval and storage of MiscFeatures.
+Misc Features are extremely generic features that can be added with
+minimal effort to the database.  Currently misc features are used to
+describe the locations of clone sets and tiling path information,
+but arbitrary features can be stored.  Misc features are grouped
+into sets and can be fetched according to their grouping using the
+fetch_all_by_Slice_and_set_code and fetch_all_by_set_code methods.
+MiscFeatures may belong to more than one set.
 
 =head1 METHODS
 
@@ -130,10 +137,11 @@ sub fetch_all_by_Slice_and_set_code {
          #get the misc feature with synonym 'AL014121'
          ($feat)=@{$mfa->fetch_all_by_attrib_type_value('synonym','AL014121');
   Description: Retrieves MiscFeatures which have a particular attribute.
-               If the attribute value argument is also provided only features
-               which have the attribute AND a particular value are returned.
-               The features are returned in their native coordinate system
-               (i.e. the coordinate system that they are stored in).
+               If the attribute value argument is also provided only
+               features which have the attribute AND a particular value
+               are returned.  The features are returned in their native
+               coordinate system (i.e. the coordinate system that they
+               are stored in).
   Returntype : listref of Bio::EnsEMBL::MiscFeatures
   Exceptions : throw if attrib_type code arg is not provided
   Caller     : general
@@ -142,59 +150,71 @@ sub fetch_all_by_Slice_and_set_code {
 =cut
 
 sub fetch_all_by_attribute_type_value {
-  my $self = shift;
+  my $self             = shift;
   my $attrib_type_code = shift;
-  my $attrib_value = shift;
+  my $attrib_value     = shift;
 
-  throw("Attrib type code argument is required.") if(!$attrib_type_code);
+  throw("Attrib type code argument is required.")
+    if ( !$attrib_type_code );
 
-  #
-  # Need to do 2 queries so that all of the ids come back with the features.
-  # The problem with adding attrib constraints to filter the misc_features
-  # which come back is that not all of the attributes will come back
-  #
+  # Need to do 2 queries so that all of the ids come back with the
+  # features.  The problem with adding attrib constraints to filter the
+  # misc_features which come back is that not all of the attributes will
+  # come back
 
-  my $sql = "SELECT DISTINCT ma.misc_feature_id " .
-            "FROM   misc_attrib ma, attrib_type at " .
-            "WHERE  ma.attrib_type_id = at.attrib_type_id " .
-            "AND    at.code = ?";
+  my $sql = qq(
+  SELECT DISTINCT
+        ma.misc_feature_id
+  FROM  misc_attrib ma,
+        attrib_type at,
+        misc_feature mf,
+        seq_region sr,
+        coord_system cs
+  WHERE ma.attrib_type_id = at.attrib_type_id
+    AND at.code = ?
+    AND ma.misc_feature_id = mf.misc_feature_id
+    AND mf.seq_region_id = sr.seq_region_id
+    AND sr.coord_system_id = cs.coord_system_id
+    AND cs.species_id = ?);
 
-  my @bind_vals = ($attrib_type_code);
-
-  if($attrib_value) {
-    push @bind_vals, $attrib_value;
+  if ($attrib_value) {
     $sql .= " AND ma.value = ?";
   }
 
   my $sth = $self->prepare($sql);
-  $sth->bind_param(1,$attrib_type_code,SQL_VARCHAR);
-  $sth->bind_param(2,$attrib_value,SQL_VARCHAR) if ($attrib_value);
+
+  $sth->bind_param( 1, $attrib_type_code,   SQL_VARCHAR );
+  $sth->bind_param( 2, $self->species_id(), SQL_INTEGER );
+  if ($attrib_value) {
+    $sth->bind_param( 3, $attrib_value, SQL_VARCHAR );
+  }
+
   $sth->execute();
 
-  my @ids = map {$_->[0]} @{$sth->fetchall_arrayref()};
+  my @ids = map { $_->[0] } @{ $sth->fetchall_arrayref() };
 
   $sth->finish();
 
-  #construct constraints from the list of ids.  Split ids into
-  #groups of 1000 to ensure that the query is not too big
+  # Construct constraints from the list of ids.  Split ids into groups
+  # of 1000 to ensure that the query is not too big.
   my @constraints;
-  while(@ids) {
-    my @subset =  splice(@ids, 0, 1000);
-    if(@subset == 1) {
+  while (@ids) {
+    my @subset = splice( @ids, 0, 1000 );
+    if ( @subset == 1 ) {
       push @constraints, "mf.misc_feature_id = $subset[0]";
     } else {
-      my $id_str = join(',',@subset);
+      my $id_str = join( ',', @subset );
       push @constraints, "mf.misc_feature_id in ($id_str)";
     }
   }
 
   my @results;
   foreach my $constraint (@constraints) {
-    push @results, @{$self->generic_fetch($constraint)};
+    push @results, @{ $self->generic_fetch($constraint) };
   }
 
   return \@results;
-}
+} ## end sub fetch_all_by_attribute_type_value
 
 
 #_tables
@@ -398,6 +418,8 @@ sub _objs_from_sth {
       }
 
       $current = $misc_feature_id;
+      #need to get the internal_seq_region, if present
+      $seq_region_id = $self->get_seq_region_id_internal($seq_region_id);
       my $slice = $slice_hash{"ID:".$seq_region_id};
 
       if (!$slice) {
@@ -475,14 +497,17 @@ sub _objs_from_sth {
         $seen_attribs->{"$attrib_type_code:$attrib_value"} = 1;
       }
 
-      $feat =  Bio::EnsEMBL::MiscFeature->new_fast
-        ({'start'   => $seq_region_start,
-          'end'     => $seq_region_end,
-          'strand'  => $seq_region_strand,
-          'slice'   => $slice,
-          'adaptor' => $self,
-          'dbID'    => $misc_feature_id,
-          'attributes' => $feat_attribs });
+      $feat =
+        $self->_create_feature_fast( 'Bio::EnsEMBL::MiscFeature', {
+                                       'start'   => $seq_region_start,
+                                       'end'     => $seq_region_end,
+                                       'strand'  => $seq_region_strand,
+                                       'slice'   => $slice,
+                                       'adaptor' => $self,
+                                       'dbID'    => $misc_feature_id,
+                                       'attributes' => $feat_attribs
+                                     } );
+
       push @features, $feat;
 
       if ($misc_set_id) {
