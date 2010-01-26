@@ -30,12 +30,16 @@ sub indelign{
     mkpath([$temp_dir]);
   }
 
+  $temp_dir =~ s/\/$//;
+
   my $aln_orig = "$temp_dir/aln.fa";
   my $control_file = "$temp_dir/input.txt";
   my $out_aln = "$temp_dir/out_aln.fa";
   my $out_anno = "$temp_dir/out_anno.fa";
   my $ancestor_anno = "$temp_dir/AncAnnotation.txt";
   my $anchor_stat = "/homes/greg/src/Indelign-2.0.3/samples/AnchorStat.txt";
+  my $stdout = "$temp_dir/out.txt";
+  my $stderr = "$temp_dir/err";
 
   $class->to_file($sa,$aln_orig);
   print $tree->newick_format()."\n";
@@ -44,7 +48,8 @@ sub indelign{
 
   # Call the FindAnchor program.
   my $num_seqs = scalar($sa->each_seq);
-  my $rc = system("FindAnchor $aln_orig $num_seqs $anchor_stat 2>/dev/null");
+  my $ld_path = "/homes/greg/lib";
+  my $rc = system("export LD_LIBRARY_PATH=$ld_path; FindAnchor $aln_orig $num_seqs $anchor_stat");
   die "FindAnchor error!" if ($rc);
 
   # Write the input file.
@@ -72,30 +77,37 @@ sub indelign{
   close(OUT);
 
   # Call the Indelign2 program.
-  my $cmd = "Indelign2 $aln_orig ${aln_orig}-anchor1 ${aln_orig}-anchor2 $control_file $anchor_stat -A 2>/dev/null";
+  my $cmd = "export LD_LIBRARY_PATH=$ld_path; Indelign2 $aln_orig ${aln_orig}-anchor1 ${aln_orig}-anchor2 $control_file $anchor_stat -A 1>$stdout 2>$stderr";
   print "$cmd\n";
-  $rc = system($cmd);
-  print "$rc\n";
+  my $rc = system($cmd);
   die "Indelign error!" if ($rc != 0);
 
   # TODO: collect the output into site-wise, cumulative insertion and deletion counts.
   my @insertions = (0) x $sa->length;
   my @deletions = (0) x $sa->length;
 
-  open(IN,$out_anno);
-  my @leaf_lines = <IN>;
-  close(IN);
-  open(IN,$ancestor_anno);
-  my @anc_lines = <IN>;
-  close(IN);
+  my @leaf_lines = read_lines($out_anno);
+  my @anc_lines = read_lines($ancestor_anno);
+  my @std_lines = read_lines($stderr);
+
+  my $ins_rate = 0;
+  my $del_rate = 0;
+  foreach my $line (@std_lines) {
+    if ($line =~ m/constIns = (\d+(\.\d+)?)/i) {
+      $ins_rate = $1;
+    }
+    if ($line =~ m/constDel = (\d+(\.\d+)?)/i) {
+      $del_rate = $1;
+    }
+  }
 
   foreach my $line (@leaf_lines,@anc_lines) {
     if ($line =~ m/(\d+)\s+(\d+)\s+(Insertion|Deletion)/) {
       my $start = $1;
       my $stop = $2;
       my $in_del = $3;
-      $start += 1;
-      $stop += 1;
+      $start -= 1;
+      $stop -= 1;
       if ($in_del eq 'Insertion') {
         map {$insertions[$_] += 1} ($start..$stop);
       } else {
@@ -105,9 +117,16 @@ sub indelign{
   }
 
   chdir $orig_dir;
-  return (\@insertions,\@deletions);
+  return (\@insertions,\@deletions,$ins_rate,$del_rate);
 }
 
+sub read_lines {
+  my $file = shift;
+  open(IN,$file);
+  my @lines = <IN>;
+  close(IN);
+  return @lines;
+}
 
 # Calculate the average column entropy (ACE) of an alignment.
 sub column_entropies {
@@ -494,17 +513,16 @@ sub get_prank_filter_matrices {
   Bio::EnsEMBL::Compara::TreeUtils->to_file($tree,$tree_f);
 
   my $cmd = qq^prank_fix -d=$aln_f -t=$tree_f -e -o=$out_f^;
-#  if (!-e $xml_f) {
     system($cmd);
-#  }
 
   my $module = XML::LibXML;
   eval "use $module";
   use Bio::Greg::Node;
 
   # Grab information from Prank's XML output.
+  my $parser;
   eval {
-    my $parser = XML::LibXML->new();
+    $parser = XML::LibXML->new();
   };
   if ($@) {
     print "$@\n";
@@ -514,7 +532,7 @@ sub get_prank_filter_matrices {
   my $root = $xml_tree->getDocumentElement;
 
   my $newick = ${$root->getElementsByTagName('newick')}[0]->getFirstChild->getData;
-  print $newick."\n";
+  #print $newick."\n";
   my $rootNode = Bio::Greg::Node->new();
   $rootNode = $rootNode->parseTree($newick);
 
@@ -642,8 +660,8 @@ sub get_prank_filter_matrices {
       $score = 0 if ($score < 0);
       $score_string .= sprintf("%1d",$score);
     }
-    print $score_string."\n";
-    print $aln_string."\n";
+    #print $score_string."\n";
+    #print $aln_string."\n";
     $leaf_scores->{$leaf->name} = $score_string;
   }
   return ($leaf_scores,[]);

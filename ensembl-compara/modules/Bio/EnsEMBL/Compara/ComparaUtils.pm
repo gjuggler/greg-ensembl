@@ -20,10 +20,14 @@ my $TREE = "Bio::EnsEMBL::Compara::TreeUtils";
 my $ALN = "Bio::EnsEMBL::Compara::AlignUtils";
 my $COMPARA = "Bio::EnsEMBL::Compara::ComparaUtils";
 
-Bio::EnsEMBL::Registry->load_registry_from_db(-host => 'ens-livemirror',
-					      -user => 'ensro',
-					      );
-Bio::EnsEMBL::Registry->set_disconnect_when_inactive(1);
+if ($ENV{'USER'} =~ /gj1/) {
+  Bio::EnsEMBL::Registry->load_registry_from_db(-host => 'ens-livemirror',
+                                                -user => 'ensro'
+    );
+  Bio::EnsEMBL::Registry->set_disconnect_when_inactive(1);
+} else {
+  Bio::EnsEMBL::Registry->no_version_check(1);
+}
 
 sub cigar_line {
   my ($class,$str) = @_;
@@ -229,10 +233,6 @@ sub fetch_masked_alignment
     alignment_score_table => 'protein_tree_member_score',
     alignment_score_mask_character => 'X',
     
-    trimal_filtering => 0,
-    trimal_filtering_params => '',
-    trimal_mask_character => 'X',
-
     cdna => $cdna_option
   };
   $params = $class->replace_params($default_params,$params);
@@ -316,14 +316,6 @@ sub fetch_masked_alignment
     }
     printf " -> Filtering table: %s  threshold: %d  avg: %.3f)\n",$table,$threshold,$total_avg;
     $aln = $ALN->mask_below_score($aln,$threshold,$hash_ref,$params->{'alignment_score_mask_character'});
-  }
-
-  #
-  # SEQUENCE QUALITY MASKING
-  #
-  if ($params->{'trimal_filtering'}) {
-    printf " -> Masking sequences with trimal!\n";
-    $aln = $class->mask_aln_by_trimal($tree,$aln,$aa_aln,$params);
   }
 
   #
@@ -1185,16 +1177,11 @@ sub remove_2x_genomes_from_tree {
 # Return a hashref object from a parameter string.
 sub load_params_from_string {
   my $class        = shift;
-  my $param_object = shift;
   my $param_string = shift;
   my $debug = shift;
   
-  return $param_object unless(defined $param_string);
-  print("parsing parameter string : $param_string\n") if($debug);
-  
-  my $tmp_params = eval($param_string);
-  return $param_object unless($tmp_params);
-  
+  my $param_object;
+  my $tmp_params = eval($param_string);  
   foreach my $key (keys %$tmp_params) {
     print("  $key\t=>\t", $tmp_params->{$key}, "\n") if ($debug);
     $param_object->{$key} = $tmp_params->{$key};
