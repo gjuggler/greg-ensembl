@@ -71,7 +71,10 @@ use Bio::EnsEMBL::Compara::ComparaUtils;
 use POSIX qw(ceil floor);
 
 use Bio::EnsEMBL::Hive;
-our @ISA = qw(Bio::EnsEMBL::Hive::Process);
+
+use Bio::Greg::ProcessUtils;
+
+our @ISA = qw(Bio::EnsEMBL::Hive::Process Bio::Greg::ProcessUtils);
 
 
 #
@@ -85,16 +88,13 @@ my $params;
 my $tags;
 
 my $tree;
-my $family;  # In case we're aligning a family -- this isn't tested by Greg (as of 2008-12-20) so beware!
 my $sa;
 my $sa_exons;
-#my $fasta_in;
-#my $fasta_exon;
-my $fasta_out;
 
-my $start_time;
-my $end_time;
+my $output_file;
+my $sa_aligned;
 
+my $dont_write_output;
 
 sub debug {1;}
 
@@ -107,78 +107,84 @@ sub fetch_input {
     
     ### DEFAULT PARAMETERS ###
     $params = {
-	input_table_base       => 'protein_tree',
-	output_table           => 'protein_tree_member',
-	method                 => 'cmcoffee',
-	max_gene_count         => 10000,
-	use_exon_boundaries    => 0,
-        executable             => ''
-	};  
+      alignment_table        => 'protein_tree_member',
+      alignment_score_table  => 'protein_tree_member_score',
+      alignment_method       => 'cmcoffee',
+      alignment_max_gene_count         => 10000,
+      alignment_use_exon_boundaries    => 0,
+      alignment_executable             => '',
+      
+      alignment_prank_codon_model => 0,
+      alignment_prank_f           => 0
+    };  
     
     #########################
     
     # Fetch parameters from the two possible locations. Input_id takes precedence!
-    $params = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_string($params,$self->parameters);
-    $params = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_string($params,$self->input_id);
+    my $p_params = $self->get_params($self->parameters);
+    my $i_params = $self->get_params($self->input_id);
+    my $node_id = $i_params->{'protein_tree_id'};
+    $node_id = $i_params->{'node_id'} if (!defined $node_id);
+    my $t_params = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_tree_tags($dba,$node_id);
+
+    $params = $self->replace_params($params,$p_params,$i_params,$t_params);
+    Bio::EnsEMBL::Compara::ComparaUtils->hash_print($params);
 
     #########################
 
     $self->check_if_exit_cleanly;
 
-    # Deal with alternate table inputs.
-    $pta->table_base($params->{'input_table_base'});
-
     # Load the tree.
     if (defined $params->{'protein_tree_id'}) {
-	$tree = $pta->fetch_node_by_node_id($params->{'protein_tree_id'});
+      $tree = Bio::EnsEMBL::Compara::ComparaUtils->get_tree_for_comparative_analysis($dba,$params);
     } elsif (defined $params->{'node_id'}) {
-	$tree = $pta->fetch_node_by_node_id($params->{'node_id'});
+      $tree = Bio::EnsEMBL::Compara::ComparaUtils->get_tree_for_comparative_analysis($dba,$params);
     } else {
 	throw("No protein tree input ID!\n");
     }
 
-    # Some last-minute adjustments based on retry counts or somesuch.
+    my $method = $params->{'alignment_method'};
 
-    # Switch to fmcoffee if we have > 300 genes.
-    my $method = $params->{'method'};
+    $dont_write_output = 0;
+    if ($method eq 'none') {
+      print "NO ALIGNMENT NECESSARY!! Skipping...\n";
+      $dont_write_output = 1;
+      return;
+    }
+
     if ($method ne 'muscle') {
       if ($method eq 'cmcoffee') {
 	my $num_leaves = scalar(@{$tree->get_all_leaves});
+        # Switch to fmcoffee if we have > 300 genes.
 	if ($num_leaves > 300) {
-	  $params->{'method'} = 'fmcoffee';
+	  $params->{'alignment_method'} = 'fmcoffee';
 	}
       }
       # Auto-switch to fmcoffee on single failure.
-#      if ($self->input_job->retry_count >= 1) {
-#	$params->{'method'} = 'fmcoffee';
-#      }
+      if ($self->input_job->retry_count >= 1) {
+	$params->{'method'} = 'fmcoffee';
+      }
       # Auto-switch to muscle on a second failure.
-#      if ($self->input_job->retry_count >= 2) {
-#	$params->{'method'} = 'muscle';
-#      }
+      if ($self->input_job->retry_count >= 2) {
+	$params->{'method'} = 'muscle';
+      }
     }
-    print "MCoffee alignment method: ".$params->{'method'}."\n";
-    $tags->{'aln_method'} = $params->{'method'};
 
-    # Ways to fail the job before running.
-    
-    # Gene count too big.
+    print "MCoffee alignment method: ".$params->{'alignment_method'}."\n";
+    $tags->{'alignment_method'} = $params->{'alignment_method'};
+
+    # Fail if the gene count is too big.
     my $num_leaves = scalar(@{$tree->get_all_leaves});
-    if ($num_leaves > $params->{'max_gene_count'}) {
+    if ($num_leaves > $params->{'alignment_max_gene_count'}) {
       #$self->dataflow_output_id($self->input_id, 2);
       $self->DESTROY;
       throw("Mcoffee job too big: try something else and FAIL it");
     }
-    # Undefined tree.
-    throw ("undefined ProteinTree as input!\n") unless (defined $tree);
-
-    # Dump tree sequences to file for use when running the job.
-    $fasta_out = $self->worker_temp_directory . "mcoffee_out.fasta";
 
     $sa = Bio::EnsEMBL::Compara::ComparaUtils->get_ProteinTree_seqs($tree,0);
 
     # Export exon-cased if necessary.
-    my $use_exons = $params->{'use_exon_boundaries'};
+    my $use_exons = $params->{'alignment_use_exon_boundaries'};
     if ($use_exons) {
       $sa_exons = Bio::EnsEMBL::Compara::ComparaUtils->get_ProteinTree_seqs($tree,1);
     }
@@ -187,15 +193,16 @@ sub fetch_input {
 sub run
 {
     my $self = shift;
-    
+
+    return if ($dont_write_output);    
     $self->check_if_exit_cleanly;
-    $start_time = time()*1000;
-    
-    $self->align_with_mcoffee($sa,$tree,$params);
 
-    $end_time = time()*1000;
-    $tags->{'mcoffee_runtime'} = $end_time-$start_time;
-
+    my $method = $params->{'alignment_method'};
+#    if ($method =~ 'coffee') {
+#      $sa_aligned = $self->align_with_mcoffee($sa,$tree,$params);
+#    } elsif ($method =~ 'prank') {
+      $sa_aligned = $self->align_with_prank($sa,$tree,$params);
+#    }
 }
 
 
@@ -203,20 +210,15 @@ sub write_output {
     my $self = shift;
     $self->check_if_exit_cleanly;
 
-    if (defined $family) {
-	$self->parse_and_store_alignment_into_family;
-    } elsif (defined $tree) {
-	my $score_out = $fasta_out.".score_ascii";
-	$self->parse_and_store_alignment_into_proteintree($tree, $fasta_out,$score_out);
+    return if ($dont_write_output);
+    
+    if (defined $tree) {
+      my $score_out = $output_file.".score_ascii";
+      $self->parse_and_store_alignment_into_proteintree($tree, $sa_aligned, $score_out);
     }
     
-    # Store various alignment tags.
-    Bio::EnsEMBL::Compara::ComparaUtils->store_aln_tags($tree);
-
     # Store our custom tags.
     Bio::EnsEMBL::Compara::ComparaUtils->store_tags($tree,$tags);
-
-
 }
 
 
@@ -228,7 +230,7 @@ sub DESTROY {
 	$tree = undef;
     }
 
-    unlink $fasta_out if (-e $fasta_out);
+    unlink $output_file if (-e $output_file);
     $self->SUPER::DESTROY if $self->can("SUPER::DESTROY");
 }
 
@@ -239,6 +241,50 @@ sub DESTROY {
 #
 ##########################################
 
+sub align_with_prank {
+  my $self = shift;
+  my $aln = shift;
+  my $tree = shift;
+  my $params = shift;
+
+  my $tmp = $self->worker_temp_directory;
+  
+  # Output alignment.
+  my $aln_file = $tmp . "aln.fasta";
+  Bio::EnsEMBL::Compara::AlignUtils->to_file($aln,$aln_file); # Write the alignment out to file.
+  
+  my $tree_file = $tmp . "tree.nh";
+  my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
+  Bio::EnsEMBL::Compara::TreeUtils->to_file($treeI,$tree_file);
+
+  $output_file = $tmp . "output";
+  
+  my $executable = $params->{'alignment_executable'} || 'prank';
+  my $extra_params = '';
+  $extra_params .= ' -codon ' if ($params->{'alignment_prank_codon_model'});
+  $extra_params .= ' -F ' if ($params->{'alignment_prank_f'});
+  
+  my $cmd = qq^$executable -d=$aln_file -t=$tree_file -o=$output_file $extra_params^;
+  
+  $output_file .= '.1.fas';
+
+  # Run the command.
+  $dba->dbc->disconnect_when_inactive(1);
+  my $rc = system($cmd);
+  $dba->dbc->disconnect_when_inactive(0);
+
+  unless($rc == 0) {
+    print "Prank error!\n";
+    die;
+  }
+  
+  use Bio::AlignIO;
+  my $alignio = Bio::AlignIO->new(-file => $output_file,
+                                  -format => "fasta");
+  my $aln = $alignio->next_aln();
+  return $aln;
+}
+
 
 sub align_with_mcoffee
 {
@@ -246,7 +292,6 @@ sub align_with_mcoffee
     my $aln = shift;
     my $tree = shift;
     my $params = shift;
-
 
     my $default_params = {
       use_tree => 1,
@@ -269,9 +314,9 @@ sub align_with_mcoffee
     my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
     Bio::EnsEMBL::Compara::TreeUtils->to_file($treeI,$input_tree);
     
-    my $output_file = $tmp . "output_aln.fasta";
+    $output_file = $tmp . "output_aln.fasta";
     $output_file =~ s/\/\//\//g;  # converts any // in path to /
-    $fasta_out = $output_file;
+
     my $tree_temp = $tmp . "tree_temp.dnd";
     $tree_temp =~ s/\/\//\//g;  # converts any // in path to /
     
@@ -291,14 +336,13 @@ sub align_with_mcoffee
     
     # GJ 2008-11-04: Variable args depending on method choice.
     my $method_string = '-method=';
-    my $method = $params->{'method'};
+    my $method = $params->{'alignment_method'};
 
     $method = "cmcoffee" unless (defined $method);
     if ($method eq 'cmcoffee' || $method eq 'mcoffee') {
 	
       # CMCoffee, slow, comprehensive multiple alignments.
       $method_string .= "mafftgins_msa, muscle_msa, kalign_msa, probcons_msa"; #, t_coffee_msa";
-      #$method_string .= "mafftgins_msa";
     } elsif ($method eq 'fmcoffee') {
 	
 	# FMCoffee, fast but accurate alignments.
@@ -313,7 +357,6 @@ sub align_with_mcoffee
 	$method_string .= "prank_msa";
     }  else {
 	
-      #throw ("Improper method parameter: ".$params->{'method'});
     }
     # GJ 2008-11-17: Use exon boundaries if desired.
     if ($params->{'use_exons'}) {
@@ -365,130 +408,6 @@ sub align_with_mcoffee
     return $aln;
 }
 
-
-##############################################################
-#
-# Family input/output section
-#
-##############################################################
-
-# Note from Greg 2008-12-03: This section is not tested and family stuff may not work... should we delete?
-
-sub dumpFamilyPeptidesToWorkdir
-{
-  my $self = shift;
-  my $family = shift;
-
-  my $fastafile = $self->worker_temp_directory. "family_". $family->dbID. ".fasta";
-  $fastafile =~ s/\/\//\//g;  # converts any // in path to /
-  return $fastafile if(-e $fastafile);
-  print("fastafile = '$fastafile'\n") if($self->debug);
-
-  #
-  # get only peptide members 
-  #
-
-  my $seq_id_hash = {};
-  
-  my @members_attributes;
-
-  push @members_attributes,@{$family->get_Member_Attribute_by_source('ENSEMBLPEP')};
-  push @members_attributes,@{$family->get_Member_Attribute_by_source('Uniprot/SWISSPROT')};
-  push @members_attributes,@{$family->get_Member_Attribute_by_source('Uniprot/SPTREMBL')};
-
-  if(scalar @members_attributes <= 1) {
-    $self->update_single_peptide_family($family);
-    return undef; #so mcoffee isn't run
-  }
-  
-  
-  open(OUTSEQ, ">$fastafile")
-    or throw("Error opening $fastafile for write");
-
-  foreach my $member_attribute (@members_attributes) {
-    my ($member,$attribute) = @{$member_attribute};
-    my $member_stable_id = $member->stable_id;
-
-    next if($seq_id_hash->{$member->sequence_id});
-    $seq_id_hash->{$member->sequence_id} = 1;
-    
-    my $seq = $member->sequence;
-    $seq =~ s/(.{72})/$1\n/g;
-    chomp $seq;
-
-    print OUTSEQ ">$member_stable_id\n$seq\n";
-  }
-
-  close OUTSEQ;
-  
-  return $fastafile;
-}
-
-
-sub update_single_peptide_family
-{
-  my $self   = shift;
-  my $family = shift;
-  
-  my $familyMemberList = $family->get_all_Member_Attribute();
-
-  foreach my $familyMember (@{$familyMemberList}) {
-    my ($member,$attribute) = @{$familyMember};
-    next unless($member->sequence);
-    next if($member->source_name eq 'ENSEMBLGENE');
-    $attribute->cigar_line(length($member->sequence)."M");
-    printf("single_pepide_family %s : %s\n", $member->stable_id, $attribute->cigar_line) if($self->debug);
-  }
-}
-
-
-sub parse_and_store_alignment_into_family 
-{
-  my $self = shift;
-  my $family = shift;
-  my $mcoffee_output =  $fasta_out;
-    
-  if($mcoffee_output and -e $mcoffee_output) {
-      #$family->read_clustalw($mcoffee_output);
-      $family->read_fasta($mcoffee_output);
-  }
-
-  my $familyDBA = $dba->get_FamilyAdaptor;
-
-  # 
-  # post process and copy cigar_line between duplicate sequences
-  #  
-  my $cigar_hash = {};
-  my $familyMemberList = $family->get_all_Member_Attribute();
-  #first build up a hash of cigar_lines that are defined
-  foreach my $familyMember (@{$familyMemberList}) {
-    my ($member,$attribute) = @{$familyMember};
-    next unless($member->sequence_id);
-    next unless(defined($attribute->cigar_line));
-    next if($attribute->cigar_line eq '');
-    next if($attribute->cigar_line eq 'NULL');
-    
-    $cigar_hash->{$member->sequence_id} = $attribute->cigar_line;
-  }
-
-  #next loop again to copy (via sequence_id) into members 
-  #missing cigar_lines and then store them
-  foreach my $familyMember (@{$familyMemberList}) {
-    my ($member,$attribute) = @{$familyMember};
-    next if($member->source_name eq 'ENSEMBLGENE');
-    next unless($member->sequence_id);
-
-    my $cigar_line = $cigar_hash->{$member->sequence_id};
-    next unless($cigar_line);
-    $attribute->cigar_line($cigar_line);
-
-    printf("update family_member %s : %s\n",$member->stable_id, $attribute->cigar_line) if($self->debug);
-    $familyDBA->update_relation([$member, $attribute]);
-  }
-
-}
-
-
 ########################################################
 #
 # ProteinTree input/output section
@@ -514,17 +433,9 @@ sub parse_and_store_alignment_into_proteintree
 {
   my $self = shift;
   my $tree = shift;
-  my $mcoffee_output_f = shift;
+  my $aln = shift;
   my $mcoffee_scores_f = shift;
   
-  print $mcoffee_output_f."\n";
-  return unless($mcoffee_output_f and -e $mcoffee_output_f);
-
-  # Read in the alignment using Bioperl.
-  use Bio::AlignIO;
-  my $alignio = Bio::AlignIO->new(-file => "$mcoffee_output_f",
-				  -format => "fasta");
-  my $aln = $alignio->next_aln();
   my %align_hash;
   foreach my $seq ($aln->each_seq) {
       my $id = $seq->display_id;
@@ -533,34 +444,36 @@ sub parse_and_store_alignment_into_proteintree
 
   # Read in the scores file manually.
   my %score_hash;
-  my %overall_score_hash;
-  my $FH = IO::File->new();
-  $FH->open($mcoffee_scores_f) || throw("Could not open alignment scores file [$mcoffee_scores_f]");
-  <$FH>; #skip header
-  my $i=0;
-  while(<$FH>) {
+  if ($mcoffee_scores_f && -e $mcoffee_scores_f) {
+    my %overall_score_hash;
+    my $FH = IO::File->new();
+    $FH->open($mcoffee_scores_f) || throw("Could not open alignment scores file [$mcoffee_scores_f]");
+    <$FH>; #skip header
+    my $i=0;
+    while(<$FH>) {
       $i++;
       next if ($i < 7); # skip first 7 lines.
       next if($_ =~ /^\s+/);  #skip lines that start with space
       if ($_ =~ /:/) {
-	  my ($id,$overall_score) = split(/:/,$_);
-	  $id =~ s/^\s+|\s+$//g;
-	  $overall_score =~ s/^\s+|\s+$//g;
-	  print "___".$id."___".$overall_score."___\n";
-	  next;
+        my ($id,$overall_score) = split(/:/,$_);
+        $id =~ s/^\s+|\s+$//g;
+        $overall_score =~ s/^\s+|\s+$//g;
+        print "___".$id."___".$overall_score."___\n";
+        next;
       }
       chomp;
       my ($id, $align) = split;
       $score_hash{$id} = '' if (!exists $score_hash{$id});
       $score_hash{$id} .= $align;
       print $id." ". $align."\n";
+    }
+    $FH->close;
   }
-  $FH->close;
 
   # Convert alignment strings into cigar_lines
   my $alignment_length;
   foreach my $id (keys %align_hash) {
-      next if ($id eq 'cons');
+    next if ($id eq 'cons');
     my $alignment_string = $align_hash{$id};
     unless (defined $alignment_length) {
       $alignment_length = length($alignment_string);
@@ -570,12 +483,12 @@ sub parse_and_store_alignment_into_proteintree
       }
     }
     # Call the method to do the actual conversion
-      print "$id  $alignment_string\n";
+    print "$id  $alignment_string\n";
     $align_hash{$id} = Bio::EnsEMBL::Compara::ComparaUtils->cigar_line($alignment_string);
   }
-
-  my $table_name = $params->{'output_table'};
-  my $score_table = $table_name."_score";
+  
+  my $table_name = $params->{'alignment_table'};
+  my $score_table = $params->{'alignment_score_table'};
   
   my $sth = $pta->prepare("INSERT INTO $table_name 
         (node_id,member_id,method_link_species_set_id,cigar_line)  VALUES (?,?,?,?)  ON DUPLICATE KEY UPDATE cigar_line=?");
@@ -598,35 +511,30 @@ sub parse_and_store_alignment_into_proteintree
 	print "MS  ".$member_sequence."\n";
 	  throw("While storing the cigar line, the returned cigar length did not match the sequence length\n");
       }
-      
-      #$DB::single=1;1;#??
             
       if ($table_name eq 'protein_tree_member') {
 	  # We can use the default store method for the $member.
 	  $pta->store($member);
       } else {
 	  # Do a manual insert into the correct output table.
-	  my $cmd = "CREATE TABLE IF NOT EXISTS $table_name LIKE protein_tree_member;";
+          my $cmd = "CREATE TABLE IF NOT EXISTS $table_name LIKE protein_tree_member;";
 	  $pta->dbc->do($cmd);
-
 	  printf("Updating $table_name %.10s : %.30s\n",$member->stable_id,$member->cigar_line) if ($self->debug);
 	  $sth->execute($member->node_id,$member->member_id,$member->method_link_species_set_id,$member->cigar_line,$member->cigar_line);
       }
 	  # Do a manual insert of the *scores* into the correct score output table.
-
-      my $score_string = $score_hash{$member->stable_id};
       
-      $score_string =~ s/[^\d-]/9/g;   # Convert non-digits and non-dashes into 9s. This is necessary because t_coffee leaves some leftover letters.
-      printf("Updating $score_table %.10s : %.30s ...\n",$member->stable_id,$score_string) if ($self->debug);
-      
-      $sth2->execute($member->node_id,$member->member_id,$member->method_link_species_set_id,$score_string,$score_string);
-
+      if (%score_hash) {
+        my $score_string = $score_hash{$member->stable_id};
+        $score_string =~ s/[^\d-]/9/g;   # Convert non-digits and non-dashes into 9s. This is necessary because t_coffee leaves some leftover letters.
+        printf("Updating $score_table %.10s : %.30s ...\n",$member->stable_id,$score_string) if ($self->debug);
+        $sth2->execute($member->node_id,$member->member_id,$member->method_link_species_set_id,$score_string,$score_string);
+      }
       sleep(0.05);
   }
 
   $sth->finish;
   $sth2->finish;
-
 }
 
 

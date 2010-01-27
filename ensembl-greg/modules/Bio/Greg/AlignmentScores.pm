@@ -1,4 +1,4 @@
-package Bio::EnsEMBL::Compara::RunnableDB::AlignmentScores;
+package Bio::Greg::AlignmentScores;
 
 use strict;
 use Cwd;
@@ -10,7 +10,9 @@ use Bio::EnsEMBL::Compara::NestedSet;
 use Bio::EnsEMBL::Hive;
 use Bio::EnsEMBL::Hive::Process;
 
-our @ISA = qw(Bio::EnsEMBL::Hive::Process);
+use Bio::Greg::ProcessUtils;
+
+our @ISA = qw(Bio::EnsEMBL::Hive::Process Bio::Greg::ProcessUtils);
 
 #
 # Some global-ish variables.
@@ -36,22 +38,24 @@ sub fetch_input {
   
   ### DEFAULT PARAMETERS ###
   $params = {
-    input_table            => 'protein_tree_member',
-    action                 => 'gblocks prank trimal'             # Options: 'gblocks', 'prank', 'trimal'
+    alignment_table            => 'protein_tree_member',
+    alignment_score_table => 'protein_tree_member_score',
+    alignment_scores_action    => 'prank'             # Options: 'gblocks', 'prank', 'trimal', 'indelign'
     };
   
   # For aminof, codonf, and freqtype, see the SLR readme.txt for more info.
 
   #########################
-  print "TEMP: ".$self->worker_temp_directory."\n";
-  print "PARAMS: ".$self->parameters."\n";
-  print "INPUT_ID: ".$self->input_id."\n";
 
   # Fetch parameters from the two possible locations. Input_id takes precedence!
-  $params = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_string($params,$self->parameters);
-  $params = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_string($params,$self->input_id);
+  my $p_params = $self->get_params($self->parameters);
+  my $i_params = $self->get_params($self->input_id);
+  my $node_id = $i_params->{'protein_tree_id'};
+  $node_id = $i_params->{'node_id'} if (!defined $node_id);
+  my $t_params = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_tree_tags($dba,$node_id);
+  
+  $params = $self->replace_params($params,$p_params,$i_params,$t_params);
 
-#  $self->check_job_fail_options;
   $dba->dbc->disconnect_when_inactive(1);
 }
 
@@ -63,25 +67,38 @@ sub run {
   $tree = Bio::EnsEMBL::Compara::ComparaUtils->get_tree_for_comparative_analysis($dba,$params);
   $tree = $tree->minimize_tree;
   
-  my $input_table = $params->{'input_table'};
+  my $input_table = $params->{'alignment_table'};
+  my $action = $params->{'alignment_scores_action'};
 
-  if ($params->{'action'} =~ m/gblocks/i) {
+  if ($action =~ m/gblocks/i) {
     print " -> RUN GBLOCKS\n";
     my $score_hash = $self->run_gblocks($tree,$params);
     $self->store_scores($tree,$score_hash,$input_table."_".'gblocks');
   }
 
-  if ($params->{'action'} =~ m/prank/i) {
+  if ($action =~ m/prank/i) {
     print " -> RUN PRANK\n";
     my $score_hash = $self->run_prank($tree,$params);
     $self->store_scores($tree,$score_hash,$input_table."_".'prank');
   }
 
-  if ($params->{'action'} =~ m/trimal/i) {
+  if ($action =~ m/trimal/i) {
     print " -> RUN TRIMAL\n";
     my $score_hash = $self->run_trimal($tree,$params);
     $self->store_scores($tree,$score_hash,$input_table."_".'trimal');
   }    
+
+  if ($action =~ m/indelign/i) {
+    print " -> RUN INDELIGN\n";
+    eval {
+      my $score_hash = $self->run_indelign($tree,$params);
+      $self->store_scores($tree,$score_hash,$input_table."_".'indelign');
+    };
+    if ($@) {
+      print "Indelible error: $@\n";
+    }
+  }
+
 }
 
 sub store_scores {
@@ -98,8 +115,44 @@ sub store_scores {
                   $leaf->member_id,
                   $score_string,
                   $score_string);
+    print $score_string."\n";
   }
   $sth->finish;
+}
+
+sub run_indelign {
+  my $self = shift;
+  my $tree = shift;
+  my $params = shift;
+
+  my $aln = $tree->get_SimpleAlign();
+
+  my ($i_obj,$d_obj,$ins_rate,$del_rate) = Bio::EnsEMBL::Compara::AlignUtils->indelign($aln,$tree,$params,$self->worker_temp_directory);
+  my @ins = @$i_obj;
+  my @del = @$d_obj;
+
+  my $num_leaves = scalar ($tree->leaves);
+  my $tree_length = Bio::EnsEMBL::Compara::TreeUtils->total_distance($tree);
+  my $rate_sum = $ins_rate+$del_rate;
+
+  my $blocks_string = "0" x $aln->length;  
+  for (my $i=0; $i < $aln->length; $i++) {
+    my $indel_sum = $ins[$i] + $del[$i];
+    my $max_allowed_indels = $rate_sum*$tree_length*2;
+    if ($indel_sum >= $max_allowed_indels) {
+      substr $blocks_string,$i,1,'0';
+    } else {
+      substr $blocks_string,$i,1,'9';
+    }
+  }
+
+  my @column_scores = split("",$blocks_string);  
+  my %scores_hash;
+  foreach my $leaf ($tree->leaves) {
+    my $aln_string = _apply_columns_to_leaf(\@column_scores,$leaf);
+    $scores_hash{$leaf->stable_id} = $aln_string;
+  }
+  return \%scores_hash;
 }
 
 sub run_gblocks {
@@ -111,11 +164,11 @@ sub run_gblocks {
 
   my $defaults = {
     t    => 'p',        # Type of sequence (p=protein,c=codon,d=dna)
-    b3   => '5000',       # Max # of contiguous nonconserved positions
-    b4   => '3',        # Minimum length of a block
+    b3   => '8',       # Max # of contiguous nonconserved positions
+    b4   => '5',        # Minimum length of a block
     b5   => 'a',        # Allow gap positions (n=none, h=with half,a=all)
   };
-  my $use_params = Bio::EnsEMBL::Compara::ComparaUtils->replace_params($defaults,$params);
+  my $use_params = $self->replace_params($defaults,$params);
 
   printf("Sitewise_dNdS::run_gblocks\n") if($self->debug);
 
@@ -209,7 +262,7 @@ sub run_trimal {
   Bio::EnsEMBL::Compara::AlignUtils->to_file($aln,$aln_f);
   
   # Build a command for TrimAl.
-  my $trim_params = '-cons 30 -gt 0.5 -w 3';
+  my $trim_params = '-cons 30 -gt 0.5 -w 2';
   $trim_params = $params->{'trimal_filtering_params'} if ($params->{'trimal_filtering_params'}); # Custom parameters if desired.
   my $cmd = "trimal -in $aln_f -out $aln_f -colnumbering $trim_params";
   my $output = `$cmd`;

@@ -602,6 +602,8 @@ sub extract_empirical_bayes {
     my $pos_sites;
 
     my $site_class_omegas;
+    
+    my $naive_output_has_p_gt_one_at_end = 0;
 
     foreach my $line (@suppl) {
 #      chomp($line);
@@ -636,26 +638,34 @@ sub extract_empirical_bayes {
       $started_pos_sel_sites = 1 if ($line =~ m/positively selected sites/i && $has_bayes_section && $started_bayes);
       
       if (!$has_bayes_section && $started_naive && !$started_pos_sel_sites) {
-        next if ($line =~ /empirical/i);
+        if ($line =~ /empirical/i) {
+          if ($line =~ /w>1/i) {
+            $naive_output_has_p_gt_one_at_end = 1;
+          }
+        }
 
         #Naive Empirical Bayes (NEB) probabilities for 10 classes& postmean_w
         # 1 M   0.00320 0.01289 0.02424 0.03656 0.04965 0.06350 0.07828 0.09450 0.11369 0.52349 (10)  0.642     
         chomp $line;
         my @bits = split(/\s+/,$line);
         my $pos = $bits[1];
-        my $omega = pop @bits;
 
         my $prob_gt_one = 0;
-        #print $pos."\n";
-        foreach my $site_class (keys %{$site_class_omegas}) {
-          my $post_prob = $bits[$site_class+3];
-          #print "  Post prob: ${site_class} $post_prob\n";
-          if ($site_class_omegas->{$site_class} > 1) {
-            $prob_gt_one += $post_prob;
+        if ($naive_output_has_p_gt_one_at_end) {
+          $prob_gt_one = pop @bits;
+        } else {
+          foreach my $site_class (keys %{$site_class_omegas}) {
+            my $post_prob = $bits[$site_class+3];
+            #print "  Post prob: ${site_class} $post_prob\n";
+            if ($site_class_omegas->{$site_class} > 1) {
+              $prob_gt_one += $post_prob;
+            }
           }
         }
-        #print "   >1: ${prob_gt_one}\n";
-        
+
+        my $omega = pop @bits;
+
+        print " -> Naive p(w>1): ${prob_gt_one}\n";        
         $bayes_results->{$pos} = $omega;
         $bayes_prob->{$pos} = $prob_gt_one;
         $bayes_se->{$pos} = '';
@@ -665,22 +675,23 @@ sub extract_empirical_bayes {
         next if ($line =~ /empirical/i);
         #Bayes Empirical Bayes (BEB) probabilities for 11 classes (class)& postmean_w
         # 1 M   0.03403 0.08222 0.10935 0.11735 0.11455 0.10627 0.09566 0.08451 0.07399 0.07080 0.11128 ( 4)  0.745 +-  1.067
-        
+
+        # GJ 2010-01-25 - the first 10 classes are probably equivalent to a 10-site class model, with the 11th position
+        # position being the probability of w>1 integrated over all possible parameter values. So we'll take the last
+        # category as the p(w>1) and ignore the rest of the site classes.
+        # 
+
         my @bits = split(/\s+/,$line);
         my $pos = $bits[1];
         my $se = pop @bits;
         my $plus_minus_sign = pop @bits;
         my $omega = pop @bits;
 
-        my $prob_gt_one = 0;
-        foreach my $site_class (keys %{$site_class_omegas}) {
-          my $post_prob = $bits[$site_class+2];
-          print "Post prob: ${site_class} $post_prob\n";
-          if ($site_class_omegas->{$site_class} > 1) {
-            $prob_gt_one += $post_prob;
-          }
-        }
+        # GJ 2010-01-25 ASSUMPTION: we assume the BEB output always gives 11 classes, where the last class is the p(w>1).
+        # Is this true??
+        my $prob_gt_one = $bits[13];
         
+        print " -> BEB p(w>1) = $prob_gt_one\n";
         $bayes_prob->{$pos} = $prob_gt_one;
         $bayes_results->{$pos} = $omega;
         $bayes_se->{$pos} = $se;
@@ -792,17 +803,27 @@ sub NSsites_ratio_test {
     my $codon_aln = shift;
     my $model_a = shift;
     my $model_b = shift;
+    my $tempdir = shift;
     
     # Model A should be a model nested within B, i.e. A=m2 b=m3, A=m7 b=m8
     $model_a = 7 unless (defined $model_a);
     $model_b = 8 unless (defined $model_b);
 
+    my $fix_omega = 0;
+    my $omega = 1.3;
+    if ($model_a eq '8a') {
+      $model_a = '8';
+      $fix_omega = 1;
+      $omega = 1;
+    }
+
     my $params = {
 	NSsites => $model_a,
 	fix_blength=>1,
-	omega => 1.3
-	};
-    my $codemla = $class->new(-params => $params, -tree => $tree, -alignment => $codon_aln);
+        fix_omega => $fix_omega,
+	omega => $omega
+    };
+    my $codemla = $class->new(-params => $params, -tree => $tree, -alignment => $codon_aln, -tempdir => $tempdir);
     $codemla->run();
 
     my $ma_lnL = $codemla->extract_lnL();
@@ -810,9 +831,10 @@ sub NSsites_ratio_test {
     $params = {
 	NSsites => $model_b,
 	fix_blength => 1,
+        fix_omega => 0,
 	omega => 1.3
-	};
-    my $codemlb = $class->new(-params => $params, -tree => $tree, -alignment => $codon_aln);
+    };
+    my $codemlb = $class->new(-params => $params, -tree => $tree, -alignment => $codon_aln, -tempdir => $tempdir);
     $codemlb->run();
     my $mb_lnL = $codemlb->extract_lnL();
     
@@ -829,7 +851,7 @@ sub NSsites_ratio_test {
 	    fix_blength => 1,
 	    omega => 0.3
 	    };
-	my $codemlb2 = $class->new(-params => $params, -tree => $tree, -alignment => $codon_aln);
+	my $codemlb2 = $class->new(-params => $params, -tree => $tree, -alignment => $codon_aln, -tempdir => $tempdir);
 	$codemlb2->run();
 	my $mb_lnL2 = $codemlb2->extract_lnL();
 	

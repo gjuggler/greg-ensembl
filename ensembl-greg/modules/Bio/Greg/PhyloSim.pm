@@ -15,10 +15,13 @@ use Bio::EnsEMBL::Compara::DBSQL::DBAdaptor;
 use Bio::EnsEMBL::Hive;
 use Bio::EnsEMBL::Hive::Process;
 use Bio::Greg::EslrUtils;
+use Bio::Greg::ProcessUtils;
 
 use Bio::AlignIO;
 
-our @ISA = qw(Bio::EnsEMBL::Hive::Process);
+our @ISA = qw(Bio::EnsEMBL::Hive::Process Bio::Greg::ProcessUtils);
+
+my $p_pre = "phylosim_";
 
 my $dba;
 my $pta;
@@ -31,57 +34,64 @@ my $aln;
 
 sub fetch_input {
   my $self = shift;
-  $dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new(-DBCONN=>$self->db->dbc);
+
+  # Load up the Compara DBAdaptor.
+  if ($self->{dba}) {
+    $dba = $self->dba;
+  } else {
+    $dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new(-DBCONN=>$self->db->dbc);
+  }
   $pta = $dba->get_ProteinTreeAdaptor;
 
+
   $params = {
-    num_bins => 20,
-
-    omega_distribution => 'M3',
-
     ### Omega Distribution Parameters ###
-
     # For lognormal model.
-    #meanlog => -4.079,
-    #sdlog => 1.23,
+    #phylosim_meanlog => -4.079,
+    #phylosim_sdlog => 1.23,
 
     # for M3 models.
-    #p0 => 0.386,
-    #p1 => 0.535,
-    #p2 => 0.079,
-    #w0 => 0.018,
-    #w1 => 0.304,
-    #w2 => 1.691,
+    #phylosim_p0 => 0.386,
+    #phylosim_p1 => 0.535,
+    #phylosim_p2 => 0.079,
+    #phylosim_w0 => 0.018,
+    #phylosim_w1 => 0.304,
+    #phylosim_w2 => 1.691,
     # etc. etc. if you want to continue the M3 model.
 
     # for M8 models.
-    #p0 => 0.9432,
-    #p => 0.572,
-    #q => 2.172,
-    #w => 2.081,
-
+    #phylosim_p0 => 0.9432,
+    #phylosim_p => 0.572,
+    #phylosim_q => 2.172,
+    #phylosim_w => 2.081,
     ### End Omega Distribution Parameters ###
 
-    seq_length => 200,
-    kappa => 2,
-    ins_rate => 0.01,
-    del_rate => 0.01,
-    simulation_program => 'indelible'
+    phylosim_num_bins => 20,
+    phylosim_omega_distribution => 'M3',
+
+    phylosim_seq_length => 500,
+    phylosim_kappa => 4,
+    phylosim_ins_rate => 0.05,
+    phylosim_del_rate => 0.05,
+    phylosim_simulation_program => 'indelible',
+    phylosim_insertmodel => 'NB 0.3 2',
+    phylosim_deletemodel => 'NB 0.3 2',
   };
-  $params = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_string($params,$self->parameters);
-  $params = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_string($params,$self->input_id);
+
+  my $node_id;
+  
+  my $p_params = $self->get_params($self->parameters);
+  my $i_params = $self->get_params($self->input_id);
+  $node_id = $i_params->{'protein_tree_id'};
+  $node_id = $i_params->{'node_id'} if (!defined $node_id);
+  my $t_params = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_tree_tags($dba,$node_id);
+
+  $params = $self->replace_params($params,$p_params,$i_params,$t_params);
+  Bio::EnsEMBL::Compara::ComparaUtils->hash_print($params);
 
   # Load the tree.
-  my $node_id;
-  $node_id = $params->{'protein_tree_id'};
-  $node_id = $params->{'node_id'} if (!defined $node_id);
   $pta->table_base($params->{'input_table_base'});
   $tree = $pta->fetch_node_by_node_id($node_id);
-
-  # Load up tree-wise simulation params.
-  my $sp_str = $tree->get_tagvalue('params_slrsim');
-  $params = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_string($params,$sp_str);
-  Bio::EnsEMBL::Compara::ComparaUtils->hash_print($params);
 
   print "Simulation tree: ".$tree->newick_format."\n";
 }
@@ -90,10 +100,10 @@ sub fetch_input {
 sub run {
   my $self = shift;
 
-  if ($params->{'simulation_program'} eq 'indelible') {
+  if (get('simulation_program') eq 'indelible') {
     $aln = $self->simulate_alignment_indelible($tree,$params);
     #print "ALN : $aln\n";
-  } elsif ($params=>{'simulation_program'} eq 'phylosim') {
+  } elsif (get('simulation_program') eq 'phylosim') {
     $aln = $self->simulate_alignment_phylosim($tree,$params);
   }
   
@@ -152,13 +162,13 @@ sub simulate_alignment_indelible {
   $newick =~ s/:\d\.?\d+;/;/g;
   print $newick."\n";
 
-  my $length = $params->{'seq_length'};
+  my $length = get('seq_length');
   if ($length eq 'sample') {
     ($length) = $self->get_r_numbers("rlnorm(1,meanlog=6.03,sdlog=0.685);");
     $length = int($length);
   }
-  my $ins_rate = $params->{'ins_rate'};
-  my $del_rate = $params->{'del_rate'};
+  my $ins_rate = get('ins_rate');
+  my $del_rate = get('del_rate');
 
   print "Simulating sequence with $length codons...\n";
   
@@ -187,7 +197,7 @@ sub simulate_alignment_indelible {
   print "bins: @bins\n";
   pop @probs; # Remove the last probability; Indelible only wants (n-1) probabilities in its input!
   
-  my $kappa = $params->{'kappa'};
+  my $kappa = get('kappa');
   my $submodel_str = $kappa."\n\t". join(" ",@probs) . "\n\t" . join(" ",@bins);
 
   my $class_to_omega;
@@ -380,8 +390,8 @@ sub get_m3_bins {
   
   my $i=0;
   my @bins;
-  while ($params->{'w'.$i}) {
-    push @bins,$params->{'w'.$i};
+  while (get('w'.$i)) {
+    push @bins,get('w'.$i);
     $i++;
   }
   return @bins;
@@ -393,8 +403,8 @@ sub get_m3_probs {
 
   my $i=0;
   my @probs;
-  while ($params->{'p'.$i}) {
-    push @probs,$params->{'p'.$i};
+  while (get('p'.$i)) {
+    push @probs,get('p'.$i);
     $i++;
   }
   return @probs;
@@ -404,11 +414,11 @@ sub get_equally_spaced_bins {
   my $self = shift;
   my $params = shift;
 
-  if ($params->{'omega_distribution'} =~ m/M3/i) {
+  if (get('omega_distribution') =~ m/M3/i) {
     return $self->get_m3_bins($params);
   }
 
-  my $k = $params->{'num_bins'};
+  my $k = get('num_bins');
   my $lo = 0;
   my $hi = 3;
 
@@ -420,12 +430,17 @@ sub get_equally_spaced_bins {
   return @nums;
 }
 
+sub get {
+  my $key = shift;
+  return $params->{$p_pre.$key};
+}
+
 sub get_equally_spaced_probs {
   my $self = shift;
   my $params = shift;
 
-  my $function = $params->{'omega_distribution'};
-  my $k = $params->{'num_bins'};
+  my $function = get('omega_distribution');
+  my $k = get('num_bins');
   my $lo = 0;
   my $hi = 3;
 
@@ -447,29 +462,29 @@ pconst = function(x,w) {
   if ($function =~ m/M3/i) {
     return $self->get_m3_probs($params);
   } elsif ($function =~ m/M8/i) {
-    my $p0 = $params->{'p0'};
-    my $p = $params->{'p'};
-    my $q = $params->{'q'};
-    my $w = $params->{'w'};
+    my $p0 = get('p0');
+    my $p = get('p');
+    my $q = get('q');
+    my $w = get('w');
     $f = qq^paml_m8(x,p0=${p0},p=$p,q=$q,w=$w)^;
   } elsif ($function eq "constant") {
-    my $w = $params->{'w'};
+    my $w = get('w');
     $f = qq^const(x,w=$w)^;
   } elsif ($function eq "uniform") {
-    my $min = $params->{'min'};
-    my $max = $params->{'max'};
+    my $min = get('min');
+    my $max = get('max');
     $f = qq^unif(x,min=$min,max=$max)^;
   } elsif ($function eq "gamma") {
-    my $shape = $params->{'shape'};
-    my $rate = $params->{'rate'};
+    my $shape = get('shape');
+    my $rate = get('rate');
     $f = qq^gamma(x,shape=$shape,rate=$rate)^;
   } elsif ($function eq "beta") {
-    my $shape1 = $params->{'shape1'};
-    my $shape2 = $params->{'shape2'};
+    my $shape1 = get('shape1');
+    my $shape2 = get('shape2');
     $f = qq^beta(x,shape1=$shape1,shape2=$shape2)^;
   } elsif ($function eq "lognormal") {
-    my $meanlog = $params->{'meanlog'};
-    my $sdlog = $params->{'sdlog'};
+    my $meanlog = get('meanlog');
+    my $sdlog = get('sdlog');
     $f = qq^lnorm(x,meanlog=$meanlog,sdlog=$sdlog)^;
   }
 
@@ -506,8 +521,8 @@ sub get_equiprobable_bins {
   my $self = shift;
   my $params = shift;
 
-  my $function = $params->{'omega_distribution'};
-  my $k = $params->{'num_bins'};
+  my $function = get('omega_distribution');
+  my $k = get('num_bins');
 
   my $r_cmd = qq^
     dd = discretize_distribution(n=$k)
@@ -517,8 +532,8 @@ sub get_equiprobable_bins {
   
   my $r_pre = "";
   if ($function eq "uniform") {
-    my $a = $params->{'min'};
-    my $b = $params->{'max'};
+    my $a = get('min');
+    my $b = get('max');
     
     $r_pre = qq^
       lo = $a;
@@ -534,8 +549,8 @@ sub get_equiprobable_bins {
     }
     ^;
   } elsif ($function eq "gamma") {
-    my $a = $params->{'shape'};
-    my $b = $params->{'rate'};
+    my $a = get('shape');
+    my $b = get('rate');
 
     $r_pre = qq^
       shape = $a;
@@ -551,8 +566,8 @@ sub get_equiprobable_bins {
       }
     ^;
   } elsif ($function eq "beta") {
-    my $p = $params->{'shape1'};
-    my $q = $params->{'shape2'};
+    my $p = get('shape1');
+    my $q = get('shape2');
 
     $r_pre = qq^
       shape1 = $p;
@@ -568,8 +583,8 @@ sub get_equiprobable_bins {
       }
     ^;
   } elsif ($function eq "lognormal") {
-    my $meanlog = $params->{'meanlog'};
-    my $sdlog = $params->{'sdlog'};
+    my $meanlog = get('meanlog');
+    my $sdlog = get('sdlog');
     $r_pre = qq^
       meanlog = $meanlog;
       sdlog = $sdlog;

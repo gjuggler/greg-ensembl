@@ -180,6 +180,122 @@ sub ace {
   return $sum / scalar(@ce_array);
 }
 
+sub total_column_score {
+  my $class = shift;
+  my $true_aln = shift;
+  my $test_aln = shift;
+
+  $class->pretty_print($true_aln,{length=>500});
+  $class->pretty_print($test_aln,{length=>500});
+
+  # Index the alignments by sequence residue #.
+  my $true_obj = $class->to_arrayrefs($true_aln);
+  my $test_obj = $class->to_arrayrefs($test_aln);
+
+  # Put aligned columns into hashtables.
+  my %true_cols;
+  foreach my $i (1..$true_aln->length) {
+    my $col_string = '';
+    foreach my $key (keys %$true_obj) {
+      $col_string .= $key.'.'.$true_obj->{$key}->[$i+1];
+    }
+    #print $col_string;
+    $true_cols{$col_string} = 1;
+  }
+
+  my %test_cols;
+  foreach my $i (1..$test_aln->length) {
+    my $col_string = '';
+    foreach my $key (keys %$test_obj) {
+      $col_string .= $key.'.'.$test_obj->{$key}->[$i+1];
+    }
+    #print $col_string;
+    $test_cols{$col_string} = 1;
+  }
+
+  my $true_col_count = scalar(keys %true_cols);
+  my $correct_col_count = 0;
+  foreach my $key (keys %test_cols) {
+    $correct_col_count++ if ($true_cols{$key});
+  }
+  
+  return ($correct_col_count / $true_col_count);
+}
+
+sub sum_of_pairs_score {
+  my $class = shift;
+  my $true_aln = shift;
+  my $test_aln = shift;
+
+  # Index the alignments by sequence residue #.
+  my $true_obj = $class->to_arrayrefs($true_aln);
+  my $test_obj = $class->to_arrayrefs($test_aln);
+
+  # Put all aligned pairs into the hashtable.
+  my $true_pairs = $class->store_pairs($true_aln,$true_obj);
+  my $test_pairs = $class->store_pairs($test_aln,$test_obj);
+
+  my $true_pair_count = scalar(keys %$true_pairs);
+  
+  my $correct_pair_count = 0;
+  foreach my $key (keys %$test_pairs) {
+    $correct_pair_count++ if ($true_pairs->{$key});
+  }
+  
+  return ($correct_pair_count/$true_pair_count);
+}
+
+sub store_pairs {
+  my $class = shift;
+  my $aln = shift;
+  my $obj = shift;
+
+  my %pairs;
+  my $pair_string;
+  foreach my $i (1..$aln->length) {
+    foreach my $key_a (keys %$obj) {
+      my $codon_a = $obj->{$key_a}->[$i+1];
+      next if ($codon_a eq '-');
+
+      foreach my $key_b (keys %$obj) {
+        next if ($key_a eq $key_b);
+        my $codon_b = $obj->{$key_b}->[$i+1];
+        next if ($codon_b eq '-');
+
+        $pair_string = join('.',$key_a,$codon_a,$key_b,$codon_b);
+        $pairs{$pair_string} = 1;
+      }
+    }
+  }
+
+  return \%pairs;
+}
+
+# Encode an alignment as an array of arrayrefs of residue numbers.
+sub to_arrayrefs {
+  my $class = shift;
+  my $aln = shift;
+
+  my $seq_objs;
+  foreach my $seq ($aln->each_seq) {
+    my @sites;
+    foreach my $i (1..$aln->length) {
+      my $range = $seq->location_from_column($i);
+      if (!defined $range) {
+        push @sites, '-';
+      } elsif ($range->location_type eq 'EXACT') {
+        push @sites, $range->start
+      } else {
+        push @sites, '-';
+      }
+    }
+    #print "@sites\n";
+    $seq_objs->{$seq->id} = \@sites;
+  }
+  return $seq_objs;
+}
+
+
 sub to_aln {
   my $class = shift;
   my $alnF = shift;

@@ -12,8 +12,9 @@ use Bio::EnsEMBL::Hive;
 use Bio::EnsEMBL::Hive::Process;
 
 use Bio::Greg::Codeml;
+use Bio::Greg::ProcessUtils;
 
-our @ISA = qw(Bio::EnsEMBL::Hive::Process);
+our @ISA = qw(Bio::EnsEMBL::Hive::Process Bio::Greg::ProcessUtils);
 
 #
 # Some global-ish variables.
@@ -49,51 +50,49 @@ sub fetch_input {
   
   ### DEFAULT PARAMETERS ###
   $params = {
-    input_table            => 'protein_tree_member',
-    output_table           => 'sitewise_omega',
+    alignment_table            => 'protein_tree_member',
+    omega_table           => 'sitewise_omega',
     parameter_set_id       => 1,
-
     alignment_quality_filtering => 0,
     sequence_quality_filtering => 0,
-    store_gaps             => 1,
 
-    parameter_sets         => 'all',
-
-    # SLR Parameters
-    gencode                => 'universal',
-    aminof                 => 1,                    # Options: 0, 1, 2 (default 1)
-    codonf                 => 0,                    # Options: 0, 1, 2 (default 0)
-    freqtype               => 0,                    # Options: 0, 1, 2 (default 0)
-
-    # PAML Parameters
-    #model                  => 'M3',                 # Used for Bayes Empirical Bayes sitewise analysis.
-    #model_b                => 'M7',                 # Used for the likelihood ratio tests.
-
-    # Actions
-    action                 => 'slr',                # Which action to perform.
+    sitewise_store_gaps             => 1,
+    sitewise_parameter_sets         => 'all',
+    sitewise_action                 => 'slr',                # Which action(s) to perform. Space-delimited.
                                                     # 'slr' - SLR sitewise omegas.
-                                                    # 'paml' - PAML sitewise omegas.
+                                                    # 'paml_sitewise' - PAML sitewise omegas.
                                                     # 'wobble' - SLR_wobble test.
                                                     # 'slr_reoptimise' - reoptimise with SLR
                                                     # 'paml_reoptimise' - reoptimise with PAML
                                                     # 'paml_lrt' - likelihood ratio test with PAML
+
+    # SLR Parameters
+    slr_gencode                => 'universal',
+    slr_aminof                 => 1,                    # Options: 0, 1, 2 (default 1)
+    slr_codonf                 => 0,                    # Options: 0, 1, 2 (default 0)
+    slr_freqtype               => 0,                    # Options: 0, 1, 2 (default 0)
+
+    # PAML Parameters
+    #paml_model                  => 'M3',                 # Used for Bayes Empirical Bayes sitewise analysis.
+    #paml_model_b                => 'M7',                 # Used for the likelihood ratio tests.
+
+    alignment_score_mask_character => 'N',
+    sequence_quality_mask_character_character => 'N'
+
     };
   
   # For aminof, codonf, and freqtype, see the SLR readme.txt for more info.
 
   #########################
-
   print "TEMP: ".$self->worker_temp_directory."\n";
-  print "PARAMS: ".$self->parameters."\n";
-  print "INPUT_ID: ".$self->input_id."\n";
 
-  # Fetch parameters from the two possible locations. Input_id takes precedence!
-  $params = Bio::EnsEMBL::Compara::ComparaUtils->replace_params($params,$self->parameters,$self->input_id);
-
+  my $p_params = $self->get_params($self->parameters);
+  my $i_params = $self->get_params($self->input_id);
+  my $node_id = $i_params->{'protein_tree_id'} || $i_params->{'node_id'};
+  my $t_params = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_tree_tags($dba,$node_id);
+  
+  $params = $self->replace_params($params,$p_params,$i_params,$t_params);
   #########################
-
-  #$self->check_job_fail_options;
-  #$self->check_if_exit_cleanly;
 
   $dba->dbc->disconnect_when_inactive(1);
 }
@@ -102,21 +101,21 @@ sub run {
   my $self = shift;  
 
   my $node_id = $params->{'node_id'};
+  my $param_set_string = get('parameter_sets');
+  print "Param sets: $param_set_string\n";
 
   my @param_sets;
-  my $param_set_string = $params->{'parameter_sets'};
   if ($param_set_string eq 'all') {
     my $query = qq^select distinct(parameter_set_id) FROM parameter_set order by parameter_set_id;^;
     @param_sets = @{$dba->dbc->db_handle->selectcol_arrayref($query)};
   } else {
-    @param_sets = split(",",$params->{'parameter_sets'});
+    @param_sets = split(",",$param_set_string);
   }
 
   delete $params->{'parameter_sets'};
   foreach my $param_set (@param_sets) {
     my $param_set_params = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_param_set($dba->dbc,$param_set);
-    my $tree_tag_params = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_tree_tags($dba,$node_id);
-    my $new_params = Bio::EnsEMBL::Compara::ComparaUtils->replace_params($params,$param_set_params,$tree_tag_params);
+    my $new_params = Bio::EnsEMBL::Compara::ComparaUtils->replace_params($params,$param_set_params);
 
     Bio::EnsEMBL::Compara::ComparaUtils->hash_print($new_params);
 
@@ -165,22 +164,32 @@ sub run_with_params {
   Bio::EnsEMBL::Compara::AlignUtils->pretty_print($input_aa,{length => 100});
   Bio::EnsEMBL::Compara::AlignUtils->pretty_print($input_cdna,{length => 100});
 
-  if ($params->{'action'} =~ m/slr/i) {
+  if (get('action') =~ m/slr/i) {
     $self->run_sitewise_dNdS($tree,$input_cdna,$params);
-  } elsif ($params->{'action'} =~ m/paml/i) {
+  } elsif (get('action') =~ m/paml/i) {
     $self->run_paml($tree,$input_cdna,$params);
-  } elsif ($params->{'action'} =~ m/wobble/i) {
-    $params->{'wobble'} = 0;
+  } elsif (get('action') =~ m/wobble/i) {
+    $params->{'slr_wobble'} = 0;
     my $results_nowobble = $self->run_wobble($tree,$input_cdna,$params);
     $tree->store_tag("lnl_nowobble",$results_nowobble->{'lnL'});
 
     sleep(2);
 
-    $params->{'wobble'} = 1;
+    $params->{'slr_wobble'} = 1;
     my $results_wobble = $self->run_wobble($tree,$input_cdna,$params);    
     $tree->store_tag("lnl_wobble",$results_wobble->{'lnL'});
   }
 
+}
+
+sub get {
+  my $key = shift;
+  return $params->{'sitewise_'.$key};
+}
+
+sub get_slr {
+  my $key = shift;
+  return $params->{'slr_'.$key};
 }
 
 sub run_wobble {
@@ -196,12 +205,12 @@ sub run_wobble {
   my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
   
   # LOAD VARIABLES FROM PARAMS.
-  my $slrexe = $params->{'slr_executable'};
-  my $gencode = $params->{'gencode'};
-  my $aminof = $params->{'aminof'};
-  my $codonf = $params->{'codonf'};
-  my $freqtype = $params->{'freqtype'};
-  my $wobble = $params->{'wobble'};
+  my $slrexe = get_slr('executable');
+  my $gencode = get_slr('gencode');
+  my $aminof = get_slr('aminof');
+  my $codonf = get_slr('codonf');
+  my $freqtype = get_slr('freqtype');
+  my $wobble = get_slr('wobble');
 
   $slrexe = "/nfs/users/nfs_g/gj1/bin/Slr_wobble";
 
@@ -347,11 +356,11 @@ sub run_sitewise_dNdS
   my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
   
   # LOAD VARIABLES FROM PARAMS.
-  my $slrexe = $params->{'slr_executable'};
-  my $gencode = $params->{'gencode'};
-  my $aminof = $params->{'aminof'};
-  my $codonf = $params->{'codonf'};
-  my $freqtype = $params->{'freqtype'};
+  my $slrexe = get_slr('executable');
+  my $gencode = get_slr('gencode');
+  my $aminof = get_slr('aminof');
+  my $codonf = get_slr('codonf');
+  my $freqtype = get_slr('freqtype');
 
 #  $slrexe = "/nfs/users/nfs_g/gj1/bin/Slr_ensembl" if (! -e $slrexe);
 #  $slrexe = "/nfs/users/nfs_g/gj1/bin/Slr" if (! -e $slrexe);
@@ -401,7 +410,6 @@ sub run_sitewise_dNdS
   print SLR "gencode\: $gencode\n";
   print SLR "aminof\: $aminof\n";
   print SLR "codonf\: $codonf\n";
-  print SLR "skipsitewise\: 1\n" if ($params->{'action'} =~ m/reoptimise/i);
   print SLR "freqtype\: $freqtype\n";
   print SLR "seed\: 1\n";
   close(SLR);
@@ -436,33 +444,6 @@ sub run_sitewise_dNdS
     $error_string = (join('',@output));
 
     print $error_string."\n";
-
-    # GJ 2009-02-22: Updated and fleshed out the saturated tree handling.
-    if ( (grep { /is saturated/ } @output)) {
-      print ("  -> Tree is dS saturated!\n") if ($self->debug);
-      
-      # Find the highest branchwise dS value.
-      my $max = $params->{'saturated_ds'};
-      foreach my $line (grep { /is saturated/ } @output) {
-	$line =~ /length = (\S+)/;
-	$max = $1 if ($1 > $max);
-      }
-
-      $results->{'tree_is_saturated'} = 1;
-      $results->{'max_ds_branch'} = $max;
-      $results->{'trees'} = [];
-      if (-e "$tmpdir/subtrees.out") {
-	my $treeio = Bio::TreeIO->new
-	  ('-format' => 'newick',
-	   '-file'   => "$tmpdir/subtrees.out");
-	while ( my $tree = $treeio->next_tree ) {
-	  print "Found saturated tree!\n";
-	  push(@{$results->{'trees'}}, $tree);
-	}
-      }
-      chdir($cwd);
-      return $results;
-    }
     
     foreach my $outline (@output) {
       if ($outline =~ /lnL = (\S+)/) {
@@ -498,7 +479,7 @@ sub run_sitewise_dNdS
     }
 
     # Reoptimise action.
-    if ($params->{'action'} =~ m/reoptimise/i) {
+    if (get('action') =~ m/reoptimise/i) {
       # Store new branch lengths back in the original protein_tree_node table.
       foreach my $leaf ($tree->leaves) {
         my $new_leaf = $new_pt->find_leaf_by_name($leaf->name);
@@ -599,7 +580,7 @@ sub run_paml {
   my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
   $treeI->get_root_node->branch_length(0);
 
-  if ($params->{'action'} =~ m/reoptimize/i) {
+  if (get('action') =~ m/reoptimize/i) {
     # Not sure if this works. GJ 2009-10-09
     ### Reoptimize branch lengths.
     print $tree->newick_format."\n";
@@ -614,39 +595,41 @@ sub run_paml {
       $leaf->store;
       print "  -> Branch lengths updated!\n";
     }
-    return;
-  } elsif ($params->{'action'} =~ m/lrt/i) {
+  }
+
+  if (get('action') =~ m/lrt/i) {
 
     ### Perform a likelihood ratio test between two models.
-    my $model_a = $params->{'model'};
-    my $model_b = $params->{'model_b'};
+    my $model_b = $params->{'paml_model'} || $params->{'paml_model_b'};
+    my $model_a = $params->{'paml_model_a'};
     
     $model_a =~ s/m//i;
     $model_b =~ s/m//i;
 
-    my ($twice_lnL,$codeml_a,$codeml_b) = Bio::Greg::Codeml->NSsites_ratio_test($treeI,$input_cdna,$model_a,$model_b);
+    my ($twice_lnL,$codeml_a,$codeml_b) = Bio::Greg::Codeml->NSsites_ratio_test($treeI,$input_cdna,$model_a,$model_b,$self->worker_temp_directory);
     my $test_label = sprintf("PAML LRT M%s-M%s",$model_a,$model_b);
     my $tags;
     $tags->{$test_label} = $twice_lnL;
     Bio::EnsEMBL::Compara::ComparaUtils->store_tags($tree,$tags);
-    return;
+  }
 
-  } else {
+  if (get('action') =~ m/sitewise/i) {
     ### Perform a BEB sitewise analysis of omegas.
 
     # Should we be scaling the tree? Dunno... GJ 2009-10-09
     #Bio::EnsEMBL::Compara::TreeUtils->scale($treeI,3);
     
-    my $model = $params->{'model'};
+    my $model = $params->{'paml_model'} || $params->{'paml_model_b'};
     $model =~ s/m//i;
     my $codeml_params = {
       NSsites => $model,
-      ncatG => 4
+      ncatG => 10
     };
     my $codeml = Bio::Greg::Codeml->new( -params => $codeml_params,
                                          -alignment => $input_cdna, 
                                          -tree => $treeI,
-                                         -tempdir => $self->worker_temp_directory);
+                                         -tempdir => $self->worker_temp_directory
+                                         );
     $codeml->save_tempfiles(1);
     $codeml->run();
 
@@ -738,7 +721,7 @@ sub store_sitewise {
   my $node_id = $tree->node_id;
 
   my $table = 'sitewise_aln';
-  $table = $params->{'output_table'} if ($params->{'output_table'});
+  $table = $params->{'omega_table'} if ($params->{'omega_table'});
   
   my $parameter_set_id = 0;
   $parameter_set_id = $params->{'parameter_set_id'} if (defined($params->{'parameter_set_id'}));
@@ -762,7 +745,7 @@ sub store_sitewise {
     }
 
     # These two cases are pretty useless, so we'll skip 'em.
-    if (!$params->{'store_gaps'}) {
+    if (!get('store_gaps')) {
       next if ($note eq 'all_gaps');
       next if ($note eq 'single_char');
     }

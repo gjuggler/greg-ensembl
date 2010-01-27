@@ -550,56 +550,6 @@ sub get_human_gene_subtrees {
   return \@root_nodes;
 }
 
-
-# Calculates and returns the alignment tags from a given ProteinTree.
-sub create_aln_tags_from_ProteinTree {
-  my $class = shift;
-  my $tree = shift;
-
-  my $tags;
-  my $pta = $tree->adaptor;
-  $aln_method = "[generic alignment]" unless ($aln_method);
-
-  my $sa = $tree->get_SimpleAlign;
-
-  # Alignment percent identity.
-  my $aln_pi = $sa->average_percentage_identity;
-  $tags->{'aln_percent_identity'} = $aln_pi;
-
-  # Alignment length.
-  my $aln_length = $sa->length;
-  $tags->{'aln_length'} = $aln_length;
-
-  # Alignment residue count.
-  my $aln_num_residues = $sa->no_residues;
-  $tags->{'aln_num_residues'} = $aln_num_residues;
-
-  # Alignment "gappiness".
-  my ($gaps,$non_gaps);
-  foreach my $seq ($sa->each_seq) {
-    my $str = $seq->seq;
-    my $str2 = $str;
-
-    $str =~ s/[-]//gi; # Hold all non-gaps.
-    $str2 =~ s/[^-]//gi; # Only hold gaps.
-    $gaps += length($str2);
-    $non_gaps += length($str);
-  }
-  my $gappiness = sprintf("%.3f",($gaps / ($non_gaps+1)));
-  $tags->{'aln_gappiness'} = $gappiness;
-
-  return $tags;
-}
-
-# Loads up and stores the alignment tags for the ProteinTree $tree.
-sub store_aln_tags {
-  my $class = shift;
-  my $tree = shift;
-
-  my $tags = $class->create_aln_tags_from_ProteinTree($tree);
-  $class->store_tags($tree,$tags);
-}
-
 # Stores the $tags key/val pairs into the $tree NestedSet.
 sub store_tags {
   my $class = shift;
@@ -735,9 +685,17 @@ sub get_tree_for_comparative_analysis {
   my $pta = $dba->get_ProteinTreeAdaptor;
 
   # GJ 2009-09-18
-  if ($params->{'input_table'}) {
-    $pta->protein_tree_member($params->{'input_table'});
-    $pta->protein_tree_score($params->{'input_table'}.'_score');
+  if ($params->{'alignment_table'}) {
+    my $table = $params->{'alignment_table'};
+    my $sth = $pta->prepare("select * from $table limit 1");
+    $sth->execute;
+    if ($sth->fetchrow_arrayref) {
+      $pta->protein_tree_member($params->{'alignment_table'});
+      $pta->protein_tree_score($params->{'alignment_score_table'});
+    } else {
+      warn("Alignment table is $table, but no sequences were found there! Using protein_tree_member...");
+    }
+    $sth->finish;
   }
 
   my $tree = $pta->fetch_node_by_node_id($node_id);

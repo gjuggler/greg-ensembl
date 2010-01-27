@@ -14,11 +14,6 @@ get_vector = function(con,query) {
   return(data)
 }
 
-# Get the sim_sets.
-sim_sets = get_vector(con,paste(
-  'SELECT distinct value FROM protein_tree_tag where tag="sim_name"'
-))
-
 # Get the parameter sets.
 query = 'SELECT parameter_set_id AS id,parameter_value AS name FROM parameter_set where parameter_name="name";'
 param_sets = get_vector(con,query)
@@ -124,8 +119,12 @@ df.cor = function(df) {
 summarize.results = function(data,thresh=3.8,paml_thresh=0.95) {
 
   # Paste together some metadata so that we have one ID per experiment.
-  attrs = c('sim_name','parameter_set_name','ins_rate','tree_length')
-  ids = paste(data$sim_name,data$parameter_set_name,data$ins_rate,data$tree_length)
+  attrs = c('slrsim_scheme_name','alignment_name','filtering_name','species_name','sitewise_name','phylosim_ins_rate','slrsim_tree_length')
+
+  ids = rep("",nrow(data))
+  for (attr in attrs) {
+    ids = paste(ids,data[[attr]],sep=" ")
+  } 
   unique_ids = unique(ids)
 
   for (my_id in unique_ids) {

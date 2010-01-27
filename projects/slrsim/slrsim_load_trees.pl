@@ -47,147 +47,193 @@ sub replace {
   return $result;
 }
 
-#create_simsets();
-x_simsets();
+create_simsets();
 
 sub create_simsets {
   my $i=1;
   my $base_length = 1;
-  my $s_params;
 
-  my $base_p = {
-    simulation_program => 'indelible',
-    simulation_replicates => 100,
-    sim_file => 'artificial.nh',
-    sim_length => 1,
-    seq_length => 500,
-    ins_rate => 0,
-    del_rate => 0
+  my $base_params = {
+    slrsim_replicates => 1,
+    slrsim_file => 'artificial.nh',
+    slrsim_tree_mult => 1,
+
+    phylosim_simulation_program => 'indelible',
+    phylosim_seq_length => 500,
+    phylosim_ins_rate => 0,
+    phylosim_del_rate => 0
   };
 
   my $tree_anisimova_bglobin = 'anisimova_01_bglobin.nh';
   my $tree_anisimova_artificial = 'anisimova_01_artificial.nh';
-  my $tree_primates = '2x_p.nh';
-  my $tree_vertebrates = '2x_v.nh';
+  my $full = '2x_v.nh';
+  my $nox = '2x_nox.nh';
+  my $primates = '2x_p.nh';
+  my $glires = '2x_g.nh';
+  my $fortyfourmammals = '44mammals.nh';
+  my $ensembl = 'ensembl.nh';
 
   my $anisimova_02_M3 = {
-    omega_distribution => 'M3',
-    p0 => 0.386,
-    p1 => 0.535,
-    p2 => 0.079,
-    w0 => 0.018,
-    w1 => 0.304,
-    w2 => 1.691
+    slrsim_scheme_name => "Anisimova 2002 M3",
+    phylosim_omega_distribution => 'M3',
+    phylosim_p0 => 0.386,
+    phylosim_p1 => 0.535,
+    phylosim_p2 => 0.079,
+    phylosim_w0 => 0.018,
+    phylosim_w1 => 0.304,
+    phylosim_w2 => 1.691
   };
   my $anisimova_02_M3_hi = replace($anisimova_02_M3,{w2 => 4.739});
 
   my $massingham_05_A = {
-    omega_distribution => 'M8',
-    p0 => 0.9432,
-    p => 0.572,
-    q => 2.172,
-    w => 2.081
+    slrsim_scheme_name => "Massingham 2005-A (M8)",    
+    phylosim_omega_distribution => 'M8',
+    phylosim_p0 => 0.9432,
+    phylosim_p => 0.572,
+    phylosim_q => 2.172,
+    phylosim_w => 2.081
   };
   # the same set of params was used by anisimova et al:
-  my $anisimova_02_M8 = $massingham_05_A;
+  my $anisimova_02_M8 = $massingham_05_A;  
 
   my $massingham_05_B = {
-    omega_distribution => 'M3',
-    p0 => 0.75,
-    p1 => 0.25,
-    w0 => 0.5,
-    w1 => 1.5
+    slrsim_scheme_name => "Massingham 2005-B (M3)",    
+    phylosim_omega_distribution => 'M3',
+    phylosim_p0 => 0.75,
+    phylosim_p1 => 0.25,
+    phylosim_w0 => 0.5,
+    phylosim_w1 => 1.5
   };
 
   my $neutral = {
-    omega_distribution => 'constant',
-    w => 1
+    slrsim_scheme_name => "Neutral evolution",
+    phylosim_omega_distribution => 'constant',
+    phylosim_w => 1
   };
 
-  foreach my $j (0.11, 1.1, 5.5, 11) {
-    foreach my $indel (0,0.01,0.05,0.1,0.2) {
-      $s_params = {
-        sim_name => 'art_anisimova',
-        sim_file => $tree_anisimova_artificial,
-        sim_ref => '1',
-        sim_length => $j,
-        ins_rate => $indel,
-        del_rate => $indel
-      };
-      push @simulation_sets, replace($base_p,$anisimova_02_M3,$s_params);
-
-      $s_params = replace($s_params, {sim_name => 'art_anisimova_hi'});
-      push @simulation_sets, replace($base_p,$anisimova_02_M3_hi,$s_params);
-    }
-  }
-
-  foreach my $j (0.11, 1.1, 5.5, 11) {
-    $s_params = {
-      sim_name => 'art_neutral',
-      sim_file => $tree_anisimova_artificial,
-      sim_ref => '1',
-      sim_length => $j
-    };
-    push @simulation_sets, replace($base_p,$neutral,$s_params);
-  }
-
-  foreach my $j (0.38,2.11,16.88,33.76) {
-    $s_params = {
-      sim_name => 'bglobin_neutral',
-      sim_file => $tree_anisimova_bglobin,
-      sim_ref => 'human',
-      sim_length => $j
-    };
-    push @simulation_sets, replace($base_p,$neutral,$s_params);
-  }
-
-  $s_params = {
-    sim_name => 'mass_05_A',
-    sim_file => $tree_anisimova_artificial,
-    sim_ref => '1',
-    sim_length => 1.1
+  my $lognormal = {
+    # These lognormal parameters should result in p(w>1) = 0.0835
+    slrsim_scheme_name => "2xmammals Lognormal",
+    phylosim_omega_distribution => 'lognormal',
+    phylosim_meanlog => -1.7,
+    phylosim_sdlog => 1.23
   };
-  push @simulation_sets, replace($base_p,$massingham_05_A,$s_params);
 
-  $s_params = {
-    sim_name => 'mass_05_B',
-    sim_file => $tree_anisimova_artificial,
-    sim_ref => '1',
-    sim_length => 1.1
+  my $slr = {
+    sitewise_name => 'SLR',
+    sitewise_action => 'slr',
   };
-  push @simulation_sets, replace($base_p,$massingham_05_B,$s_params);
+  my $paml = {
+    sitewise_name => 'PAML M8B/M8A',
+    sitewise_action => 'paml_sitewise paml_lrt',
+    paml_model_a => 'M8a',
+    paml_model_b => 'M8'
+  };
+  my $paml_alt = {
+    sitewise_name => 'PAML M3/M2',
+    sitewise_action => 'paml_sitewise paml_lrt',
+    paml_model_a => 'M2',
+    paml_model_b => 'M3'
+  };
+  
 
-  foreach my $j (0.38, 2.11, 16.88) {
-    foreach my $indel (0,0.01,0.05,0.1,0.2) {
-      $s_params = {
-      sim_name => 'bglobin_anisimova',
-      sim_file => $tree_anisimova_bglobin,
-      sim_ref  => 'human',
-      sim_length => $j,
-      ins_rate => $indel,
-      del_rate => $indel
-      };
+  # Looking at bglobin and difference reference sequences
 
-      push @simulation_sets, replace($base_p,$anisimova_02_M3,$s_params);
-    }
+  my $sim_p = replace($massingham_05_A,{
+    slrsim_tree_mult => 1,
+  });
+  my @sim_params;
+  foreach my $indel (0.01,0.02,0.05) {
+    push @sim_params, replace($sim_p,{phylosim_ins_rate => $indel,phylosim_del_rate => $indel});
   }
+  my @tree_params = map {tree_param($_)} ($tree_anisimova_bglobin);
+  my @aln_params = map {aln_param($_)} ('mcoffee');#,'mcoffee','prank');
+  my @filter_params = map {filter_param($_)} ('none');#'prank','indelign','trimal','gblocks');
+  my @species_params = map {species_param($_)} ('human');#,'mouse','xenlaev');
+  my @sitewise_params = ($slr);#,$paml,$paml_alt);
 
-  foreach my $indel (0, 0.01, 0.02, 0.05) {
-    $s_params = {
-      sim_name => 'bglobin_ref_hum',
-      sim_file => $tree_anisimova_bglobin,
-      sim_ref => 'human',
-      sim_length => 16.88,
-      ins_rate => $indel,
-      del_rate => $indel
+  foreach my $tr (@tree_params) {
+    foreach my $sim (@sim_params) {
+      foreach my $aln (@aln_params) {
+        foreach my $f (@filter_params) {
+          foreach my $sp (@species_params) {
+            foreach my $sw (@sitewise_params) {
+              my $p = replace($base_params,$tr,$sim,$aln,$f,$sp,$sw);
+              verify_params($p);
+              push @simulation_sets,$p;
+            }
+          }
+        }
+      }
+    }  
+  }
+}  
+
+sub verify_params {
+  my $p = shift;
+
+  # Check that we have proper filter and alignment tables.
+  $p->{alignment_score_table} = $p->{alignment_table}.'_'.$p->{alignment_scores_action};
+  create_filter_table($p->{alignment_score_table});
+
+  create_aln_table($p->{alignment_table});
+  create_aln_table($p->{alignment_table}.'_score');
+  create_omega_table($p->{omega_table});
+}
+
+sub tree_param {
+  my $tree = shift;
+  return {slrsim_file => $tree};
+}
+
+sub aln_param {
+  my $aln = shift;
+  my $aln_params = {
+    alignment_name => $aln,
+    alignment_method => $aln,
+    alignment_table => 'aln',
+    omega_table => 'omega'
+  };
+  if ($aln eq 'none') {
+    $aln_params = {
+      alignment_name => "True Alignment",
+      alignment_method => 'none',
+      alignment_table => 'protein_tree_member',
+      omega_table => 'omega_true'
     };
-    push @simulation_sets, replace($base_p,$anisimova_02_M3_hi,$s_params);
-
-    $s_params = replace($s_params, {sim_name => 'bglobin_ref_xen',
-                                    sim_ref => 'xenlaev'});
-    push @simulation_sets, replace($base_p,$anisimova_02_M3_hi,$s_params);
   }
+  return $aln_params;
+}
 
+sub filter_param {
+  my $filter = shift;
+  
+  my $f = {
+    filtering_name => $filter,
+    alignment_scores_action => $filter,
+    alignment_score_filtering => 1,
+    alignment_score_threshold => 5
+  };
+  $f->{alignment_score_threshold} = 7 if ($filter eq 'prank');
+  if ($filter eq 'mcoffee') {
+    $f->{alignment_scores_action} = 'score';
+  }
+  if ($filter eq 'none') {
+    $f = {
+      filtering_name => 'None',
+      alignment_scores_action => 'score',
+      alignment_score_filtering => 0
+    };    
+  }
+  return $f;
+}
+
+sub species_param {
+  my $species = shift;
+  my $p = {
+    species_name => $species,
+    slrsim_ref => $species
+  };
 }
 
   
@@ -201,82 +247,21 @@ if ($clean) {
   $dba->dbc->do("truncate table sequence;");
 }
 
-sub x_simsets {
-  my $base_p = {
-    simulation_program => 'indelible',
-    simulation_replicates => 100,
-    sim_file => 'artificial.nh',
-    seq_length => 500,
-    tree_mult => 1,
-    ins_rate => 0.05,
-    del_rate => 0.05
-  };
-
-  my $full = '2x_v.nh';
-  my $nox = '2x_nox.nh';
-  my $primates = '2x_p.nh';
-  my $glires = '2x_g.nh';
-  my $fortyfourmammals = '44mammals.nh';
-  my $ensembl = 'ensembl.nh';
-
-  my $distr_lognormal = {
-    omega_distribution => 'lognormal',
-    meanlog => -4.079,
-    sdlog => 1.23
-  };
-
-  my $s_params;
-
-  foreach my $mult (0.1, 0.5, 1, 2, 5) {
-    $base_p = replace($base_p,{tree_mult => $mult});
-
-    $s_params = {
-      sim_name => '2x full',
-      sim_file => $full,
-      sim_ref => 'human'
-    };
-    push @simulation_sets, replace($base_p,$distr_lognormal,$s_params);
-    
-    $s_params = {
-      sim_name => '2x no2x',
-      sim_file => $nox,
-      sim_ref => 'human'
-    };
-    push @simulation_sets, replace($base_p,$distr_lognormal,$s_params);
-    
-    $s_params = {
-      sim_name => '2x primates',
-      sim_file => $primates,
-      sim_ref => 'human'
-    };
-    push @simulation_sets, replace($base_p,$distr_lognormal,$s_params);
-    
-    $s_params = {
-      sim_name => '2x glires',
-      sim_file => $glires,
-      sim_ref => 'mouse'
-    };
-    push @simulation_sets, replace($base_p,$distr_lognormal,$s_params);
-  }
-
-}
-
 # The list of simulation replicates to use. These will be stored as tags in the XYZ_tag table,
 # and accessible using the $node->get_tagvalue("tag_key") method.
 # my @simulation_sets = sort grep {$_ =~ /simset_/} keys %{$params};
 
 my $tree_dir = $params->{'tree_dir'};
 foreach my $params (@simulation_sets) {
-  my $sim_set = $params->{'sim_name'};
-  my $replicates = $params->{'simulation_replicates'};
-  my $tree_length = $params->{'sim_length'};
-  my $tree_mult = $params->{'tree_mult'};
-  my $file = $tree_dir.'/'.$params->{'sim_file'};  
+  my $sim_set = $params->{'slrsim_scheme_name'};
+  my $replicates = $params->{'slrsim_replicates'};
+  my $tree_length = $params->{'slrsim_tree_length'};
+  my $tree_mult = $params->{'slrsim_tree_mult'};
+  my $file = $tree_dir.'/'.$params->{'slrsim_file'};
   open(IN,"$file");
   my $newick_str = join("",<IN>);
   close(IN);
   
-  my $sim_param_str = Bio::EnsEMBL::Compara::ComparaUtils->hash_to_string($params);
   foreach my $sim_rep (1 .. $replicates) {
     print "$file $sim_set $sim_rep\n";
     
@@ -294,8 +279,8 @@ foreach my $params (@simulation_sets) {
     if ($tree_mult) {
       $node = Bio::EnsEMBL::Compara::TreeUtils->scale($node,$tree_mult);
     }
-    my $length = Bio::EnsEMBL::Compara::TreeUtils->total_distance($node);
-    print "  -> $length\n";
+    my $final_length = Bio::EnsEMBL::Compara::TreeUtils->total_distance($node);
+    print "  -> $final_length\n";
 
     # Go through each leaf and store the member objects.
     foreach my $leaf ($node->leaves) {
@@ -307,11 +292,14 @@ foreach my $params (@simulation_sets) {
     # Store the tree in the XYZ_node table.
     $pta->store($node);
     
-    # Store the tags.
-    foreach my $tag (grep {$_ =~ m/sim_/g} keys %{$params}) {
+    # Store all parameters as tags.
+    $params->{'slrsim_rep'} = $sim_rep;
+    $params->{'slrsim_tree_length'} = $final_length;
+    my $sim_param_str = Bio::EnsEMBL::Compara::ComparaUtils->hash_to_string($params);
+    foreach my $tag (keys %{$params}) {
       $node->store_tag($tag,$params->{$tag});
     }
-    $node->store_tag("sim_rep",$sim_rep);
+    # Store the whole parameter set as a string.
     $node->store_tag("params_slrsim",$sim_param_str);
   }
 }
@@ -320,3 +308,18 @@ foreach my $node (@{$pta->fetch_all_roots}) {
   print $node->get_tagvalue("input_file")."\t".$node->node_id."\t" . scalar(@{$node->get_all_leaves}) . "\n";
 }
 
+
+sub create_aln_table {
+  my $table = shift;
+  $dba->dbc->do("CREATE TABLE IF NOT EXISTS $table LIKE protein_tree_member");
+  $dba->dbc->do("TRUNCATE TABLE $table");
+}
+sub create_omega_table {
+  my $table = shift;
+  $dba->dbc->do("CREATE TABLE IF NOT EXISTS $table LIKE sitewise_omega");
+  $dba->dbc->do("TRUNCATE TABLE $table");
+}
+sub create_filter_table {
+  my $table = shift;
+  create_aln_table($table);
+}

@@ -489,3 +489,20 @@ What did I do:
 
 What did I do:
  - Changing ComparaUtils to automatically import parameters from the sim_params tag.
+
+### 2010-01-25 ###
+
+What did I do:
+ - Updated lots of the parameter names all throughout the pipeline, to clarify what options are going where.
+ - Tweaked the BEB and NEB parsing for the Codeml runnable
+ - Set up the final parameters for the alignment & filtering pipeline
+   -> Got a big run of bglobin simulations running, testing various alignment and filtering schemes. Should take 
+      a day or two to run... get going on Ewan's enrichments and general eslr stuff tomorrow!
+
+### 2010-01-26 ###
+
+What did I do:
+ - Rearranged the slrsim_load_trees script and created 'plot_proteins.pl' for plotting sets of proteins.
+   -> plot_proteins.pl calls the 'tree_dump.pl' in the greg-ensembl/scripts directory for dumping tree data.
+ - Implemented total column score and sum of pairs score in AlignUtils.pm
+ - 
