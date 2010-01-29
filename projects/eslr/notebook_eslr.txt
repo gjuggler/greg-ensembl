@@ -136,3 +136,7 @@ What I did:
       -> For each pos-sel site, what is the chance that at least one site within N codons is also pos-sel?
       -> "", what is the chance that at least one site is within the XYZ% percentile of the lognormal distribution?
       -> What is the mantel t-test clustering coefficient for the gene?
+
+### 2010-01-21 ###
+
+ - The Ensembl 56 E-slr run is finished collecting omegas. Time to work on the data collection scripts. Do a good Runnable this time around.

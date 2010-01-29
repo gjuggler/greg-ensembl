@@ -663,6 +663,23 @@ sub get_tree_and_alignment {
   return ($tree,$sa);
 }
 
+sub tree_aln_cdna {
+  my $class = shift;
+  my $dba = shift;
+  my $params = shift;
+
+  my $tree = $class->get_tree_for_comparative_analysis($dba,$params);
+  $tree->minimize_tree;
+
+  my $aa = $tree->get_SimpleAlign;
+  my $cdna = $tree->get_SimpleAlign(-cdna => 1);
+
+  my $filtered_aa = Bio::EnsEMBL::Compara::ComparaUtils->fetch_masked_alignment($aa,$cdna,$tree,$params,0);
+  my $filtered_cdna = Bio::EnsEMBL::Compara::ComparaUtils->fetch_masked_alignment($aa,$cdna,$tree,$params,1);
+
+  return ($tree,$filtered_aa,$filtered_cdna);
+}
+
 # GJ 2009-01-15
 sub get_tree_for_comparative_analysis {
   my $class = shift;
@@ -1172,7 +1189,7 @@ sub hash_print {
 
   print "{\n";
   foreach my $key (sort keys %{$hashref}) {
-    printf("    %-40.40s => %-40.40s\n",$key,$hashref->{$key});
+    printf("    %-40.40s => %-40s\n",$key,$hashref->{$key});
   }
   print "}\n";
 }

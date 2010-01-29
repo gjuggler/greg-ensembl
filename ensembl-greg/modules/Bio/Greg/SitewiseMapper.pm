@@ -17,7 +17,9 @@ use Bio::EnsEMBL::Compara::ComparaUtils;
 use Bio::EnsEMBL::Hive;
 use Bio::EnsEMBL::Hive::Process;
 
-our @ISA = qw(Bio::EnsEMBL::Hive::Process);
+use Bio::Greg::ProcessUtils;
+
+our @ISA = qw(Bio::EnsEMBL::Hive::Process Bio::Greg::ProcessUtils);
 
 my $dba;
 my $pta;
@@ -40,34 +42,29 @@ sub fetch_input {
   $pta->local_mode(-1);
 
   ### DEFAULT PARAMETERS ###
-  $params->{'sitewise_table'} = 'sitewise_aln';
+  $params->{'omega_table'} = 'sitewise_omega';
   $params->{'do_mapping'} = 1;
-  $params->{'collect_tags'} = 1;
+  $params->{'collect_tags'} = 0;
   $params->{'collect_dup_tags'} = 0;
   $params->{'collect_pfam'} = 1;
   $params->{'collect_uniprot'} = 1;
   $params->{'collect_go'} = 1;
-  $params->{'go_taxon_id'} = 9606;
+  $params->{'go_taxon_ids'} = '9606,10090';
+  $params->{'go_ignore_iea'} = 1;
   $params->{'create_plot'} = 0;
   $params->{'parameter_set_id'} = 1; # The parameter set to use for UniProt extraction.
   #########################
   
   # Fetch parameters from the two possible locations. Input_id takes precedence!
-  $params = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_string($params,$self->parameters);
-  $params = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_string($params,$self->input_id);
+  my $p_params = $self->get_params($self->parameters);
+  my $i_params = $self->get_params($self->input_id);
+  my $node_id = $i_params->{'protein_tree_id'} || $i_params->{'node_id'};
+  my $t_params = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_tree_tags($dba,$node_id);
 
-  #########################
-  #
-  # Load the tree.
-  #
-  my $node_id;
-  $node_id = $params->{'protein_tree_id'};
-  $node_id = $params->{'node_id'} if (!defined $node_id);
+  $params = $self->replace_params($params,$p_params,$i_params,$t_params);
+  Bio::EnsEMBL::Compara::ComparaUtils->hash_print($params);
 
-  my $param_set_params = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_param_set($dba->dbc,$params->{'parameter_set_id'});
-  my $new_params = Bio::EnsEMBL::Compara::ComparaUtils->replace_params($params,$param_set_params);
-
-  $tree = Bio::EnsEMBL::Compara::ComparaUtils->get_tree_for_comparative_analysis($dba,$new_params);
+  $tree = Bio::EnsEMBL::Compara::ComparaUtils->get_tree_for_comparative_analysis($dba,$params);
   $tree = $tree->minimize_tree;
 }
 
@@ -76,9 +73,10 @@ sub run {
 
   $self->check_if_exit_cleanly;
   $self->{'start_time'} = time() * 1000;
+  $dba->dbc->disconnect_when_inactive(1);
 
   # Select all codons. 
-  my $table = $params->{'sitewise_table'};
+  my $table = $params->{'omega_table'};
   my $node_id = $tree->node_id;
 
   if ($params->{'do_mapping'}) {
@@ -101,7 +99,7 @@ sub run {
 
   if ($params->{'collect_pfam'}) {
     print "Collecting Pfam annotations...\n";
-    #$self->collect_pfam();
+    $self->collect_pfam();
     print "  -> Finished collecting Pfam!\n";
   }
 
@@ -121,13 +119,15 @@ sub run {
     $self->create_plot();
     print "  -> Finished plotting omegas!\n";
   }
+
+  $dba->dbc->disconnect_when_inactive(0);
 }
 
 sub do_mapping {
   my $self = shift;
 
   my $node_id = $tree->node_id;
-  my $table = $params->{'sitewise_table'};
+  my $table = $params->{'omega_table'};
   print "Mapping sitewise $node_id to genome...\n";
   
   my $omega_cmd = qq^
@@ -150,8 +150,8 @@ sub do_mapping {
   #$dba->dbc->do("LOCK TABLE sitewise_genome WRITE;");
   my $insert_cmd = qq^
     REPLACE INTO sitewise_genome 
-    (node_id,aln_position,member_id,chr_name,chr_start,chr_end,residue)
-    VALUES (?,?,?,?,?,?,?);^;
+    (node_id,aln_position,member_id,chr_name,chr_start,chr_end)
+    VALUES (?,?,?,?,?,?);^;
   $sth = $dba->dbc->prepare($insert_cmd);
 
   foreach my $map (@{$mapped_omegas}) {
@@ -160,10 +160,9 @@ sub do_mapping {
                   $map->{'member_id'},
                   $map->{'chr'},
                   $map->{'start'},
-                  $map->{'end'},
-		  $map->{'char'}
+                  $map->{'end'}
       );
-    print $map->{'chr'}." ".$map->{'start'}."\n";
+    print join(" ",$map->{aln_position},$map->{'chr'},$map->{'start'})."\n";
     sleep(0.05);
   }  
   $sth->finish();
@@ -186,32 +185,40 @@ sub collect_go
     my $tree = $pta->fetch_node_by_node_id($tree->node_id);
     my @leaves = @{$tree->get_all_leaves};
 
-    my $taxon_id = 0;
-    if (defined $params->{'go_taxon_id'}) {
-      $taxon_id = $params->{'go_taxon_id'} if (defined $params->{'go_taxon_id'});
-      @leaves = grep {$_->taxon_id==$taxon_id} @leaves;
+    my @taxon_ids;
+    if (defined $params->{'go_taxon_ids'}) {
+      @taxon_ids = split(",",$params->{'go_taxon_ids'});
+    } else {
+      @taxon_ids = (9606);
     }
 
     my %go_terms;
-    my $taxon_id;
-
-    foreach my $leaf (@leaves)
-    {
-	$taxon_id = $leaf->taxon_id;
+    foreach my $taxon_id (@taxon_ids) {
+      my @taxon_leaves = grep {$_->taxon_id==$taxon_id} @leaves;
+      
+      foreach my $leaf (@taxon_leaves) {
 	my $ts = $leaf->transcript;
 	next if (!defined $ts);
-
+	
 	my $db_entries = $ts->get_all_DBLinks;
-
+	
 	# Grep out all the GO xref entries.
 	my @keepers = grep {$_->dbname eq "GO"} @{$db_entries};
-	foreach my $db_e (@keepers)
-	{
+	foreach my $db_e (@keepers) {
+	  my $iea = 0;
+	  foreach (@{$db_e->get_all_linkage_info}) {
+	    $iea = 1 if ($_->[0] eq 'IEA');
+	  }
+	  if ($params->{'go_ignore_iea'} && $iea) {
+	    # Don't insert!
+	  } else {
 	    $self->insert_go_term($tree->node_id,$leaf,$db_e);
 	    sleep(0.1);
+	  }
 	}
+      }
     }
-    
+      
     my @gos = keys(%go_terms);
     return \@gos;
 }
@@ -221,11 +228,10 @@ sub insert_go_term
     my $self = shift;
     my ($node_id,$leaf,$db_e) = @_;
 
-    my $cmd = "INSERT IGNORE INTO go_terms (node_id,member_id,stable_id,go_term) values (?,?,?,?);";
-#    print $cmd."\n";
-    print "  ".join(" ",$leaf->dbID,$leaf->stable_id,$db_e->display_id)."\n";
+    my $cmd = "INSERT IGNORE INTO go_terms (node_id,member_id,source_taxon,stable_id,go_term) values (?,?,?,?,?);";
+    print "  ".join(" ",$leaf->dbID,$leaf->taxon_id,$leaf->stable_id,$db_e->display_id)."\n";
     my $sth = $dba->dbc->prepare($cmd);
-    $sth->execute($node_id,$leaf->dbID,$leaf->stable_id,$db_e->display_id);
+    $sth->execute($node_id,$leaf->dbID,$leaf->taxon_id,$leaf->stable_id,$db_e->display_id);
 }
 
 
@@ -283,6 +289,8 @@ sub collect_uniprot {
       my $value = $tokens[4];
       my $residue = $tokens[5];
 
+      next if (!$seq_pos);
+
       my $node_id = $tree->node_id;
       my $parameter_set_id = $params->{parameter_set_id};
       my $aln_position = $sa->column_from_residue_number($stable_id,$seq_pos);
@@ -328,7 +336,7 @@ sub collect_pfam {
       my $lo = $f->start;
       my $hi = $f->end;
       $hi = $tx->length if ($hi > $tx->length);
-      print "lo:$lo hi:$hi hstart:$pf_lo hend:$pf_hi\n";
+      print "$pf_id  lo:$lo hi:$hi hstart:$pf_lo hend:$pf_hi\n";
       foreach my $i (0 .. ($hi-$lo)) {
 	my $pos = $lo + $i;
 	my $aln_col = $sa->column_from_residue_number($name,$pos);
@@ -341,10 +349,8 @@ sub collect_pfam {
     }
   }
 
-  my $tree_node_id=0;
-  $tree_node_id = $tree->subroot->node_id if ($tree->subroot);
-
-  my $cmd = "REPLACE INTO sitewise_pfam (node_id,aln_position,pf_position,tree_node_id,pfam_id,score) VALUES (?,?,?,?,?,?)";
+#  my $cmd = "REPLACE INTO sitewise_pfam (node_id,aln_position,pf_position,pfam_id,score) VALUES (?,?,?,?,?)";
+  my $cmd = "REPLACE INTO sitewise_tag (node_id,aln_position,parameter_set_id,tag,value,source) VALUES (?,?,?,?,?,?)";
   my $sth = $tree->adaptor->prepare($cmd);
 
   use Time::HiRes qw(sleep);
@@ -360,12 +366,14 @@ sub collect_pfam {
 	   $pos,
 	   $pf_pos,
 	   $score);
+
     $sth->execute($tree->node_id,
 		  $pos,
-		  $pf_pos,
-		  $tree_node_id,
+		  $params->{parameter_set_id},
 		  $id,
-		  $score);
+		  $score,
+		  "PFam"
+		  );
     sleep(0.1);
   }
 
@@ -377,14 +385,11 @@ sub create_plot {
   my $self = shift;
 
   my $base_dir = "/lustre/scratch103/ensembl/gj1/2xmammals_plots";
-
   my $node_id = $tree->node_id;
 
   use Digest::MD5 qw(md5_hex);
   my $digest = md5_hex($node_id);
-
   my $small_digest = substr($digest,0,10);
-
   my $subdir = substr($digest,0,1);
   my $sub_subdir = substr($digest,1,1);
 

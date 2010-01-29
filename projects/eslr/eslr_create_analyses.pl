@@ -19,19 +19,21 @@ my $dbc = $dba->dbc;
 my $analysis_hash; # Hash to store mapping between analysis names and ID numbers.
 
 # Clean up our mess.
-clean_tables();
+#clean_tables();
 
 # Define parameters (species sets, filtering options, etc).
-parameter_sets();
+#parameter_sets();
 
 # Create analyses.
-node_sets();
-omegas();
+#node_sets();
+#omegas();
 mapping();
+collect_stats();
 
 # Connect the dots.
-connect_analysis("NodeSets","Omegas",1);
-connect_analysis("Omegas","Mapping",1);
+#connect_analysis("NodeSets","Omegas",1);
+#connect_analysis("Omegas","Mapping",1);
+connect_analysis("Mapping","CollectStats",1);
 
 sub parameter_sets {
   my $params;
@@ -202,11 +204,19 @@ sub mapping {
   my $logic_name = "Mapping";
   my $module = "Bio::Greg::SitewiseMapper";
   my $params = {
-    sitewise_table => 'sitewise_omega'
   };
-  _create_analysis($analysis_id,$logic_name,$module,$params,20,1);
+  _create_analysis($analysis_id,$logic_name,$module,$params,200,1);
 }
 
+
+sub collect_stats {
+  my $analysis_id=107;
+  my $logic_name = "CollectStats";
+  my $module = "Bio::Greg::Eslr::CollectEslrStats";
+  my $params = {
+  };
+  _create_analysis($analysis_id,$logic_name,$module,$params,50,1);
+}
 
 sub _combine_hashes {
   my @hashes = @_;

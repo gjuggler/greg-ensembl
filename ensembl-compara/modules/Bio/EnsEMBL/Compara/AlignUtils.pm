@@ -38,6 +38,11 @@ sub indelign{
   my $out_anno = "$temp_dir/out_anno.fa";
   my $ancestor_anno = "$temp_dir/AncAnnotation.txt";
   my $anchor_stat = "/homes/greg/src/Indelign-2.0.3/samples/AnchorStat.txt";
+  if ($ENV{'USER'} =~ /gj1/) {
+    $anchor_stat = "/nfs/users/nfs_g/gj1/bin/AnchorStat.txt";
+  }
+  Bio::EnsEMBL::Registry->set_disconnect_when_inactive(1);
+  
   my $stdout = "$temp_dir/out.txt";
   my $stderr = "$temp_dir/err";
 
@@ -168,7 +173,7 @@ sub column_entropies {
   return @column_entropy_array;
 }
 
-sub ace {
+sub average_column_entropy {
   my $class = shift;
   my $sa = shift;
 
@@ -500,7 +505,7 @@ sub remove_blank_columns {
     }
   }
   $aln = $aln->_remove_columns_by_num(\@cols_to_remove);
-  return [$aln,$new_to_old,$old_to_new];
+  return ($aln,$new_to_old,$old_to_new);
 }
 
 # Removes blank columns in threes, and returns a codon-wise column mapping.
