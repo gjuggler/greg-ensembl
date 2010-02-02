@@ -7,40 +7,30 @@ if (exists('drv')) {
 
 con <- dbConnect(drv, host='mysql-greg.ebi.ac.uk', port=4134, user='slrsim', password='slrsim', dbname='slrsim_anisimova')
 
-get_vector = function(con,query) {
+get.vector = function(con,query,columns=1) {
   res = dbSendQuery(con,query)
-  data = fetch(res,n=-1)[[1]]  # Important: the n=-1 causes the entire resultset to be fetched, not just the first 500.
+  if (columns == 'all') {
+    data = fetch(res,n=-1)  # Important: the n=-1 causes the entire resultset to be fetched, not just the first 500.
+  } else {
+    data = fetch(res,n=-1)[[columns]]
+  }
   dbClearResult(res)
   return(data)
 }
 
-# Get the parameter sets.
-query = 'SELECT parameter_set_id AS id,parameter_value AS name FROM parameter_set where parameter_name="name";'
-param_sets = get_vector(con,query)
-
 # Grabs from the database the true and inferred omegas for the given reference sequence.
-get_data_alt = function() {
-  header_q = "SELECT meta_value FROM meta WHERE meta_key='slrsim_stats_header'";
-  header = get_vector(con,header_q)
-  query = sprintf("SELECT stats FROM sitewise_stats");
-  data = get_vector(con,query)
-  data = c(header,data)
-  toks = paste(data,collapse="\n")
-  cat(toks,file="tmp.txt")
-  tbl = read.table(file="tmp.txt",sep="\t",header=T)
-  return(tbl)
+get.data.alt = function() {
+  query = sprintf("SELECT * FROM stats_slrsim");
+  data = get.vector(con,query,columns='all')
+  return(data)
 }
 
-if (!exists('all_data')) {
-  all_data = get_data_alt()
-
-  # Touch-ups.
-  #all_data[is.na(all_data$ins_rate),]$ins_rate = 0
-  #all_data[is.na(all_data$del_rate),]$del_rate = 0
+if (!exists('all.data')) {
+  all.data = get.data.alt()
 }
 
 is.paml = function(df) {
-  if (grepl("paml",df[1,]$parameter_set_name,ignore.case=T)) {
+  if (grepl("paml",df[1,]$sitewise_name,ignore.case=T)) {
     return(TRUE)
   } else {
     return(FALSE)
@@ -56,15 +46,15 @@ df.stats = function(df,thresh=3.8,paml_thresh=0.95,type='all') {
   }
 
     # Collect stats for SLR-type runs.
-    pos_pos = nrow(subset(df,true_type=="positive1" & lrt>thresh & aln>aln_thresh))
-    neg_pos = nrow(subset(df,true_type!="positive1" & lrt>thresh & aln>aln_thresh))
-    neg_neg = nrow(subset(df,true_type!="positive1" & !(lrt>thresh & aln>aln_thresh)))
-    pos_neg = nrow(subset(df,true_type=="positive1" & !(lrt>thresh & aln>aln_thresh)))
+    pos_pos = nrow(subset(df,true_type=="positive1" & lrt>thresh & aln_dnds>aln_thresh))
+    neg_pos = nrow(subset(df,true_type!="positive1" & lrt>thresh & aln_dnds>aln_thresh))
+    neg_neg = nrow(subset(df,true_type!="positive1" & !(lrt>thresh & aln_dnds>aln_thresh)))
+    pos_neg = nrow(subset(df,true_type=="positive1" & !(lrt>thresh & aln_dnds>aln_thresh)))
 
     pos_all = nrow(subset(df,true_type=="positive1"))
     neg_all = nrow(subset(df,true_type!="positive1"))
-    all_pos = nrow(subset(df,lrt>thresh & aln>aln_thresh))
-    all_neg = nrow(subset(df,!(lrt>thresh & aln>aln_thresh)))
+    all_pos = nrow(subset(df,lrt>thresh & aln_dnds>aln_thresh))
+    all_neg = nrow(subset(df,!(lrt>thresh & aln_dnds>aln_thresh)))
 
   all = nrow(df)
 
@@ -80,38 +70,53 @@ df.stats = function(df,thresh=3.8,paml_thresh=0.95,type='all') {
   pos_true = pos_all/all # proportion of true positives
   pos_inf = all_pos/all # proportion of inferred positives
 
-  if(all_pos==0) {
-#    ppv = NA
-#    fdr = NA
-  }
-  if (pos_all==0) {
-#    sens = NA
-  } 
-
-  return(list(sens=sens,spec=spec,ppv=ppv,npv=npv,fdr=fdr,fpr=fpr,dlr=dlr,pos_true=pos_true,pos_inf=pos_inf))
+  return(list(
+    sens=sens,
+    spec=spec,
+#    ppv=ppv,
+#    npv=npv,
+    fdr=fdr,
+    fpr=fpr,
+#    dlr=dlr,
+    pos_true=pos_true,
+    pos_inf=pos_inf
+  ))
 }
 
-df.fwer = function(df,thresh=3.8,paml_thresh=0.95) {
+df.swfwer = function(df,thresh=3.8,paml_thresh=0.95) {
   aln_thresh = 1
   if (is.paml(df)) {
     thresh = paml_thresh
     aln_thresh = -1
-  } 
+  }
 
   df.fp = function(df,thresh) {
-    fps = nrow(subset(df,true_type!="positive1" & lrt>thresh & aln>aln_thresh))
+    fps = nrow(subset(df,true_type!="positive1" & lrt>thresh & aln_dnds>aln_thresh))
     return(fps)
   }
 
   error_by_protein = by(df,df$node_id,df.fp,thresh=thresh)
   max_errors = max(error_by_protein)
   min_errors = min(error_by_protein)
-  return(list(fwer=sum(error_by_protein >= 1)/length(error_by_protein),
+  return(list(swfwer=sum(error_by_protein >= 1)/length(error_by_protein),
               max=max_errors,min=min_errors))
 }
 
+df.gene.detection.rate = function(df) {
+  df.detected.positive = function(df) {
+    if (is.paml(df)) {
+      return(nrow(subset(df, paml_lrt > 5.99)) >= 1)
+    } else {
+      return(nrow(subset(df, aln_type == 'positive3' | aln_type == 'positive4')) >= 1)
+    }
+  }
+
+  num.detected = by(df,df$node_id,df.detected.positive)
+  return(list(detected=sum(num.detected)/length(num.detected)))
+}
+
 df.cor = function(df) {
-  return(list(cor=cor(df$true,df$aln,method='spearman')))
+  return(list(cor=cor(df$true_dnds,df$aln_dnds,method='spearman')))
 }
 
 
@@ -119,7 +124,7 @@ df.cor = function(df) {
 summarize.results = function(data,thresh=3.8,paml_thresh=0.95) {
 
   # Paste together some metadata so that we have one ID per experiment.
-  attrs = c('slrsim_scheme_name','alignment_name','filtering_name','species_name','sitewise_name','phylosim_ins_rate','slrsim_tree_length')
+  attrs = c('slrsim_file','alignment_name','filtering_name','species_name','sitewise_name','phylosim_ins_rate','slrsim_tree_length')
 
   ids = rep("",nrow(data))
   for (attr in attrs) {
@@ -133,7 +138,8 @@ summarize.results = function(data,thresh=3.8,paml_thresh=0.95) {
 
     # Calculate the summaries.
     stats = df.stats(df,thresh=thresh,paml_thresh=paml_thresh)
-    fwer = df.fwer(df,thresh=thresh,paml_thresh=paml_thresh)
+    gene.detection.rate = df.gene.detection.rate(df)
+    swfwer = df.swfwer(df,thresh=thresh,paml_thresh=paml_thresh)
     cor = df.cor(df)
 
     # Put them all together into a data frame.
@@ -143,9 +149,9 @@ summarize.results = function(data,thresh=3.8,paml_thresh=0.95) {
     }   
 
     if(!exists('res.df')) {
-      res.df = data.frame(attr.list,stats,fwer,cor)
+      res.df = data.frame(attr.list,stats,gene.detection.rate,swfwer,cor)
     } else {
-      res.df = rbind(res.df,data.frame(attr.list,stats,fwer,cor))
+      res.df = rbind(res.df,data.frame(attr.list,stats,gene.detection.rate,swfwer,cor))
     }
   } 
   return(res.df)
@@ -160,14 +166,14 @@ plot.roc = function(df,color='black',lty='solid',lwd=1,overlay=T) {
 
   if (!is.paml(df)) {
     # Create a signed LRT if it's SLR-based data.
-    df$lrt = sign(df$aln-1)*df$lrt
+    df$lrt = sign(df$aln_dnds-1)*df$lrt
   }
   a = get.perf(df)
   plot(a,col=color,lty=lty,lwd=lwd,add=overlay)
 }
 
 get.perf = function(df,...) {
-  truth = as.integer( df$true > 1 )
+  truth = as.integer( df$true_dnds > 1 )
   
   require(ROCR)
   pred = prediction(df$lrt,truth)

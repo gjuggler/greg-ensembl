@@ -54,12 +54,12 @@ sub create_simsets {
   my $base_length = 1;
 
   my $base_params = {
-    slrsim_replicates => 1,
+    slrsim_replicates => 50,
     slrsim_file => 'artificial.nh',
     slrsim_tree_mult => 1,
 
     phylosim_simulation_program => 'indelible',
-    phylosim_seq_length => 500,
+    phylosim_seq_length => 400,
     phylosim_ins_rate => 0,
     phylosim_del_rate => 0
   };
@@ -124,21 +124,20 @@ sub create_simsets {
     sitewise_action => 'slr',
   };
   my $paml = {
-    sitewise_name => 'PAML M8B/M8A',
+    sitewise_name => 'PAML M8A/M8B',
     sitewise_action => 'paml_sitewise paml_lrt',
     paml_model_a => 'M8a',
     paml_model_b => 'M8'
   };
   my $paml_alt = {
-    sitewise_name => 'PAML M3/M2',
+    sitewise_name => 'PAML M2/M3',
     sitewise_action => 'paml_sitewise paml_lrt',
     paml_model_a => 'M2',
     paml_model_b => 'M3'
   };
   
 
-  # Looking at bglobin and difference reference sequences
-
+  # Looking at bglobin and difference between reference sequences
   my $sim_p = replace($massingham_05_A,{
     slrsim_tree_mult => 1,
   });
@@ -147,11 +146,10 @@ sub create_simsets {
     push @sim_params, replace($sim_p,{phylosim_ins_rate => $indel,phylosim_del_rate => $indel});
   }
   my @tree_params = map {tree_param($_)} ($tree_anisimova_bglobin);
-  my @aln_params = map {aln_param($_)} ('mcoffee');#,'mcoffee','prank');
-  my @filter_params = map {filter_param($_)} ('none');#'prank','indelign','trimal','gblocks');
-  my @species_params = map {species_param($_)} ('human');#,'mouse','xenlaev');
-  my @sitewise_params = ($slr);#,$paml,$paml_alt);
-
+  my @aln_params = map {aln_param($_)} ('mcoffee');
+  my @filter_params = map {filter_param($_)} ('none');
+  my @species_params = map {species_param($_)} ('human','mouse','xenlaev');
+  my @sitewise_params = ($slr,$paml,$paml_alt);
   foreach my $tr (@tree_params) {
     foreach my $sim (@sim_params) {
       foreach my $aln (@aln_params) {
@@ -167,6 +165,35 @@ sub create_simsets {
       }
     }  
   }
+
+
+  $sim_p = replace($lognormal,{
+    slrsim_tree_mult => 2,
+  });
+  foreach my $indel (0.05) {
+    push @sim_params, replace($sim_p,{phylosim_ins_rate => $indel,phylosim_del_rate => $indel});
+  }
+  @tree_params = map {tree_param($_)} ($full);
+  @aln_params = map {aln_param($_)} ('mcoffee');
+  @filter_params = map {filter_param($_)} ('none','prank','trimal','indelign','gblocks');
+  @species_params = map {species_param($_)} ('human');
+  @sitewise_params = ($slr,$paml_alt);
+  foreach my $tr (@tree_params) {
+    foreach my $sim (@sim_params) {
+      foreach my $aln (@aln_params) {
+        foreach my $f (@filter_params) {
+          foreach my $sp (@species_params) {
+            foreach my $sw (@sitewise_params) {
+              my $p = replace($base_params,$tr,$sim,$aln,$f,$sp,$sw);
+              verify_params($p);
+              push @simulation_sets,$p;
+            }
+          }
+        }
+      }
+    }  
+  }
+
 }  
 
 sub verify_params {

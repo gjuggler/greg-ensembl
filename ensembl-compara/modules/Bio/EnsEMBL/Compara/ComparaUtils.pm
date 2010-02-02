@@ -1216,11 +1216,15 @@ sub load_params_from_tree_tags {
   my $tags = $tree->get_tagvalue_hash;
 
   my @param_objs;
+  my $simple_tags;
   foreach my $tag (keys %$tags) {
     if ($tag =~ /params/i) {
       push @param_objs,$class->load_params_from_tag($tree,$tag);
+    } else {
+      $simple_tags->{$tag} = $tags->{$tag};
     }
   }
+  push @param_objs,$simple_tags;
 
   return $class->replace_params(@param_objs);
 }
