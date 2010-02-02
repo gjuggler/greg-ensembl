@@ -7,7 +7,6 @@ if (exists('drv')) {
 
 con <- dbConnect(drv, host='ens-research', port=3306, user='ensro', password='', dbname='gj1_eslr')
 
-
 get.vector = function(con,query,columns=1) {
   res = dbSendQuery(con,query)
   if (columns == 'all') {
@@ -22,26 +21,20 @@ get.vector = function(con,query,columns=1) {
 # Get the parameter sets.
 query = 'SELECT parameter_set_id AS id,parameter_value AS name FROM parameter_set where parameter_name="name";'
 param.sets = get.vector(con,query,columns='all')
-#print(param.sets)
 
-get.data.alt = function() {
-  query = sprintf("SELECT * FROM stats_genes where parameter_set_id=1");
+get.genes = function(parameter.set.id=1) {
+  query = sprintf("SELECT * FROM stats_genes where parameter_set_id=%s",parameter.set.id);
   data = get.vector(con,query,columns='all')
+
+  # Temoporary fix.
+  psc = data$num_pscs
+  psc_weak = data$num_pscs_weak
+  data$num_pscs = psc_weak
+  data$num_pscs_weak = psc
+
   return(data)
 }
 
-if (!exists('all.data')) {
-  all.data = get.data.alt()
+if (!exists('all.genes')) {
+  all.genes = get.genes(1)
 }
-
-
-
-ize = function(izer) {
-  function(data, columns=names(data)) {
-    data[columns] = lapply(data[columns], izer)
-    data
-  }
-}
-logicalize = ize(as.logical)
-characterize = ize(as.character)
-factorize = ize(as.factor)
