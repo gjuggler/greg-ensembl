@@ -190,8 +190,8 @@ sub total_column_score {
   my $true_aln = shift;
   my $test_aln = shift;
 
-  $class->pretty_print($true_aln,{length=>500});
-  $class->pretty_print($test_aln,{length=>500});
+#  $class->pretty_print($true_aln,{length=>500});
+#  $class->pretty_print($test_aln,{length=>500});
 
   # Index the alignments by sequence residue #.
   my $true_obj = $class->to_arrayrefs($true_aln);

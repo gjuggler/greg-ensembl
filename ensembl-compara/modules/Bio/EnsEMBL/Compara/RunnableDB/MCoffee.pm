@@ -135,6 +135,8 @@ sub fetch_input {
     $self->check_if_exit_cleanly;
 
     # Load the tree.
+    my $out_table = $params->{'alignment_table'};
+    $params->{'alignment_table'} = 'protein_tree_member';
     if (defined $params->{'protein_tree_id'}) {
       $tree = Bio::EnsEMBL::Compara::ComparaUtils->get_tree_for_comparative_analysis($dba,$params);
     } elsif (defined $params->{'node_id'}) {
@@ -142,7 +144,7 @@ sub fetch_input {
     } else {
 	throw("No protein tree input ID!\n");
     }
-
+    $params->{'alignment_table'} = $out_table;
     my $method = $params->{'alignment_method'};
 
     $dont_write_output = 0;
@@ -181,7 +183,7 @@ sub fetch_input {
       throw("Mcoffee job too big: try something else and FAIL it");
     }
 
-    $sa = Bio::EnsEMBL::Compara::ComparaUtils->get_ProteinTree_seqs($tree,0);
+   $sa = Bio::EnsEMBL::Compara::ComparaUtils->get_ProteinTree_seqs($tree,0);
 
     # Export exon-cased if necessary.
     my $use_exons = $params->{'alignment_use_exon_boundaries'};
@@ -198,11 +200,11 @@ sub run
     $self->check_if_exit_cleanly;
 
     my $method = $params->{'alignment_method'};
-#    if ($method =~ 'coffee') {
-#      $sa_aligned = $self->align_with_mcoffee($sa,$tree,$params);
-#    } elsif ($method =~ 'prank') {
+    if ($method =~ 'coffee') {
+      $sa_aligned = $self->align_with_mcoffee($sa,$tree,$params);
+    } elsif ($method =~ 'prank') {
       $sa_aligned = $self->align_with_prank($sa,$tree,$params);
-#    }
+    }
 }
 
 

@@ -56,18 +56,22 @@ sub create_table_from_params {
   my $dbh = $dba->dbc->db_handle;
 
   # Check if the table already exists.
-  my $sth = $dbh->table_info("%",'',$table_name);
-  if ($sth->fetchrow_arrayref) {
-    # table already exists!
+  eval {
+    my $sth = $dbh->column_info(undef,$dba->dbc->dbname,$table_name,'%');
+  };
+  if (!$@) {
+    #print "TABLE $table_name EXISTS!\n";
     return;
   }
-
   # First, create the table with node_id and parameter_set columns.
+  print "Creating new table $table_name ...\n";
+
+  my $unique_keys = delete $params->{'unique_keys'};
+
   $dbh->do(qq^
 	   CREATE TABLE $table_name (
 	     node_id INT(10),
-	     parameter_set_id TINYINT(3),
-	     UNIQUE KEY (node_id,parameter_set_id)
+	     parameter_set_id TINYINT(3)
 	   )
 	   ^);
 
@@ -81,10 +85,16 @@ sub create_table_from_params {
     };
     $type = $type_map->{$type};
 
-    my $create_cmd = qq^ALTER TABLE $table_name ADD COLUMN $key $type^;
+    my $create_cmd = qq^ALTER TABLE $table_name ADD COLUMN `$key` $type^;
     $dbh->do($create_cmd);
   }
 
+  my $unique_cmd = qq^ALTER TABLE $table_name ADD UNIQUE (node_id,parameter_set_id)^;
+  if ($unique_keys) {
+    $unique_cmd = qq^ALTER TABLE $table_name ADD UNIQUE ($unique_keys)^;
+  }
+  $dbh->do($unique_cmd);
+  
 }
 
 sub store_params_in_table {
@@ -100,7 +110,7 @@ sub store_params_in_table {
   my $hashref = $sth->fetchall_hashref(['Field']);
   my @fields = keys %$hashref;
 
-  my $fields_string = '('.join(',',@fields).')';
+  my $fields_string = '(`'.join('`,`',@fields).'`)';
   my $question_marks_string = '('. join(',',('?') x scalar(@fields)) . ')';  # Don't ask. It just works.
   
   my $sth2 = $dbh->prepare(qq^REPLACE INTO $table_name $fields_string VALUES $question_marks_string^);

@@ -15,10 +15,11 @@ get_vector = function(con,query) {
 }
 
 source("aln-tools/aln.tools.R")
+source("aln-tools/phylo.tools.R")
 source("aln-tools/plot.phylo.greg.R")
 library(ape)
 
-plot.protein = function(node_id) {
+plot.protein = function(node_id,label='') {
   tree_file = "tree.nh"
   aln_file = "aln.fasta"
 
@@ -43,7 +44,7 @@ plot.protein = function(node_id) {
     x.lim=c(tree.space,length+tree.space),
     y.lim=c(0,aln$num_seqs))
 
-  text(x=tree.space*.9,y=0,labels=paste(node_id),cex=2,adj=c(1,0))
+  text(x=tree.space*.9,y=0,labels=label,cex=2,adj=c(0,0))
 
   rect(xleft=tree.space,xright=length+tree.space,ybottom=0,ytop=aln$num_seqs)
   par(new=T)
@@ -54,16 +55,26 @@ plot.protein = function(node_id) {
   unlink(c(tree_file,aln_file))                                 
 }
 
-main = function() {
-  query = 'SELECT node_id FROM protein_tree_tag where tag="slrsim_rep" and value=1'
-  nodes = get_vector(con,query)
-
+main = function(data) {
+  source("collect_slrsim.R")
+  
+  # Set up the plotting params.
   pdf("~/public_html/slrsim.pdf")
   par(mfrow=c(10,1))
-  for (node in nodes) {
-    plot.protein(node)
+
+  attrs = c('slrsim_file','slrsim_tree_length','phylosim_ins_rate','alignment_name','filtering_name')
+  ids = rep("",nrow(data))
+  for (attr in attrs) {ids = paste(ids,data[[attr]],sep=" ")} 
+  unique_ids = unique(ids)
+  print(length(unique_ids))
+  for (my_id in unique_ids[1:2]) {
+    print(my_id)
+    df = data[ids==my_id,]
+    first.row = df[1,]
+    plot.protein(first.row$node_id,label=my_id)
   }
+
   dev.off()
 }
 
-main()
+#main()
