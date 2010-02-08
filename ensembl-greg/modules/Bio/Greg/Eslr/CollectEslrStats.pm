@@ -33,12 +33,19 @@ my $gene_stats_def = {
   num_human_genes       => 'int',
   human_gene            => 'string',
   human_genes           => 'string',
+  human_chr             => 'string',
+  human_str             => 'string'
+
   duplications          => 'int',
   duplication_fraction  => 'float',
 
   num_pscs              => 'int',
   num_pscs_weak         => 'int',
-  avg_omega             => 'float',
+  mean_omega            => 'float',
+
+  omega                 => 'float',
+  kappa                 => 'float',
+  slr_lnl               => 'float',
 
   ins_rate              => 'float',
   del_rate              => 'float'
@@ -143,19 +150,35 @@ sub get_gene_data {
 
   my @hum_gen = grep {$_->taxon_id==9606} $tree->leaves;
   $cur_params->{'num_human_genes'} = scalar(@hum_gen);
-  $cur_params->{'human_gene'} = $hum_gen[0]->stable_id if (scalar @hum_gen > 0);
-  $cur_params->{'human_genes'} = join(",",map {$_->stable_id} @hum_gen);
+  if (scalar @hum_gen > 0) {
+    $cur_params->{'human_genes'} = join(",",map {$_->stable_id} @hum_gen);
+    my $first_human_gene = $hum_gen[0];
+    $cur_params->{'human_gene'} = $first_human_gene->stable_id;
+
+    my $tscr = $first_human_gene->get_Transcript;
+    $tscr = $tscr->transform("chromosome");
+    if (defined $tscr) {
+      my $chr = "chr".$tscr->slice->seq_region_name;
+    }
+
+  }
+
   $cur_params->{'duplications'} = mysql_getval($tree,"SELECT num_dups_under_node($node_id)");
   $cur_params->{'duplication_fraction'} = sprintf "%.3f", mysql_getval($tree,"SELECT num_dups_under_node($node_id)/node_count($node_id)");
 
   my $psc_hash = get_psc_hash($dba->dbc,$cur_params);
   $cur_params->{'num_pscs'} = psc_count($psc_hash,0);
   $cur_params->{'num_pscs_weak'} = psc_count($psc_hash,1);
-  $cur_params->{'avg_omega'} = omega_average($psc_hash);
+  $cur_params->{'mean_omega'} = omega_average($psc_hash);
+
+  my $ps = $cur_params->{'parameter_set_id'};
+  $cur_params->{'omega'} = $cur_params->{'slr_omega_'.$ps};
+  $cur_params->{'kappa'} = $cur_params->{'slr_kappa_'.$ps};
+  $cur_params->{'lnl'} = $cur_params->{'slr_lnL_'.$ps};
 
 #  my ($ins,$del,$ins_rate,$del_rate) = Bio::EnsEMBL::Compara::AlignUtils->indelign($sa_nogap,$tree,$cur_params);
-#  $cur_params->{'indelign_ins_rate'} = $ins_rate;
-#  $cur_params->{'indelign_del_rate'} = $del_rate;
+  $cur_params->{'indelign_ins_rate'} = $cur_params->{'indelign_ins_rate_'.$ps};
+  $cur_params->{'indelign_del_rate'} = $cur_params->{'indelign_del_rate_'.$ps};
 
   # Store values in our output table.
   my $table = $cur_params->{'collect_eslr_stats_genes_table'};

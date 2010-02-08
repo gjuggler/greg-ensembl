@@ -43,14 +43,13 @@ sub fetch_input {
 
   ### DEFAULT PARAMETERS ###
   $params->{'omega_table'} = 'sitewise_omega';
-  $params->{'do_mapping'} = 1;
+  $params->{'do_mapping'} = 0;
   $params->{'collect_tags'} = 0;
   $params->{'collect_dup_tags'} = 0;
-  $params->{'collect_pfam'} = 1;
-  $params->{'collect_uniprot'} = 1;
+  $params->{'collect_pfam'} = 0;
+  $params->{'collect_uniprot'} = 0;
   $params->{'collect_go'} = 1;
   $params->{'go_taxon_ids'} = '9606,10090';
-  $params->{'go_ignore_iea'} = 1;
   $params->{'create_plot'} = 0;
   $params->{'parameter_set_id'} = 1; # The parameter set to use for UniProt extraction.
   #########################
@@ -228,10 +227,15 @@ sub insert_go_term
     my $self = shift;
     my ($node_id,$leaf,$db_e) = @_;
 
-    my $cmd = "INSERT IGNORE INTO go_terms (node_id,member_id,source_taxon,stable_id,go_term) values (?,?,?,?,?);";
-    print "  ".join(" ",$leaf->dbID,$leaf->taxon_id,$leaf->stable_id,$db_e->display_id)."\n";
+    my $evidence = '';
+    foreach (@{$db_e->get_all_linkage_info}) {
+      $evidence = $_->[0];
+    }
+
+    my $cmd = "REPLACE INTO go_terms (node_id,member_id,source_taxon,stable_id,go_term,evidence_code) values (?,?,?,?,?,?);";
+    print "  ".join(" ",$leaf->dbID,$leaf->taxon_id,$leaf->stable_id,$db_e->display_id,$evidence)."\n";
     my $sth = $dba->dbc->prepare($cmd);
-    $sth->execute($node_id,$leaf->dbID,$leaf->taxon_id,$leaf->stable_id,$db_e->display_id);
+    $sth->execute($node_id,$leaf->dbID,$leaf->taxon_id,$leaf->stable_id,$db_e->display_id,$evidence);
 }
 
 

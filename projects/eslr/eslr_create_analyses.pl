@@ -90,6 +90,7 @@ sub parameter_sets {
 
   $params = {
     parameter_set_name => "Mammals",
+    shortname => 'm',
     keep_species => $mammals,
   };
   $params = _combine_hashes($base_params,$params);
@@ -97,6 +98,7 @@ sub parameter_sets {
 
   $params = {
     parameter_set_name => "Primates",
+    shortname => 'p',
     keep_species => $primates
   };
   $params = _combine_hashes($base_params,$params);
@@ -104,6 +106,7 @@ sub parameter_sets {
 
   $params = {
     parameter_set_name => "Glires",
+    shortname => 'g',
     keep_species => $glires
   };
   $params = _combine_hashes($base_params,$params);
@@ -111,6 +114,7 @@ sub parameter_sets {
 
   $params = {
     parameter_set_name => "Laurasiatheria",
+    shortname => 'l',
     keep_species => $laurasiatheria
   };
   $params = _combine_hashes($base_params,$params);
@@ -118,6 +122,7 @@ sub parameter_sets {
 
   $params = {
     parameter_set_name => "No 2x",
+    shortname => 'n2',
     keep_species => $hi_coverage,
     remove_species => $not_mammals
   };
@@ -126,6 +131,7 @@ sub parameter_sets {
 
   $params = {
     parameter_set_name => "2x Only",
+    shortname => '2o',
     keep_species => $lo_coverage,
     remove_species => $not_mammals
   };
@@ -134,6 +140,7 @@ sub parameter_sets {
 
   $params = {
     parameter_set_name => "No Primates",
+    shortname => 'np',
     keep_species => $mammals,
     remove_species => $primates
   };
@@ -142,6 +149,7 @@ sub parameter_sets {
 
   $params = {
     parameter_set_name => "No Glires",
+    shortname => 'ng',
     keep_species => $mammals,
     remove_species => $glires
   };
@@ -243,6 +251,13 @@ sub _add_parameter_set {
     my $name_cmd = "REPLACE INTO parameter_set VALUES ('$parameter_set_id','name',\"$parameter_set_name\");";
     $dbc->do($name_cmd);
   }
+
+  if (exists $params->{'shortname'} ) {
+    my $shortname = $params->{'shortname'} || '';
+    my $shortname_cmd = "REPLACE INTO parameter_set VALUES ('$parameter_set_','shortname',\"$shortname\");";
+    $dbc->do($shortname_cmd);
+  }
+
   
   my $param_string = Bio::EnsEMBL::Compara::ComparaUtils->hash_to_string($params);
   my $cmd = "REPLACE INTO parameter_set VALUES ('$parameter_set_id','params',\"$param_string\");";

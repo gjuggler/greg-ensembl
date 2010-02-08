@@ -562,9 +562,13 @@ sub run_sitewise_dNdS
   $results->{'rc'} = $rc;
 
   # Store the results in the database.
-  $tree->store_tag("slr_kappa",$results->{'kappa'});
-  $tree->store_tag("slr_omega",$results->{'omega'});
-  $tree->store_tag("slr_lnL",$results->{'lnL'});
+  my $kappa_key = "slr_kappa_".$params->{parameter_set_id};
+  my $omega_key = "slr_omega_".$params->{parameter_set_id};
+  my $lnl_key = "slr_lnL_".$params->{parameter_set_id};
+    
+  $tree->store_tag($kappa_key,$results->{'kappa'});
+  $tree->store_tag($omega_key,$results->{'omega'});
+  $tree->store_tag($lnl_key,$results->{'lnL'});
   $self->store_sitewise($results,$tree,$params);
 }
 
