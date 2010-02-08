@@ -1,4 +1,4 @@
-package Bio::Greg::SitewiseMapper;
+package Bio::Greg::Eslr::SitewiseMapper;
 
 use strict;
 use Getopt::Long;
