@@ -1,11 +1,14 @@
 # To create the all.genes dataset, source the ../collect_eslr.R file.
 source("../collect_eslr.R",echo=T)
+source("go_functions.R",echo=T)
 
-go.cmd = 'select node_id, stable_id, group_concat(DISTINCT go_term) AS go from go_terms WHERE source_taxon=9606 AND evidence_code != "IEA" group by stable_id';
-go.hs = get.vector(con,go.cmd,columns='all')
+go.cmd = 'select node_id, stable_id, group_concat(DISTINCT go_term) AS go from go_terms WHERE source_taxon=%s AND evidence_code != "%s" group by stable_id';
 
-go.cmd = 'select node_id, stable_id, group_concat(DISTINCT go_term) AS go from go_terms WHERE source_taxon=10090 AND evidence_code != "IEA" group by stable_id';
-go.mm = get.vector(con,go.cmd,columns='all')
+go.hs = get.vector(con,sprintf(go.cmd,9606,'IEA'),columns='all')
+go.hs.iea = get.vector(con,sprintf(go.cmd,9606,''),columns='all')
+
+go.mm = get.vector(con,sprintf(go.cmd,'10090','IEA'),columns='all')
+go.mm.iea = get.vector(con,sprintf(go.cmd,'10090',''),columns='all')
 
 library(biomaRt)
 library(topGO)
@@ -35,15 +38,45 @@ get.go.table = function(int.symbols,all.symbols,symbols.to.go,ontology) {
   return(my.df)
 }
 
+
+get.enrich.df = function(subset,all,go.df) {
+  go.vec = strsplit(go.df$go,split=",",fixed=T)
+  names(go.vec) = go.df$node_id
+  
+  bp = get.go.table(subset,all,go.vec,"BP")
+  mf = get.go.table(subset,all,go.vec,"MF")
+  cc = get.go.table(subset,all,go.vec,"CC")
+  return(rbind(bp,mf,cc))
+}
+
 do.enrichments = function() {
+  all.genes = get.all.merged()
   objs = c()
-  for (param.set in 1:8) {
+
+  # Add one for primate-greater and glires-greater genes.
+  primates.higher = subset(all.genes, p_dnds > np_dnds)
+  primates.lower = subset(all.genes, p_dnds < np_dnds)
+  primates.morepsc = subset(all.genes, p_psc > np_psc & np_psc == 0)
+  glires.higher = subset(all.genes, g_dnds > ng_dnds)
+  glires.lower = subset(all.genes, g_dnds < ng_dnds)
+
+  assign('go.primates.higher',get.enrich.df(primates.higher$node_id,all.genes$node_id,go.hs),pos=.GlobalEnv)
+  assign('go.primates.lower',get.enrich.df(primates.lower$node_id,all.genes$node_id,go.hs),pos=.GlobalEnv)
+  assign('go.primates.morepsc',get.enrich.df(primates.morepsc$node_id,all.genes$node_id,go.hs),pos=.GlobalEnv)
+  assign('go.glires.higher',get.enrich.df(glires.higher$node_id,all.genes$node_id,go.mm),pos=.GlobalEnv)
+  assign('go.glires.lower',get.enrich.df(glires.lower$node_id,all.genes$node_id,go.mm),pos=.GlobalEnv)
+  objs = c(objs,'go.primates.higher','go.primates.lower','go.primates.morepsc','go.glires.higher','go.glires.lower')
+
+  param.sets = get.psets()
+  
+  for (param.set in param.sets$id) {
     pset.name = param.sets[param.set,]$name
-    all.genes = get.genes(param.set)
-                                        #  ensp.genes = all.genes[grep("ENSP0",all.genes$human_gene),]
+    pset.shortname = param.sets[param.set,]$shortname
     
-    hi.genes = subset(all.genes,avg_omega > 0.4)
-    psc.genes = subset(all.genes,num_pscs >= 1)
+    col.dnds = paste(pset.shortname,'_dnds',sep="")
+    col.psc = paste(pset.shortname,'_psc',sep="")
+    hi.genes = all.genes[all.genes[[col.dnds]] > 0.4,]
+    psc.genes = all.genes[all.genes[[col.psc]] >= 1,]
     
     print(paste("Param set:",pset.name,
                 "Num genes:",nrow(all.genes),
@@ -51,35 +84,94 @@ do.enrichments = function() {
                 "PSC:",nrow(psc.genes)
                 ))
     
-    for (species in c('hs','mm')) {
+    for (species in c('hs.iea','mm.iea','hs','mm')) {
       go.df = get(paste("go.",species,sep=""))
-      go.vec = strsplit(go.df$go,split=",",fixed=T)
-      names(go.vec) = go.df$node_id
       
       for (subset in c('psc','hi')) {
         gene.subset = get(paste(subset,".genes",sep=""))
-        
-        bp = get.go.table(gene.subset$node_id,all.genes$node_id,go.vec,"BP")
-        mf = get.go.table(gene.subset$node_id,all.genes$node_id,go.vec,"MF")
-        cc = get.go.table(gene.subset$node_id,all.genes$node_id,go.vec,"CC")
-        
-        all = rbind(bp,mf)
+
+        all = get.enrich.df(gene.subset$node_id,all.genes$node_id,go.df)
         
         object.name = paste("go",param.set,species,subset,sep=".")
-        assign(object.name,all)
+        print(object.name)
+        assign(object.name,all,pos=.GlobalEnv)
         objs = c(objs,object.name)
-                                        #write.csv(all,file=paste("go",species,subset,"csv",sep="."))
+      }
+    }
+  }      
+}
+
+save.enrichments = function() {
+  ids = 1:8
+  names = c('Mammals','Primates','Glires','Laurasiatheria','No 2x','2x Only','No Primates','No Glires')
+  param.sets = data.frame(id=ids,name=names)
+  
+  df.list = list()
+  df.names = c()
+  i = 1
+  for (go in c('iea','')) {
+    for (species in c('hs','mm')) {
+      for (ps in param.sets$id) {
+        ps.name = param.sets[ps,]$name
+        if (nchar(go) > 0) {
+          species.full = paste(species,go,sep=".")
+        } else {
+          species.full = species
+        }
+        for (type in c('psc','hi')) {
+          obj.name = paste("go",ps,species.full,type,sep=".")
+          obj = get(obj.name)
+                                        # P-value correction:
+          df.list[[i]] = obj
+          display.name = sprintf("%s %s (GO:%s %s)",
+            ps.name, type, species, go)
+          df.names = c(df.names,display.name)
+          
+          i = i + 1
+        }
       }
     }
   }
+
+  tbl = create.go.table(df.list=df.list,names=df.names)
+  write.csv(tbl,file="eslr_go.csv")
+}
+
+save.special = function() {
+  df.list = list(
+    go.primates.higher, go.primates.lower, go.primates.morepsc,
+    go.glires.higher, go.glires.lower
+    )
+  df.names = c(
+    'primates_higher','primates_lower','primates_morepsc',
+    'glires_higher','glires_lower'
+    )
+  tbl = create.go.table(df.list=df.list,names=df.names)
+  write.csv(tbl,file="go_table_special.csv",row.names=F)
 }
 
 save.objs = function(objs) {
   # Save all objects to a Rdata file.
   save(list=objs,file="go_objs_eslr.Rdata")
 
-  df.list = list(go.1.hs.psc,go.1.hs.hi,go.1.mm.psc,go.1.mm.hi)
-  df.names = c('hs_psc','hs_hi','mm_psc','mm_hi')
+  df.list = list(
+    go.1.hs.psc,go.1.hs.hi,go.1.mm.psc,go.1.mm.hi,
+    go.1.hs.iea.psc,go.1.hs.iea.hi,go.1.mm.iea.psc,go.1.mm.iea.hi)
+  df.names = c(
+    'hs_psc','hs_hi','mm_psc','mm_hi',
+    'hs_iea_psc','hs_iea_hi','mm_iea_psc','mm_iea_hi')
   tbl = create.go.table(df.list=df.list,names=df.names)
   write.csv(tbl,file="go_table_eslr.csv",row.names=F)
 }
+
+
+main.done = FALSE
+main = function() {
+  do.enrichments()
+  save.enrichments()
+  save.special()
+  
+  assign("main.done",TRUE,pos=.GlobalEnv)
+}
+
+if (!main.done) {main()}

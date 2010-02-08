@@ -19,8 +19,11 @@ get.vector = function(con,query,columns=1) {
 }
 
 # Get the parameter sets.
-query = 'SELECT parameter_set_id AS id,parameter_value AS name FROM parameter_set where parameter_name="name";'
-param.sets = get.vector(con,query,columns='all')
+get.psets = function() {
+  query = paste('SELECT n.parameter_set_id AS id,sn.parameter_value AS shortname, n.parameter_value AS name FROM parameter_set n, parameter_set sn',
+    'WHERE n.parameter_set_id=sn.parameter_set_id AND n.parameter_name="name" AND sn.parameter_name="shortname";')
+  return(get.vector(con,query,columns='all'))
+}
 
 get.genes = function(parameter.set.id=1) {
   query = sprintf("SELECT * FROM stats_genes where parameter_set_id=%s",parameter.set.id);
@@ -35,6 +38,26 @@ get.genes = function(parameter.set.id=1) {
   return(data)
 }
 
-if (!exists('all.genes')) {
-  all.genes = get.genes(1)
+get.all.merged = function() {
+  if (exists('merged.df')) {
+    rm(merged.df)
+  }
+
+  all.node.ids = get.vector(con,'SELECT DISTINCT(node_id) FROM stats_genes')
+  
+  param.sets = get.psets()
+  for (pset in param.sets$id) {
+    genes = get.genes(pset)
+    col.dnds = paste(param.sets[pset,]$shortname,'_dnds',sep="")
+    col.psc = paste(param.sets[pset,]$shortname,'_psc',sep="")
+    genes.subset = data.frame(a=genes$node_id,b=genes$avg_omega,c=genes$num_pscs)
+    colnames(genes.subset) = c('node_id',col.dnds,col.psc)
+      
+    if (!exists('merged.df')) {
+      merged.df = data.frame(node_id=all.node.ids)
+    }
+    print(merged.df[1,])
+    merged.df = merge(merged.df,genes.subset,all.x=T)
+  }
+  assign('all.genes',merged.df,pos=1)
 }
