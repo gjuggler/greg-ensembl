@@ -3,7 +3,7 @@ Project TODO list:
  [X 2009-12-15] Re-connect with protein feature collection Java code.
      Note: I think the right thing to do here is to make the Java stuff input ONLY a sequence and accession, and output ONLY sequence-aligned features.
      Then we can plug into the database using the Perl module.
- [ ] Create two sets of GO enrichments: 1 for human GO assignments, 1 for mouse GO assignments
+ [X 2010-02-05] Create two sets of GO enrichments: 1 for human GO assignments, 1 for mouse GO assignments
  [ ] Detailed comparisons to previously published work:
      [ ] Cherry-picked site-wise examples aligned to comparable published work.
      [ ] Sets of PSGs compared to, e.g. Kosiol, Nielsen, etc.
