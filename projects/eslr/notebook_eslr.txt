@@ -150,9 +150,43 @@ What I did today:
  - Created Excel tables for Ewan with enrichments for 
 
 TODO:
- - Add first_exon, middle_exon, last_exon sitewise tags
- - Implement site-wise data export
- - Add parameter_set short names
- - Collect M0 dn/ds values from SLR.
+X - Add first_exon, middle_exon, last_exon sitewise tags
+X - Implement site-wise data export
+X - Add parameter_set short names
+X - Collect M0 dn/ds values from SLR.
  - Bring out Indelign into its own Runnable.
  - Bring ALL of my stuff into the Bio::Greg tree, so we're not at all reliant on my modded Compara codebase.
+
+Interesting gene from Sydney Brenner talk: HRas, NRas
+
+
+### 2010-02-09 ###
+
+Check-up on UniProt annotation counts:
+ - Number of:
+   -> Active sites (ACT_SITE)  : 3,028
+   -> Metal-binding (METAL)    : 2,589
+   -> Binding (BINDING)        : 2,222
+   -> Glycosylation (CARBOHYD) : 981
+
+Compare to what we get: 
+  mysql> select tag,count(*) from sitewise_tag where tag NOT LIKE "%PF%" group by tag;
+  +-----------------+----------+
+  | tag             | count(*) |
+  +-----------------+----------+
+  | ACT_SITE        |     2118 |
+  | BINDING         |     1805 |
+  | CARBOHYD        |    11865 |
+  | DISULFID        |    18310 |
+  | DNA_BIND        |    31863 |
+  | EXON            |     2018 |
+  | METAL           |     2884 |
+  | MOD_RES         |    26381 |
+  | SIGNAL          |    49958 |
+  | SPLICE_DISTANCE |      193 |
+  | TRANSMEM        |   325886 |
+  +-----------------+----------+
+
+What I did today:
+ - Implemented exon and splice distance collection in SitewiseMapper (collect_exons).
+ - Patched up site-wise data export.

@@ -48,7 +48,9 @@ sub fetch_input {
   $params->{'collect_dup_tags'} = 0;
   $params->{'collect_pfam'} = 0;
   $params->{'collect_uniprot'} = 0;
-  $params->{'collect_go'} = 1;
+  $params->{'collect_exons'} = 1;
+  $params->{'collect_go'} = 0;
+
   $params->{'go_taxon_ids'} = '9606,10090';
   $params->{'create_plot'} = 0;
   $params->{'parameter_set_id'} = 1; # The parameter set to use for UniProt extraction.
@@ -106,6 +108,12 @@ sub run {
     print "Collecting UniProt annotations...\n";
     $self->collect_uniprot();
     print "  -> Finished collecting UniProt!\n";
+  }
+
+  if ($params->{'collect_exons'}) {
+    print "Collecting Exon annotations...\n";
+    $self->collect_exons();
+    print "  -> Finished collecting Exons!\n";
   }
 
   if ($params->{'collect_go'}) {
@@ -323,6 +331,76 @@ sub collect_uniprot {
 
 }
 
+sub collect_exons {
+  my $self = shift;
+
+  my $sa = $tree->get_SimpleAlign;
+
+  print $sa->length."\n";
+
+  use Time::HiRes qw(sleep);
+  my $cmd = "REPLACE INTO sitewise_tag (node_id,aln_position,parameter_set_id,tag,value,source) VALUES (?,?,?,?,?,?)";
+  my $sth = $tree->adaptor->prepare($cmd);
+
+  foreach my $leaf ($tree->leaves) {
+    next unless ($leaf->taxon_id == 9606);
+    print $leaf->seq_length."\n";
+    print $leaf->stable_id."\n";
+    my $name = $leaf->stable_id;
+    my $tx = $leaf->get_Transcript;
+    my @exons = @{$tx->get_all_Exons};
+    my $sequence = $leaf->sequence;
+    my $i = 0;
+    foreach my $exon (@exons) {
+      $i++;
+      my $exon_pep = $exon->peptide($tx)->seq;
+      if ($sequence =~ m/$exon_pep/) {
+	print $exon_pep."\n";
+	my $pep_start = $-[0]+1;
+	my $pep_end = $+[0]+1;	
+	my $len = $pep_end - $pep_start;
+
+	my $exon_position = 'MIDDLE';
+	$exon_position = 'FIRST' if ($i == 1);
+	$exon_position = 'LAST' if ($i == scalar(@exons));
+
+	foreach my $pos ($pep_start .. $pep_end) {
+	  # Store whether we're in a first, middle, or last exon.
+	  my $aln_start = $sa->column_from_residue_number($leaf->stable_id,$pep_start);
+	  my $aln_end = $sa->column_from_residue_number($leaf->stable_id,$pep_end);
+	  $sth->execute($tree->node_id,
+			$pos,
+			$params->{parameter_set_id},
+			'EXON',
+			$exon_position,
+			"EnsEMBL"
+			);
+
+	  # Store the smallest distance to an exon junction.
+	  my $dist_left = $pep_start - $pos;
+	  my $dist_right = $pep_end - $pos;
+	  
+	  my $dist = $dist_left;
+	  if ($dist_right + $dist_left <= 0) {
+	    $dist = $dist_right;
+	  }
+
+	  $sth->execute($tree->node_id,
+			$pos,
+			$params->{parameter_set_id},
+			'SPLICE_DISTANCE',
+			$dist,
+			"EnsEMBL"
+			);
+	}	
+
+      } else {
+	die ("Exon $exon_pep did not match protein $sequence!\n");
+      }
+    }
+  }
+}
+
 sub collect_pfam {
   my $self = shift;
 
@@ -353,7 +431,6 @@ sub collect_pfam {
     }
   }
 
-#  my $cmd = "REPLACE INTO sitewise_pfam (node_id,aln_position,pf_position,pfam_id,score) VALUES (?,?,?,?,?)";
   my $cmd = "REPLACE INTO sitewise_tag (node_id,aln_position,parameter_set_id,tag,value,source) VALUES (?,?,?,?,?,?)";
   my $sth = $tree->adaptor->prepare($cmd);
 

@@ -11,8 +11,11 @@ use Bio::EnsEMBL::Compara::DBSQL::DBAdaptor;
 use Bio::EnsEMBL::Hive::Process;
 
 use Bio::Greg::ProcessUtils;
+use Bio::Greg::StatsCollectionUtils;
 
 our @ISA = qw(Bio::EnsEMBL::Hive::Process Bio::Greg::ProcessUtils);
+
+my $utils = "Bio::Greg::StatsCollectionUtils";
 
 my $dba;
 my $pta;
@@ -23,18 +26,22 @@ my $params;
 my $results;
 
 my $gene_stats_def = {
-  tree_length_total     => 'float',
-  tree_length_max       => 'float',
-  tree_length_avg       => 'float',
+  tree_length           => 'float',
+  tree_max_path         => 'float',
+  tree_mean_path        => 'float',
+  tree_max_branch       => 'float',
+  tree_mean_branch      => 'float',
   num_leaves            => 'int',
-  avg_column_entropy    => 'float',
-  avg_seq_length        => 'float',
+
+  mean_column_entropy   => 'float',
+  mean_seq_length       => 'float',
+  mean_gc_content       => 'float',
     
   num_human_genes       => 'int',
   human_gene            => 'string',
   human_genes           => 'string',
   human_chr             => 'string',
-  human_str             => 'string'
+  human_str             => 'string',
 
   duplications          => 'int',
   duplication_fraction  => 'float',
@@ -52,19 +59,30 @@ my $gene_stats_def = {
   };
 
 my $site_stats_def = {
+  omega                 => 'float',
   omega_lower           => 'float',
   omega_upper           => 'float',
   lrt_stat              => 'float',
   ncod                  => 'float',
   type                  => 'string',
   note                  => 'string',
-  
+
   aln_position          => 'int',
   aln_position_fraction => 'float',
 
   chr_name              => 'string',
   chr_start             => 'int',
   chr_end               => 'int',
+
+  column_entropy        => 'float',
+  indel_count           => 'int',
+
+  pfam_domain           => 'string',
+  sec_structure         => 'string',
+  solvent_acc           => 'int',
+  exon_type             => 'string',
+  splice_dist           => 'int',
+  
 };
 
 
@@ -141,12 +159,16 @@ sub get_gene_data {
   #Bio::EnsEMBL::Compara::AlignUtils->pretty_print($sa_nogap);
   
   # Collect gene tag values into the params hash.
-  $cur_params->{'tree_length_total'} = total_distance($tree);
-  $cur_params->{'tree_length_max'} = max_distance($tree);
-  $cur_params->{'tree_length_avg'} = avg_distance($tree);
+  $cur_params->{'tree_length'} = $utils->tree_length($tree);
+  $cur_params->{'tree_max_branch'} = $utils->max_branch($tree);
+  $cur_params->{'tree_mean_branch'} = $utils->mean_branch($tree);
+  $cur_params->{'tree_max_path'} = $utils->max_path($tree);
+  $cur_params->{'tree_mean_path'} = $utils->mean_path($tree);
+
   $cur_params->{'num_leaves'} = scalar($tree->leaves);
-  $cur_params->{'avg_column_entropy'} = sprintf("%.3f",Bio::EnsEMBL::Compara::AlignUtils->average_column_entropy($cdna_nogap));
-  $cur_params->{'avg_seq_length'} = avg_seq_length($tree);
+  $cur_params->{'mean_column_entropy'} = sprintf("%.3f",Bio::EnsEMBL::Compara::AlignUtils->average_column_entropy($cdna_nogap));
+  $cur_params->{'mean_seq_length'} = mean_seq_length($tree);
+  $cur_params->{'mean_gc_content'} = mean_gc_content($tree);
 
   my @hum_gen = grep {$_->taxon_id==9606} $tree->leaves;
   $cur_params->{'num_human_genes'} = scalar(@hum_gen);
@@ -172,7 +194,7 @@ sub get_gene_data {
   $cur_params->{'mean_omega'} = omega_average($psc_hash);
 
   my $ps = $cur_params->{'parameter_set_id'};
-  $cur_params->{'omega'} = $cur_params->{'slr_omega_'.$ps};
+  $cur_params->{'m0_omega'} = $cur_params->{'slr_omega_'.$ps};
   $cur_params->{'kappa'} = $cur_params->{'slr_kappa_'.$ps};
   $cur_params->{'lnl'} = $cur_params->{'slr_lnL_'.$ps};
 
@@ -185,8 +207,7 @@ sub get_gene_data {
   $self->store_params_in_table($dba,$table,$cur_params);
 }
 
-
-sub avg_seq_length {
+sub mean_seq_length {
   my $tree = shift;
   
   my $seq_len = 0;
@@ -194,37 +215,21 @@ sub avg_seq_length {
   return sprintf "%.3f", $seq_len / scalar($tree->leaves);
 }
 
-sub avg_distance {
-  my $tree = shift;
-  my $dist = 0;
-  map {$dist += dist_to_root($_);} $tree->leaves;
-  $dist = $dist / scalar($tree->leaves);
-  return sprintf "%.3f", $dist;
-}
-
-sub dist_to_root {
-  my $leaf = shift;
-
-  my $d = $leaf->distance_to_parent;
-  my $p = $leaf->parent;
-  while ($p) {
-    $d += $p->distance_to_parent;
-    $p = $p->parent;
+sub mean_gc_content {
+  my $tr = shift;
+  
+  my $sum_gc = 0;
+  foreach my $leaf ($tr->leaves) {
+    my $tx = $leaf->transcript;
+    my $seq = $tx->seq->seq;
+    $seq =~ s/[nx]//gi;
+    
+    my $total_len = length($seq);
+    $seq =~ s/[at]//gi;
+    my $gc_content = length($seq) / $total_len;
+    $sum_gc += $gc_content;
   }
-  return $d;
-}
-
-sub max_distance {
-  my $tree = shift;
-  my $max = $tree->max_distance;
-  return sprintf "%.3f", $max;
-}
-
-sub total_distance {
-  my $tree = shift;
-  my $dist = 0;
-  map {$dist += $_->distance_to_parent} $tree->nodes;
-  return sprintf "%.3f", $dist;
+  my $avg_gc = $sum_gc / scalar($tr->leaves);
 }
 
 sub mysql_getval {
