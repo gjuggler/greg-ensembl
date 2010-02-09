@@ -75,7 +75,7 @@ sub create_table_from_params {
 	   )
 	   ^);
 
-  foreach my $key (keys %$params) {
+  foreach my $key (sort keys %$params) {
     my $type = $params->{$key};
 
     my $type_map = {
@@ -109,12 +109,12 @@ sub store_params_in_table {
   $sth->execute;
   my $hashref = $sth->fetchall_hashref(['Field']);
   my @fields = keys %$hashref;
-
+  
   my $fields_string = '(`'.join('`,`',@fields).'`)';
   my $question_marks_string = '('. join(',',('?') x scalar(@fields)) . ')';  # Don't ask. It just works.
   
   my $sth2 = $dbh->prepare(qq^REPLACE INTO $table_name $fields_string VALUES $question_marks_string^);
-
+  
   # Prepare an array of values.
   my @values = map {
     if (defined $params->{$_} && $params->{$_} ne '') {

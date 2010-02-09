@@ -11,8 +11,11 @@ use Bio::EnsEMBL::Compara::DBSQL::DBAdaptor;
 use Bio::EnsEMBL::Hive::Process;
 
 use Bio::Greg::ProcessUtils;
+use Bio::Greg::StatsCollectionUtils;
 
 our @ISA = qw(Bio::EnsEMBL::Hive::Process Bio::Greg::ProcessUtils);
+
+my $utils = "Bio::Greg::StatsCollectionUtils";
 
 my $dba;
 my $pta;
@@ -44,19 +47,28 @@ my $slrsim_stats_def = {
 
   parameter_set_name => 'string',
 
-  true_dnds               => 'float',
-  aln_dnds                => 'float',
+  tree_length        => 'float',
+  tree_max_branch    => 'float',
+  tree_mean_branch  => 'float',
+  tree_max_path      => 'float',
+  tree_mean_path     => 'float',
+  num_leaves         => 'int',
+
+  true_dnds          => 'float',
   true_type          => 'string',
-  aln_type           => 'string',
-  ncod               => 'int',
   true_e             => 'float',
+  aln_dnds           => 'float',
+  aln_type           => 'string',
   aln_e              => 'float',
+  ncod               => 'int',
   lrt                => 'float',
   paml_lrt           => 'float',
+  slr_lnL            => 'float',
+  slr_omega          => 'float',
 
   sum_of_pairs_score => 'float',
   total_column_score => 'float',
-  average_column_entropy => 'float',
+  mean_column_entropy => 'float',
 
   unique_keys        => 'aln_position,node_id,parameter_set_id'
 };
@@ -120,7 +132,7 @@ sub get_data_for_node {
   my @aln_entropies;
   my $sum_of_pairs_score;
   my $total_column_score;
-  my $average_column_entropy;
+  my $mean_column_entropy;
   my $tree;
   eval {
     $pta->protein_tree_member("protein_tree_member");
@@ -137,7 +149,7 @@ sub get_data_for_node {
 
     $sum_of_pairs_score = Bio::EnsEMBL::Compara::AlignUtils->sum_of_pairs_score($sa_true,$sa_aln);
     $total_column_score = Bio::EnsEMBL::Compara::AlignUtils->total_column_score($sa_true,$sa_aln);
-    $average_column_entropy = Bio::EnsEMBL::Compara::AlignUtils->total_column_score($sa_true,$sa_aln);
+    $mean_column_entropy = Bio::EnsEMBL::Compara::AlignUtils->total_column_score($sa_true,$sa_aln);
   };  
   die("Hold up: ".$@) if ($@);
   return if (!$sa_true || !$sa_aln);
@@ -149,12 +161,24 @@ sub get_data_for_node {
   }
   my @seqs = $sa_true->each_seq;
   my ($ref_seq) = grep {$_->id eq $reference_id} @seqs;
-  die ("Reference was defined in params but not found in aln!") if ($reference_id ne '' && !defined $ref_seq);
+  #die ("Reference was defined in params but not found in aln!") if ($reference_id ne '' && !defined $ref_seq);
   $ref_seq = $seqs[0] if (!defined $ref_seq);
   my $ref_name = $ref_seq->id;
   my $str = $ref_seq->seq;
   my $nogaps = $str;
   $nogaps =~ s/-//g;
+
+  # Calculate branch length stats.
+  $cur_params->{tree_length} = $utils->tree_length($tree);
+  $cur_params->{tree_max_branch} = $utils->max_branch($tree);
+  $cur_params->{tree_mean_branch} = $utils->mean_branch($tree);
+  $cur_params->{tree_max_path} = $utils->max_path($tree);
+  $cur_params->{tree_mean_path} = $utils->mean_path($tree);
+  $cur_params->{num_leaves} = scalar($tree->leaves);
+
+  $cur_params->{sum_of_pairs_score} = $sum_of_pairs_score;
+  $cur_params->{total_column_score} = $total_column_score;
+  $cur_params->{mean_column_entropy} = $mean_column_entropy;
 
   # Get all the site-wise data from the omega table.
   my $aln_table_name = $cur_params->{'omega_table'};
@@ -162,7 +186,6 @@ sub get_data_for_node {
   my $sth2 = $pta->prepare("SELECT aln_position,omega,type,note,ncod,lrt_stat FROM $aln_table_name WHERE node_id=? AND parameter_set_id=?;");
   $sth1->execute($node_id);
   $sth2->execute($node_id,$parameter_set_id);
-  
   my $true_omegas = $sth1->fetchall_hashref('aln_position');
   my $aln_omegas = $sth2->fetchall_hashref('aln_position');
 
@@ -175,8 +198,14 @@ sub get_data_for_node {
     $obj->{true_dnds} = $true_omegas->{$true_col}->{'omega'};
     $obj->{aln_dnds} = $aln_omegas->{$aln_col}->{'omega'};
     if (!($obj->{aln_dnds} && $obj->{true_dnds})) {
-      printf " =>Skipping! aln:%s  %s  true:%s  %s\n",$aln_col,$obj->{aln},$true_col,$obj->{true};
-      next;
+      if ($cur_params->{'sitewise_action'} eq '') {
+        # Do nothing.
+        $obj->{aln_dnds} = 0;
+        $obj->{true_dnds} = 0;
+      } else {
+        printf " =>Skipping! aln:%s  %s  true:%s  %s\n",$aln_col,$obj->{aln},$true_col,$obj->{true};
+        next;
+      }
     }
     $obj->{aln_type} = $aln_omegas->{$aln_col}->{'type'} || '';
     $obj->{true_type} = $true_omegas->{$true_col}->{'type'} || '';
@@ -185,9 +214,6 @@ sub get_data_for_node {
     $obj->{true_e} = sprintf "%.3f", $true_entropies[$true_col];
     $obj->{aln_e} = sprintf "%.3f", $aln_entropies[$aln_col];
     $obj->{lrt} = $aln_omegas->{$aln_col}->{'lrt_stat'} || 99;
-    $obj->{sum_of_pairs_score} = $sum_of_pairs_score;
-    $obj->{total_column_score} = $total_column_score;
-    $obj->{average_column_entropy} = $average_column_entropy;
 
     # Store PAML LRTs if relevant.
     foreach my $tag (keys %$cur_params) {
@@ -196,12 +222,13 @@ sub get_data_for_node {
       }
     }
 
-
     # Store values in our output table.
     $obj = $self->replace_params($obj,$cur_params);
     my $table = $cur_params->{'collect_slrsim_stats_table'};
     $self->store_params_in_table($dba,$table,$obj);
   }
 }
+
+
 
 1;
