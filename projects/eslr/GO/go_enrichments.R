@@ -4,10 +4,6 @@ library(org.Hs.eg.db)
 library(Category)
 library(GOstats)
 
-if (!exists("all_genes")) {
-  all_genes= read.table("~/src/ensembl_svn/ensembl-greg/scripts/eslr/data_dump/data/NO.backup/genes/ensembl_genes.tsv",sep="\t",header=T,stringsAsFactors=F)
-}
-
 # Create the different sets of genes.
 genes = subset(all_genes,!is.na(v_omega))
 genes = genes[grep("ENSP0",genes$stable_id),]
@@ -31,8 +27,6 @@ egUNI	<- mget(genes$stable_id,org.Hs.egENSEMBLPROT2EG,ifnotfound=NA)
 for (g in c('hi','lo','psc')) {
                                         # Get the data
   eg	<- get(paste(g, ".egs", sep=""))
-                                        # File name and other parameters
-  add	<- list(categorySize=3)
                                         # Running though the GO categories
   for (go in c("BP","MF","CC")) {
     para <- new("GOHyperGParams", geneIds=eg, universeGeneIds=egUNI, annotation="org.Hs.eg.db", ontology=go, pvalueCutoff = Inf, conditional=T)

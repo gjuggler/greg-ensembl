@@ -140,3 +140,19 @@ What I did:
 ### 2010-01-21 ###
 
  - The Ensembl 56 E-slr run is finished collecting omegas. Time to work on the data collection scripts. Do a good Runnable this time around.
+
+### 2010-02-05 ###
+ 
+What I did since last update:
+ - Implemented a nicer table-based method for outputting the results into tables. Gene-wise is working fine. Site-wise remaining.
+
+What I did today:
+ - Created Excel tables for Ewan with enrichments for 
+
+TODO:
+ - Add first_exon, middle_exon, last_exon sitewise tags
+ - Implement site-wise data export
+ - Add parameter_set short names
+ - Collect M0 dn/ds values from SLR.
+ - Bring out Indelign into its own Runnable.
+ - Bring ALL of my stuff into the Bio::Greg tree, so we're not at all reliant on my modded Compara codebase.

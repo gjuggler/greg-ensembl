@@ -7,7 +7,6 @@ if (exists('drv')) {
 
 con <- dbConnect(drv, host='ens-research', port=3306, user='ensro', password='', dbname='gj1_eslr')
 
-
 get.vector = function(con,query,columns=1) {
   res = dbSendQuery(con,query)
   if (columns == 'all') {
@@ -20,28 +19,45 @@ get.vector = function(con,query,columns=1) {
 }
 
 # Get the parameter sets.
-query = 'SELECT parameter_set_id AS id,parameter_value AS name FROM parameter_set where parameter_name="name";'
-param.sets = get.vector(con,query,columns='all')
-#print(param.sets)
+get.psets = function() {
+  query = paste('SELECT n.parameter_set_id AS id,sn.parameter_value AS shortname, n.parameter_value AS name FROM parameter_set n, parameter_set sn',
+    'WHERE n.parameter_set_id=sn.parameter_set_id AND n.parameter_name="name" AND sn.parameter_name="shortname";')
+  return(get.vector(con,query,columns='all'))
+}
 
-get.data.alt = function() {
-  query = sprintf("SELECT * FROM stats_genes where parameter_set_id=1");
+get.genes = function(parameter.set.id=1) {
+  query = sprintf("SELECT * FROM stats_genes where parameter_set_id=%s",parameter.set.id);
   data = get.vector(con,query,columns='all')
+
+  # Temoporary fix.
+  psc = data$num_pscs
+  psc_weak = data$num_pscs_weak
+  data$num_pscs = psc_weak
+  data$num_pscs_weak = psc
+
   return(data)
 }
 
-if (!exists('all.data')) {
-  all.data = get.data.alt()
-}
-
-
-
-ize = function(izer) {
-  function(data, columns=names(data)) {
-    data[columns] = lapply(data[columns], izer)
-    data
+get.all.merged = function() {
+  if (exists('merged.df')) {
+    rm(merged.df)
   }
+
+  all.node.ids = get.vector(con,'SELECT DISTINCT(node_id) FROM stats_genes')
+  
+  param.sets = get.psets()
+  for (pset in param.sets$id) {
+    genes = get.genes(pset)
+    col.dnds = paste(param.sets[pset,]$shortname,'_dnds',sep="")
+    col.psc = paste(param.sets[pset,]$shortname,'_psc',sep="")
+    genes.subset = data.frame(a=genes$node_id,b=genes$avg_omega,c=genes$num_pscs)
+    colnames(genes.subset) = c('node_id',col.dnds,col.psc)
+      
+    if (!exists('merged.df')) {
+      merged.df = data.frame(node_id=all.node.ids)
+    }
+    print(merged.df[1,])
+    merged.df = merge(merged.df,genes.subset,all.x=T)
+  }
+  assign('all.genes',merged.df,pos=1)
 }
-logicalize = ize(as.logical)
-characterize = ize(as.character)
-factorize = ize(as.factor)

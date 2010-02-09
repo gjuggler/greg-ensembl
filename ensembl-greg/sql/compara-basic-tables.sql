@@ -375,6 +375,7 @@ CREATE TABLE IF NOT EXISTS go_terms (
   `source_taxon` int unsigned NOT NULL default 0,
   `stable_id` varchar(40) default NULL,
   `go_term` varchar(20) default NULL,
+  `evidence_code` varchar(10) default NULL,
   PRIMARY KEY (go_term_id),
   UNIQUE KEY `member_go_term` (`go_term`,`member_id`,`source_taxon`),
   KEY `node_id` (`node_id`),
