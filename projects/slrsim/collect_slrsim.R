@@ -25,10 +25,6 @@ get.data.alt = function() {
   return(data)
 }
 
-if (!exists('all.data')) {
-  all.data = get.data.alt()
-}
-
 is.paml = function(df) {
   if (grepl("paml",df[1,]$sitewise_name,ignore.case=T)) {
     return(TRUE)
@@ -245,6 +241,5 @@ do.some.plots = function(data) {
     plot.phylo(tree,cex=0.3)
   }
   subplot(plot.tree,x=0.087,y=0.65,size=c(1.5,1.5))
-
 
 }
