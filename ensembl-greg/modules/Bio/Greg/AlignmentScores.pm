@@ -95,7 +95,7 @@ sub run {
       $self->store_scores($tree,$score_hash,$input_table."_".'indelign');
     };
     if ($@) {
-      print "Indelible error: $@\n";
+      print "Indelign error: $@\n";
     }
   }
 
@@ -138,7 +138,7 @@ sub run_indelign {
   my $blocks_string = "0" x $aln->length;  
   for (my $i=0; $i < $aln->length; $i++) {
     my $indel_sum = $ins[$i] + $del[$i];
-    my $max_allowed_indels = $rate_sum*$tree_length*2;
+    my $max_allowed_indels = $rate_sum*$tree_length*1.5;
     if ($indel_sum >= $max_allowed_indels) {
       substr $blocks_string,$i,1,'0';
     } else {
@@ -262,7 +262,7 @@ sub run_trimal {
   Bio::EnsEMBL::Compara::AlignUtils->to_file($aln,$aln_f);
   
   # Build a command for TrimAl.
-  my $trim_params = '-cons 30 -gt 0.5 -w 2';
+  my $trim_params = '-cons 30 -gt 0.2 -st 0.001';
   $trim_params = $params->{'trimal_filtering_params'} if ($params->{'trimal_filtering_params'}); # Custom parameters if desired.
   my $cmd = "trimal -in $aln_f -out $aln_f -colnumbering $trim_params";
   my $output = `$cmd`;
@@ -292,7 +292,7 @@ sub run_prank {
   my $params = shift;
 
   my $aln = $tree->get_SimpleAlign();
-  my $threshold = $params->{'prank_filtering_threshold'} || 5;
+  my $threshold = $params->{'prank_filtering_threshold'} || 7;
   my ($scores,$blocks) = Bio::EnsEMBL::Compara::AlignUtils->get_prank_filter_matrices($aln,$tree,$params);
 
   return $scores;

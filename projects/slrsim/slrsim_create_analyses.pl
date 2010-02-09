@@ -43,7 +43,7 @@ sub clean_tables {
     my @truncate_tables = qw^
 sequence
 analysis analysis_job dataflow_rule hive
-sitewise_omega sitewise_stats
+sitewise_omega sitewise_stats stats_slrsim
 parameter_set
 node_set_member node_set
       ^;

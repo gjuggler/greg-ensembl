@@ -236,7 +236,6 @@ sub store {
   return $node->node_id;
 }
 
-
 sub store_node {
   my ($self, $node) = @_;
 
@@ -280,9 +279,6 @@ sub store_node {
   $node->adaptor($self);
   $sth->finish;
 
-  # GJ 2008-12-20: store the tags for this node.
-  $node->store_tags;
-
   if($node->isa('Bio::EnsEMBL::Compara::AlignedMember')) {
       my $ptm = $self->protein_tree_member;
       $sth = $self->prepare("INSERT IGNORE INTO $ptm
@@ -323,9 +319,6 @@ sub update_node {
 
   $node->adaptor($self);
   $sth->finish;
-
-  # GJ 2008-12-20: store tags on update.
-  $node->store_tags;
 
   if($node->isa('Bio::EnsEMBL::Compara::AlignedMember')) {
     my $sql = "UPDATE protein_tree_member SET ". 

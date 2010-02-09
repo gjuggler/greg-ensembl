@@ -54,7 +54,7 @@ sub create_simsets {
   my $base_length = 1;
 
   my $base_params = {
-    slrsim_replicates => 50,
+    slrsim_replicates => 1,
     slrsim_file => 'artificial.nh',
     slrsim_tree_mult => 1,
 
@@ -71,6 +71,7 @@ sub create_simsets {
   my $primates = '2x_p.nh';
   my $glires = '2x_g.nh';
   my $fortyfourmammals = '44mammals.nh';
+  my $twoxmammals = '2xmammals.nh';
   my $ensembl = 'ensembl.nh';
 
   my $anisimova_02_M3 = {
@@ -119,9 +120,13 @@ sub create_simsets {
     phylosim_sdlog => 1.23
   };
 
+  my $sitewise_none = {
+    sitewise_name => 'None',
+    sitewise_action => ''
+  };
   my $slr = {
     sitewise_name => 'SLR',
-    sitewise_action => 'slr',
+    sitewise_action => 'slr'
   };
   my $paml = {
     sitewise_name => 'PAML M8A/M8B',
@@ -136,62 +141,69 @@ sub create_simsets {
     paml_model_b => 'M3'
   };
   
-
-  # Looking at bglobin and difference between reference sequences
-  my $sim_p = replace($massingham_05_A,{
+  my $sim_p = replace($lognormal, {
+    slrsim_file => '',
     slrsim_tree_mult => 1,
-  });
+    phylosim_insertmodel => 'NB 0.18 2',
+    phylosim_deletemodel => 'NB 0.18 2'
+                      });
   my @sim_params;
-  foreach my $indel (0.01,0.02,0.05) {
+
+  my (@tree_params,@mult_params,@aln_params,@filter_params,@species_params,@sitewise_params);
+
+  foreach my $indel (0.1,0.2) {
     push @sim_params, replace($sim_p,{phylosim_ins_rate => $indel,phylosim_del_rate => $indel});
   }
-  my @tree_params = map {tree_param($_)} ($tree_anisimova_bglobin);
-  my @aln_params = map {aln_param($_)} ('mcoffee');
-  my @filter_params = map {filter_param($_)} ('none');
-  my @species_params = map {species_param($_)} ('human','mouse','xenlaev');
-  my @sitewise_params = ($slr,$paml,$paml_alt);
-  foreach my $tr (@tree_params) {
-    foreach my $sim (@sim_params) {
-      foreach my $aln (@aln_params) {
-        foreach my $f (@filter_params) {
-          foreach my $sp (@species_params) {
-            foreach my $sw (@sitewise_params) {
-              my $p = replace($base_params,$tr,$sim,$aln,$f,$sp,$sw);
-              verify_params($p);
-              push @simulation_sets,$p;
+  @tree_params = map {tree_param($_)} ($tree_anisimova_bglobin);
+  @mult_params = map {mult_param($_)} (1,2);
+  @aln_params = map {aln_param($_)} ('mcoffee','prank');
+  @filter_params = map {filter_param($_)} ('none','mcoffee','prank','trimal','indelign','gblocks');
+  @species_params = map {species_param($_)} ('human','xenlaev','mouse');
+  @sitewise_params = ($slr);
+  foreach my $sim (@sim_params) {
+    foreach my $tr (@tree_params) {
+      foreach my $mult (@mult_params) {
+        foreach my $aln (@aln_params) {
+          foreach my $f (@filter_params) {
+            foreach my $sp (@species_params) {
+              foreach my $sw (@sitewise_params) {
+                my $p = replace($base_params,$sim,$tr,$mult,$aln,$f,$sp,$sw);
+                verify_params($p);
+                push @simulation_sets,$p;
+              }
             }
           }
         }
-      }
-    }  
+      }  
+    }
   }
 
-
-  $sim_p = replace($lognormal,{
-    slrsim_tree_mult => 2,
-  });
-  foreach my $indel (0.05) {
+  @sim_params = ();
+  foreach my $indel (0.1,0.2) {
     push @sim_params, replace($sim_p,{phylosim_ins_rate => $indel,phylosim_del_rate => $indel});
   }
-  @tree_params = map {tree_param($_)} ($full);
-  @aln_params = map {aln_param($_)} ('mcoffee');
-  @filter_params = map {filter_param($_)} ('none','prank','trimal','indelign','gblocks');
-  @species_params = map {species_param($_)} ('human');
-  @sitewise_params = ($slr,$paml_alt);
-  foreach my $tr (@tree_params) {
-    foreach my $sim (@sim_params) {
-      foreach my $aln (@aln_params) {
-        foreach my $f (@filter_params) {
-          foreach my $sp (@species_params) {
-            foreach my $sw (@sitewise_params) {
-              my $p = replace($base_params,$tr,$sim,$aln,$f,$sp,$sw);
-              verify_params($p);
-              push @simulation_sets,$p;
+  @tree_params = map {tree_param($_)} ($fortyfourmammals);
+  @mult_params = map {mult_param($_)} (1,2,4);
+  @aln_params = map {aln_param($_)} ('mcoffee','prank');
+  @filter_params = map {filter_param($_)} ('none','mcoffee','prank','trimal','indelign','gblocks');
+  @species_params = map {species_param($_)} ('Human','X_tropicalis','Mouse');
+  @sitewise_params = ($slr);
+  foreach my $sim (@sim_params) {
+    foreach my $tr (@tree_params) {
+      foreach my $mult (@mult_params) {
+        foreach my $aln (@aln_params) {
+          foreach my $f (@filter_params) {
+            foreach my $sp (@species_params) {
+              foreach my $sw (@sitewise_params) {
+                my $p = replace($base_params,$sim,$tr,$mult,$aln,$f,$sp,$sw);
+                verify_params($p);
+                push @simulation_sets,$p;
+              }
             }
           }
         }
-      }
-    }  
+      }  
+    }
   }
 
 }  
@@ -206,6 +218,11 @@ sub verify_params {
   create_aln_table($p->{alignment_table});
   create_aln_table($p->{alignment_table}.'_score');
   create_omega_table($p->{omega_table});
+}
+
+sub mult_param {
+  my $mult = shift;
+  return {slrsim_tree_mult => $mult};
 }
 
 sub tree_param {
@@ -289,15 +306,17 @@ foreach my $params (@simulation_sets) {
   my $newick_str = join("",<IN>);
   close(IN);
   
+  my $base_node = Bio::EnsEMBL::Compara::TreeUtils->from_newick($newick_str);
+  
   foreach my $sim_rep (1 .. $replicates) {
     print "$file $sim_set $sim_rep\n";
-    
+    my $node = $base_node->copy;
+
     my $md5 = Digest::MD5->new;
     $md5->add($params);
     $md5->add($sim_rep);
     my $unique_string = substr($md5->hexdigest,20);
 
-    my $node = Bio::EnsEMBL::Compara::TreeUtils->from_newick($newick_str);
     my $bl = Bio::EnsEMBL::Compara::TreeUtils->total_distance($node);
     my $n = scalar $node->leaves;
     if ($tree_length) {
@@ -307,7 +326,8 @@ foreach my $params (@simulation_sets) {
       $node = Bio::EnsEMBL::Compara::TreeUtils->scale($node,$tree_mult);
     }
     my $final_length = Bio::EnsEMBL::Compara::TreeUtils->total_distance($node);
-    print "  -> $final_length\n";
+    my $mean_length = $final_length / scalar($node->nodes);
+    printf "  -> total: %.3f  mean: %.3f\n",$final_length,$mean_length;
 
     # Go through each leaf and store the member objects.
     foreach my $leaf ($node->leaves) {

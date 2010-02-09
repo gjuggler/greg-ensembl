@@ -505,4 +505,56 @@ What did I do:
  - Rearranged the slrsim_load_trees script and created 'plot_proteins.pl' for plotting sets of proteins.
    -> plot_proteins.pl calls the 'tree_dump.pl' in the greg-ensembl/scripts directory for dumping tree data.
  - Implemented total column score and sum of pairs score in AlignUtils.pm
- - 
+
+
+### 2010-02-08 ###
+
+Update on slrsim stuff:
+ - Parameter handling in the Runnables is now refactored so that each tree / root node can have its own set of everything.
+   So, to test different alignment / filtering / sitewise options, we simulate multiple trees as opposed to using multiple
+   parameter sets.
+ - (This might be an issue if we wanted to directly compare the results of different options on the same tree, but for Slrsim
+   we're just interested in the overall behavior. For E-slr analysis, we'll want multiple parameter sets.)
+ - Now we need to settle on a tree and really dig into alignment / filtering behavior and performance.
+ - Open questions:
+   -> Does filtering help at all? When? What is the tradeoff between throwing out data and better specificity?
+   -> What are the most biologically realistic indel parameters? How can we test this?
+
+---
+Code for Slrsim testing different tree sizes / indel rates:
+  # Looking at bglobin and difference between reference sequences
+  my $sim_p = replace($lognormal, {
+    slrsim_file => $ensembl,
+    slrsim_tree_mult => 1,
+    phylosim_insertmodel => 'NB 0.2 2',
+    phylosim_deletemodel => 'NB 0.2 2'
+                      });
+  my @sim_params;
+  foreach my $indel (0.02,0.05,0.1,0.2) {
+    push @sim_params, replace($sim_p,{phylosim_ins_rate => $indel,phylosim_del_rate => $indel});
+  }
+  my @tree_params = map {tree_param($_)} ($ensembl,$full,$fortyfourmammals,$twoxmammals,$tree_anisimova_bglobin);
+  my @mult_params = map {mult_param($_)} (1,2,4);
+  my @aln_params = map {aln_param($_)} ('none');
+  my @filter_params = map {filter_param($_)} ('none');
+  my @species_params = map {species_param($_)} ('Human');
+  my @sitewise_params = ($sitewise_none);
+  foreach my $sim (@sim_params) {
+    foreach my $tr (@tree_params) {
+      foreach my $mult (@mult_params) {
+        foreach my $aln (@aln_params) {
+          foreach my $f (@filter_params) {
+            foreach my $sp (@species_params) {
+              foreach my $sw (@sitewise_params) {
+                my $p = replace($base_params,$sim,$tr,$mult,$aln,$f,$sp,$sw);
+                verify_params($p);
+                push @simulation_sets,$p;
+              }
+            }
+          }
+        }
+      }  
+    }
+  }
+---
+

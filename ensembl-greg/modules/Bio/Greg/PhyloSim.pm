@@ -74,8 +74,8 @@ sub fetch_input {
     phylosim_ins_rate => 0.05,
     phylosim_del_rate => 0.05,
     phylosim_simulation_program => 'indelible',
-    phylosim_insertmodel => 'NB 0.3 2',
-    phylosim_deletemodel => 'NB 0.3 2',
+    phylosim_insertmodel => 'NB 0.2 2',
+    phylosim_deletemodel => 'NB 0.2 2',
   };
 
   my $node_id;
