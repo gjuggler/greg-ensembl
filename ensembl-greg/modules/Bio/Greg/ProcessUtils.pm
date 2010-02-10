@@ -52,49 +52,48 @@ sub create_table_from_params {
   my $dba = shift;
   my $table_name = shift;
   my $params = shift;
-
+  
   my $dbh = $dba->dbc->db_handle;
 
-  # Check if the table already exists.
+  # First, create the table with node_id and parameter_set columns.
   eval {
-    my $sth = $dbh->column_info(undef,$dba->dbc->dbname,$table_name,'%');
+    $dbh->do(qq^
+	     CREATE TABLE $table_name (
+				       node_id INT(10),
+				       parameter_set_id TINYINT(3)
+				       )
+	     ^);
   };
-  if (!$@) {
-    #print "TABLE $table_name EXISTS!\n";
+  if ($@) {
+    print "TABLE $table_name EXISTS!!\n";
     return;
   }
-  # First, create the table with node_id and parameter_set columns.
   print "Creating new table $table_name ...\n";
 
   my $unique_keys = delete $params->{'unique_keys'};
+  eval {
+    
+    foreach my $key (sort keys %$params) {
+      my $type = $params->{$key};
+      
+      my $type_map = {
+	'int' => 'INT',
+	'string' => 'TEXT',
+	'float' => 'FLOAT'
+	};
+      $type = $type_map->{$type};
+      
+      my $create_cmd = qq^ALTER TABLE $table_name ADD COLUMN `$key` $type^;
+      $dbh->do($create_cmd);
+    }
+    
+    my $unique_cmd = qq^ALTER TABLE $table_name ADD UNIQUE (node_id,parameter_set_id)^;
+    if ($unique_keys) {
+      $unique_cmd = qq^ALTER TABLE $table_name ADD UNIQUE ($unique_keys)^;
+    }
+    $dbh->do($unique_cmd);
+  };
 
-  $dbh->do(qq^
-	   CREATE TABLE $table_name (
-	     node_id INT(10),
-	     parameter_set_id TINYINT(3)
-	   )
-	   ^);
-
-  foreach my $key (sort keys %$params) {
-    my $type = $params->{$key};
-
-    my $type_map = {
-      'int' => 'INT',
-      'string' => 'TEXT',
-      'float' => 'FLOAT'
-    };
-    $type = $type_map->{$type};
-
-    my $create_cmd = qq^ALTER TABLE $table_name ADD COLUMN `$key` $type^;
-    $dbh->do($create_cmd);
-  }
-
-  my $unique_cmd = qq^ALTER TABLE $table_name ADD UNIQUE (node_id,parameter_set_id)^;
-  if ($unique_keys) {
-    $unique_cmd = qq^ALTER TABLE $table_name ADD UNIQUE ($unique_keys)^;
-  }
-  $dbh->do($unique_cmd);
-  
 }
 
 sub store_params_in_table {
@@ -105,14 +104,21 @@ sub store_params_in_table {
 
   my $dbh = $dba->dbc->db_handle;
 
-  my $sth = $dbh->prepare("SHOW FIELDS FROM $table_name");
-  $sth->execute;
-  my $hashref = $sth->fetchall_hashref(['Field']);
-  my @fields = keys %$hashref;
+  my @fields;
+  if (!defined $params->{_fields_arrayref}) {
+    my $sth = $dbh->prepare("SHOW FIELDS FROM $table_name");
+    $sth->execute;
+    my $hashref = $sth->fetchall_hashref(['Field']);
+    $sth->finish;
+    @fields = keys %$hashref;
   
+    $params->{_fields_arrayref} = \@fields;
+  } else {
+    @fields = @{$params->{_fields_arrayref}};
+  }
+
   my $fields_string = '(`'.join('`,`',@fields).'`)';
-  my $question_marks_string = '('. join(',',('?') x scalar(@fields)) . ')';  # Don't ask. It just works.
-  
+  my $question_marks_string = '('. join(',',('?') x @fields) . ')';  # Don't ask. It just works.
   my $sth2 = $dbh->prepare(qq^REPLACE INTO $table_name $fields_string VALUES $question_marks_string^);
   
   # Prepare an array of values.
@@ -124,7 +130,7 @@ sub store_params_in_table {
     }
   } @fields;
   $sth2->execute(@values);
-  
+  $sth2->finish;
 }
 
 1;

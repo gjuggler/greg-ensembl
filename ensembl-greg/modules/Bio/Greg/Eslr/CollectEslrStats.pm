@@ -31,31 +31,35 @@ my $gene_stats_def = {
   tree_mean_path        => 'float',
   tree_max_branch       => 'float',
   tree_mean_branch      => 'float',
-  num_leaves            => 'int',
+  leaf_count            => 'int',
 
-  mean_column_entropy   => 'float',
-  mean_seq_length       => 'float',
-  mean_gc_content       => 'float',
+  column_entropy_mean   => 'float',
+  seq_length_mean       => 'float',
+  gc_content_mean       => 'float',
     
-  num_human_genes       => 'int',
-  human_gene            => 'string',
-  human_genes           => 'string',
-  human_chr             => 'string',
-  human_str             => 'string',
+  human_gene_count      => 'int',
+  human_gene_list       => 'string',
 
-  duplications          => 'int',
+  human_gene            => 'string',
+  human_chr             => 'string',
+  human_start           => 'int',
+  human_end             => 'int',
+  human_strand          => 'int',
+
+  duplication_count     => 'int',
   duplication_fraction  => 'float',
 
-  num_pscs              => 'int',
-  num_pscs_weak         => 'int',
-  mean_omega            => 'float',
-
-  omega                 => 'float',
+  psc_count             => 'int',
+  weak_psc_count        => 'int',
+  omega_mean            => 'float',
+  omega_mean_excl_pscs  => 'float',
+  omega_m0              => 'float',
   kappa                 => 'float',
   slr_lnl               => 'float',
 
-  ins_rate              => 'float',
-  del_rate              => 'float'
+# Coming soon...
+#  ins_rate              => 'float',
+#  del_rate              => 'float'
   };
 
 my $site_stats_def = {
@@ -74,15 +78,17 @@ my $site_stats_def = {
   chr_start             => 'int',
   chr_end               => 'int',
 
-  column_entropy        => 'float',
-  indel_count           => 'int',
 
-  pfam_domain           => 'string',
-  sec_structure         => 'string',
-  solvent_acc           => 'int',
-  exon_type             => 'string',
-  splice_dist           => 'int',
-  
+# Should we integrate these into the table now, or let this be done in R?
+#  column_entropy        => 'float',
+#  indel_count           => 'int',
+#  pfam_domain           => 'string',
+#  sec_structure         => 'string',
+#  solvent_acc           => 'int',
+#  exon_type             => 'string',
+#  splice_dist           => 'int',
+
+  unique_keys            => 'aln_position,node_id,parameter_set_id'  
 };
 
 
@@ -129,7 +135,11 @@ sub run {
   }
 
   foreach my $ps_id (@param_sets) {
-    $self->get_gene_data($node_id,$ps_id);
+#    $self->get_gene_data($node_id,$ps_id);
+  }
+
+  foreach my $ps_id (@param_sets) {
+    $self->get_sites_data($node_id,$ps_id);
   }
 
 }
@@ -160,135 +170,106 @@ sub get_gene_data {
   
   # Collect gene tag values into the params hash.
   $cur_params->{'tree_length'} = $utils->tree_length($tree);
-  $cur_params->{'tree_max_branch'} = $utils->max_branch($tree);
-  $cur_params->{'tree_mean_branch'} = $utils->mean_branch($tree);
   $cur_params->{'tree_max_path'} = $utils->max_path($tree);
   $cur_params->{'tree_mean_path'} = $utils->mean_path($tree);
+  $cur_params->{'tree_max_branch'} = $utils->max_branch($tree);
+  $cur_params->{'tree_mean_branch'} = $utils->mean_branch($tree);
+  $cur_params->{'leaf_count'} = scalar($tree->leaves);
 
-  $cur_params->{'num_leaves'} = scalar($tree->leaves);
-  $cur_params->{'mean_column_entropy'} = sprintf("%.3f",Bio::EnsEMBL::Compara::AlignUtils->average_column_entropy($cdna_nogap));
-  $cur_params->{'mean_seq_length'} = mean_seq_length($tree);
-  $cur_params->{'mean_gc_content'} = mean_gc_content($tree);
+  $cur_params->{'column_entropy_mean'} = sprintf("%.3f",Bio::EnsEMBL::Compara::AlignUtils->average_column_entropy($cdna_nogap));
+  $cur_params->{'seq_length_mean'} = $utils->seq_length_mean($tree);
+  $cur_params->{'gc_content_mean'} = $utils->gc_content_mean($tree);
 
   my @hum_gen = grep {$_->taxon_id==9606} $tree->leaves;
-  $cur_params->{'num_human_genes'} = scalar(@hum_gen);
+  $cur_params->{'human_gene_count'} = scalar(@hum_gen);
   if (scalar @hum_gen > 0) {
-    $cur_params->{'human_genes'} = join(",",map {$_->stable_id} @hum_gen);
     my $first_human_gene = $hum_gen[0];
+    $cur_params->{'human_gene_list'} = join(",",map {$_->stable_id} @hum_gen);
     $cur_params->{'human_gene'} = $first_human_gene->stable_id;
 
     my $tscr = $first_human_gene->get_Transcript;
     $tscr = $tscr->transform("chromosome");
     if (defined $tscr) {
       my $chr = "chr".$tscr->slice->seq_region_name;
+      my $strand = $tscr->slice->strand;
+      my $start = $tscr->coding_region_start;
+      my $end = $tscr->coding_region_end;
+      $cur_params->{human_chr} = $chr;
+      $cur_params->{human_strand} = $strand;
+      $cur_params->{human_start} = $start;
+      $cur_params->{human_end} = $end;
     }
-
   }
 
-  $cur_params->{'duplications'} = mysql_getval($tree,"SELECT num_dups_under_node($node_id)");
-  $cur_params->{'duplication_fraction'} = sprintf "%.3f", mysql_getval($tree,"SELECT num_dups_under_node($node_id)/node_count($node_id)");
+  $cur_params->{'duplication_count'} = $utils->mysql_getval($tree,"SELECT num_dups_under_node($node_id)");
+  $cur_params->{'duplication_fraction'} = sprintf "%.3f", $utils->mysql_getval($tree,"SELECT num_dups_under_node($node_id)/node_count($node_id)");
 
-  my $psc_hash = get_psc_hash($dba->dbc,$cur_params);
-  $cur_params->{'num_pscs'} = psc_count($psc_hash,0);
-  $cur_params->{'num_pscs_weak'} = psc_count($psc_hash,1);
-  $cur_params->{'mean_omega'} = omega_average($psc_hash);
-
+  my $psc_hash = $utils->get_psc_hash($dba->dbc,$cur_params);
+  $cur_params->{'psc_count'} = $utils->psc_count($psc_hash,0);
+  $cur_params->{'weak_psc_count'} = $utils->psc_count($psc_hash,1);
+  $cur_params->{'omega_mean'} = $utils->omega_average($psc_hash);
+  $cur_params->{'omega_mean_excl_pscs'} = $utils->omega_average_exclude_pscs($psc_hash);
+ 
   my $ps = $cur_params->{'parameter_set_id'};
-  $cur_params->{'m0_omega'} = $cur_params->{'slr_omega_'.$ps};
+  $cur_params->{'omega_m0'} = $cur_params->{'slr_omega_'.$ps};
   $cur_params->{'kappa'} = $cur_params->{'slr_kappa_'.$ps};
-  $cur_params->{'lnl'} = $cur_params->{'slr_lnL_'.$ps};
+  $cur_params->{'slr_lnl'} = $cur_params->{'slr_lnL_'.$ps};
 
+# Indel rates aren't yet implemented (need to speed up Indelign first.)
 #  my ($ins,$del,$ins_rate,$del_rate) = Bio::EnsEMBL::Compara::AlignUtils->indelign($sa_nogap,$tree,$cur_params);
-  $cur_params->{'indelign_ins_rate'} = $cur_params->{'indelign_ins_rate_'.$ps};
-  $cur_params->{'indelign_del_rate'} = $cur_params->{'indelign_del_rate_'.$ps};
+#  $cur_params->{'indelign_ins_rate'} = $cur_params->{'indelign_ins_rate_'.$ps};
+#  $cur_params->{'indelign_del_rate'} = $cur_params->{'indelign_del_rate_'.$ps};
 
   # Store values in our output table.
   my $table = $cur_params->{'collect_eslr_stats_genes_table'};
   $self->store_params_in_table($dba,$table,$cur_params);
 }
 
-sub mean_seq_length {
-  my $tree = shift;
-  
-  my $seq_len = 0;
-  map {$seq_len += $_->seq_length} $tree->leaves;
-  return sprintf "%.3f", $seq_len / scalar($tree->leaves);
-}
 
-sub mean_gc_content {
-  my $tr = shift;
+sub get_sites_data {
+  my $self = shift;
+  my $node_id = shift;
+  my $parameter_set_id = shift;
+
+  my $param_set_params = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_param_set($dba->dbc,$parameter_set_id);
+  my $cur_params = $self->replace_params($params,$param_set_params);
+  Bio::EnsEMBL::Compara::ComparaUtils->hash_print($cur_params);
+
+  $pta->protein_tree_member("protein_tree_member");
+
+  my ($tree,$sa_aln,$cdna_aln);
+  eval {
+    ($tree,$sa_aln,$cdna_aln) = Bio::EnsEMBL::Compara::ComparaUtils->tree_aln_cdna($dba,$cur_params);
+  };
+  return if ($@);
   
-  my $sum_gc = 0;
-  foreach my $leaf ($tr->leaves) {
-    my $tx = $leaf->transcript;
-    my $seq = $tx->seq->seq;
-    $seq =~ s/[nx]//gi;
+  my $psc_params = $self->replace_params($cur_params,{genome => 1});
+  my $psc_hash = $utils->get_psc_hash($dba->dbc,$psc_params);
+
+  my $aln_length = $sa_aln->length;
+
+  foreach my $key (sort {$a <=> $b} keys %$psc_hash) {
+    my $site = $psc_hash->{$key};
     
-    my $total_len = length($seq);
-    $seq =~ s/[at]//gi;
-    my $gc_content = length($seq) / $total_len;
-    $sum_gc += $gc_content;
+    $cur_params->{omega} = $site->{omega};
+    $cur_params->{omega_lower} = $site->{omega_lower};
+    $cur_params->{omega_upper} = $site->{omega_upper};
+    $cur_params->{lrt_stat} = $site->{lrt_stat};
+    $cur_params->{ncod} = $site->{ncod};
+    $cur_params->{type} = $site->{type};
+    $cur_params->{note} = $site->{note};
+    
+    $cur_params->{'aln_position'} = $site->{aln_position};
+    $cur_params->{'aln_position_fraction'} = $site->{aln_position} / $aln_length;
+
+    $cur_params->{'chr_name'} = $site->{chr_name};
+    $cur_params->{'chr_start'} = $site->{chr_start};
+    $cur_params->{'chr_end'} = $site->{chr_end};
+
+    # Store values in our output table.
+    my $table = $cur_params->{'collect_eslr_stats_sites_table'};
+    $self->store_params_in_table($dba,$table,$cur_params);
   }
-  my $avg_gc = $sum_gc / scalar($tr->leaves);
-}
-
-sub mysql_getval {
-  my $tree = shift;
-  my $cmd = shift;
-
-  my $dbc = $tree->adaptor->dbc;
-  my $sth = $dbc->prepare($cmd);
-  $sth->execute();
-  my $val = @{$sth->fetchrow_arrayref()}[0];
-  $val = 'NA' unless (defined $val);
-  $sth->finish;
-  return $val;
-}
-
-sub get_psc_hash {
-  my $dbc = shift;
-  my $params = shift;
-
-  my $table = $params->{'omega_table'};
-  my $pset = $params->{'parameter_set_id'};
-  my $node_id = $params->{'node_id'};
-  my $cmd = qq^SELECT aln_position,omega,omega_lower,omega_upper,lrt_stat,ncod,type,note 
-    FROM $table WHERE parameter_set_id=$pset and node_id=$node_id
-    AND ncod > 4 AND note != 'random' AND omega_upper > omega^;
-  print "$cmd\n";
-  my $sth = $dbc->prepare($cmd);
-  $sth->execute;
-  my $obj = $sth->fetchall_hashref('aln_position');
-  $sth->finish;
-  return $obj;
-}
-
-sub psc_count {
-  my $psc_hash = shift;
-  my $include_weak_pscs = shift;
-
-  my @obj_array = map {$psc_hash->{$_}} keys %$psc_hash;
-  my @psc_objs;
-  if ($include_weak_pscs) {
-    @psc_objs = grep {$_->{type} =~ /positive[1234]/} @obj_array;
-  } else {  
-    @psc_objs = grep {$_->{type} =~ /positive[34]/} @obj_array;
-  }
-
-  return scalar(@psc_objs);
-}
-
-
-sub omega_average {
-  my $hash = shift;
-
-  my @obj_array = map {$hash->{$_}} keys %$hash;
-  
-  my $omega_total = 0;
-  map {$omega_total += $_->{omega}} @obj_array;
-
-  return 'NA' if (scalar @obj_array == 0);
-  return sprintf "%.3f", $omega_total/scalar(@obj_array);
 }
 
 1;

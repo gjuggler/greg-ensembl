@@ -190,3 +190,8 @@ Compare to what we get:
 What I did today:
  - Implemented exon and splice distance collection in SitewiseMapper (collect_exons).
  - Patched up site-wise data export.
+ - Read alot about duplications after talking with Ari... there's interesting stuff to do there, just need to find
+   the right hypothesis to apply our data to.
+
+### 2010-02-10 ###
+
