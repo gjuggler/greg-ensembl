@@ -36,11 +36,15 @@ my $gene_stats_def = {
   column_entropy_mean   => 'float',
   seq_length_mean       => 'float',
   gc_content_mean       => 'float',
-    
+  cpg_obs_exp_mean      => 'float',
+  
   human_gene_count      => 'int',
+  human_protein_list    => 'string',
   human_gene_list       => 'string',
 
   human_gene            => 'string',
+  human_protein         => 'string',
+  human_gene_exon_count => 'int',
   human_chr             => 'string',
   human_start           => 'int',
   human_end             => 'int',
@@ -135,7 +139,7 @@ sub run {
   }
 
   foreach my $ps_id (@param_sets) {
-#    $self->get_gene_data($node_id,$ps_id);
+    $self->get_gene_data($node_id,$ps_id);
   }
 
   foreach my $ps_id (@param_sets) {
@@ -179,15 +183,21 @@ sub get_gene_data {
   $cur_params->{'column_entropy_mean'} = sprintf("%.3f",Bio::EnsEMBL::Compara::AlignUtils->average_column_entropy($cdna_nogap));
   $cur_params->{'seq_length_mean'} = $utils->seq_length_mean($tree);
   $cur_params->{'gc_content_mean'} = $utils->gc_content_mean($tree);
+  $cur_params->{'cpg_obs_exp_mean'} = $utils->cpg_obs_exp_mean($cdna_aln);
 
-  my @hum_gen = grep {$_->taxon_id==9606} $tree->leaves;
-  $cur_params->{'human_gene_count'} = scalar(@hum_gen);
-  if (scalar @hum_gen > 0) {
-    my $first_human_gene = $hum_gen[0];
-    $cur_params->{'human_gene_list'} = join(",",map {$_->stable_id} @hum_gen);
-    $cur_params->{'human_gene'} = $first_human_gene->stable_id;
 
-    my $tscr = $first_human_gene->get_Transcript;
+  my @human_proteins = grep {$_->taxon_id==9606} $tree->leaves;
+  my @human_genes = map {$_->get_Gene} @human_proteins;
+  
+  $cur_params->{'human_gene_count'} = scalar(@human_proteins);
+  if (scalar @human_proteins > 0) {
+    my $first_human_member = $human_proteins[0];
+    $cur_params->{'human_protein_list'} = join(",",map {$_->stable_id} @human_proteins);
+    $cur_params->{'human_gene_list'} = join(",",map {$_->stable_id} @human_genes);
+    $cur_params->{'human_protein'} = $first_human_member->stable_id;
+    $cur_params->{'human_gene'} = $first_human_member->get_Gene->stable_id;
+
+    my $tscr = $first_human_member->get_Transcript;
     $tscr = $tscr->transform("chromosome");
     if (defined $tscr) {
       my $chr = "chr".$tscr->slice->seq_region_name;
@@ -198,6 +208,8 @@ sub get_gene_data {
       $cur_params->{human_strand} = $strand;
       $cur_params->{human_start} = $start;
       $cur_params->{human_end} = $end;
+
+      $cur_params->{'human_gene_exon_count'} = scalar @{$tscr->get_all_Exons};
     }
   }
 

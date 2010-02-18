@@ -163,6 +163,35 @@ sub omega_average_exclude_pscs {
 }
 
 
+sub cpg_obs_exp_mean {
+  my $class = shift;
+  my $aln = shift;
+
+  my $seq;
+  my $running_total;
+  foreach my $seq_obj ($aln->each_seq) {
+    $seq .= $seq_obj->seq;
+  }
+  
+  $seq =~ s/[-X]//gi; # Remove gaps and filtered sites.
+  
+  my $len = length($seq);
+  my $gs = $seq;
+  $gs =~ s/[atc]//gi;
+  my $cs = $seq;
+  $cs =~ s/[atg]//gi;
+  my $g_rate = length($gs)/length($seq);
+  my $c_rate = length($cs)/length($seq);
+  
+  my $exp_count = $g_rate * $c_rate * $len;
+  
+  my $cpgs = $seq;
+  my @matches = $cpgs =~ /(cg)/gi;
+  my $obs_count = scalar(@matches);
+  
+  return $obs_count / $exp_count;
+}
+
 sub mysql_getval {
   my $class = shift;
   my $tree = shift;
