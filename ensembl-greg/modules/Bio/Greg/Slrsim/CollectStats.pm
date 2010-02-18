@@ -49,26 +49,35 @@ my $slrsim_stats_def = {
 
   tree_length        => 'float',
   tree_max_branch    => 'float',
-  tree_mean_branch  => 'float',
+  tree_mean_branch   => 'float',
   tree_max_path      => 'float',
   tree_mean_path     => 'float',
-  num_leaves         => 'int',
+  leaf_count         => 'int',
 
   true_dnds          => 'float',
   true_type          => 'string',
-  true_e             => 'float',
+  true_entropy       => 'float',
   aln_dnds           => 'float',
   aln_type           => 'string',
-  aln_e              => 'float',
+  aln_entropy        => 'float',
   ncod               => 'int',
   lrt                => 'float',
-  paml_lrt           => 'float',
-  slr_lnL            => 'float',
-  slr_omega          => 'float',
+
+  gene_lrt_paml      => 'float',
+  gene_lnL_slr       => 'float',
+  gene_omega_slr     => 'float',
 
   sum_of_pairs_score => 'float',
   total_column_score => 'float',
-  mean_column_entropy => 'float',
+
+  column_entropy_mean_true => 'float',
+  column_entropy_mean_aln  => 'float',
+
+  seq_length_mean          => 'float',
+  gc_content_mean          => 'float',
+  site_count               => 'float',
+  unfiltered_site_count    => 'float',
+  unfiltered_site_fraction => 'float',
 
   unique_keys        => 'aln_position,node_id,parameter_set_id'
 };
@@ -128,32 +137,31 @@ sub get_data_for_node {
 
   my $sa_true;
   my $sa_aln;
+  my $cdna_true;
+  my $cdna_aln;
   my @true_entropies;
   my @aln_entropies;
   my $sum_of_pairs_score;
   my $total_column_score;
-  my $mean_column_entropy;
   my $tree;
   eval {
-    $pta->protein_tree_member("protein_tree_member");
-    $tree = $pta->fetch_node_by_node_id($node_id);
-    $sa_true = $tree->get_SimpleAlign();
-    my $cdna_aln = $tree->get_SimpleAlign(-cdna => 1);
-    @true_entropies = Bio::EnsEMBL::Compara::AlignUtils->column_entropies($cdna_aln);
+    my $true_aln_params = $self->replace_params($cur_params,{alignment_table => 'protein_tree_member'});
+    ($tree,$sa_true,$cdna_true) = Bio::EnsEMBL::Compara::ComparaUtils->tree_aln_cdna($dba,$true_aln_params);
 
-    $pta->protein_tree_member($cur_params->{'alignment_table'});
-    $tree = $pta->fetch_node_by_node_id($node_id);
-    $sa_aln = $tree->get_SimpleAlign();
-    $cdna_aln = $tree->get_SimpleAlign(-cdna => 1);
+    ($tree,$sa_aln,$cdna_aln) = Bio::EnsEMBL::Compara::ComparaUtils->tree_aln_cdna($dba,$cur_params);
+
+    Bio::EnsEMBL::Compara::AlignUtils->pretty_print($sa_true,{length=>80});
+    Bio::EnsEMBL::Compara::AlignUtils->pretty_print($sa_aln,{length=>80});
+
+    @true_entropies = Bio::EnsEMBL::Compara::AlignUtils->column_entropies($cdna_true);
     @aln_entropies = Bio::EnsEMBL::Compara::AlignUtils->column_entropies($cdna_aln);
-
     $sum_of_pairs_score = Bio::EnsEMBL::Compara::AlignUtils->sum_of_pairs_score($sa_true,$sa_aln);
     $total_column_score = Bio::EnsEMBL::Compara::AlignUtils->total_column_score($sa_true,$sa_aln);
-    $mean_column_entropy = Bio::EnsEMBL::Compara::AlignUtils->total_column_score($sa_true,$sa_aln);
   };  
   die("Hold up: ".$@) if ($@);
   return if (!$sa_true || !$sa_aln);
   
+
   # Get the sequence to act as a reference in site-wise value comparisons.
   my $reference_id = '';
   if (defined $cur_params->{'slrsim_ref'}) {
@@ -174,11 +182,20 @@ sub get_data_for_node {
   $cur_params->{tree_mean_branch} = $utils->mean_branch($tree);
   $cur_params->{tree_max_path} = $utils->max_path($tree);
   $cur_params->{tree_mean_path} = $utils->mean_path($tree);
-  $cur_params->{num_leaves} = scalar($tree->leaves);
+  $cur_params->{leaf_count} = scalar($tree->leaves);
 
   $cur_params->{sum_of_pairs_score} = $sum_of_pairs_score;
   $cur_params->{total_column_score} = $total_column_score;
-  $cur_params->{mean_column_entropy} = $mean_column_entropy;
+
+  $cur_params->{column_entropy_mean_true} = Bio::EnsEMBL::Compara::AlignUtils->average_column_entropy($sa_true);
+  $cur_params->{column_entropy_mean_aln} = Bio::EnsEMBL::Compara::AlignUtils->average_column_entropy($sa_aln);
+
+  $cur_params->{seq_length_mean} = $utils->seq_length_mean($tree);
+  $cur_params->{gc_content_mean} = $utils->gc_content_mean($cdna_true);
+
+  $cur_params->{site_count} = $utils->site_count($sa_aln);
+  $cur_params->{unfiltered_site_count} = $utils->unfiltered_site_count($sa_aln);
+  $cur_params->{unfiltered_site_fraction} = $utils->unfiltered_site_count($sa_aln) / $utils->site_count($sa_aln);
 
   # Get all the site-wise data from the omega table.
   my $aln_table_name = $cur_params->{'omega_table'};
@@ -189,6 +206,17 @@ sub get_data_for_node {
   my $true_omegas = $sth1->fetchall_hashref('aln_position');
   my $aln_omegas = $sth2->fetchall_hashref('aln_position');
 
+  # Store PAML LRTs if relevant.
+  foreach my $tag (keys %$cur_params) {
+    print "$tag\n";
+    if ($tag =~ m/paml lrt/i) {
+      $cur_params->{gene_lrt_paml} = $cur_params->{$tag};
+    }
+    if ($tag =~ m/slr_lnL/i) {
+      $cur_params->{gene_lnl_slr} = $cur_params->{$tag};
+    }
+  }
+  
   for (my $i=1; $i <= length($nogaps); $i++) {
     my $obj;
     my $true_col = $sa_true->column_from_residue_number($ref_name,$i);
@@ -211,16 +239,9 @@ sub get_data_for_node {
     $obj->{true_type} = $true_omegas->{$true_col}->{'type'} || '';
     $obj->{aln_note} = $aln_omegas->{$aln_col}->{'note'} || '';
     $obj->{ncod} = $aln_omegas->{$aln_col}->{'ncod'} || 0;
-    $obj->{true_e} = sprintf "%.3f", $true_entropies[$true_col];
-    $obj->{aln_e} = sprintf "%.3f", $aln_entropies[$aln_col];
+    $obj->{true_entropy} = sprintf "%.3f", $true_entropies[$true_col];
+    $obj->{aln_entropy} = sprintf "%.3f", $aln_entropies[$aln_col];
     $obj->{lrt} = $aln_omegas->{$aln_col}->{'lrt_stat'} || 99;
-
-    # Store PAML LRTs if relevant.
-    foreach my $tag (keys %$cur_params) {
-      if ($tag =~ m/paml lrt/i) {
-        $obj->{paml_lrt} = $cur_params->{$tag};
-      }
-    }
 
     # Store values in our output table.
     $obj = $self->replace_params($obj,$cur_params);
