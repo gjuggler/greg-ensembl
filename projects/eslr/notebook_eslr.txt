@@ -195,3 +195,34 @@ What I did today:
 
 ### 2010-02-10 ###
 
+What I did today:
+ - Read a ton of papers. Mostly tagged as 'proteins' or 'e-slr' in CiteULike.
+ - Slightly tweaked PFam tag collection.
+ - Added human_cpg_count to the collected stats.
+
+
+### 2010-02-15 ###
+
+> all
+   id                         name count median       mean min max hum_count 
+1   1          Human Gene Subtrees 17251      6   6.620718   6  82     18393 
+2   2  Small Balanced Duplications  5958     74  62.825445  13 214      9243
+3   3  Large Balanced Duplications  4549     91 109.894702  13 397     11909
+4   4     Overlapping Duplications 66077      2  14.870454   2 397     22896
+5   5               Small Subtrees 60379      6   6.642011   6  82     17589
+6   6                 Med Subtrees 31137     11  11.757844  10  82     14775
+7   7               Large Subtrees 18530     23  23.943281  20  82     16723
+8   8         Superfamily Subtrees 15559     45  47.171348   6 395     16564
+9   9                 Tim Subtrees 19891     38  35.581771   4 294     17421
+10 10             Primate subtrees 22025     37  32.627333   2 271     19143
+11 11                 Primates n=4 19453     42  38.332288   4 233     18742
+12 12                 Primates n=5 18226     43  41.289696   5 373     18395
+13 13 Primates n=4 plus Glires n=1 18278     43  41.264854   5 381     18168
+
+
+### 2010-02-17 ###
+
+Went to Chris Tyler-Smith's talk on preliminary results on 1k genomes project.
+ - Phase 1, ~2-3x sequencing of ~50 genomes per population type
+ - Apply Tajima's D statistic over non-overlapping 10kb blocks
+   -> Tajima's D? Read up on that!
