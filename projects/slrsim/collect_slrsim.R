@@ -19,8 +19,14 @@ get.vector = function(con,query,columns=1) {
 }
 
 # Grabs from the database the true and inferred omegas for the given reference sequence.
-get.data.alt = function() {
+get.all.data = function() {
   query = sprintf("SELECT * FROM stats_slrsim");
+  data = get.vector(con,query,columns='all')
+  return(data)
+}
+
+get.test.data = function() {
+  query = sprintf("SELECT * FROM stats_slrsim LIMIT 500000");
   data = get.vector(con,query,columns='all')
   return(data)
 }
@@ -125,12 +131,14 @@ summarize.results = function(data,thresh=3.8,paml_thresh=0.95) {
   ids = rep("",nrow(data))
   for (attr in attrs) {
     ids = paste(ids,data[[attr]],sep=" ")
-  } 
-  unique_ids = unique(ids)
+  }
+  data$id = ids
 
-  for (my_id in unique_ids) {
-    print(my_id)
-    df = data[ids==my_id,]
+  split.sets = split(data,data$id)
+  for (i in 1:length(split.sets)) {
+    df = split.sets[[i]]
+    print(df[1,]$id)
+    #df = data[ids==my_id,]
 
     # Calculate the summaries.
     stats = df.stats(df,thresh=thresh,paml_thresh=paml_thresh)
