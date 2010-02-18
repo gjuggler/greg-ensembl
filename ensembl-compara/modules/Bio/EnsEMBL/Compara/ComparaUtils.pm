@@ -703,16 +703,10 @@ sub get_tree_for_comparative_analysis {
 
   # GJ 2009-09-18
   if ($params->{'alignment_table'}) {
-    my $table = $params->{'alignment_table'};
-    my $sth = $pta->prepare("select * from $table limit 1");
-    $sth->execute;
-    if ($sth->fetchrow_arrayref) {
-      $pta->protein_tree_member($params->{'alignment_table'});
-      $pta->protein_tree_score($params->{'alignment_score_table'});
-    } else {
-      warn("Alignment table is $table, but no sequences were found there! Using protein_tree_member...");
-    }
-    $sth->finish;
+    $pta->protein_tree_member($params->{'alignment_table'});
+  }
+  if ($params->{'alignment_score_table'}) {
+    $pta->protein_tree_score($params->{'alignment_score_table'});
   }
 
   my $tree = $pta->fetch_node_by_node_id($node_id);
