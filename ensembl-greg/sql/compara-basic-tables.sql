@@ -445,6 +445,33 @@ RETURN (SELECT COUNT(*)
    AND m.taxon_id = 9606
 );
 
+DROP FUNCTION IF EXISTS human_protein_list;
+CREATE FUNCTION human_protein_list (n int(20))
+RETURNS TEXT
+READS SQL DATA
+RETURN (SELECT GROUP_CONCAT(m.stable_id SEPARATOR ',')
+   FROM protein_tree_node n, protein_tree_node n2, protein_tree_member ptm, member m
+   WHERE n.node_id=n
+   AND n2.left_index BETWEEN n.left_index and n.right_index
+   AND ptm.node_id=n2.node_id
+   AND m.member_id=ptm.member_id
+   AND m.taxon_id = 9606
+);
+
+DROP FUNCTION IF EXISTS human_gene_list;
+CREATE FUNCTION human_gene_list (n int(20))
+RETURNS TEXT
+READS SQL DATA
+RETURN (SELECT GROUP_CONCAT(gm.stable_id SEPARATOR ',')
+   FROM protein_tree_node n, protein_tree_node n2, protein_tree_member ptm, member m, member gm
+   WHERE n.node_id=n
+   AND n2.left_index BETWEEN n.left_index and n.right_index
+   AND ptm.node_id=n2.node_id
+   AND m.member_id=ptm.member_id
+   AND m.taxon_id = 9606
+   AND m.gene_member_id=gm.member_id
+);
+
 
 DROP FUNCTION IF EXISTS  human_protein_under_node;
 CREATE FUNCTION human_protein_under_node (n int(20))

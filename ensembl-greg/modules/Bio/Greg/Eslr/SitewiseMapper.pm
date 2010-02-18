@@ -43,15 +43,16 @@ sub fetch_input {
 
   ### DEFAULT PARAMETERS ###
   $params->{'omega_table'} = 'sitewise_omega';
-  $params->{'do_mapping'} = 0;
+  $params->{'do_mapping'} = 1;
   $params->{'collect_tags'} = 0;
   $params->{'collect_dup_tags'} = 0;
-  $params->{'collect_pfam'} = 0;
-  $params->{'collect_uniprot'} = 0;
+  $params->{'collect_pfam'} = 1;
+  $params->{'collect_uniprot'} = 1;
   $params->{'collect_exons'} = 1;
-  $params->{'collect_go'} = 0;
-
+  $params->{'collect_go'} = 1;
+  $params->{'pfam_taxon_ids'} = '9606,10090';
   $params->{'go_taxon_ids'} = '9606,10090';
+
   $params->{'create_plot'} = 0;
   $params->{'parameter_set_id'} = 1; # The parameter set to use for UniProt extraction.
   #########################
@@ -404,12 +405,22 @@ sub collect_exons {
 sub collect_pfam {
   my $self = shift;
 
+  my @taxon_ids;
+  if (defined $params->{'pfam_taxon_ids'}) {
+    @taxon_ids = split(",",$params->{'pfam_taxon_ids'});
+  } else {
+    @taxon_ids = (9606);
+  }
+
   my $sa = $tree->get_SimpleAlign;
   my $pos_id_hash;
   foreach my $leaf ($tree->leaves) {
+    next unless (grep {$leaf->taxon_id == $_} @taxon_ids);
+
     print $leaf->stable_id."\n";
     my $name = $leaf->stable_id;
     my $tx = $leaf->get_Translation;
+    next if (!defined $tx);
     my @features = @{$tx->get_all_ProteinFeatures('PFam')};
     foreach my $f (@features) {
       my $pf_id = $f->display_id;
@@ -431,8 +442,8 @@ sub collect_pfam {
     }
   }
 
-  my $cmd = "REPLACE INTO sitewise_tag (node_id,aln_position,parameter_set_id,tag,value,source) VALUES (?,?,?,?,?,?)";
-  my $sth = $tree->adaptor->prepare($cmd);
+
+  my @array_of_strings = ();
 
   use Time::HiRes qw(sleep);
   foreach my $key (sort keys %{$pos_id_hash}) {
@@ -447,18 +458,24 @@ sub collect_pfam {
 	   $pos,
 	   $pf_pos,
 	   $score);
-
-    $sth->execute($tree->node_id,
+    my @values = ($tree->node_id,
 		  $pos,
 		  $params->{parameter_set_id},
-		  $id,
+		  '"DOMAIN"',
 		  $score,
-		  "PFam"
-		  );
-    sleep(0.1);
+		  '"'.$id.'"');
+    my $string = '('.join(',',@values).')';
+    push @array_of_strings,$string;
   }
 
-  $sth->finish;
+
+  if (scalar(@array_of_strings) > 0) {
+    my $values_string = join(",",@array_of_strings);
+    my $cmd = "REPLACE INTO sitewise_tag (node_id,aln_position,parameter_set_id,tag,value,source) VALUES $values_string";
+    my $sth = $tree->adaptor->prepare($cmd);
+    $sth->execute;
+    $sth->finish;
+  }
 }
 
 
