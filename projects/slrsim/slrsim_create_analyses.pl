@@ -17,7 +17,7 @@ GetOptions('clean' => \$clean,
 	   );
 Bio::EnsEMBL::Registry->no_version_check(1);
 
-$url = 'mysql://greg:TMOqp3now@mysql-greg.ebi.ac.uk:4134/gj1_slrsim_test' if (!$url);
+$url = 'mysql://slrsim:slrsim@mysql-greg.ebi.ac.uk:4134/slrsim_anisimova' if (!$url);
 my $dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new(-url => $url);
 my $dbc = $dba->dbc;
 
@@ -75,7 +75,7 @@ sub align_sequences {
     alignment_table => 'aln_mcoffee',
     executable => '/homes/greg/src/T-COFFEE_distribution_Version_8.06/bin/binaries/linux/t_coffee'
   };
-  _create_analysis($analysis_id,$logic_name,$module,$params,50,1);
+  _create_analysis($analysis_id,$logic_name,$module,$params,100,1);
 }
 
 sub alignment_scores {
@@ -87,7 +87,7 @@ sub alignment_scores {
     alignment_table => 'aln_mcoffee',
     alignment_scores_action => 'gblocks prank trimal'
   };
-  _create_analysis($analysis_id,$logic_name,$module,$params,30,1);
+  _create_analysis($analysis_id,$logic_name,$module,$params,100,1);
 }
 
 sub calculate_omegas {
@@ -97,7 +97,7 @@ sub calculate_omegas {
   my $params = {
     sitewise_parameter_sets => 'all'
   };
-  _create_analysis($analysis_id,$logic_name,$module,$params,400,1);
+  _create_analysis($analysis_id,$logic_name,$module,$params,500,1);
 
   $params = {
     parameter_set_id => 1,
@@ -115,7 +115,7 @@ sub collect_stats {
     alignment_table => 'aln_mcoffee',
     collect_stats_parameter_sets => 'all'
   };
-  _create_analysis($analysis_id,$logic_name,$module,$params,30,1);
+  _create_analysis($analysis_id,$logic_name,$module,$params,50,1);
 
   #my @nodes = _select_node_ids("SELECT distinct(node_id) FROM protein_tree_tag where tag='sim_name'");
   #_add_nodes_to_analysis($analysis_id,{},\@nodes);

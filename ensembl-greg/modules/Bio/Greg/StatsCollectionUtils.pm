@@ -71,17 +71,28 @@ sub seq_length_mean {
   
   my $seq_len = 0;
   map {$seq_len += $_->seq_length} $tree->leaves;
-  return sprintf "%.3f", $seq_len / scalar($tree->leaves);
+  return $seq_len / scalar($tree->leaves);
 }
 
 sub gc_content_mean {
   my $class = shift;
   my $tr = shift;
   
+  my @seqs;
+  if ($tr =~ /ProteinTree/i) {
+    foreach my $leaf ($tr->leaves) {
+      my $tx = $leaf->transcript;
+      my $seq = $tx->seq->seq;
+      push @seqs, $seq;
+    }
+  } elsif ($tr =~ /Align/i) {
+    foreach my $seq ($tr->each_seq) {
+      push @seqs,$seq->seq;
+    }
+  }
+
   my $sum_gc = 0;
-  foreach my $leaf ($tr->leaves) {
-    my $tx = $leaf->transcript;
-    my $seq = $tx->seq->seq;
+  foreach my $seq (@seqs) {
     $seq =~ s/[nx]//gi;
     
     my $total_len = length($seq);
@@ -89,7 +100,7 @@ sub gc_content_mean {
     my $gc_content = length($seq) / $total_len;
     $sum_gc += $gc_content;
   }
-  my $avg_gc = $sum_gc / scalar($tr->leaves);
+  my $avg_gc = $sum_gc / scalar(@seqs);
 }
 
 sub get_psc_hash {
@@ -162,6 +173,31 @@ sub omega_average_exclude_pscs {
   return sprintf "%.3f", $omega_total/scalar(@obj_array);
 }
 
+sub site_count {
+  my $class = shift;
+  my $aln = shift;
+
+  my $site_count = 0;
+  foreach my $seq ($aln->each_seq) {
+    my $str = $seq->seq;
+    $str =~ s/-//g;
+    $site_count += length($str);
+  }
+  return $site_count;
+}
+
+sub unfiltered_site_count {
+  my $class = shift;
+  my $aln = shift;
+
+  my $site_count = 0;
+  foreach my $seq ($aln->each_seq) {
+    my $str = $seq->seq;
+    $str =~ s/[-X]//g;
+    $site_count += length($str);
+  }
+  return $site_count;
+}
 
 sub cpg_obs_exp_mean {
   my $class = shift;

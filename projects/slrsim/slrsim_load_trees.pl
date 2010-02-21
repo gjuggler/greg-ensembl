@@ -20,8 +20,7 @@ GetOptions('url=s' => \$url,
 	   'clean' => \$clean
 	   );
 
-#$url = 'mysql://ensadmin:ensembl@ensdb-2-12:5106/gj1_slrsim' if (!$url);
-$url = 'mysql://greg:TMOqp3now@mysql-greg.ebi.ac.uk:4134/gj1_slrsim_1' if (!$url);
+$url = 'mysql://slrsim:slrsim@mysql-greg.ebi.ac.uk:4134/slrsim_anisimova' if (!$url);
 
 my ($mysql_args,$database,$project_base) = undef;
 $mysql_args = Bio::Greg::ComparaLite::HiveUtils->hive_url_to_mysql_args($url);
@@ -54,7 +53,7 @@ sub create_simsets {
   my $base_length = 1;
 
   my $base_params = {
-    slrsim_replicates => 1,
+    slrsim_replicates => 50,
     slrsim_file => 'artificial.nh',
     slrsim_tree_mult => 1,
 
@@ -141,7 +140,7 @@ sub create_simsets {
     paml_model_b => 'M3'
   };
   
-  my $sim_p = replace($lognormal, {
+  my $sim_p = replace($massingham_05_B, {
     slrsim_file => '',
     slrsim_tree_mult => 1,
     phylosim_insertmodel => 'NB 0.18 2',
@@ -151,7 +150,7 @@ sub create_simsets {
 
   my (@tree_params,@mult_params,@aln_params,@filter_params,@species_params,@sitewise_params);
 
-  foreach my $indel (0.1,0.2) {
+  foreach my $indel (0,0.1,0.2) {
     push @sim_params, replace($sim_p,{phylosim_ins_rate => $indel,phylosim_del_rate => $indel});
   }
   @tree_params = map {tree_param($_)} ($tree_anisimova_bglobin);
@@ -169,7 +168,7 @@ sub create_simsets {
               foreach my $sw (@sitewise_params) {
                 my $p = replace($base_params,$sim,$tr,$mult,$aln,$f,$sp,$sw);
                 verify_params($p);
-                push @simulation_sets,$p;
+                #push @simulation_sets,$p;
               }
             }
           }
@@ -178,15 +177,22 @@ sub create_simsets {
     }
   }
 
+  $sim_p = replace($massingham_05_A, {
+    slrsim_file => '',
+    slrsim_tree_mult => 1,
+    phylosim_insertmodel => 'NB 0.18 2',
+    phylosim_deletemodel => 'NB 0.18 2'
+                   });
+
   @sim_params = ();
-  foreach my $indel (0.1,0.2) {
+  foreach my $indel (0.05) {
     push @sim_params, replace($sim_p,{phylosim_ins_rate => $indel,phylosim_del_rate => $indel});
   }
   @tree_params = map {tree_param($_)} ($fortyfourmammals);
-  @mult_params = map {mult_param($_)} (1,2,4);
+  @mult_params = map {mult_param($_)} (0.5,1,2,4);
   @aln_params = map {aln_param($_)} ('mcoffee','prank');
-  @filter_params = map {filter_param($_)} ('none','mcoffee','prank','trimal','indelign','gblocks');
-  @species_params = map {species_param($_)} ('Human','X_tropicalis','Mouse');
+  @filter_params = map {filter_param($_)} ('none');
+  @species_params = map {species_param($_)} ('Human');
   @sitewise_params = ($slr);
   foreach my $sim (@sim_params) {
     foreach my $tr (@tree_params) {
