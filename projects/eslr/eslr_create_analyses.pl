@@ -19,20 +19,22 @@ my $dbc = $dba->dbc;
 my $analysis_hash; # Hash to store mapping between analysis names and ID numbers.
 
 # Clean up our mess.
-#clean_tables();
+clean_tables();
 
 # Define parameters (species sets, filtering options, etc).
-#parameter_sets();
+parameter_sets();
 
 # Create analyses.
-#node_sets();
-#omegas();
+node_sets();
+align();
+omegas();
 mapping();
 collect_stats();
 
 # Connect the dots.
-#connect_analysis("NodeSets","Omegas",1);
-#connect_analysis("Omegas","Mapping",1);
+connect_analysis("NodeSets","Align",1);
+connect_analysis("Align","Omegas",1);
+connect_analysis("Omegas","Mapping",1);
 connect_analysis("Mapping","CollectStats",1);
 
 sub parameter_sets {
@@ -163,9 +165,9 @@ sub node_sets {
   my $logic_name = "NodeSets";
   my $module = "Bio::Greg::NodeSets";
   my $params = {
-    flow_node_set => 8
+    flow_node_set => 11 # Primates n=4 node sets
   };
-  _create_analysis($analysis_id,$logic_name,$module,$params,30,1);
+  _create_analysis($analysis_id,$logic_name,$module,$params,50,1);
 
   # Add all root nodes to this analysis.
   $params = {};
@@ -179,7 +181,7 @@ sub align {
   my $logic_name = "Align";
   my $module = "Bio::EnsEMBL::Compara::RunnableDB::MCoffee";
   my $params = {
-    method => 'cmcoffee'
+    alignment_method => 'prank'
   };
 
   _create_analysis($analysis_id,$logic_name,$module,$params,400,1);
@@ -201,7 +203,7 @@ sub omegas {
   my $base_params = {
     parameter_sets => "all",
     sequence_quality_filtering => 0,
-    alignment_quality_filtering => 0,
+    alignment_score_filtering => 1,
     };
   _create_analysis($analysis_id,$logic_name,$module,$base_params,500,1);
 
@@ -223,7 +225,7 @@ sub collect_stats {
   my $module = "Bio::Greg::Eslr::CollectEslrStats";
   my $params = {
   };
-  _create_analysis($analysis_id,$logic_name,$module,$params,50,1);
+  _create_analysis($analysis_id,$logic_name,$module,$params,80,1);
 }
 
 sub _combine_hashes {
@@ -254,7 +256,7 @@ sub _add_parameter_set {
 
   if (exists $params->{'shortname'} ) {
     my $shortname = $params->{'shortname'} || '';
-    my $shortname_cmd = "REPLACE INTO parameter_set VALUES ('$parameter_set_','shortname',\"$shortname\");";
+    my $shortname_cmd = "REPLACE INTO parameter_set VALUES ('$parameter_set_id','shortname',\"$shortname\");";
     $dbc->do($shortname_cmd);
   }
 
@@ -274,7 +276,7 @@ sub clean_tables {
       go_terms      
       ^;
     map {
-      #print "$_\n";
+      print "$_\n";
       eval {$dba->dbc->do("truncate table $_");}} @truncate_tables;
   }
 }
