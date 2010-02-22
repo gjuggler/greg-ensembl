@@ -145,7 +145,7 @@ sub get_data_for_node {
   my $total_column_score;
   my $tree;
   eval {
-    my $true_aln_params = $self->replace_params($cur_params,{alignment_table => 'protein_tree_member'});
+    my $true_aln_params = $self->replace_params($cur_params,{alignment_table => 'protein_tree_member', alignment_score_filtering => 0});
     ($tree,$sa_true,$cdna_true) = Bio::EnsEMBL::Compara::ComparaUtils->tree_aln_cdna($dba,$true_aln_params);
 
     ($tree,$sa_aln,$cdna_aln) = Bio::EnsEMBL::Compara::ComparaUtils->tree_aln_cdna($dba,$cur_params);
@@ -169,7 +169,7 @@ sub get_data_for_node {
   }
   my @seqs = $sa_true->each_seq;
   my ($ref_seq) = grep {$_->id eq $reference_id} @seqs;
-  #die ("Reference was defined in params but not found in aln!") if ($reference_id ne '' && !defined $ref_seq);
+  die ("Reference was defined in params but not found in aln!") if ($reference_id ne '' && !defined $ref_seq);
   $ref_seq = $seqs[0] if (!defined $ref_seq);
   my $ref_name = $ref_seq->id;
   my $str = $ref_seq->seq;
@@ -208,7 +208,7 @@ sub get_data_for_node {
 
   # Store PAML LRTs if relevant.
   foreach my $tag (keys %$cur_params) {
-    print "$tag\n";
+#    print "$tag\n";
     if ($tag =~ m/paml lrt/i) {
       $cur_params->{gene_lrt_paml} = $cur_params->{$tag};
     }
@@ -235,6 +235,9 @@ sub get_data_for_node {
         next;
       }
     }
+    my @array = Bio::EnsEMBL::Compara::AlignUtils->get_column_array($sa_aln,$aln_col);
+    print join("",@array)." ".$obj->{aln_dnds}." ".$aln_omegas->{$aln_col}->{'note'}."\n";
+
     $obj->{aln_type} = $aln_omegas->{$aln_col}->{'type'} || '';
     $obj->{true_type} = $true_omegas->{$true_col}->{'type'} || '';
     $obj->{aln_note} = $aln_omegas->{$aln_col}->{'note'} || '';

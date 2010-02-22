@@ -56,7 +56,7 @@ sub fetch_input {
     alignment_quality_filtering => 0,
     sequence_quality_filtering => 0,
 
-    sitewise_store_gaps             => 1,
+    sitewise_store_gaps             => 0,
     sitewise_parameter_sets         => 'all',
     sitewise_action                 => 'slr',                # Which action(s) to perform. Space-delimited.
                                                     # 'slr' - SLR sitewise omegas.
