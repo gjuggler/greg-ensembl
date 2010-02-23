@@ -158,75 +158,16 @@ sub create_simsets {
                    });
 
 
-  # INDEL RATE, TREE LENGTH AND MCOFFEE vs PRANK
-  @sim_params = ();
-  foreach my $indel (0.05, 0.1) {
-    push @sim_params, replace($sim_p,{phylosim_ins_rate => $indel,phylosim_del_rate => $indel});
-  }
-  @tree_params = map {tree_param($_)} ($fortyfourmammals);
-  @mult_params = map {mult_param($_)} (0.5,1,2,4);
-  @aln_params = map {aln_param($_)} ('mcoffee','prank');
-  @filter_params = map {filter_param($_)} ('none');
-  @species_params = map {species_param($_)} ('Human');
-  @sitewise_params = ($slr);
-  foreach my $sim (@sim_params) {
-    foreach my $tr (@tree_params) {
-      foreach my $mult (@mult_params) {
-        foreach my $aln (@aln_params) {
-          foreach my $f (@filter_params) {
-            foreach my $sp (@species_params) {
-              foreach my $sw (@sitewise_params) {
-                my $p = replace($base_params,$sim,$tr,$mult,$aln,$f,$sp,$sw);
-                verify_params($p);
-                push @simulation_sets,$p;
-              }
-            }
-          }
-        }
-      }  
-    }
-  }
-
-  
-  # FILTERING OPTIONS
+  # FILTERING TEST
   @sim_params = ();
   foreach my $indel (0.05) {
     push @sim_params, replace($sim_p,{phylosim_ins_rate => $indel,phylosim_del_rate => $indel});
   }
   @tree_params = map {tree_param($_)} ($fortyfourmammals);
-  @mult_params = map {mult_param($_)} (1);
-  @aln_params = map {aln_param($_)} ('mcoffee');
-  @filter_params = map {filter_param($_)} ('none','mcoffee','prank');
+  @mult_params = map {mult_param($_)} (1,4);
+  @aln_params = map {aln_param($_)} ('mcoffee','prank');
+  @filter_params = map {filter_param($_)} ('none','mcoffee','indelign','trimal','prank_mean','prank_minimum','prank_treewise');
   @species_params = map {species_param($_)} ('Human');
-  @sitewise_params = ($slr);
-  foreach my $sim (@sim_params) {
-    foreach my $tr (@tree_params) {
-      foreach my $mult (@mult_params) {
-        foreach my $aln (@aln_params) {
-          foreach my $f (@filter_params) {
-            foreach my $sp (@species_params) {
-              foreach my $sw (@sitewise_params) {
-                my $p = replace($base_params,$sim,$tr,$mult,$aln,$f,$sp,$sw);
-                verify_params($p);
-                push @simulation_sets,$p;
-              }
-            }
-          }
-        }
-      }  
-    }
-  }
-
-  # INDEL RATE AND SPECIES REFERENCE 
-  @sim_params = ();
-  foreach my $indel (0, 0.05, 0.1) {
-    push @sim_params, replace($sim_p,{phylosim_ins_rate => $indel,phylosim_del_rate => $indel});
-  }
-  @tree_params = map {tree_param($_)} ($fortyfourmammals);
-  @mult_params = map {mult_param($_)} (2);
-  @aln_params = map {aln_param($_)} ('prank');
-  @filter_params = map {filter_param($_)} ('none');
-  @species_params = map {species_param($_)} ('Human','Mouse','Platypus','X_tropicalis');
   @sitewise_params = ($slr);
   foreach my $sim (@sim_params) {
     foreach my $tr (@tree_params) {
@@ -298,7 +239,10 @@ sub filter_param {
     alignment_score_filtering => 1,
     alignment_score_threshold => 5
   };
-  $f->{alignment_score_threshold} = 7 if ($filter eq 'prank');
+
+  $f->{alignment_score_threshold} = 4 if ($filter eq 'indelign');
+  $f->{alignment_score_threshold} = 2 if ($filter eq 'prank_minimum');
+
   if ($filter eq 'mcoffee') {
     $f->{alignment_scores_action} = 'score';
   }
