@@ -23,7 +23,7 @@ sub indelign{
   my $sa = shift; # SimpleAlign of DNA/codon sequences.
   my $tree = shift; # Note: Indelign requires a ROOTED tree as input!!!
   my $params = shift;
-  my $temp_dir = shift;
+#  my $temp_dir = shift;
   if (!defined $temp_dir) {
     $temp_dir = '/tmp/indelign';
     rmtree([$temp_dir]);
@@ -617,10 +617,14 @@ sub get_prank_filter_matrices {
   my $tree = shift;
   my $params = shift;
 
+  my $defaults = {
+    'prank_filtering_scheme' => 'prank_minimum'
+  };
+  $params = Bio::EnsEMBL::Compara::ComparaUtils->replace_params($defaults,$params);  
+
   my $dna_aln = $tree->get_SimpleAlign(-cdna => 1);
 
   my $node_id = $tree->node_id;
-  my $mask_char = $params->{'prank_mask_character'};
 
   my $dir = "/tmp/prank_temp";
   mkpath([$dir]);
@@ -713,77 +717,147 @@ sub get_prank_filter_matrices {
   my @nodes = $rootNode->nodes();
   foreach my $node (@nodes) {
     next if ($node->isLeaf);
-    
     my @score = split(/,/,$postprob{$node->name}{$nameToState{'postprob'}});
     $pp_hash->{$node->name} = ();
     for (my $i=0; $i < scalar(@score); $i++) {
       $pp_hash->{$node->name}[$i] = $score[$i];
     }
   }
-  
-  my $leaf_scores;
-  foreach my $leaf ($tree->leaves) {
-    my $total_dist = $leaf->distance_to_root;
-    my $aln_len = $aln->length;
-    
-    my $aln_string = $leaf->alignment_string;
-    my @aln_arr = split("",$aln_string);
 
-    sub get_other_child {
-      my $parent = shift;
-      my $node = shift;
+  my $aln_len = $aln->length;
 
-      foreach my $child (@{$parent->children}) {
-        return $child if ($node != $child);
-      }
-      return undef;
-    }
+  if ($params->{'prank_filtering_scheme'} eq 'prank_mean') {
+    foreach my $leaf ($tree->leaves) {
+      my $score_string = "";
+      my $aln_string = $leaf->alignment_string;
+      my @aln_arr = split("",$aln_string);
 
-    my @scores;
-    my $score_string = "";
-    for (my $i=0; $i < $aln_len; $i++) {
-      if ($aln_arr[$i] eq '-') {
-        $score_string .= '-';
-        next;
-      }
-
-      my $total_prob = 0;
-      my $node = $leaf;
-      while (my $parent = $node->parent) {
-        my $bl = $node->distance_to_parent;
-        my $xml_node = $node_to_xml->{$parent};
-        my $post_prob = $pp_hash->{$xml_node}[$i];
-        if ($post_prob != -1) {
-          # We've got nucleotides aligned here. Sum up according to our rules.
-          
-          # Find the fraction of branch length encompassed by our node and the
-          # other node being aligned. If we have more branch length, adjust the weights.
-          my $total_bl = Bio::EnsEMBL::Compara::TreeUtils->total_distance($node);
-          my $other_node = get_other_child($parent,$node);
-          my $other_total_bl = Bio::EnsEMBL::Compara::TreeUtils->total_distance($other_node);
-          
-          my $bl_fraction = $other_total_bl / $total_bl;
-          $bl_fraction = 1 if ($bl_fraction > 1);
-
-          # Add a value proportional to post_prob, bl, and 'balance' fraction.
-          $total_prob += $post_prob/100 * ($bl / $total_dist) * $bl_fraction;
-          # Add a value to make up for a 'balance' fraction less than 1.
-          $total_prob += 1 * ($bl / $total_dist) * (1 - $bl_fraction);
-
-          #$total_prob += $post_prob/100 * ($bl / $total_dist);
+      for (my $i=0; $i < $aln_len; $i++) {
+        if ($aln_arr[$i] eq '-') {
+          $score_string .= '-';
         } else {
-          # If the alignment has a gap in the other node, don't penalize it.
-          $total_prob += 100/100 * ($bl / $total_dist);
+          my $sitewise_score = 9;
+
+          my $bl_sum = 0;
+          my $pp_sum = 0;
+          my $node = $leaf;
+          while (my $parent = $node->parent) {
+            my $bl = $node->distance_to_parent;
+
+            my $xml_node = $node_to_xml->{$parent};
+            my $post_prob = $pp_hash->{$xml_node}[$i];
+            if (defined $xml_node && defined $post_prob && $post_prob != -1) {
+              $bl_sum += 1 * $bl;
+              $pp_sum += $post_prob * $bl;
+            } else {
+            }
+            $node = $parent;
+          }
+          my $sitewise_score = $pp_sum / 10 / $bl_sum;
+          $sitewise_score = 0 if ($sitewise_score < 0);
+          $sitewise_score = 9 if ($sitewise_score > 9);
+          $score_string .= sprintf("%1d",$sitewise_score);
         }
-        $node = $parent;
       }
-      my $score = $total_prob*10 - 1;
-      $score = 0 if ($score < 0);
-      $score_string .= sprintf("%1d",$score);
+      $leaf_scores->{$leaf->name} = $score_string;
     }
-    #print $score_string."\n";
-    #print $aln_string."\n";
-    $leaf_scores->{$leaf->name} = $score_string;
+
+  } elsif ($params->{'prank_filtering_scheme'} eq 'prank_minimum') {
+    foreach my $leaf ($tree->leaves) {
+      my $score_string = "";
+      my $aln_string = $leaf->alignment_string;
+      my @aln_arr = split("",$aln_string);
+
+      for (my $i=0; $i < $aln_len; $i++) {
+        if ($aln_arr[$i] eq '-') {
+          $score_string .= '-';
+        } else {
+          
+          my $min_pp = 100;
+          my $node = $leaf;
+          while (my $parent = $node->parent) {
+
+            my $xml_node = $node_to_xml->{$parent};
+            my $post_prob = $pp_hash->{$xml_node}[$i];
+            if (defined $xml_node && defined $post_prob && $post_prob != -1) {
+              
+              $min_pp = $post_prob if ($post_prob < $min_pp);
+            }
+            $node = $parent;
+          }
+          my $sitewise_score = $min_pp / 10;
+          $sitewise_score = 0 if ($sitewise_score < 0);
+          $sitewise_score = 9 if ($sitewise_score > 9);
+          $score_string .= sprintf("%1d",$sitewise_score);
+        }
+      }
+      $leaf_scores->{$leaf->name} = $score_string;
+    }
+
+  } elsif ($params->{'prank_filtering_scheme'} eq 'prank_treewise') {
+    
+    foreach my $leaf ($tree->leaves) {
+      my $total_dist = $leaf->distance_to_root;
+      my $aln_len = $aln->length;
+      
+      my $aln_string = $leaf->alignment_string;
+      my @aln_arr = split("",$aln_string);
+
+      sub get_other_child {
+        my $parent = shift;
+        my $node = shift;
+        
+        foreach my $child (@{$parent->children}) {
+          return $child if ($node != $child);
+        }
+        return undef;
+      }
+      
+      my @scores;
+      my $score_string = "";
+      for (my $i=0; $i < $aln_len; $i++) {
+        if ($aln_arr[$i] eq '-') {
+          $score_string .= '-';
+          next;
+        }
+        
+        my $total_prob = 0;
+        my $node = $leaf;
+        while (my $parent = $node->parent) {
+          my $bl = $node->distance_to_parent;
+          my $xml_node = $node_to_xml->{$parent};
+          my $post_prob = $pp_hash->{$xml_node}[$i];
+          if ($post_prob != -1) {
+            # We've got nucleotides aligned here. Sum up according to our rules.
+            
+            # Find the fraction of branch length encompassed by our node and the
+            # other node being aligned. If we have more branch length, adjust the weights.
+            my $total_bl = Bio::EnsEMBL::Compara::TreeUtils->total_distance($node);
+            my $other_node = get_other_child($parent,$node);
+            my $other_total_bl = Bio::EnsEMBL::Compara::TreeUtils->total_distance($other_node);
+            
+            my $bl_fraction = $other_total_bl / $total_bl;
+            $bl_fraction = 1 if ($bl_fraction > 1);
+            
+            # Add a value proportional to post_prob, bl, and 'balance' fraction.
+            $total_prob += $post_prob/100 * ($bl / $total_dist) * $bl_fraction;
+            # Add a value to make up for a 'balance' fraction less than 1.
+            $total_prob += 1 * ($bl / $total_dist) * (1 - $bl_fraction);
+            
+            #$total_prob += $post_prob/100 * ($bl / $total_dist);
+          } else {
+            # If the alignment has a gap in the other node, don't penalize it.
+            $total_prob += 100/100 * ($bl / $total_dist);
+          }
+          $node = $parent;
+        }
+        my $score = $total_prob*10 - 1;
+        $score = 0 if ($score < 0);
+        $score_string .= sprintf("%1d",$score);
+      }
+      $leaf_scores->{$leaf->name} = $score_string;
+    }
+    
   }
   return ($leaf_scores,[]);
 }
