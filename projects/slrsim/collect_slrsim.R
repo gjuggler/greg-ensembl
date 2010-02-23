@@ -133,16 +133,20 @@ df.alignment.accuracy = function(df) {
   sps.by.gene = by(df,df$node_id,df.sps)
   tcs.by.gene = by(df,df$node_id,df.tcs)
 
+  df.unfiltered = function(df){return(df[1,]$unfiltered_site_fraction)}
+  unfiltered.by.gene = by(df,df$node_id,df.unfiltered)
+
   return(list(
     sum_of_pairs=mean(sps.by.gene),
     total_column_score=mean(tcs.by.gene),
     aln_entropy=mean(df$aln_entropy),
-    true_entropy=mean(df$true_entropy)
+    true_entropy=mean(df$true_entropy),
+    unfiltered_fraction=mean(unfiltered.by.gene)
   ))
 }
 
 # Go through each experiment, calculate summary stats, and build a data frame.
-summarize.results = function(data,thresh=2,paml_thresh=0.95) {
+summarize.results = function(data,thresh=3.8,paml_thresh=0.95) {
 
   # Paste together some metadata so that we have one ID per experiment.
   attrs = c('slrsim_file','alignment_name','filtering_name','species_name','sitewise_name','phylosim_ins_rate','slrsim_tree_length')
