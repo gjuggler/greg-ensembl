@@ -226,3 +226,14 @@ Went to Chris Tyler-Smith's talk on preliminary results on 1k genomes project.
  - Phase 1, ~2-3x sequencing of ~50 genomes per population type
  - Apply Tajima's D statistic over non-overlapping 10kb blocks
    -> Tajima's D? Read up on that!
+
+
+### 2010-02-18 ###
+
+Get the final version of Ensembl 57!
+ - Dump important compara tables:
+> mysqldump -uensadmin -pensembl -hcompara2 -P5316 --opt --routines lg4_ensembl_compara_57 meta ncbi_taxa_node ncbi_taxa_name genome_db sequence sequence_cds member protein_tree_node protein_tree_member protein_tree_tag
+
+### 2010-02-19 ###
+
+Start the v57 pipeline run!!
