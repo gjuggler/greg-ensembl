@@ -181,7 +181,8 @@ sub align {
   my $logic_name = "Align";
   my $module = "Bio::EnsEMBL::Compara::RunnableDB::MCoffee";
   my $params = {
-    alignment_method => 'prank'
+    alignment_method => 'prank',
+    alignment_prank_f => 1
   };
 
   _create_analysis($analysis_id,$logic_name,$module,$params,400,1);
