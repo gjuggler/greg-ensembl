@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Copyright (c) 1999-2010 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -508,7 +508,74 @@ sub is_toplevel {
 }
 
 
+=head2 seq
+
+  Example     : my $seq = $mapped_slice->seq()
+  Description : Retrieves the expanded sequence of this mapped slice,
+                including "-" characters where there are inserts in any other
+                mapped slices. This will align with the sequence returned by
+                the container's seq() method.
+  Return type : String
+  Exceptions  : none
+  Caller      : general
+  Status      : At Risk
+              : under development
+
+=cut
+
 sub seq {
+  my $self = shift;
+  
+  # create an empty string
+  my $ms_seq = '';
+  
+  # this coord represents the current position in the MS sequence
+  my $start = 0;
+
+  # get slice/mapper pairs from mapped slice (usually only one anyway)
+  foreach my $pair(@{$self->get_all_Slice_Mapper_pairs()}) {
+    my ($s, $m) = @$pair;
+    my $seq = $s->seq();
+    
+    # project from mapped slice to reference slice using the mapper
+    foreach my $ref_coord($m->map_coordinates('mapped_slice', 1, CORE::length($seq), $s->strand, 'mapped_slice')) {
+    
+      # normal coord
+      if(!$ref_coord->isa('Bio::EnsEMBL::Mapper::IndelCoordinate') && !$ref_coord->isa('Bio::EnsEMBL::Mapper::Gap')) {
+      
+        # project from reference slice to container slice using the container's mapper
+        foreach my $ms_coord($self->container->mapper->map_coordinates($self->container->ref_slice->seq_region_name, $ref_coord->start, $ref_coord->end, $ref_coord->strand, 'ref_slice')) {
+          
+          # normal coord
+          if(!$ms_coord->isa('Bio::EnsEMBL::Mapper::IndelCoordinate') && !$ms_coord->isa('Bio::EnsEMBL::Mapper::Gap')) {
+            $ms_seq .= substr($seq, $start, $ms_coord->length);
+            
+            $start += $ms_coord->length();
+          }
+          
+          # indel coord
+          else {
+            $ms_seq .= '-' x $ms_coord->length();
+          }
+        }
+      }
+      
+      # indel / gap
+      else {
+      
+        # if there's a gap here aswell, add corresponding sequence
+        if($ref_coord->gap_length > 0) {
+          $ms_seq .= substr($seq, $start, $ref_coord->gap_length);
+          $start += $ref_coord->gap_length;
+        }
+        
+        # add "-" to the sequence
+        $ms_seq .= '-' x ($ref_coord->length() - $ref_coord->gap_length());
+      }
+    }
+  }
+  
+  return $ms_seq;
 }
 
 sub subseq {

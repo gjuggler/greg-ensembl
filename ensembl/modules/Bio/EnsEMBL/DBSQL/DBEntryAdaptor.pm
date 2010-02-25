@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Copyright (c) 1999-2010 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -688,7 +688,7 @@ sub fetch_all_by_Transcript {
                (The translation to fetch database entries for)
   Arg [2]    : optional external database name
   Arg [3]    : optional externaldb type 
-  Example    : @db_entries = @{$db_entry_adptr->fetch_by_Translation($trans)};
+  Example    : @db_entries = @{$db_entry_adptr->fetch_all_by_Translation($trans)};
   Description: Retrieves external database entries for an EnsEMBL translation
   Returntype : listref of Bio::EnsEMBL::DBEntries; may be of type IdentityXref if
                there is mapping data, or GoXref if there is linkage data.
@@ -1542,24 +1542,27 @@ sub fetch_all_by_source {
 
 
 sub fetch_all_synonyms {
+  my ( $self, $dbID ) = @_;
 
-  my ($self, $dbID) = @_;
+  my @synonyms = ();
 
-  my @synonyms;
+  my $sth =
+    $self->prepare( "SELECT synonym "
+      . "FROM external_synonym "
+      . "WHERE xref_id = ?" );
 
-  my $sth = $self->prepare("SELECT synonym FROM external_synonym WHERE xref_id = ?");
+  $sth->bind_param( 1, $dbID, SQL_INTEGER );
 
-  $sth->bind_param(1, $dbID, SQL_INTEGER);
   $sth->execute();
-  while ( my $arrayref = $sth->fetchrow_arrayref()){
-    my ($synonym) = @$arrayref;
-    push (@synonyms, $synonym);
+
+  my $synonym;
+  $sth->bind_col(1, \$synonym);
+
+  while ( $sth->fetch() ) {
+    push( @synonyms, $synonym );
   }
 
-  @synonyms = () if (!@synonyms);
-
   return \@synonyms;
-
 }
 
 

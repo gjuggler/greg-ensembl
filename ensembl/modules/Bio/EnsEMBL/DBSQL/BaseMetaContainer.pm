@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Copyright (c) 1999-2010 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -89,7 +89,7 @@ sub get_schema_version {
 
   Arg [1]    : string $key
                the key to obtain values from the meta table with
-  Example    : my @values = $meta_container->list_value_by_key($key);
+  Example    : my @values = @{ $meta_container->list_value_by_key($key) };
   Description: gets a value for a key. Can be anything 
   Returntype : listref of strings 
   Exceptions : none

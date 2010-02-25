@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Copyright (c) 1999-2010 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -273,7 +273,7 @@ sub fetch_by_translation_id {
   Arg [1]    : Bio::EnsEMBL::Gene $gene
                The gene to fetch transcripts of
   Example    : my $gene = $gene_adaptor->fetch_by_stable_id('ENSG0000123');
-               my @transcripts = $tr_adaptor->fetch_all_by_Gene($gene);
+               my @transcripts = { $tr_adaptor->fetch_all_by_Gene($gene) };
   Description: Retrieves Transcript objects for given gene. Puts Genes slice
                in each Transcript. 
   Returntype : Listref of Bio::EnsEMBL::Transcript objects
@@ -333,6 +333,8 @@ sub fetch_all_by_Gene {
                lazy loaded later
   Arg [3]    : (optional) String $logic_name
                The logic name of the type of features to obtain
+  ARG [4]    : (optional) String $constraint
+               An extra contraint.
   Example    : my @transcripts = @{ $tr_adaptor->fetch_all_by_Slice($slice) };
   Description: Overrides superclass method to optionally load exons
                immediately rather than lazy-loading them later. This
@@ -346,16 +348,19 @@ sub fetch_all_by_Gene {
 =cut
 
 sub fetch_all_by_Slice {
-  my $self  = shift;
-  my $slice = shift;
-  my $load_exons = shift;
-  my $logic_name = shift;
+  my ( $self, $slice, $load_exons, $logic_name, $constraint ) = @_;
 
-  my $transcripts = $self->SUPER::fetch_all_by_Slice_constraint($slice,
-    't.is_current = 1', $logic_name);
+  my $transcripts;
+  if ( defined($constraint) && $constraint ne '' ) {
+    $transcripts = $self->SUPER::fetch_all_by_Slice_constraint( $slice,
+      't.is_current = 1 AND ' . $constraint, $logic_name );
+  } else {
+    $transcripts = $self->SUPER::fetch_all_by_Slice_constraint( $slice,
+      't.is_current = 1', $logic_name );
+  }
 
   # if there are 0 or 1 transcripts still do lazy-loading
-  if (!$load_exons || @$transcripts < 2) {
+  if ( !$load_exons || @$transcripts < 2 ) {
     return $transcripts;
   }
 
@@ -363,73 +368,80 @@ sub fetch_all_by_Slice {
   # faster than 1 query per transcript
 
   # first check if the exons are already preloaded
-  return $transcripts if( exists $transcripts->[0]->{'_trans_exon_array'});
+  # FIXME: Should test all exons.
+  if ( exists( $transcripts->[0]->{'_trans_exon_array'} ) ) {
+    return $transcripts;
+  }
 
   # get extent of region spanned by transcripts
-  my ($min_start, $max_end);
+  my ( $min_start, $max_end );
   foreach my $tr (@$transcripts) {
-    if(!defined($min_start) || $tr->seq_region_start() < $min_start) {
+    if ( !defined($min_start) || $tr->seq_region_start() < $min_start )
+    {
       $min_start = $tr->seq_region_start();
     }
-    if(!defined($max_end) || $tr->seq_region_end() > $max_end) {
-      $max_end   = $tr->seq_region_end();
+    if ( !defined($max_end) || $tr->seq_region_end() > $max_end ) {
+      $max_end = $tr->seq_region_end();
     }
   }
 
   my $ext_slice;
 
-  if($min_start >= $slice->start() && $max_end <= $slice->end()) {
+  if ( $min_start >= $slice->start() && $max_end <= $slice->end() ) {
     $ext_slice = $slice;
   } else {
     my $sa = $self->db()->get_SliceAdaptor();
-    $ext_slice = $sa->fetch_by_region
-      ($slice->coord_system->name(), $slice->seq_region_name(),
-       $min_start,$max_end, $slice->strand(), $slice->coord_system->version());
+    $ext_slice = $sa->fetch_by_region(
+      $slice->coord_system->name(), $slice->seq_region_name(),
+      $min_start,                   $max_end,
+      $slice->strand(),             $slice->coord_system->version() );
   }
 
   # associate exon identifiers with transcripts
 
-  my %tr_hash = map {$_->dbID => $_} @$transcripts;
+  my %tr_hash = map { $_->dbID => $_ } @{$transcripts};
 
-  my $tr_id_str = '(' . join(',', keys %tr_hash) . ')';
+  my $tr_id_str = join( ',', keys(%tr_hash) );
 
-  my $sth = $self->prepare("SELECT transcript_id, exon_id, rank " .
-                           "FROM   exon_transcript " .
-                           "WHERE  transcript_id IN $tr_id_str");
+  my $sth =
+    $self->prepare( "SELECT transcript_id, exon_id, rank "
+      . "FROM exon_transcript "
+      . "WHERE transcript_id IN ($tr_id_str)" );
 
   $sth->execute();
 
-  my ($ex_id, $tr_id, $rank);
-  $sth->bind_columns(\$tr_id, \$ex_id, \$rank);
+  my ( $tr_id, $ex_id, $rank );
+  $sth->bind_columns( \( $tr_id, $ex_id, $rank ) );
 
   my %ex_tr_hash;
 
-  while($sth->fetch()) {
+  while ( $sth->fetch() ) {
     $ex_tr_hash{$ex_id} ||= [];
-    push @{$ex_tr_hash{$ex_id}}, [$tr_hash{$tr_id}, $rank];
+    push( @{ $ex_tr_hash{$ex_id} }, [ $tr_hash{$tr_id}, $rank ] );
   }
 
-  $sth->finish();
-
-  my $ea = $self->db()->get_ExonAdaptor();
-  my $exons = $ea->fetch_all_by_Slice($ext_slice);
+  my $ea    = $self->db()->get_ExonAdaptor();
+  my $exons = $ea->fetch_all_by_Slice_constraint(
+    $ext_slice,
+    sprintf( "e.exon_id IN (%s)",
+      join( ',', sort { $a <=> $b } keys(%ex_tr_hash) ) ) );
 
   # move exons onto transcript slice, and add them to transcripts
-  foreach my $ex (@$exons) {
-
+  foreach my $ex ( @{$exons} ) {
     my $new_ex;
-    if ($slice != $ext_slice) {
-      $new_ex = $ex->transfer($slice) if($slice != $ext_slice);
-      if (!$new_ex) {
-	throw("Unexpected. Exon could not be transfered onto transcript slice.");
+    if ( $slice != $ext_slice ) {
+      $new_ex = $ex->transfer($slice);
+      if ( !defined($new_ex) ) {
+        throw("Unexpected. "
+            . "Exon could not be transfered onto Transcript slice." );
       }
     } else {
       $new_ex = $ex;
     }
 
-    foreach my $row (@{$ex_tr_hash{$new_ex->dbID()}}) {
-      my ($tr, $rank) = @$row;
-      $tr->add_Exon($new_ex, $rank);
+    foreach my $row ( @{ $ex_tr_hash{ $new_ex->dbID() } } ) {
+      my ( $tr, $rank ) = @{$row};
+      $tr->add_Exon( $new_ex, $rank );
     }
   }
 
@@ -439,7 +451,7 @@ sub fetch_all_by_Slice {
   $tla->fetch_all_by_Transcript_list($transcripts);
 
   return $transcripts;
-}
+} ## end sub fetch_all_by_Slice
 
 
 =head2 fetch_all_by_external_name
@@ -739,79 +751,101 @@ sub store {
   #store transcript
   #
   my $tst = $self->prepare(qq(
-      INSERT INTO transcript
-          (gene_id, analysis_id, seq_region_id, seq_region_start,
-          seq_region_end, seq_region_strand, biotype, status, description,
-          is_current)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO transcript (
+        gene_id, analysis_id, seq_region_id, seq_region_start,
+        seq_region_end, seq_region_strand, biotype, status, description,
+        is_current, canonical_translation_id
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   ));
 
-  $tst->bind_param(1, $gene_dbID, SQL_INTEGER);
-  $tst->bind_param(2, $new_analysis_id, SQL_INTEGER);
-  $tst->bind_param(3, $seq_region_id, SQL_INTEGER);
-  $tst->bind_param(4, $transcript->start, SQL_INTEGER);
-  $tst->bind_param(5, $transcript->end, SQL_INTEGER);
-  $tst->bind_param(6, $transcript->strand, SQL_TINYINT);
-  $tst->bind_param(7, $transcript->biotype, SQL_VARCHAR);
-  $tst->bind_param(8, $transcript->status, SQL_VARCHAR);
-  $tst->bind_param(9, $transcript->description, SQL_LONGVARCHAR);
-  $tst->bind_param(10, $is_current, SQL_TINYINT);
+  $tst->bind_param( 1,  $gene_dbID,                 SQL_INTEGER );
+  $tst->bind_param( 2,  $new_analysis_id,           SQL_INTEGER );
+  $tst->bind_param( 3,  $seq_region_id,             SQL_INTEGER );
+  $tst->bind_param( 4,  $transcript->start(),       SQL_INTEGER );
+  $tst->bind_param( 5,  $transcript->end(),         SQL_INTEGER );
+  $tst->bind_param( 6,  $transcript->strand(),      SQL_TINYINT );
+  $tst->bind_param( 7,  $transcript->biotype(),     SQL_VARCHAR );
+  $tst->bind_param( 8,  $transcript->status(),      SQL_VARCHAR );
+  $tst->bind_param( 9,  $transcript->description(), SQL_LONGVARCHAR );
+  $tst->bind_param( 10, $is_current,                SQL_TINYINT );
+
+  # If the transcript has a translation, this is updated later:
+  $tst->bind_param( 11, undef, SQL_INTEGER );
 
   $tst->execute();
   $tst->finish();
 
   my $transc_dbID = $tst->{'mysql_insertid'};
-  
+
   #
   # store translation
   #
   my $translation = $transcript->translation();
-  if( defined $translation ) {
+  if ( defined($translation) ) {
     #make sure that the start and end exon are set correctly
     my $start_exon = $translation->start_Exon();
     my $end_exon   = $translation->end_Exon();
 
-    if(!$start_exon) {
+    if ( !defined($start_exon) ) {
       throw("Translation does not define a start exon.");
     }
 
-    if(!$end_exon) {
+    if ( !defined($end_exon) ) {
       throw("Translation does not defined an end exon.");
     }
 
-    #If the dbID is not set, this means the exon must have been a different 
-    #object in memory than the the exons of the transcript.  Try to find the
-    #matching exon in all of the exons we just stored
-    if(!$start_exon->dbID()) {
+    # If the dbID is not set, this means the exon must have been a
+    # different object in memory than the the exons of the transcript.
+    # Try to find the matching exon in all of the exons we just stored.
+    if ( !defined( $start_exon->dbID() ) ) {
       my $key = $start_exon->hashkey();
-      ($start_exon) = grep {$_->hashkey() eq $key} @$exons;
-      
-      if($start_exon) {
+      ($start_exon) = grep { $_->hashkey() eq $key } @$exons;
+
+      if ( defined($start_exon) ) {
         $translation->start_Exon($start_exon);
       } else {
-        throw("Translation's start_Exon does not appear to be one of the " .
-              "exons in its associated Transcript");
+        throw(
+          "Translation's start_Exon does not appear to be one of the "
+            . "exons in its associated Transcript" );
       }
     }
 
-    if(!$end_exon->dbID()) {
+    if ( !defined( $end_exon->dbID() ) ) {
       my $key = $end_exon->hashkey();
-      ($end_exon) = grep {$_->hashkey() eq $key} @$exons;
+      ($end_exon) = grep { $_->hashkey() eq $key } @$exons;
 
-      if($end_exon) {
+      if ( defined($end_exon) ) {
         $translation->end_Exon($end_exon);
       } else {
-        throw("Translation's end_Exon does not appear to be one of the " .
-              "exons in its associated Transcript.");
+        throw(
+              "Translation's end_Exon does not appear to be one of the "
+            . "exons in its associated Transcript." );
       }
     }
 
+    my $old_dbid = $translation->dbID();
     $db->get_TranslationAdaptor()->store( $translation, $transc_dbID );
+
+    # Need to update the canonical_translation_id for this transcript.
+
+    my $sth = $self->prepare(
+      qq(
+      UPDATE transcript
+      SET canonical_translation_id = ?
+      WHERE transcript_id = ?)
+    );
+
+    $sth->bind_param( 1, $translation->dbID(), SQL_INTEGER );
+    $sth->bind_param( 2, $transc_dbID,         SQL_INTEGER );
+
+    $sth->execute();
+
     # set values of the original translation, we may have copied it
     # when we transformed the transcript
-    $original_translation->dbID($translation->dbID());
-    $original_translation->adaptor($translation->adaptor());
-  }
+    $original_translation->dbID( $translation->dbID() );
+    $original_translation->adaptor( $translation->adaptor() );
+  } ## end if ( defined($translation...))
 
   #
   # store the xrefs/object xref mapping
@@ -1265,22 +1299,30 @@ sub _objs_from_sth {
   my %sr_name_hash;
   my %sr_cs_hash;
 
-  my ( $transcript_id, $seq_region_id, $seq_region_start, $seq_region_end, 
-       $seq_region_strand, $analysis_id, $gene_id, $is_current, 
-       $stable_id, $version, $created_date, $modified_date,
-       $description, $biotype, $status,
-       $external_db, $external_status, $external_db_name,
-       $xref_id, $xref_display_label, $xref_primary_acc, $xref_version, 
-       $xref_description, $xref_info_type, $xref_info_text );
+  my (
+    $transcript_id,  $seq_region_id,      $seq_region_start,
+    $seq_region_end, $seq_region_strand,  $analysis_id,
+    $gene_id,        $is_current,         $stable_id,
+    $version,        $created_date,       $modified_date,
+    $description,    $biotype,            $status,
+    $external_db,    $external_status,    $external_db_name,
+    $xref_id,        $xref_display_label, $xref_primary_acc,
+    $xref_version,   $xref_description,   $xref_info_type,
+    $xref_info_text
+  );
 
-  $sth->bind_columns( \$transcript_id, \$seq_region_id, \$seq_region_start,
-                      \$seq_region_end, \$seq_region_strand, \$analysis_id,
-                      \$gene_id, \$is_current, , \$stable_id,
-                      \$version, \$created_date, \$modified_date,
-		      \$description, \$biotype, \$status,
-                      \$external_db, \$external_status, \$external_db_name,
-		      \$xref_id, \$xref_display_label, \$xref_primary_acc, \$xref_version,
-                      \$xref_description, \$xref_info_type, \$xref_info_text );
+  $sth->bind_columns(
+    \(
+      $transcript_id,  $seq_region_id,      $seq_region_start,
+      $seq_region_end, $seq_region_strand,  $analysis_id,
+      $gene_id,        $is_current,         $stable_id,
+      $version,        $created_date,       $modified_date,
+      $description,    $biotype,            $status,
+      $external_db,    $external_status,    $external_db_name,
+      $xref_id,        $xref_display_label, $xref_primary_acc,
+      $xref_version,   $xref_description,   $xref_info_type,
+      $xref_info_text
+    ) );
 
   my $asm_cs;
   my $cmp_cs;
@@ -1688,5 +1730,3 @@ sub fetch_all_by_DBEntry {
 
 
 1;
-
-

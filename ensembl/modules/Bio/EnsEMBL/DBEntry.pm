@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Copyright (c) 1999-2010 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -308,7 +308,7 @@ sub version {
   Arg [1]    : (optional) String $arg - value to set
   Example    : none
   Description: Getter/setter for attribute 'description'.
-               The object's description, from the external_db table
+               The object's description, from the xref table
   Returntype : String
   Exceptions : none
   Caller     : general
@@ -318,9 +318,9 @@ sub version {
 
 sub description {
   my ( $self, $arg ) = @_;
-  if( defined $arg ) {
-    $self->{description} = $arg;
-  } 
+
+  if ( defined($arg) ) { $self->{'description'} = $arg }
+
   return $self->{description};
 }
 

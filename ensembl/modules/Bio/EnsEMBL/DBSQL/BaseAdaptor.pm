@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Copyright (c) 1999-2010 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -334,6 +334,10 @@ sub bind_param_generic_fetch{
 	throw("Need to specify sql_type for parameter $param\n");
     }
     elsif (defined $param && defined $sql_type){
+	#check when there is a SQL_INTEGER type that the parameter is really a number
+	if ($sql_type eq SQL_INTEGER){
+	    throw "Trying to assign a non numerical parameter to an integer value in the database" if ($param !~ /^\d+$/);
+	}
 	#both paramters have been entered, push it to the bind_param array
 	push @{$self->{'_bind_param_generic_fetch'}},[$param,$sql_type];
     }
@@ -455,9 +459,10 @@ sub generic_fetch {
   #append additional clauses which may have been defined
   $sql .= "\n$final_clause";
 
+
   # FOR DEBUG:
-#warn "SQL:\n$sql\n";
- #  printf(STDERR "SQL:\n%s\n", $sql);
+  # printf(STDERR "SQL:\n%s\n", $sql);
+
 
   my $sth = $db->dbc->prepare($sql);
   my $bind_parameters = $self->bind_param_generic_fetch();
@@ -471,8 +476,11 @@ sub generic_fetch {
       #after binding parameters, undef for future queries
       $self->{'_bind_param_generic_fetch'} = ();
   }
-#  print STDERR $sql,"\n";
-  $sth->execute;
+  eval { $sth->execute() };
+  if ($@) {
+    throw("Detected an error whilst executing SQL '${sql}': $@");
+  }
+
   my $res = $self->_objs_from_sth($sth, $mapper, $slice);
   $sth->finish();
   return $res;
@@ -717,9 +725,9 @@ sub dump_data {
   my $dumper = Data::Dumper->new([$data]);
   $dumper->Indent(0);
   $dumper->Terse(1);
-  my $dump = $dumper->Dump();
-# $dump =~ s/'/\\'/g;
-# $dump =~ s/^\$VAR1 = //;
+   my $dump = $dumper->Dump();
+# $dump =~ s/'/\\'/g; 
+ # $dump =~ s/^\$VAR1 = //;
   return $dump;
 }
 

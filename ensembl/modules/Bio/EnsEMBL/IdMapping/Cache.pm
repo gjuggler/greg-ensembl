@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Copyright (c) 1999-2010 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -567,9 +567,12 @@ sub find_common_coord_systems {
 
   SOURCE:
   foreach my $s_cs (@s_coord_systems) {
-    
+    if ( !$s_cs->is_default() ) { next SOURCE }
+
     TARGET:
     foreach my $t_cs (@t_coord_systems) {
+      if ( !$t_cs->is_default() ) { next TARGET }
+
       if ($s_cs->name eq $t_cs->name) {
 
         # test for identical coord_system version
@@ -747,7 +750,7 @@ sub get_db_privs {
     my $sth = $dbc->prepare($sql);
     $sth->execute();
     $rs = $sth->fetchall_arrayref();
-    $sth->finish();
+    #$sth->finish();
   };
 
   if ($@) {

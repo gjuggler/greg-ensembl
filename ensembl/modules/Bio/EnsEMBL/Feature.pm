@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Copyright (c) 1999-2010 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -805,7 +805,6 @@ sub display_id {
 
 sub feature_Slice {
   my $self = shift;
-  my $flanking = shift || 0;
 
   my $slice = $self->slice();
 
@@ -818,8 +817,8 @@ sub feature_Slice {
     (-seq_region_name   => $slice->seq_region_name,
      -seq_region_length => $slice->seq_region_length,
      -coord_system      => $slice->coord_system,
-     -start             => $self->seq_region_start()-$flanking,
-     -end               => $self->seq_region_end()+$flanking,
+     -start             => $self->seq_region_start(),
+     -end               => $self->seq_region_end(),
      -strand            => $self->seq_region_strand(),
      -adaptor           => $slice->adaptor());
 

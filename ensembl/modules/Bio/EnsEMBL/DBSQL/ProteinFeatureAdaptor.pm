@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Copyright (c) 1999-2010 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -61,7 +61,8 @@ use vars qw(@ISA);
   Arg [1]    : int $transl
                the internal id of the translation corresponding to protein 
                whose features are desired 
-  Example    : @prot_feats = $prot_feat_adaptor->fetch_by_translation_id(1234);
+  Example    : @prot_feats =
+                  @{ $prot_feat_adaptor->fetch_by_translation_id(1234) };
   Description: Gets all protein features present on a peptide using the
                translations internal identifier.  This method will return
                an unsorted list of all protein_feature types.  The feature

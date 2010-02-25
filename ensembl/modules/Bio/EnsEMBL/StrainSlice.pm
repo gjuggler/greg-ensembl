@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Copyright (c) 1999-2010 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -261,6 +261,7 @@ sub seq {
   if($self->adaptor()) {
     my $seqAdaptor = $self->adaptor()->db()->get_SequenceAdaptor();
     my $reference_sequence = $seqAdaptor->fetch_by_Slice_start_end_strand($self,1,undef,1); #get the reference sequence for that slice
+	
     #apply all differences to the reference sequence
     #first, in case there are any indels, create the new sequence (containing the '-' bases)
    # sort edits in reverse order to remove complication of
@@ -270,6 +271,7 @@ sub seq {
     foreach my $vf (@indels_ordered){
 	$vf->apply_edit($reference_sequence); #change, in the reference sequence, the vf
     }
+	
     #need to find coverage information if diffe
     # sort edits in reverse order to remove complication of
     # adjusting downstream edits
@@ -278,17 +280,31 @@ sub seq {
     foreach my $vf (@variation_features_ordered){
 	$vf->apply_edit($reference_sequence); #change, in the reference sequence, the vf
     }
+	
     #need to find coverage information if different from reference
     my $indAdaptor = $self->adaptor->db->get_db_adaptor('variation')->get_IndividualAdaptor;
     my $ref_strain = $indAdaptor->get_reference_strain_name;
     $self->_add_coverage_information($reference_sequence) if ($with_coverage == 1 && $self->strain_name ne $ref_strain);
     return substr(${$reference_sequence},0,1) if ($self->length == 1); 
-    return substr(${$reference_sequence},0,$self->length); #returns the reference sequence, applying the variationFeatures. Remove additional bases added due to indels
+    return substr(${$reference_sequence},0,$self->expanded_length); #returns the reference sequence, applying the variationFeatures. Remove additional bases added due to indels
   }
 
   # no attached sequence, and no db, so just return Ns
   return 'N' x $self->length();
 }
+
+sub expanded_length() {
+	my $self = shift;
+	
+	my $length = $self->SUPER::length();
+	
+	foreach my $af(@{$self->{'alleleFeatures'}}) {
+		$length += $af->length_diff() if $af->length_diff > 0;
+	}
+	
+	return $length;
+}
+
 
 
 sub _add_coverage_information{
@@ -779,6 +795,133 @@ sub remove_indels {
 	my @new_afs = grep { $_->variation->var_class ne 'in-del' } @{$self->{'alleleFeatures'}};
 	
 	$self->{'alleleFeatures'} = \@new_afs;
+}
+
+
+=head2 _get_ReadCoverage
+
+	Args		: none
+	Example		: $ss->_get_ReadCoverage()
+	Description	: Internal method to add read coverage info to this strain slice
+	ReturnType	: none
+	Exceptions	: none
+	Caller		: Internal
+
+=cut
+
+sub _get_ReadCoverage {
+	my $self = shift;
+	
+	# check we have an adaptor
+	unless(defined $self->adaptor) {
+		warning('Cannot get Read Coverage info without attached adaptor');
+		return '';
+	}	
+	
+	# try and get a var DB connection
+	my $variation_db = $self->adaptor->db->get_db_adaptor('variation');
+
+    unless($variation_db) {
+		warning("Variation database must be attached to core database to ".
+				"retrieve variation information" );
+		return '';
+    }
+	
+	# try and get a RC adaptor
+	my $rc_adaptor = $variation_db->get_ReadCoverageAdaptor();
+	
+	unless($rc_adaptor) {
+		warning("Could not get ReadCoverageAdaptor");
+		return '';
+    }
+	
+	# try and get an individual adatpor
+	my $ind_adaptor = $variation_db->get_IndividualAdaptor;
+
+	unless($ind_adaptor){
+		warning("Could not get IndividualAdaptor");
+		return '';
+	}
+	
+	# get the individual object
+	my $ind = shift @{$ind_adaptor->fetch_all_by_name($self->{'strain_name'})};
+	
+	# get all read coverage units for this individual and slice
+	my @rcs = @{$rc_adaptor->fetch_all_by_Slice_Sample_depth($self, $ind)};
+	
+	# get indels
+	my @indels_ordered = sort {$b->start() <=> $a->start()} @{$self->{'alignIndels'}} if (defined $self->{'alignIndels'});
+	
+	# get length differences
+	my %length_changes;
+    foreach my $af (@indels_ordered) {
+		$length_changes{$af->start} = $af->length_diff;
+	}
+	
+	my @new_rcs;
+	
+	# change RC coordinates according to length diffs
+	foreach my $rc(@rcs) {
+		foreach my $pos(keys %length_changes) {
+			if($rc->start > $pos) {
+				$rc->start($rc->start + $length_changes{$pos});
+			}
+			
+			if($rc->end > $pos) {
+				$rc->end($rc->end + $length_changes{$pos});
+			}
+		}
+		
+		push @new_rcs, $rc;
+	}
+	
+	$self->{'_read_coverage'} = \@new_rcs;
+	
+	return $self->{'_read_coverage'};
+}
+
+
+=head2 masked_seq
+
+	Args		: none
+	Example		: my $seq = $ss->masked_seq()
+	Description	: Returns the sequence of this Strain Slice with "N"s in place
+				  of the sequence where there is no read coverage.
+	ReturnType	: none
+	Exceptions	: none
+	Caller		: General
+
+=cut
+
+sub masked_seq {
+	my $self = shift;
+	
+	# get the sequence of the strain
+	my $seq = $self->seq();
+	
+	# make an equivalent fully masked string
+	my $masked = "N" x length($seq);
+	
+	# make sure read coverage has been retrieved
+	if(!defined($self->{'_read_coverage'})) {
+		$self->_get_ReadCoverage();
+	}
+	
+	# iterate through read coverage units
+	foreach my $rc(@{$self->{'_read_coverage'}}) {
+		next unless $rc->level() >= 1;
+		
+		my ($start, $end) = ($rc->start, $rc->end);
+		
+		# adjust coords to within string bounds
+		$start = 1 if $start < 1;
+		$end = length($seq) if $end > length($seq);
+		
+		# unmask sequence over region of coverage
+		substr($masked, $start - 1, ($end - $start) + 1) = substr($seq, $start - 1, ($end - $start) + 1);
+	}
+	
+	return $masked;
 }
 
 1;
