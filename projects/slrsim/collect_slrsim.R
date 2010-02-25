@@ -105,6 +105,8 @@ df.swfwer = function(df,thresh=3.8,paml_thresh=0.95) {
 }
 
 df.gene.detection.rate = function(df) {
+  # Note: the detection rate is based on PAML's LRT test or SLR's multiple testing-corrected estimates.
+  # (This means that a different SLR threshold will *not* change these calculated detection rates.)
   df.detected.positive = function(df) {
     if (is.paml(df)) {
       return(nrow(subset(df, paml_lrt > 5.99)) >= 1)
@@ -121,6 +123,27 @@ df.cor = function(df) {
   return(list(cor=cor(df$true_dnds,df$aln_dnds,method='spearman')))
 }
 
+df.alignment.accuracy = function(df) {
+  df.sps = function(df) {
+    return(df[1,]$sum_of_pairs_score)
+  }
+  df.tcs = function(df) {
+    return(df[1,]$total_column_score)
+  }
+  sps.by.gene = by(df,df$node_id,df.sps)
+  tcs.by.gene = by(df,df$node_id,df.tcs)
+
+  df.unfiltered = function(df){return(df[1,]$unfiltered_site_fraction)}
+  unfiltered.by.gene = by(df,df$node_id,df.unfiltered)
+
+  return(list(
+    sum_of_pairs=mean(sps.by.gene),
+    total_column_score=mean(tcs.by.gene),
+    aln_entropy=mean(df$aln_entropy),
+    true_entropy=mean(df$true_entropy),
+    unfiltered_fraction=mean(unfiltered.by.gene)
+  ))
+}
 
 # Go through each experiment, calculate summary stats, and build a data frame.
 summarize.results = function(data,thresh=3.8,paml_thresh=0.95) {
@@ -145,6 +168,7 @@ summarize.results = function(data,thresh=3.8,paml_thresh=0.95) {
     gene.detection.rate = df.gene.detection.rate(df)
     swfwer = df.swfwer(df,thresh=thresh,paml_thresh=paml_thresh)
     cor = df.cor(df)
+    acc = df.alignment.accuracy(df)
 
     # Put them all together into a data frame.
     attr.list = list()
@@ -153,9 +177,9 @@ summarize.results = function(data,thresh=3.8,paml_thresh=0.95) {
     }   
 
     if(!exists('res.df')) {
-      res.df = data.frame(attr.list,stats,gene.detection.rate,swfwer,cor)
+      res.df = data.frame(attr.list,stats,gene.detection.rate,swfwer,cor,acc)
     } else {
-      res.df = rbind(res.df,data.frame(attr.list,stats,gene.detection.rate,swfwer,cor))
+      res.df = rbind(res.df,data.frame(attr.list,stats,gene.detection.rate,swfwer,cor,acc))
     }
   } 
   return(res.df)

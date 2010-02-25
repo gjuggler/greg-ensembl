@@ -115,7 +115,7 @@ sub fetch_input {
       alignment_executable             => '',
       
       alignment_prank_codon_model => 0,
-      alignment_prank_f           => 0
+      alignment_prank_f           => 1
     };  
     
     #########################

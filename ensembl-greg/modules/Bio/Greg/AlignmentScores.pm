@@ -2,6 +2,7 @@ package Bio::Greg::AlignmentScores;
 
 use strict;
 use Cwd;
+use POSIX qw(ceil floor);
 use Bio::AlignIO;
 
 use Bio::EnsEMBL::Compara::ComparaUtils;
@@ -56,6 +57,8 @@ sub fetch_input {
   
   $params = $self->replace_params($params,$p_params,$i_params,$t_params);
 
+  Bio::EnsEMBL::Compara::ComparaUtils->hash_print($params);
+
   $dba->dbc->disconnect_when_inactive(1);
 }
 
@@ -76,10 +79,11 @@ sub run {
     $self->store_scores($tree,$score_hash,$input_table."_".'gblocks');
   }
 
-  if ($action =~ m/prank/i) {
+  if ($action =~ 'prank') {
     print " -> RUN PRANK\n";
+    $params->{prank_filtering_scheme} = $action;
     my $score_hash = $self->run_prank($tree,$params);
-    $self->store_scores($tree,$score_hash,$input_table."_".'prank');
+    $self->store_scores($tree,$score_hash,$input_table."_".$action);
   }
 
   if ($action =~ m/trimal/i) {
@@ -134,22 +138,29 @@ sub run_indelign {
   my $num_leaves = scalar ($tree->leaves);
   my $tree_length = Bio::EnsEMBL::Compara::TreeUtils->total_distance($tree);
   my $rate_sum = $ins_rate+$del_rate;
+  my $max_allowed_indels = $rate_sum*$tree_length * 1;
+  $max_allowed_indels = ceil($max_allowed_indels);
 
-  my $blocks_string = "0" x $aln->length;  
+  my $blocks_string = "1" x $aln->length;  
   for (my $i=0; $i < $aln->length; $i++) {
     my $indel_sum = $ins[$i] + $del[$i];
-    my $max_allowed_indels = $rate_sum*$tree_length*1.5;
-    if ($indel_sum >= $max_allowed_indels) {
-      substr $blocks_string,$i,1,'0';
+
+    if ($indel_sum > $max_allowed_indels) {
+      my $indel_excess = ($indel_sum / $max_allowed_indels) * 2;
+      my $indel_score = 9 - $indel_excess;
+      $indel_score = 0 if ($indel_score < 0);
+      substr $blocks_string,$i,1,floor($indel_score);
     } else {
       substr $blocks_string,$i,1,'9';
     }
   }
 
   my @column_scores = split("",$blocks_string);  
+#  print "@column_scores\n";
   my %scores_hash;
   foreach my $leaf ($tree->leaves) {
     my $aln_string = _apply_columns_to_leaf(\@column_scores,$leaf);
+    print "$aln_string\n";
     $scores_hash{$leaf->stable_id} = $aln_string;
   }
   return \%scores_hash;
@@ -240,10 +251,8 @@ sub _apply_columns_to_leaf {
   my @aln_chars = split("",$aln_str);
   
   for (my $i=0; $i < scalar(@aln_chars); $i++) {
-    if ($column_scores[$i] < 9 && $aln_chars[$i] ne '-') {
-      $aln_chars[$i] = 0;
-    } elsif ($aln_chars[$i] ne '-') {
-      $aln_chars[$i] = 9;
+    if ($aln_chars[$i] ne '-') {
+      $aln_chars[$i] = $column_scores[$i];
     }
   }
   return join("",@aln_chars);
