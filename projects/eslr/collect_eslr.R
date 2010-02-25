@@ -4,8 +4,7 @@ if (exists('drv')) {
   library(RMySQL)
   drv <- dbDriver('MySQL')
 }
-
-con <- dbConnect(drv, host='ens-research', port=3306, user='ensro', password='', dbname='gj1_eslr')
+con <- dbConnect(drv, host='ens-research', port=3306, user='ensro', password='', dbname='gj1_eslr_57')
 
 get.vector = function(con,query,columns=1) {
   res = dbSendQuery(con,query)
@@ -29,20 +28,10 @@ get.genes = function(parameter.set.id=1) {
   query = sprintf("SELECT * FROM stats_genes where parameter_set_id=%s",parameter.set.id);
   data = get.vector(con,query,columns='all')
 
-  # Temoporary fix.
-  psc = data$num_pscs
-  psc_weak = data$num_pscs_weak
-  data$num_pscs = psc_weak
-  data$num_pscs_weak = psc
-
   return(data)
 }
 
 get.all.merged = function() {
-  if (exists('merged.df')) {
-    rm(merged.df)
-  }
-
   all.node.ids = get.vector(con,'SELECT DISTINCT(node_id) FROM stats_genes')
   
   param.sets = get.psets()
@@ -50,14 +39,15 @@ get.all.merged = function() {
     genes = get.genes(pset)
     col.dnds = paste(param.sets[pset,]$shortname,'_dnds',sep="")
     col.psc = paste(param.sets[pset,]$shortname,'_psc',sep="")
-    genes.subset = data.frame(a=genes$node_id,b=genes$avg_omega,c=genes$num_pscs)
-    colnames(genes.subset) = c('node_id',col.dnds,col.psc)
-      
+    col.psc.weak = paste(param.sets[pset,]$shortname,'_psc_weak',sep="")
+    genes.subset = data.frame(a=genes$node_id,b=genes$omega_mean,c=genes$psc_count,d=genes$weak_psc_count)
+    colnames(genes.subset) = c('node_id',col.dnds,col.psc,col.psc.weak)
+    
     if (!exists('merged.df')) {
       merged.df = data.frame(node_id=all.node.ids)
     }
     print(merged.df[1,])
     merged.df = merge(merged.df,genes.subset,all.x=T)
   }
-  assign('all.genes',merged.df,pos=1)
+  return(merged.df);
 }
