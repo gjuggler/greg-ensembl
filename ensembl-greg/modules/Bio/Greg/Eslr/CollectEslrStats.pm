@@ -82,15 +82,14 @@ my $site_stats_def = {
   chr_start             => 'int',
   chr_end               => 'int',
 
-
 # Should we integrate these into the table now, or let this be done in R?
-#  column_entropy        => 'float',
+  column_entropy        => 'float',
 #  indel_count           => 'int',
-#  pfam_domain           => 'string',
-#  sec_structure         => 'string',
-#  solvent_acc           => 'int',
-#  exon_type             => 'string',
-#  splice_dist           => 'int',
+  pfam_domain           => 'string',
+  sec_structure         => 'string',
+  solvent_acc           => 'int',
+  exon_type             => 'string',
+  splice_distance       => 'int',
 
   unique_keys            => 'aln_position,node_id,parameter_set_id'  
 };
@@ -253,15 +252,23 @@ sub get_sites_data {
   eval {
     ($tree,$sa_aln,$cdna_aln) = Bio::EnsEMBL::Compara::ComparaUtils->tree_aln_cdna($dba,$cur_params);
   };
-  return if ($@);
+  if ($@) {
+    print "Sites data collection error!\n";
+    return;
+  }
   
-  my $psc_params = $self->replace_params($cur_params,{genome => 1});
+  my @column_entropies;
+  @column_entropies = Bio::EnsEMBL::Compara::AlignUtils->column_entropies($cdna_aln);
+  my $psc_params = $self->replace_params($cur_params,{'genome' => 1});
   my $psc_hash = $utils->get_psc_hash($dba->dbc,$psc_params);
+  my $tag_hash = $utils->get_tag_hash($dba->dbc,$psc_params);
+
+  Bio::EnsEMBL::Compara::ComparaUtils->hash_print($psc_params);
 
   my $aln_length = $sa_aln->length;
 
-  foreach my $key (sort {$a <=> $b} keys %$psc_hash) {
-    my $site = $psc_hash->{$key};
+  foreach my $aln_position (sort {$a <=> $b} keys %$psc_hash) {
+    my $site = $psc_hash->{$aln_position};
     
     $cur_params->{omega} = $site->{omega};
     $cur_params->{omega_lower} = $site->{omega_lower};
@@ -277,6 +284,23 @@ sub get_sites_data {
     $cur_params->{'chr_name'} = $site->{chr_name};
     $cur_params->{'chr_start'} = $site->{chr_start};
     $cur_params->{'chr_end'} = $site->{chr_end};
+
+    $cur_params->{'column_entropy'} = $column_entropies[$aln_position];
+
+    my $pfam_domain = $tag_hash->{'DOMAIN.'.$aln_position};
+    $cur_params->{'pfam_domain'} = $pfam_domain if (defined $pfam_domain);
+
+    my $sec_structure = $tag_hash->{'DSSP.'.$aln_position};
+    $cur_params->{'sec_structure'} = $sec_structure if (defined $sec_structure);
+
+    my $solvent_acc = $tag_hash->{'ACC.'.$aln_position};
+    $cur_params->{'solvent_acc'} = $solvent_acc if (defined $solvent_acc);
+
+    my $exon_type = $tag_hash->{'EXON.'.$aln_position};
+    $cur_params->{'exon_type'} = $exon_type if (defined $exon_type);
+
+    my $splice_distance = $tag_hash->{'SPLICE_DISTANCE.'.$aln_position};
+    $cur_params->{'splice_distance'} = $splice_distance if (defined $splice_distance);
 
     # Store values in our output table.
     my $table = $cur_params->{'collect_eslr_stats_sites_table'};

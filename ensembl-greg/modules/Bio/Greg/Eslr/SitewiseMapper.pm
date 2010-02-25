@@ -44,8 +44,6 @@ sub fetch_input {
   ### DEFAULT PARAMETERS ###
   $params->{'omega_table'} = 'sitewise_omega';
   $params->{'do_mapping'} = 1;
-  $params->{'collect_tags'} = 0;
-  $params->{'collect_dup_tags'} = 0;
   $params->{'collect_pfam'} = 1;
   $params->{'collect_uniprot'} = 1;
   $params->{'collect_exons'} = 1;
@@ -53,6 +51,8 @@ sub fetch_input {
   $params->{'pfam_taxon_ids'} = '9606,10090';
   $params->{'go_taxon_ids'} = '9606,10090';
 
+  $params->{'collect_tags'} = 0;
+  $params->{'collect_dup_tags'} = 0;
   $params->{'create_plot'} = 0;
   $params->{'parameter_set_id'} = 1; # The parameter set to use for UniProt extraction.
   #########################
@@ -350,25 +350,32 @@ sub collect_exons {
     my $name = $leaf->stable_id;
     my $tx = $leaf->get_Transcript;
     my @exons = @{$tx->get_all_Exons};
-    my $sequence = $leaf->sequence;
     my $i = 0;
     foreach my $exon (@exons) {
       $i++;
-      my $exon_pep = $exon->peptide($tx)->seq;
-      if ($sequence =~ m/$exon_pep/) {
-	print $exon_pep."\n";
-	my $pep_start = $-[0]+1;
-	my $pep_end = $+[0]+1;	
+      my $sequence = $leaf->sequence;
+      my $exon_pep = '';
+      eval {
+	$exon_pep = $exon->peptide($tx)->seq;
+      };
+      next if ($exon_pep eq '');
+      if ($sequence =~ /($exon_pep)/g) {
+	my $pep_end = pos($sequence);
+	my $pep_start = $pep_end - length($exon_pep) + 1;
 	my $len = $pep_end - $pep_start;
+
+	print $sequence."\n";
+	print ' ' x ($pep_start-1) . $exon_pep . "\n";
 
 	my $exon_position = 'MIDDLE';
 	$exon_position = 'FIRST' if ($i == 1);
 	$exon_position = 'LAST' if ($i == scalar(@exons));
 
-	foreach my $pos ($pep_start .. $pep_end) {
+	my $aln_start = $sa->column_from_residue_number($leaf->stable_id,$pep_start);
+	my $aln_end = $sa->column_from_residue_number($leaf->stable_id,$pep_end);
+	
+	foreach my $pos ($aln_start .. $aln_end) {
 	  # Store whether we're in a first, middle, or last exon.
-	  my $aln_start = $sa->column_from_residue_number($leaf->stable_id,$pep_start);
-	  my $aln_end = $sa->column_from_residue_number($leaf->stable_id,$pep_end);
 	  $sth->execute($tree->node_id,
 			$pos,
 			$params->{parameter_set_id},
@@ -376,16 +383,16 @@ sub collect_exons {
 			$exon_position,
 			"EnsEMBL"
 			);
-
+	  
 	  # Store the smallest distance to an exon junction.
-	  my $dist_left = $pep_start - $pos;
-	  my $dist_right = $pep_end - $pos;
+	  my $dist_left = $aln_start - $pos;
+	  my $dist_right = $aln_end - $pos;
 	  
 	  my $dist = $dist_left;
 	  if ($dist_right + $dist_left <= 0) {
 	    $dist = $dist_right;
 	  }
-
+	  
 	  $sth->execute($tree->node_id,
 			$pos,
 			$params->{parameter_set_id},
@@ -394,7 +401,7 @@ sub collect_exons {
 			"EnsEMBL"
 			);
 	}	
-
+	
       } else {
 	die ("Exon $exon_pep did not match protein $sequence!\n");
       }
