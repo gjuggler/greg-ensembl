@@ -56,8 +56,13 @@ sub copy {
 sub print_node {
   my $self  = shift;
   printf("(%s %d,%d)", $self->node_id, $self->left_index, $self->right_index);
-
-  printf(" %s", $self->genome_db->name) if($self->genome_db_id and $self->adaptor);
+    if($self->genome_db_id and $self->adaptor) {
+      my $genome_db = $self->genome_db;
+      if (!defined($genome_db)) {
+        $DB::single=1;1;
+      }
+      printf(" %s", $genome_db->name) 
+    }
   if($self->gene_member) {
     printf(" %s %s %s:%d-%d",
       $self->gene_member->stable_id, $self->gene_member->display_label || '', $self->gene_member->chr_name,
@@ -169,6 +174,49 @@ sub alignment_string {
   return $self->{'alignment_string'};
 }
 
+sub alignment_string_bounded {
+  my $self = shift;
+
+  unless (defined $self->cigar_line && $self->cigar_line ne "") {
+    throw("To get an alignment_string, the cigar_line needs to be define\n");
+  }
+  unless (defined $self->{'alignment_string_bounded'}) {
+    my $sequence_exon_bounded = $self->sequence_exon_bounded;
+    if (defined $self->cigar_start || defined $self->cigar_end) {
+      throw("method doesnt implement defined cigar_start and cigar_end");
+    }
+    $sequence_exon_bounded =~ s/b|o|j/\ /g;
+    my $cigar_line = $self->cigar_line;
+    $cigar_line =~ s/([MD])/$1 /g;
+
+    my @cigar_segments = split " ",$cigar_line;
+    my $alignment_string_bounded = "";
+    my $seq_start = 0;
+    my $exon_count = 1;
+    foreach my $segment (@cigar_segments) {
+      if ($segment =~ /^(\d*)D$/) {
+        my $length = $1;
+        $length = 1 if ($length eq "");
+        $alignment_string_bounded .= "-" x $length;
+      } elsif ($segment =~ /^(\d*)M$/) {
+        my $length = $1;
+        $length = 1 if ($length eq "");
+        my $substring = substr($sequence_exon_bounded,$seq_start,$length);
+        if ($substring =~ /\ /) {
+          my $num_boundaries = $substring =~ s/(\ )/$1/g;
+          $length += $num_boundaries;
+          $substring = substr($sequence_exon_bounded,$seq_start,$length);
+        }
+        $alignment_string_bounded .= $substring;
+        $seq_start += $length;
+      }
+    }
+    $self->{'alignment_string_bounded'} = $alignment_string_bounded;
+  }
+
+  return $self->{'alignment_string_bounded'};
+}
+
 
 =head2 cdna_alignment_string
 
@@ -185,56 +233,62 @@ sub alignment_string {
 
 =cut
 
-  sub cdna_alignment_string {
-    my $self = shift;
+sub cdna_alignment_string {
+  my $self = shift;
 
-    throw("can't connect to CORE to get transcript and cdna for "
-	  . "genome_db_id:" . $self->genome_db_id )
-      unless($self->transcript || $self->isa('Bio::EnsEMBL::Compara::LocalMember'));
+  unless (defined $self->{'cdna_alignment_string'}) {
     
-    unless (defined $self->{'cdna_alignment_string'}) {
-      
-      my $cdna;
-      if (defined $self->cdna_sequence) {
-	$cdna = $self->cdna_sequence;
-#	  print "CDNA: $cdna\n";
-#	  print $self->cigar_line."\n";
+    my $cdna;
+    eval { $cdna = $self->sequence_cds;};
+    if ($@) {
+      throw("can't connect to CORE to get transcript and cdna for "
+            . "genome_db_id:" . $self->genome_db_id )
+        unless($self->transcript);
+      $cdna = $self->transcript->translateable_seq;
+    }
+
+    if (defined $self->cigar_start || defined $self->cigar_end) {
+      unless (defined $self->cigar_start && defined $self->cigar_end) {
+        throw("both cigar_start and cigar_end should be defined");
+      }
+      my $offset = $self->cigar_start * 3 - 3;
+      my $length = ($self->cigar_end - $self->cigar_start + 1) * 3;
+      $cdna = substr($cdna, $offset, $length);
+    }
+
+    my $cdna_len = length($cdna);
+    my $start = 0;
+    my $cdna_align_string = '';
+
+    printf "%s %s\n", $self->stable_id,$self->member_id;
+    # foreach my $pep (split(//, $self->alignment_string)) { # Speed up below
+    my $alignment_string = $self->alignment_string;
+    foreach my $pep (unpack("A1" x length($alignment_string), $alignment_string)) {
+      if($pep eq '-') {
+        $cdna_align_string .= '--- ';
       } else {
-	$cdna = $self->transcript->translateable_seq;
-      }
-
-      if (defined $self->cigar_start || defined $self->cigar_end) {
-	unless (defined $self->cigar_start && defined $self->cigar_end) {
-	  throw("both cigar_start and cigar_end should be defined");
+        my $codon = substr($cdna, $start, 3);
+        unless (length($codon) == 3) {
+          # sometimes the last codon contains only 1 or 2 nucleotides.
+          # making sure that it has 3 by adding as many Ns as necessary
+          $codon .= 'N' x (3 - length($codon));
+        }
+	#print $pep." $codon ";
+	if ($codon =~ m/(tga|tag|taa)/ig) {
+	  #print "$codon ";
+	  printf " -> Stop codon found in alignment string for %s! Masking...\n",$self->stable_id;
+	  $codon = 'N' x length($codon);
 	}
-	my $offset = $self->cigar_start * 3 - 3;
-	my $length = ($self->cigar_end - $self->cigar_start + 1) * 3;
-	$cdna = substr($cdna, $offset, $length);
+        $cdna_align_string .= $codon . ' ';
+        $start += 3;
       }
-      
-      my $cdna_len = length($cdna);
-      my $start = 0;
-      my $cdna_align_string = '';
-      
-      foreach my $pep (split(//, $self->alignment_string)) {
-	if($pep eq '-') {
-	  $cdna_align_string .= '--- ';
-	} else {
-	  my $codon = substr($cdna, $start, 3);
-	  unless (length($codon) == 3) {
-	    # sometimes the last codon contains only 1 or 2 nucleotides.
-	    # making sure that it has 3 by adding as many Ns as necessary
-	    $codon .= 'N' x (3 - length($codon));
-	  }
-	  $cdna_align_string .= $codon . ' ';
-	  $start += 3;
-	}
-      }
-      $self->{'cdna_alignment_string'} = $cdna_align_string
-      }
-    
-    return $self->{'cdna_alignment_string'};
+    }
+    #print "\n";
+    #print $cdna_align_string."\n";
+    $self->{'cdna_alignment_string'} = $cdna_align_string
   }
+  return $self->{'cdna_alignment_string'};
+}
 
 
 #############################################################

@@ -10,6 +10,37 @@ use Bio::EnsEMBL::Compara::GenomeDB;
 use Bio::EnsEMBL::Compara::NestedSet;
 our @ISA = qw(Bio::EnsEMBL::Compara::NestedSet);
 
+=head2 new (CONSTRUCTOR)
+
+    Arg [-DBID] : (opt) 
+        : int $dbID (the database internal ID for this object)
+    Arg [-ADAPTOR] 
+        : Bio::EnsEMBL::Compara::DBSQL::Member $adaptor
+                (the adaptor for connecting to the database)
+    Arg [-DESCRIPTION] (opt) 
+         : string $description
+    Arg [-SOURCE_NAME] (opt) 
+         : string $source_name 
+         (e.g., "ENSEMBLGENE", "ENSEMBLPEP", "Uniprot/SWISSPROT", "Uniprot/SPTREMBL")
+    Arg [-TAXON_ID] (opt)
+         : int $taxon_id
+         (NCBI taxonomy id for the member)
+    Arg [-GENOME_DB_ID] (opt)
+        : int $genome_db_id
+        (the $genome_db->dbID for a species in the database)
+    Arg [-SEQUENCE_ID] (opt)
+        : int $sequence_id
+        (the $sequence_id for the sequence table in the database)
+    Example :
+	my $member = new Bio::EnsEMBL::Compara::Member;
+       Description: Creates a new Member object
+       Returntype : Bio::EnsEMBL::Compara::Member
+       Exceptions : none
+       Caller     : general
+       Status     : Stable
+
+=cut
+
 sub new {
   my ($class, @args) = @_;
 
@@ -17,7 +48,7 @@ sub new {
   
   if (scalar @args) {
     #do this explicitly.
-    my ($dbid, $stable_id, $description, $source_name, $adaptor, $taxon_id, $genome_db_id, $sequence_id, $cdna_sequence_id) = rearrange([qw(DBID STABLE_ID DESCRIPTION SOURCE_NAME ADAPTOR TAXON_ID GENOME_DB_ID SEQUENCE_ID CDNA_SEQUENCE_ID)], @args);
+    my ($dbid, $stable_id, $description, $source_name, $adaptor, $taxon_id, $genome_db_id, $sequence_id) = rearrange([qw(DBID STABLE_ID DESCRIPTION SOURCE_NAME ADAPTOR TAXON_ID GENOME_DB_ID SEQUENCE_ID)], @args);
 
     $dbid && $self->dbID($dbid);
     $stable_id && $self->stable_id($stable_id);
@@ -27,8 +58,6 @@ sub new {
     $taxon_id && $self->taxon_id($taxon_id);
     $genome_db_id && $self->genome_db_id($genome_db_id);
     $sequence_id && $self->sequence_id($sequence_id);
-    # GJ 2009-01-18
-    $cdna_sequence_id && $self->cdna_sequence_id($cdna_sequence_id);
   }
 
   return $self;
@@ -150,7 +179,7 @@ sub new_from_transcript {
   $self->chr_start($transcript->coding_region_start);
   $self->chr_end($transcript->coding_region_end);
   $self->chr_strand($transcript->seq_region_strand);
-  $self->version($transcript->translation->version);
+  $self->version($transcript->translation->version) if ($translate eq 'yes');
 
   if(($translate eq 'translate') or ($translate eq 'yes')) {
     if(not defined($transcript->translation)) {
@@ -163,17 +192,17 @@ sub new_from_transcript {
     
     $self->stable_id($transcript->translation->stable_id);
     $self->source_name("ENSEMBLPEP");
-
-   unless ($peptideBioSeq = $transcript->translate) {
-	throw("COREDB error: unable to get a BioSeq translation from ". $transcript->stable_id);
+    
+    unless ($peptideBioSeq = $transcript->translate) {
+      throw("COREDB error: unable to get a BioSeq translation from ". $transcript->stable_id);
     }
     eval {
-	$seq_string = $peptideBioSeq->seq;
+      $seq_string = $peptideBioSeq->seq;
     };
     throw "COREDB error: can't get seq from peptideBioSeq" if $@;
     # OR
     #$seq_string = $transcript->translation->seq;
-
+    
     if ($seq_string =~ /^X+$/) {
       warn("X+ in sequence from translation " . $transcript->translation->stable_id."\n");
     }
@@ -184,16 +213,22 @@ sub new_from_transcript {
       #$seq_string =~ s/(.{72})/$1\n/g;
       $self->sequence($seq_string);
     }
-  }
-  else {
+  } elsif ($translate eq 'ncrna') {
     unless (defined $transcript->stable_id) {
       throw("COREDB error: does not contain transcript stable id for transcript_id ".$transcript->dbID."\n");
     }
     $self->stable_id($transcript->stable_id);
     $self->source_name("ENSEMBLTRANS");
-    #$self->sequence($transcript->seq);
-  }
 
+    unless ($seq_string = $transcript->spliced_seq) {
+      throw("COREDB error: unable to get a BioSeq spliced_seq from ". $transcript->stable_id);
+    }
+    if (length($seq_string) == 0) {
+      warn("zero length sequence from transcript " . $transcript->stable_id."\n");
+    }
+    $self->sequence($seq_string);
+  }
+  
   #print("Member->new_from_transcript\n");
   #print("  source_name = '" . $self->source_name . "'\n");
   #print("  stable_id = '" . $self->stable_id . "'\n");
@@ -224,7 +259,7 @@ sub copy {
   $mycopy->version($self->version);
   $mycopy->description($self->description);
   $mycopy->source_name($self->source_name);
-  #$mycopy->adaptor($self->adaptor);  # This line used to be commented out...
+  #$mycopy->adaptor($self->adaptor);
   $mycopy->chr_name($self->chr_name);
   $mycopy->chr_start($self->chr_start);
   $mycopy->chr_end($self->chr_end);
@@ -348,9 +383,6 @@ sub description {
 sub source_name {
   my $self = shift;
   $self->{'_source_name'} = shift if (@_);
-
-  # GJ 2009-01-16 : If source name is null, give "NA" for the database.
-  $self->{'_source_name'} = "NA" unless ($self->{'_source_name'});
   return $self->{'_source_name'};
 }
 
@@ -427,7 +459,6 @@ sub chr_strand {
 sub taxon_id {
     my $self = shift;
     $self->{'_taxon_id'} = shift if (@_);
-    $self->{'_taxon_id'} = 0 unless (defined $self->{'_taxon_id'});
     return $self->{'_taxon_id'};
 }
 
@@ -531,33 +562,6 @@ sub sequence {
   return $self->{'_sequence'};
 }
 
-# GJ 2009-01-15
-sub cdna_sequence {
-    my $self = shift;
-
-    if(@_) {
-	$self->{'_cdna_sequence'} = shift;
-    }
-    
-    if(!defined($self->{'_cdna_sequence'}) and
-       $self->cdna_sequence_id() != 0 and     
-       defined($self->adaptor))
-    {
-	$self->{'_cdna_sequence'} = $self->adaptor->_fetch_sequence_by_id($self->cdna_sequence_id);
-    }
-    
-    return $self->{'_cdna_sequence'};
-}
-
-sub cdna_sequence_id {
-    my $self = shift;
-    my $k = '_cdna_sequence_id';
-
-    $self->{$k} = shift if (@_);
-    $self->{$k} = 0 if (!defined $self->{$k});
-    return $self->{$k};
-}
-
 =head2 sequence_exon_cased
 
   Args       : none
@@ -582,7 +586,7 @@ sub sequence_exon_cased {
   my %splice_site;
   my $pep_len = 0;
   my $overlap_len = 0;
-  for my $exon (@exons) {
+  while (my $exon = shift @exons) {
     my $exon_len = $exon->length;
     my $pep_seq = $exon->peptide($trans)->length;
     # remove the first char of seq if overlap ($exon->peptide()) return full overlapping exon seq
@@ -597,7 +601,7 @@ sub sequence_exon_cased {
   }
 
   my $seqsplice = '';
-  my $splice = 0;
+  my $splice = 1;
   foreach my $pep_len (sort {$b<=>$a} keys %splice_site) { # We start from the end
     next if (defined($splice_site{$pep_len}{'overlap'}));
     next if ($pep_len > length($sequence)); # Get rid of 1 codon STOP exons in the protein
@@ -614,8 +618,27 @@ sub sequence_exon_cased {
   return $seqsplice;
 }
 
-
 sub sequence_exon_bounded {
+  my $self = shift;
+
+  if(@_) {
+    $self->{'_sequence_exon_bounded'} = shift;
+    return $self->{'_sequence_exon_bounded'};
+  }
+
+  if(!defined($self->{'_sequence_exon_bounded'})) {
+    $self->{'_sequence_exon_bounded'} = $self->adaptor->db->get_MemberAdaptor->_fetch_sequence_exon_bounded_by_member_id($self->member_id);
+  }
+
+  if(!defined($self->{'_sequence_exon_bounded'})) {
+    $self->{'_sequence_exon_bounded'} = $self->_compose_sequence_exon_bounded;
+  }
+
+  return $self->{'_sequence_exon_bounded'};
+}
+
+
+sub _compose_sequence_exon_bounded {
   my $self = shift;
 
   my $sequence = $self->sequence;
@@ -658,67 +681,70 @@ sub sequence_exon_bounded {
   return $seqsplice;
 }
 
+sub sequence_cds {
+  my $self = shift;
+
+  if(@_) {
+    $self->{'_sequence_cds'} = shift;
+    return $self->{'_sequence_cds'};
+  }
+
+  if(!defined($self->{'_sequence_cds'})) {
+    $self->{'_sequence_cds'} = $self->adaptor->db->get_MemberAdaptor->_fetch_sequence_cds_by_member_id($self->member_id);
+  }
+
+  if(!defined($self->{'_sequence_cds'})) {
+    $self->{'_sequence_cds'} = $self->transcript->translateable_seq;
+  }
+
+  return $self->{'_sequence_cds'};
+}
 
 # GJ 2008-11-17
 # Returns the amino acid sequence with exon boundaries denoted as O, B, or J depending on the phase (O=0, B=1, J=2)
 sub get_exon_bounded_sequence {
-  my $self = shift;
-  my $numbers = shift;
-  my $debug = shift;
+    my $self = shift;
+    my $numbers = shift;
+    my $transcript = $self->get_Transcript;
 
-  my $transcript = $self->get_Transcript;
+    # The get_all_translateable_exons creates a list of reformatted "translateable" exon sequences.
+    # When the exon phase is 1 or 2, there will be duplicated residues at the end and start of exons.
+    # We'll deal with this during the exon loop.
+    my @exons = @{$transcript->get_all_translateable_Exons};
+    my $seq_string = "";
+    # for my $ex (@exons) {
+    while (my $ex = shift @exons) {
+	my $seq = $ex->peptide($transcript)->seq;
 
-  # The get_all_translateable_exons creates a list of reformatted "translateable" exon sequences.
-  # When the exon phase is 1 or 2, there will be duplicated residues at the end and start of exons.
-  # We'll deal with this during the exon loop.
-  my @exons = @{$transcript->get_all_translateable_Exons};
-  my $seq_string = "";
-  my $index=0;
-  for my $ex (@exons) {
-    my $seq = $ex->peptide($transcript)->seq;
-    my $original_seq = $seq;
+	# PHASE HANDLING
+	my $phase = $ex->phase;
+	my $end_phase = $ex->end_phase;
 
-    # PHASE HANDLING
-    my $phase = $ex->phase;
-    my $end_phase = $ex->end_phase;
-    
-    # Special case: last exon.
-    $end_phase = 0 if ($index == scalar(@exons)-1);
+	# First, cut off repeated end residues.
+	if ($end_phase == 1 && 0 < scalar @exons) {
+	    # We only own 1/3, so drop the last residue.
+	    $seq = substr($seq,0,-1);
+	}
 
-    # First, cut off repeated end residues.
-    if ($end_phase == 1) {
-      # We only own 1/3, so drop the last residue.
-      $seq = substr($seq,0,-1);
+	# Now cut off repeated start residues.
+	if ($phase == 2) {
+	    # We only own 1/3, so drop the first residue.
+	    $seq = substr($seq, 1);
+	}
+
+	if ($end_phase > -1) {
+	    $seq = $seq . 'o' if ($end_phase == 0);
+	    $seq = $seq . 'b' if ($end_phase == 1);
+	    $seq = $seq . 'j' if ($end_phase == 2);
+	}
+	#print "Start_phase: $phase   End_phase: $end_phase\t$seq\n";
+	$seq_string .= $seq;
     }
-
-    # Now cut off repeated start residues.
-    if ($phase == 2) {
-      # We only own 1/3, so drop the first residue.
-      $seq = substr($seq, 1);
-    }
-    
-    if ($end_phase > -1) {
-      $seq = $seq . 'o' if ($end_phase == 0);
-      $seq = $seq . 'b' if ($end_phase == 1);
-      $seq = $seq . 'j' if ($end_phase == 2);
-    }
-    
-    if ($debug) {
-      print "Start_phase: $phase   End_phase: $end_phase\t$original_seq\n";
-    }
-
-    # Special case: if the last exon is a single residue, ignore it.
-    next if (length($seq) == 1 && $index == scalar(@exons)-1);
-
-    $seq_string .= $seq;
-    if ($numbers) {
+    if (defined $numbers) {
       $seq_string =~ s/o/0/g; $seq_string =~ s/b/1/g; $seq_string =~ s/j/2/g;
     }
-    $index++;
-  }
-  return $seq_string;
+    return $seq_string;
 }
-
 
 =head2 seq_length
 
@@ -761,6 +787,16 @@ sub sequence_id {
   return $self->{'_sequence_id'};
 }
 
+=head2 gene_member_id
+
+  Arg [1]    : int $gene_member_id
+  Example    : my $gene_member_id = $member->gene_member_id;
+  Description: Gene_member_id of this protein member
+  Returntype : int
+  Exceptions : none
+  Caller     : general
+
+=cut
 
 sub gene_member_id {
   my $self = shift;
@@ -804,8 +840,8 @@ sub bioseq {
 =head2 gene_member
 
   Arg[1]     : Bio::EnsEMBL::Compara::Member $geneMember (optional)
-  Example    : my $primaryseq = $member->primaryseq;
-  Description: returns sequence this member as a Bio::Seq object
+  Example    : my $gene_member = $member->gene_member;
+  Description: returns gene member object for this protein member
   Returntype : Bio::EnsEMBL::Compara::Member object
   Exceptions : if arg[0] is not a Bio::EnsEMBL::Compara::Member object
   Caller     : MemberAdaptor(set), general
@@ -872,7 +908,7 @@ sub get_Gene {
   my $self = shift;
   
   return $self->{'core_gene'} if($self->{'core_gene'});
-
+  
   unless($self->genome_db and 
          $self->genome_db->db_adaptor and
          $self->genome_db->db_adaptor->isa('Bio::EnsEMBL::DBSQL::DBAdaptor')) 
@@ -909,12 +945,12 @@ sub get_Transcript {
   
   return undef unless($self->source_name eq 'ENSEMBLPEP');
   return $self->{'core_transcript'} if($self->{'core_transcript'});
-
+  
   unless($self->genome_db and 
          $self->genome_db->db_adaptor and
          $self->genome_db->db_adaptor->isa('Bio::EnsEMBL::DBSQL::DBAdaptor')) 
   {
-    throw("Member::get_transcript - unable to connect to core ensembl database: missing registry and genome_db.locator");
+    throw("unable to connect to core ensembl database: missing registry and genome_db.locator");
   }
   my $coreDBA = $self->genome_db->db_adaptor;
   $self->{'core_transcript'} = $coreDBA->get_TranscriptAdaptor->fetch_by_translation_stable_id($self->stable_id);
@@ -955,33 +991,34 @@ sub translation {
   return $self->get_Translation;
 }
 
-=head2 get_longest_peptide_Member
+
+=head2 get_canonical_peptide_Member
 
   Args       : none
-  Example    : $longestPepMember = $member->get_longest_peptide_Member
-  Description: if member is an "ENSEMBLGENE" it will return the longest peptide member
+  Example    : $canonicalPepMember = $member->get_canonical_peptide_Member
+  Description: if member is an "ENSEMBLGENE" it will return the canonical peptide member
                if member is an 'ENSEMBLPEP' it will get its gene member and have it
-               return the longest peptide (which could be the same as the starting member)
+               return the canonical peptide (which could be the same as the starting member)
   Returntype : Bio::EnsEMBL::Compara::Member or undef
   Exceptions : none
   Caller     : general
 
 =cut
 
-sub get_longest_peptide_Member {
+sub get_canonical_peptide_Member {
   my $self = shift;
 
   return undef unless($self->adaptor);
-  my $longestPep = undef;
+  my $canonicalPep = undef;
   if($self->source_name eq 'ENSEMBLGENE') {
-    $longestPep = $self->adaptor->fetch_longest_peptide_member_for_gene_member_id($self->dbID);
+    $canonicalPep = $self->adaptor->fetch_canonical_peptide_member_for_gene_member_id($self->dbID);
   }
   if($self->source_name eq 'ENSEMBLPEP') {
     my $geneMember = $self->gene_member;
     return undef unless($geneMember);
-    $longestPep = $self->adaptor->fetch_longest_peptide_member_for_gene_member_id($geneMember->dbID);
+    $canonicalPep = $self->adaptor->fetch_canonical_peptide_member_for_gene_member_id($geneMember->dbID);
   }
-  return $longestPep;
+  return $canonicalPep;
 }
 
 
@@ -1012,6 +1049,12 @@ sub get_all_peptide_Members {
 sub source_id {
   my $self = shift;
   throw("Method deprecated. You can now get the source_name by directly calling source_name method\n");
+}
+
+sub get_longest_peptide_Member {
+  my $self = shift;
+
+  throw("Method deprecated. You can now use the get_canonical_peptide_Member method\n");
 }
 
 

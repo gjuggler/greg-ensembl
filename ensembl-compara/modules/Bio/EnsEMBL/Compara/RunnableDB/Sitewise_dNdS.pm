@@ -53,8 +53,6 @@ sub fetch_input {
     alignment_table            => 'protein_tree_member',
     omega_table           => 'sitewise_omega',
     parameter_set_id       => 1,
-    alignment_quality_filtering => 0,
-    sequence_quality_filtering => 0,
 
     sitewise_store_gaps             => 1,
     sitewise_parameter_sets         => 'all',
@@ -132,14 +130,15 @@ sub run {
     }
     foreach my $leaf (@leaves) {
       if ($leaf->distance_to_parent > 100) {
-	$self->fail_job("Tree contains a massive branch length -- probably an error in b.l. optimization!");
+	$leaf->distance_to_parent(4);
+	#$self->fail_job("Tree contains a massive branch length -- probably an error in b.l. optimization!");
       }
     }
     
-    #eval {
-      $self->run_with_params($new_params,$tree);
+    eval {
+    $self->run_with_params($new_params,$tree);
       $tree->release_tree;
-    #};
+    };
   }
 }
 
@@ -155,7 +154,7 @@ sub run_with_params {
   my $cdna_aln = $tree->get_SimpleAlign(-cdna => 1);
 
   foreach my $leaf ($tree->leaves) {
-    print $leaf->member_id."\n";
+    #print $leaf->member_id."\n";
   }
 
   $input_aa = Bio::EnsEMBL::Compara::ComparaUtils->fetch_masked_alignment($aa_aln,$cdna_aln,$tree,$params,0);

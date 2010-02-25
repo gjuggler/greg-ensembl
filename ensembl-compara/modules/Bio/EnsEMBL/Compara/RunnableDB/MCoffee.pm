@@ -147,6 +147,12 @@ sub fetch_input {
     $params->{'alignment_table'} = $out_table;
     my $method = $params->{'alignment_method'};
 
+    foreach my $leaf ($tree->leaves) {
+      if ($leaf->distance_to_parent > 20) {
+	$leaf->distance_to_parent(4);
+      }
+    }
+
     $dont_write_output = 0;
     if ($method eq 'none') {
       print "NO ALIGNMENT NECESSARY!! Skipping...\n";
@@ -264,7 +270,7 @@ sub align_with_prank {
   my $executable = $params->{'alignment_executable'} || 'prank';
   my $extra_params = '';
   $extra_params .= ' -codon ' if ($params->{'alignment_prank_codon_model'});
-  $extra_params .= ' -F ' if ($params->{'alignment_prank_f'});
+  $extra_params .= ' +F ' if ($params->{'alignment_prank_f'});
   
   my $cmd = qq^$executable -d=$aln_file -t=$tree_file -o=$output_file $extra_params^;
   

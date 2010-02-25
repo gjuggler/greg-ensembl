@@ -21,12 +21,31 @@ my $ALN = "Bio::EnsEMBL::Compara::AlignUtils";
 my $COMPARA = "Bio::EnsEMBL::Compara::ComparaUtils";
 
 if ($ENV{'USER'} =~ /gj1/) {
-  Bio::EnsEMBL::Registry->load_registry_from_db(-host => 'ens-livemirror',
-                                                -user => 'ensro'
-    );
+  Bio::EnsEMBL::Registry->load_registry_from_multiple_dbs(
+							  {
+							    -host => 'ens-staging',
+							    -user => 'ensro',
+							    #-verbose => 1
+							    },
+							  {
+							    -host => 'ens-staging1',
+							    -user => 'ensro',
+							    #-verbose => 1
+							    },
+							  {
+							    -host => 'ens-staging2',
+							    -user => 'ensro',
+							    #-verbose => 1
+							    },
+							  {
+							    -host => 'ens-livemirror',
+							    -user => 'ensro',
+							    #-verbose => 1
+							  }
+							  );
   Bio::EnsEMBL::Registry->set_disconnect_when_inactive(1);
-} else {
-  Bio::EnsEMBL::Registry->no_version_check(1);
+  } else {
+  #Bio::EnsEMBL::Registry->no_version_check(1);
 }
 
 sub cigar_line {
