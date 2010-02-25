@@ -196,11 +196,11 @@ sub get_gene_data {
     $cur_params->{'human_protein'} = $first_human_member->stable_id;
     $cur_params->{'human_gene'} = $first_human_member->get_Gene->stable_id;
 
-    my $tscr = $first_human_member->get_Transcript;
-    $tscr = $tscr->transform("chromosome");
+    my $tscr_orig = $first_human_member->get_Transcript;
+    my $tscr = $tscr_orig->transform("chromosome");
     if (defined $tscr) {
       my $chr = "chr".$tscr->slice->seq_region_name;
-      my $strand = $tscr->slice->strand;
+      my $strand = $tscr->strand;
       my $start = $tscr->coding_region_start;
       my $end = $tscr->coding_region_end;
       $cur_params->{human_chr} = $chr;
