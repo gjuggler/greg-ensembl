@@ -22,7 +22,7 @@ my $dbc = $dba->dbc;
 create_mysql();
 #create_sqlite();
 
-$dbc->do("BEGIN WORK;");
+#$dbc->do("BEGIN WORK;");
 my $insert = $dbc->prepare("REPLACE INTO pdbfinder (id) VALUES (?);");
 my $update = $dbc->prepare("UPDATE pdbfinder set seq=? WHERE id=?;");
 my $update2 = $dbc->prepare("UPDATE pdbfinder set access=? WHERE id=?;");
@@ -58,7 +58,7 @@ $update->finish;
 $update2->finish;
 $update3->finish;
 
-$dbc->do("END WORK;");
+#$dbc->do("END WORK;");
 
 sub create_mysql {
   $dbc->do(qq^
