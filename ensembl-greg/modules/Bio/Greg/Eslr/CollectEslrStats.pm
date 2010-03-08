@@ -216,15 +216,20 @@ sub get_gene_data {
   $cur_params->{'duplication_fraction'} = sprintf "%.3f", $utils->mysql_getval($tree,"SELECT num_dups_under_node($node_id)/node_count($node_id)");
 
   my $psc_hash = $utils->get_psc_hash($dba->dbc,$cur_params);
-  $cur_params->{'psc_count'} = $utils->psc_count($psc_hash,0);
-  $cur_params->{'weak_psc_count'} = $utils->psc_count($psc_hash,1);
-  $cur_params->{'omega_mean'} = $utils->omega_average($psc_hash);
-  $cur_params->{'omega_mean_excl_pscs'} = $utils->omega_average_exclude_pscs($psc_hash);
- 
-  my $ps = $cur_params->{'parameter_set_id'};
-  $cur_params->{'omega_m0'} = $cur_params->{'slr_omega_'.$ps};
-  $cur_params->{'kappa'} = $cur_params->{'slr_kappa_'.$ps};
-  $cur_params->{'slr_lnl'} = $cur_params->{'slr_lnL_'.$ps};
+
+  if (scalar(keys(%$psc_hash)) > 0) {
+
+    $cur_params->{'psc_count'} = $utils->psc_count($psc_hash,0);
+    $cur_params->{'weak_psc_count'} = $utils->psc_count($psc_hash,1);
+    $cur_params->{'omega_mean'} = $utils->omega_average($psc_hash);
+    $cur_params->{'omega_mean_excl_pscs'} = $utils->omega_average_exclude_pscs($psc_hash);
+    
+    my $ps = $cur_params->{'parameter_set_id'};
+    $cur_params->{'omega_m0'} = $cur_params->{'slr_omega_'.$ps};
+    $cur_params->{'kappa'} = $cur_params->{'slr_kappa_'.$ps};
+    $cur_params->{'slr_lnl'} = $cur_params->{'slr_lnL_'.$ps};
+    
+  }
 
 # Indel rates aren't yet implemented (need to speed up Indelign first.)
 #  my ($ins,$del,$ins_rate,$del_rate) = Bio::EnsEMBL::Compara::AlignUtils->indelign($sa_nogap,$tree,$cur_params);
@@ -234,6 +239,8 @@ sub get_gene_data {
   # Store values in our output table.
   my $table = $cur_params->{'collect_eslr_stats_genes_table'};
   $self->store_params_in_table($dba,$table,$cur_params);
+
+  $tree->release_tree;
 }
 
 
@@ -305,7 +312,9 @@ sub get_sites_data {
     # Store values in our output table.
     my $table = $cur_params->{'collect_eslr_stats_sites_table'};
     $self->store_params_in_table($dba,$table,$cur_params);
+
   }
+  $tree->release_tree;
 }
 
 1;
