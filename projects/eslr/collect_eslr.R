@@ -35,19 +35,35 @@ get.all.merged = function() {
   all.node.ids = get.vector(con,'SELECT DISTINCT(node_id) FROM stats_genes')
   
   param.sets = get.psets()
+
+  genes = get.genes(1)
+  
   for (pset in param.sets$id) {
-    genes = get.genes(pset)
-    col.dnds = paste(param.sets[pset,]$shortname,'_dnds',sep="")
-    col.psc = paste(param.sets[pset,]$shortname,'_psc',sep="")
-    col.psc.weak = paste(param.sets[pset,]$shortname,'_psc_weak',sep="")
-    genes.subset = data.frame(a=genes$node_id,b=genes$omega_mean,c=genes$psc_count,d=genes$weak_psc_count)
-    colnames(genes.subset) = c('node_id',col.dnds,col.psc,col.psc.weak)
+    cur.genes = get.genes(pset)
+
+    create.name = function(ext) {paste(param.sets[pset,]$shortname,ext,sep='')}
     
-    if (!exists('merged.df')) {
-      merged.df = data.frame(node_id=all.node.ids)
-    }
-    print(merged.df[1,])
-    merged.df = merge(merged.df,genes.subset,all.x=T)
+    col.dnds = create.name('.dnds')
+    col.dnds.m0 = create.name('.dnds.m0')
+    col.psc.count = create.name('.psc.count')
+    col.weak.psc.count = create.name('.weak.psc.count')
+
+    genes.subset = data.frame(
+      a=cur.genes$node_id,
+      b=cur.genes$omega_mean,
+      c=cur.genes$omega_m0,
+      d=cur.genes$psc_count,
+      e=cur.genes$weak_psc_count
+      )
+    colnames(genes.subset) = c(
+              'node_id',
+              col.dnds,
+              col.dnds.m0,
+              col.psc.count,
+              col.weak.psc.count
+              )
+    
+    genes = merge(genes,genes.subset,all.x=T)
   }
-  return(merged.df);
+  return(genes);
 }
