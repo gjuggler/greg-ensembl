@@ -120,7 +120,7 @@ sub fetch_input {
     
     #########################
     
-    # Fetch parameters from the two possible locations. Input_id takes precedence!
+    # Fetch parameters from the possible locations.
     my $p_params = $self->get_params($self->parameters);
     my $i_params = $self->get_params($self->input_id);
     my $node_id = $i_params->{'protein_tree_id'};
@@ -160,36 +160,41 @@ sub fetch_input {
       return;
     }
 
-    if ($method ne 'muscle') {
-      if ($method eq 'cmcoffee') {
-	my $num_leaves = scalar(@{$tree->get_all_leaves});
-        # Switch to fmcoffee if we have > 300 genes.
-	if ($num_leaves > 300) {
-	  $params->{'alignment_method'} = 'fmcoffee';
-	}
-      }
-      # Auto-switch to fmcoffee on single failure.
-      if ($self->input_job->retry_count >= 1) {
-	$params->{'method'} = 'fmcoffee';
-      }
-      # Auto-switch to muscle on a second failure.
-      if ($self->input_job->retry_count >= 2) {
-	$params->{'method'} = 'muscle';
+    if ($method eq 'cmcoffee') {
+      my $num_leaves = scalar(@{$tree->get_all_leaves});
+      # Switch to fmcoffee if we have > 300 genes.
+      if ($num_leaves > 300) {
+	$params->{'alignment_method'} = 'fmcoffee';
       }
     }
+    # Auto-switch to fmcoffee on single failure.
 
-    print "MCoffee alignment method: ".$params->{'alignment_method'}."\n";
-    $tags->{'alignment_method'} = $params->{'alignment_method'};
+    my @prank_order = qw(prank cmcoffee fmcoffee muscle);
+    my @mcoffee_order = qw(cmcoffee fmcoffee muscle);
+
+    my $retry_count = $self->input_job->retry_count;
+    if ($retry_count > 0) {
+      my $index = $retry_count;
+      my @array;
+      if ($params->{'alignment_method'} =~ 'prank') {
+	@array = @prank_order;
+      } elsif ($params->{'alignment_method'} =~ 'mcoffee') {
+	@array = @mcoffee_order;
+      }
+      $index = scalar(@array) -1 if ($index > scalar(@array) - 1);
+      $params->{'alignment_method'} = $array[$index];
+    }
+
+    print "Alignment method: ".$params->{'alignment_method'}."\n";
 
     # Fail if the gene count is too big.
     my $num_leaves = scalar(@{$tree->get_all_leaves});
     if ($num_leaves > $params->{'alignment_max_gene_count'}) {
-      #$self->dataflow_output_id($self->input_id, 2);
       $self->DESTROY;
       throw("Mcoffee job too big: try something else and FAIL it");
     }
 
-   $sa = Bio::EnsEMBL::Compara::ComparaUtils->get_ProteinTree_seqs($tree,0);
+    $sa = Bio::EnsEMBL::Compara::ComparaUtils->get_ProteinTree_seqs($tree,0);
 
     # Export exon-cased if necessary.
     my $use_exons = $params->{'alignment_use_exon_boundaries'};
@@ -202,11 +207,11 @@ sub run
 {
     my $self = shift;
 
-    return if ($dont_write_output);    
+    return if ($dont_write_output);
     $self->check_if_exit_cleanly;
 
     my $method = $params->{'alignment_method'};
-    if ($method =~ 'coffee') {
+    if ($method =~ '(coffee|muscle)') {
       $sa_aligned = $self->align_with_mcoffee($sa,$tree,$params);
     } elsif ($method =~ 'prank') {
       $sa_aligned = $self->align_with_prank($sa,$tree,$params);

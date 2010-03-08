@@ -663,6 +663,82 @@ sub distance_to_node {
 }
 
 
+
+# Returns a TreeI-compliant object based on this NestedSet.
+sub get_TreeI {
+    my $self = shift;
+    my $newick = $self->newick_format();
+
+    open(my $fake_fh, "+<", \$newick);
+    my $treein = new Bio::TreeIO
+	(-fh => $fake_fh,
+	 #-verbose => 1,
+	 -format => 'newick');
+    my $treeI = $treein->next_tree;
+    $treein->close;
+
+    return $treeI;
+}
+
+sub new_from_newick {
+    my $class = shift;
+    my $file = shift;
+
+    my $treein = new Bio::TreeIO
+        (-file => $file,
+         -format => 'newick');
+    my $treeI = $treein->next_tree;
+    $treein->close;
+
+    my $new_tree = $class->new_from_TreeI($treeI);
+    return bless($new_tree,$class);
+}
+
+sub new_from_TreeI {
+    my $class = shift;
+    my $treeI = shift;
+
+    my $rootI = $treeI->get_root_node;
+    my $node = new $class;
+
+    # Kick off the recursive, parallel node adding.
+    _add_nodeI_to_node($node,$rootI);
+
+    return bless($node,$class);
+}
+
+# Recursive helper for new_from_TreeI.
+sub _add_nodeI_to_node {
+    my $node = shift; # Our node object (Compara)
+    my $nodeI = shift; # Our nodeI object (BioPerl)
+
+    $node->node_id(-1);
+
+    foreach my $c ($nodeI->each_Descendent) {
+	my $child = ref($node)->new;
+
+	my $name = $c->id;
+	$name =~ s/^\s+//;
+	$name =~ s/\s+$//;
+
+	if ($c->is_Leaf) {
+	    $child = Bio::EnsEMBL::Compara::Member->new();
+	    $child->stable_id($name);
+	    $child->source_name("NestedSet.pm");
+	}
+
+	# Set name.
+	$child->name($name);
+	$child->store_tag("name",$name);
+
+	# Set branch length.
+	$node->add_child($child,$c->branch_length);
+
+	# Recurse.
+	_add_nodeI_to_node($child,$c);
+    }
+}
+
 =head2 print_tree
 
   Arg [1]     : int $scale
@@ -1293,6 +1369,26 @@ sub flatten_tree {
   }
   
   return $self;
+}
+
+sub unroot {
+  my $self = shift;
+
+  my $root = $self->root;
+
+  return $root if (scalar(@{$root->children}) > 2); # Already unrooted!
+
+  my $new_root_node;
+  foreach my $child (@{$root->children}) {
+    if (!$child->is_leaf) {
+      $new_root_node = $child;
+      print $new_root_node->newick_format."\n";
+    }
+  }
+
+  $new_root_node->_invert_tree_above;
+  $new_root_node->minimize_tree;
+  return $new_root_node;
 }
 
 =head2 re_root

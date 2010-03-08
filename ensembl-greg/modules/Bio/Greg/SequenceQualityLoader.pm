@@ -15,7 +15,9 @@ use Bio::EnsEMBL::Compara::ComparaUtils;
 use Bio::EnsEMBL::Hive;
 use Bio::EnsEMBL::Hive::Process;
 
-our @ISA = qw(Bio::EnsEMBL::Hive::Process);
+use Bio::Greg::ProcessUtils;
+
+our @ISA = qw(Bio::EnsEMBL::Hive::Process Bio::Greg::ProcessUtils);
 
 my $dba;
 my $pta;
@@ -34,41 +36,35 @@ sub fetch_input {
   $pta = $dba->get_ProteinTreeAdaptor;
 
   ### DEFAULT PARAMETERS ###
-  my $p;
-  
-  $params->{'input_table_base'} = 'protein_tree';
-  $params->{'output_table_base'} = 'protein_tree';
-  #########################
-  
-  # Fetch parameters from the two possible locations. Input_id takes precedence!
-  # (this utility method is from AlignmentProcess.pm)
-  $params = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_string($params,$self->parameters);
-  $params = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_string($params,$self->input_id);
+  $params = {
+    alignment_table        => 'protein_tree_member',
+    alignment_score_table  => 'protein_tree_member_score'
+  };  
 
   #########################
-  #
+  
+  # Fetch parameters from the possible locations.
+  my $p_params = $self->get_params($self->parameters);
+  my $i_params = $self->get_params($self->input_id);
+  my $node_id = $i_params->{'protein_tree_id'};
+  $node_id = $i_params->{'node_id'} if (!defined $node_id);
+  my $t_params = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_tree_tags($dba,$node_id);
+  
+  $params = $self->replace_params($params,$p_params,$i_params,$t_params);
+  Bio::EnsEMBL::Compara::ComparaUtils->hash_print($params);
+  
+  #########################
+
   # Load the tree.
-  #
-  my $node_id;
-  $node_id = $params->{'protein_tree_id'};
-  $node_id = $params->{'node_id'} if (!defined $node_id);
-
-  $pta->table_base($params->{'input_table_base'});
-  $tree = $pta->fetch_node_by_node_id($node_id);
+  $params->{'alignment_table'} = 'protein_tree_member';
+  if (defined $params->{'node_id'}) {
+    $tree = Bio::EnsEMBL::Compara::ComparaUtils->get_tree_for_comparative_analysis($dba,$params);
+  } else {
+    throw("No protein tree input ID!\n");
+  }
 
   throw("No protein tree!") unless (defined $tree);
-
-  #
-  # Some last-minute adjustments based on retry counts or somesuch.
-  #
-
-  #
-  # Think of reasons why we want to fail the job.
-  #
-
 }
-
-my @twox_ids = (9978,9371,9739,9478,42254,30538,10020,9365,59463,9358,9813,37347,9593,132908,30611,30608,9785,43179,9986,9685,9361);
 
 sub run {
   my $self = shift;
@@ -77,9 +73,14 @@ sub run {
 
   foreach my $leaf ($tree->leaves) {
     my $member = $leaf;
-    
-    # Only try with leaves that are 2x genomes.
-    if (!grep {$_ eq $leaf->taxon_id} @twox_ids) {
+    print $member->stable_id."\n";
+#    next unless ($member->stable_id =~ m/(pvap|stop)/ig);
+
+    my $gdb = $member->genome_db;
+    # This is finicky: we need to call the "db_adaptor" method to get the Bio::EnsEMBL::DBSQL::DBAdaptor object, and then the meta container.
+    my $meta = $gdb->db_adaptor->get_MetaContainer;
+    my $coverage = @{$meta->list_value_by_key('assembly.coverage_depth')}[0];
+    if ($coverage ne 'low') {
       print $member->stable_id."\n";
       next;
     } else {
@@ -89,9 +90,9 @@ sub run {
     my $quals = Bio::EnsEMBL::Compara::ComparaUtils->get_quality_string_for_member($member);
     if (defined $quals) {
       my $pep = $member->sequence;
-      #print $quals."\n";
-      #print $pep."\n";
-      #$quals = substr($quals,0,-1) if (length($quals) > length($pep));
+      print $quals."\n";
+      print $pep."\n";
+      $quals = substr($quals,0,-1) if (length($quals) > length($pep));
       if (length($quals) == length($pep)+1) {
 	$quals = substr($quals,0,-1);
       }

@@ -92,6 +92,36 @@ CREATE TABLE IF NOT EXISTS sequence (
   KEY sequence (sequence(18))
 ) ENGINE=InnoDB MAX_ROWS = 1000000 AVG_ROW_LENGTH = 19000 COLLATE=latin1_swedish_ci;
 
+-- overview:
+--   This table holds the sequence exon boundaries information
+CREATE TABLE IF NOT EXISTS sequence_exon_bounded (
+  sequence_exon_bounded_id    int(10) unsigned NOT NULL auto_increment, # unique internal id
+  member_id                   int(10) unsigned NOT NULL, # unique internal id
+  length                      int(10) NOT NULL,
+  sequence_exon_bounded       longtext NOT NULL,
+
+#  FOREIGN KEY (member_id) REFERENCES member(member_id),
+
+  PRIMARY KEY (sequence_exon_bounded_id),
+  KEY (member_id),
+  KEY sequence_exon_bounded (sequence_exon_bounded(18))
+) ENGINE=InnoDB MAX_ROWS = 10000000 AVG_ROW_LENGTH = 19000 COLLATE=latin1_swedish_ci;
+
+-- overview:
+--   This table holds the sequence cds information
+CREATE TABLE IF NOT EXISTS sequence_cds (
+  sequence_cds_id             int(10) unsigned NOT NULL auto_increment, # unique internal id
+  member_id                   int(10) unsigned NOT NULL, # unique internal id
+  length                      int(10) NOT NULL,
+  sequence_cds                longtext NOT NULL,
+
+#  FOREIGN KEY (member_id) REFERENCES member(member_id),
+
+  PRIMARY KEY (sequence_cds_id),
+  KEY (member_id),
+  KEY sequence_cds (sequence_cds(64))
+) ENGINE=InnoDB MAX_ROWS = 10000000 AVG_ROW_LENGTH = 60000 COLLATE=latin1_swedish_ci;
+
 
 CREATE TABLE IF NOT EXISTS `sequence_quality` (
   `sequence_id` int(10) unsigned NOT NULL AUTO_INCREMENT,
@@ -135,6 +165,32 @@ CREATE TABLE IF NOT EXISTS member (
   KEY (sequence_id),
   KEY (gene_member_id)
 ) ENGINE=InnoDB COLLATE=latin1_swedish_ci;
+
+#
+# Table structure for table 'subset'
+#
+
+CREATE TABLE subset (
+ subset_id      int(10) NOT NULL auto_increment,
+ description    varchar(255),
+ dump_loc       varchar(255),
+
+ PRIMARY KEY (subset_id),
+ UNIQUE (description)
+);
+
+#
+# Table structure for table 'subset_member'
+#
+
+CREATE TABLE subset_member (
+ subset_id   int(10) NOT NULL,
+ member_id   int(10) NOT NULL,
+
+ KEY (member_id),
+ UNIQUE subset_member_id (subset_id, member_id)
+);
+
 
 ------------------------------------------------------------------------------------
 --
