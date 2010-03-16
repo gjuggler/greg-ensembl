@@ -14,7 +14,8 @@ use File::Basename;
 # gunzip PDBFIND2.TXT.gz
 # Make sure the PDBFIND2.TXT is in the current directory.
 
-my $url = 'mysql://ensadmin:ensembl@compara2:3306/gj1_57';
+my $url = 'mysql://ensadmin:ensembl@ens-research/gj1_2x_57';
+my $file = '/nfs/users/nfs_g/gj1/scratch/PDBFIND2.TXT';
 GetOptions('url=s' => \$url);
 my $dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new(-url => $url);
 my $dbc = $dba->dbc;
@@ -28,12 +29,12 @@ my $update = $dbc->prepare("UPDATE pdbfinder set seq=? WHERE id=?;");
 my $update2 = $dbc->prepare("UPDATE pdbfinder set access=? WHERE id=?;");
 my $update3 = $dbc->prepare("UPDATE pdbfinder set dssp=? WHERE id=?;");
 
-open(IN,"PDBFIND2.TXT");
+open(IN,$file);
 my $i=0;
 my $id;
 while (<IN>) {
   $i++;
-#  last if ($i > 500);
+  #last if ($i > 500);
   chomp $_;
 
   if ($_ =~ 'ID\s*:\s*(\S+)') {

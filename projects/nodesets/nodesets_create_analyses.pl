@@ -11,7 +11,7 @@ use Bio::Greg::EslrUtils;
 use File::Path;
 use File::Basename;
 
-my ($url) = 'mysql://ensadmin:ensembl@ens-research/gj1_eslr_nodesets';
+my ($url) = 'mysql://ensadmin:ensembl@ens-research/gj1_nodesets_57';
 #GetOptions('url=s' => \$url);
 my $clean = 1;
 my $dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new(-url => $url);
@@ -26,13 +26,13 @@ parameter_sets();
 
 # Create analyses.
 node_sets();
-#omegas();
+omegas();
 mapping();
 collect_stats();
 
 # Connect the dots.
 connect_analysis("NodeSets","Mapping",1);
-#connect_analysis("Omegas","Mapping",1);
+connect_analysis("Omegas","Mapping",1);
 connect_analysis("Mapping","CollectStats",1);
 
 sub parameter_sets {
@@ -161,9 +161,9 @@ sub parameter_sets {
 sub node_sets {
   my $analysis_id=101;
   my $logic_name = "NodeSets";
-  my $module = "Bio::Greg::NodeSets";
+  my $module = "Bio::Greg::NodeSetsB";
   my $params = {
-    flow_node_set => 10
+    flow_node_set => 11
   };
   _create_analysis($analysis_id,$logic_name,$module,$params,30,1);
 
