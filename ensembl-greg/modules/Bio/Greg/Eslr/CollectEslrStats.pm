@@ -61,6 +61,8 @@ my $gene_stats_def = {
   kappa                 => 'float',
   slr_lnl               => 'float',
 
+  mean_copy_count       => 'float',
+
 # Coming soon...
 #  ins_rate              => 'float',
 #  del_rate              => 'float'
@@ -211,6 +213,8 @@ sub get_gene_data {
       $cur_params->{'human_gene_exon_count'} = scalar @{$tscr->get_all_Exons};
     }
   }
+
+  $cur_params->{'mean_copy_count'} = $utils->mean_copy_count($tree);
 
   $cur_params->{'duplication_count'} = $utils->mysql_getval($tree,"SELECT num_dups_under_node($node_id)");
   $cur_params->{'duplication_fraction'} = sprintf "%.3f", $utils->mysql_getval($tree,"SELECT num_dups_under_node($node_id)/node_count($node_id)");

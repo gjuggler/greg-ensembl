@@ -65,6 +65,36 @@ sub mean_branch {
   return $total / scalar($tree->nodes);
 }
 
+
+# GJ 2010-03-16
+# Calculate the per-species member count within this gene family. Counted for all 
+# species that have at least one member in the family.
+sub mean_copy_count {
+  my $class = shift;
+  my $tree = shift;
+
+  my $taxon_hash;
+  foreach my $leaf ($tree->leaves) {
+    my $tx_id = $leaf->taxon_id;
+    if (!defined $taxon_hash->{$tx_id}) {
+      $taxon_hash->{$tx_id} = 1;
+    } else {
+      $taxon_hash->{$tx_id} += 1;
+    }
+  }
+
+  my $sum = 0;
+  foreach my $taxon (keys %$taxon_hash) {
+    $sum += $taxon_hash->{$taxon};
+  }
+  my $num_taxa = scalar keys %$taxon_hash;
+
+  return 0 if ($num_taxa == 0);
+  my $mean = $sum / $num_taxa;
+
+  return $mean;
+}
+
 sub seq_length_mean {
   my $class = shift;
   my $tree = shift;

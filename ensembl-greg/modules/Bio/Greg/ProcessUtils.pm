@@ -10,6 +10,61 @@ use Bio::EnsEMBL::Hive;
 
 our @ISA = qw();
 
+sub load_params_from_tree_tags {
+  my $self = shift;
+  my $dba = shift;
+  my $node_id = shift;
+
+  my $pta = $dba->get_ProteinTreeAdaptor;
+  my $tree = $pta->fetch_node_by_node_id($node_id);
+
+  my $tags = $tree->get_tagvalue_hash;
+
+  my @param_objs;
+  my $simple_tags;
+  foreach my $tag (keys %$tags) {
+    if ($tag =~ /params/i) {
+      push @param_objs,$self->load_params_from_tag($tree,$tag);
+    } else {
+      $simple_tags->{$tag} = $tags->{$tag};
+    }
+  }
+  push @param_objs,$simple_tags;
+
+  return $self->replace_params(@param_objs);
+}
+
+sub load_params_from_tag {
+  my $self = shift;
+  my $tree = shift;
+  my $tag = shift;
+
+  my $tag_string = $tree->get_tagvalue($tag);
+  return $self->string_to_hash($tag_string);
+}
+
+# Eval a hashref from a string.
+sub string_to_hash {
+  my $self = shift;
+  my $string = shift;
+
+  my $hash = eval $string;
+  return $hash if (defined $hash);
+
+  return {};
+}
+
+sub hash_print {
+  my $class = shift;
+  my $hashref = shift;
+
+  print "{\n";
+  foreach my $key (sort keys %{$hashref}) {
+    printf("    %-40.40s => %-40s\n",$key,$hashref->{$key});
+  }
+  print "}\n";
+}
+
 sub replace_params {
   my $self = shift;  
   my @params = @_;

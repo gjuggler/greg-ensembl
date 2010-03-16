@@ -469,8 +469,8 @@ sub collect_pfam {
 		  $pos,
 		  $params->{parameter_set_id},
 		  '"DOMAIN"',
-		  $score,
-		  '"'.$id.'"');
+		  '"'.$id.'"',
+		  $score);
     my $string = '('.join(',',@values).')';
     push @array_of_strings,$string;
   }
