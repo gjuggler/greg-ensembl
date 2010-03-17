@@ -73,7 +73,7 @@ sub copy {
   $mycopy->left_index($self->left_index);
   $mycopy->right_index($self->right_index);
 
-  foreach my $child (@{$self->children}) {  
+  foreach my $child (@{$self->sorted_children}) {  
     $mycopy->add_child($child->copy);
   }
   return $mycopy;
@@ -375,7 +375,7 @@ sub sorted_children {
             $a->distance_to_parent <=> $b->distance_to_parent
             ||
             $a->node_id <=> $b->node_id # GJ 2009-10-09
-          }  @{$self->children;};
+          }  @{$self->children};
   return \@sortedkids;
 }
 
@@ -549,7 +549,8 @@ sub get_child_count {
 
 sub load_children_if_needed {
   my $self = shift;
-  if($self->adaptor and !defined($self->{'_children_loaded'})) {
+  return $self unless ($self->adaptor && $self->adaptor->isa('Bio::EnsEMBL::Compara::DBSQL::NestedSetAdaptor'));
+  if(!defined($self->{'_children_loaded'})) {
     #define _children_id_hash thereby signally that I've tried to load my children
     $self->{'_children_loaded'} = 1; 
     #print("load_children_if_needed : "); $self->print_node;
@@ -1547,7 +1548,7 @@ sub _recursive_get_all_leaves {
     
   $leaves->{$self->obj_id} = $self if($self->is_leaf);
 
-  foreach my $child (@{$self->children}) {
+  foreach my $child (@{$self->sorted_children}) {
     $child->_recursive_get_all_leaves($leaves);
   }
   return undef;

@@ -70,22 +70,22 @@ sub treeI_from_newick {
   my $newick = shift;
 
   $newick .= ";" if ($newick !~ /;/);
-  $newick =~ s/\s//g;
+#  $newick =~ s/\s//g;
 
   # Parse out and store the NHX annotations... because bioperl-live sucks.
-  my $annotation;
-  while ($newick =~ m/[,\(\)]+(.*?)(:.*?)?\[&&nhx:(.*?)\]/gi) {
-    my $hash;
-    my @keyvals = split(/:/,$3);
-    foreach my $keyval (@keyvals) {
-      my ($key,$val) = split(/=/,$keyval);
-      $hash->{$key} = $val;
-    }
-    $annotation->{$1} = $hash if (length $1 > 1);
-  }
+#  my $annotation;
+#  while ($newick =~ m/[,\(\)]+(.*?)(:.*?)?\[&&nhx:(.*?)\]/gi) {
+#    my $hash;
+#    my @keyvals = split(/:/,$3);
+#    foreach my $keyval (@keyvals) {
+#      my ($key,$val) = split(/=/,$keyval);
+#      $hash->{$key} = $val;
+#    }
+#    $annotation->{$1} = $hash if (length $1 > 1);
+#  }
   
   # Now remove the NHX annotations from the string.
-  $newick =~ s/\[&&nhx.*?\]//ig;
+#  $newick =~ s/\[&&nhx.*?\]//ig;
   
   # Load the tree using TreeIO.
   open(my $fake_fh, "+<", \$newick);
@@ -94,14 +94,14 @@ sub treeI_from_newick {
   $treein->close();
 
   # Put annotations back into nodes.
-  foreach my $node ($treeI->get_nodes) {
-    my $hash = $annotation->{$node->id};
-    if (defined $hash) {
-      foreach my $key (keys %{$hash}) {
-	$node->add_tag_value($key,$hash->{$key});
-      }
-    }
-  }
+#  foreach my $node ($treeI->get_nodes) {
+#    my $hash = $annotation->{$node->id};
+#    if (defined $hash) {
+#      foreach my $key (keys %{$hash}) {
+#	$node->add_tag_value($key,$hash->{$key});
+#      }
+#    }
+#  }
   
   # Test outputting the tree to a string.
   #my $new_newick;
@@ -128,7 +128,8 @@ sub from_newick {
   my $class = shift;
   my $newick = shift;
 
-  return $class->from_treeI($class->treeI_from_newick($newick));
+  my $tree = $class->from_treeI($class->treeI_from_newick($newick));
+  return $tree;
 }
 
 # Creates a Bio::EnsEMBL::Compara::NestedSet from a file.
@@ -152,20 +153,19 @@ sub from_treeI {
   
   my $rootI = $treeI->get_root_node;
   my $node = new Bio::EnsEMBL::Compara::NestedSet;
-  $node->init;
-  
+
   # Kick off the recursive, parallel node adding.
-  $class->add_nodeI_to_node($node,$rootI);
+  _add_nodeI_to_node($node,$rootI);
   
-  return $node;
+  return bless($node,Bio::EnsEMBL::Compara::NestedSet);
 }
 
 # Recursive helper for new_from_TreeI.
-sub add_nodeI_to_node {
-  my $class = shift;
+sub _add_nodeI_to_node {
   my $node = shift; # Our node object (Compara)
   my $nodeI = shift; # Our nodeI object (BioPerl)
-  
+
+  my $i = 0;
   foreach my $c ($nodeI->each_Descendent) {
     my $child = ref($node)->new;
     
@@ -175,19 +175,19 @@ sub add_nodeI_to_node {
     
     if ($c->is_Leaf) {
       $child = Bio::EnsEMBL::Compara::LocalMember->new();
-      $child->init;
       $child->stable_id($name);
       $child->source_name("");
     }
+
+    $child->node_id($i++) unless ($c->is_Leaf);
     
     # Set name.
-    $child->name($name) if (length $name > 1);
+    $child->name($name);
+    $child->store_tag("name",$name);
     
     # Set branch length.
     $node->add_child($child,$c->branch_length);
 
-    #print "Adding node $name ".$c->branch_length."\n";
-    
     # Add the tags.
     my $tags = $c->{'_tags'};
     foreach my $tag (keys %{$tags}) {
@@ -196,9 +196,8 @@ sub add_nodeI_to_node {
     $child->{'_tags'} = $tags;
 
     # Recurse.
-    $class->add_nodeI_to_node($child,$c);
+    _add_nodeI_to_node($child,$c);
   }
-  $node->{'_children_loaded'} = 1;
 }
 
 
