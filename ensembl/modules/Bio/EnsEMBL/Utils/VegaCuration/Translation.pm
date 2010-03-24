@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Copyright (c) 1999-2010 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -127,10 +127,13 @@ sub check_CDS_start_end_remarks_loutre {
   foreach my $attribute (@{$trans->get_all_Attributes()}) {
     $attributes{$attribute->code} = $attribute;
   }
+#  warn $trans->stable_id;
+#  warn Data::Dumper::Dumper(\%attributes);
   my $coding_end   = $trans->cdna_coding_end;
   my $coding_start = $trans->cdna_coding_start;
   my $trans_end    = $trans->length;
   my $trans_seq    = $trans->seq->seq;
+  my $stop_codon_offset = 3 + $trans->translation->end_Exon->end_phase;
   my $stop_codon   = substr($trans_seq, $coding_end-3, 3);
   my $start_codon  = substr($trans_seq, $coding_start-1, 3);
 
@@ -138,36 +141,48 @@ sub check_CDS_start_end_remarks_loutre {
   my $results;
 
   #extra CDS end not found remarks
-  if ( ($attributes{'cds_end_NF'}->value == 1)
-	 && ($coding_end != $trans_end) 
+  if ($attributes{'cds_end_NF'}) {
+    if ( ($attributes{'cds_end_NF'}->value == 1)
+	   && ($coding_end != $trans_end) 
 	   && ( grep {$_ eq $stop_codon} @stops) ) {
-    $results->{'END_EXTRA'} = 1;
+#      warn $trans->stable_id.": $coding_end--$trans_end--$stop_codon";
+#      warn $trans->translation->end_Exon->end_phase;
+      $results->{'END_EXTRA'} = $stop_codon1;
+    }
   }
   #missing CDS end not found remark
   if ( $coding_end == $trans_end ) {
-    if ($attributes{'cds_end_NF'}->value == 0 ) {
-      if (grep {$_ eq $stop_codon} @stops) {
-	$results->{'END_MISSING_2'} = 1;
-      }
-      else {
-	$results->{'END_MISSING_1'} = $stop_codon;
+    if ($attributes{'cds_end_NF'}) {
+      if ($attributes{'cds_end_NF'}->value == 0 ) {
+	if (! grep {$_ eq $stop_codon} @stops) {
+#	  warn $trans->stable_id.": $coding_end--$trans_end--$stop_codon";
+#	  warn $trans->translation->end_Exon->end_phase;
+	  $results->{'END_MISSING'}{'WRONG'} = $stop_codon;
+	}
       }
     }
+    elsif (! grep {$_ eq $stop_codon} @stops) {
+      $results->{'END_MISSING'}{'ABSENT'} = $stop_codon;
+    }
   }
-  #extra CDS start not found remark
-  if ( ($attributes{'cds_start_NF'}->value == 1 )
-	 && ($coding_start != 1)
+  #extra CDS start not found remark 
+  if ( $attributes{'cds_start_NF'}) {
+    if ( ($attributes{'cds_start_NF'}->value == 1 )
 	   && ($start_codon eq 'ATG') ) {
-    $results->{'START_EXTRA'} = 1;
+      $results->{'START_EXTRA'} = $start_codon;
+    }
   }
   #missing CDS start not found remark
   if ( $coding_start == 1) {
-    if ( $attributes{'cds_start_NF'}->value == 0 ) {
-      if ($start_codon eq 'ATG') {
-	$results->{'START_MISSING_2'} = 1;
-      } else {
-	$results->{'START_MISSING_1'} = $start_codon;
+    if ( $attributes{'cds_start_NF'} ) {
+      if ( $attributes{'cds_start_NF'}->value == 0 ) {
+	if ($start_codon ne 'ATG') {
+	  $results->{'START_MISSING'}{'WRONG'} = $start_codon;
+	}
       }
+    }
+    elsif ($start_codon ne 'ATG') {
+      $results->{'START_MISSING'}{'ABSENT'} = $start_codon;
     }
   }
   return $results;
@@ -204,9 +219,16 @@ sub check_for_stops {
  TRANS:
   foreach my $trans (@{$gene->get_all_Transcripts}) {
     my $tsi = $trans->stable_id;
-#    next unless ($tsi eq 'OTTDART00000022820');
     my $tID = $trans->dbID;
     my $tname = $trans->get_all_Attributes('name')->[0]->value;
+
+    foreach my $rem (@{$trans->get_all_Attributes('hidden_remark')}) {
+      if ($rem->value =~ /not_for_Vega/) {
+	$support->log_verbose("Skipping transcript $tname ($tsi) since 'not_for_Vega'\n",1);
+	next TRANS;
+      }
+    }
+
     $support->log_verbose("Studying transcript $tsi ($tname, $tID)\n",1);
 
     my $peptide;
@@ -278,21 +300,13 @@ sub check_for_stops {
 
       #parse remarks to check syntax for location of edits
       while (my ($attrib,$remarks)= each %$remarks) {
-	foreach my $text (@{$remarks}) {
-	  if ( $attrib eq 'remark') {
-	    if ($text=~/^$alabel([\d\s]+)/){
-	      $support->log_warning("seleno remark for $tsi stored as Annotation_remark not hidden remark [$mod_date]\n");
-	      $annot_stops=$1;
-	    }
-	    elsif ($text=~/^$alabel(.*)/) {
-	      $support->log_warning("non numerical seleno remark ($text) for $tsi stored as Annotation_remark not hidden remark [$mod_date]\n");
-	    }
-	  }
-	  elsif ($text =~ /^$alabel2([\d\s]+)/) {
+	foreach my $text (@{$remarks}) {					
+	  if ( ($attrib eq 'remark') && ($text=~/^$alabel(.*)/) ){
+	    $support->log_warning("seleno remark for $tsi stored as Annotation_remark not hidden remark) [$mod_date]\n");
 	    $annot_stops=$1;
 	  }
-	  elsif ($text =~ /^$alabel2(.*)/) { 
-	    $support->log_warning("non numerical seleno remark ($text) for $tsi [$mod_date]\n");
+	  elsif ($text =~ /^$alabel2(.*)/) {
+	    $annot_stops=$1;
 	  }
 	}
       }
@@ -302,12 +316,8 @@ sub check_for_stops {
       if ($annot_stops){
 	my $i = 0;
 	foreach my $offset (split(/\s+/, $annot_stops)) {
-	  if ($i > scalar(@found_stops)-1) {
-	    $support->log_warning("Transcript $tsi ($tname) has more annotated stops than there are actual stops\n");
-	  }
 	  # not a number - ignore
-	  elsif ($offset !~ /^\d+$/){
-	    $support->log_warning("Non-numerical offset ($offset) found at $offset\n");
+	  if ($offset!~/^\d+$/){
 	  }
 	  #OK if it matches a known stop
 	  elsif ($found_stops[$i]->[1] == $offset) {
@@ -315,14 +325,14 @@ sub check_for_stops {
 	  }
 	  # catch old annotations where number was in DNA not peptide coordinates
 	  elsif (($found_stops[$i]->[1] * 3) == $offset) {
-	    $support->log_warning("DNA: Annotated stop ($offset) for transcript $tsi ($tname) is in DNA not peptide coordinates) [$mod_date]\n");
+	    $support->log_warning("DNA: Annotated stop for transcript tsi ($tname) is in DNA not peptide coordinates) [$mod_date]\n");
 	  }
 	  # catch old annotations where number off by one
 	  elsif (($found_stops[$i]->[1]) == $offset+1) {
-	    $support->log_warning("PEPTIDE: Annotated stop ($offset) for transcript $tsi ($tname) is out by one) [$mod_date]\n");
+	    $support->log_warning("PEPTIDE: Annotated stop for transcript $tsi ($tname) is out by one) [$mod_date]\n");
 	  }
 	  else {
-	    $support->log_warning("Annotated stop ($offset) for transcript $tsi ($tname) does not match a TGA codon) [$mod_date]\n");
+	    $support->log_warning("Annotated stop for transcript $tsi ($tname) does not match a TGA codon) [$mod_date]\n");
 	    push  @annotated_stops, $offset;
 	  }						
 	  $i++;

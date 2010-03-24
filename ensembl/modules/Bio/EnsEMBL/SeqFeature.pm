@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Copyright (c) 1999-2010 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -676,14 +676,14 @@ sub entire_seq{
 
 =cut
 
-sub sub_SeqFeature{
-   my ($self) = @_;
+sub sub_SeqFeature {
+  my ($self) = @_;
 
-   if($self->{'_gsf_sub_array'}){
-     return @{$self->{'_gsf_sub_array'}};
-   }else{
-     return;
-   }
+  if ( $self->{'_gsf_sub_array'} ) {
+    return @{ $self->{'_gsf_sub_array'} };
+  } else {
+    return ();
+  }
 }
 
 =head2 add_sub_SeqFeature

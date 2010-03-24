@@ -65,6 +65,36 @@ sub mean_branch {
   return $total / scalar($tree->nodes);
 }
 
+
+# GJ 2010-03-16
+# Calculate the per-species member count within this gene family. Counted for all 
+# species that have at least one member in the family.
+sub mean_copy_count {
+  my $class = shift;
+  my $tree = shift;
+
+  my $taxon_hash;
+  foreach my $leaf ($tree->leaves) {
+    my $tx_id = $leaf->taxon_id;
+    if (!defined $taxon_hash->{$tx_id}) {
+      $taxon_hash->{$tx_id} = 1;
+    } else {
+      $taxon_hash->{$tx_id} += 1;
+    }
+  }
+
+  my $sum = 0;
+  foreach my $taxon (keys %$taxon_hash) {
+    $sum += $taxon_hash->{$taxon};
+  }
+  my $num_taxa = scalar keys %$taxon_hash;
+
+  return 0 if ($num_taxa == 0);
+  my $mean = $sum / $num_taxa;
+
+  return $mean;
+}
+
 sub seq_length_mean {
   my $class = shift;
   my $tree = shift;
@@ -103,6 +133,32 @@ sub gc_content_mean {
   my $avg_gc = $sum_gc / scalar(@seqs);
 }
 
+sub get_tag_hash {
+  my $class = shift;
+  my $dbc = shift;
+  my $params = shift;
+
+  # Index tags by the aln_position and tag.
+  my $table = "sitewise_tag";
+  my $pset = $params->{'parameter_set_id'};
+  my $node_id = $params->{'node_id'};
+
+  my $cmd = qq^SELECT aln_position,tag,value
+    FROM $table WHERE parameter_set_id=$pset and node_id=$node_id
+    ^;
+
+  my $tag_hash = {};
+  
+  my $sth = $dbc->prepare($cmd);
+  $sth->execute;
+  while (my $obj = $sth->fetchrow_hashref) {
+    my $key = join('.',$obj->{'tag'},$obj->{'aln_position'});
+    $tag_hash->{$key} = $obj->{'value'};
+  }
+
+  return $tag_hash;
+}
+
 sub get_psc_hash {
   my $class = shift;
   my $dbc = shift;
@@ -114,6 +170,7 @@ sub get_psc_hash {
   my $cmd = qq^SELECT aln_position,omega,omega_lower,omega_upper,lrt_stat,ncod,type,note 
     FROM $table WHERE parameter_set_id=$pset and node_id=$node_id
     AND ncod > 4 AND note != 'random' AND omega_upper > omega^;
+  my $id_field = 'aln_position';
 
   if ($params->{genome}) {
     $cmd = qq^SELECT * from $table o, sitewise_genome g WHERE o.parameter_set_id=$pset AND 
@@ -121,10 +178,9 @@ sub get_psc_hash {
       AND o.aln_position=g.aln_position^;
   }
 
-  print "$cmd\n";
   my $sth = $dbc->prepare($cmd);
   $sth->execute;
-  my $obj = $sth->fetchall_hashref('aln_position');
+  my $obj = $sth->fetchall_hashref($id_field);
   $sth->finish;
   return $obj;
 }

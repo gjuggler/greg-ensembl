@@ -49,16 +49,58 @@ get.enrich.df = function(subset,all,go.df) {
   return(rbind(bp,mf,cc))
 }
 
+do.vizbi.enrichments = function() {
+  all.genes = get.all.merged()
+
+  hi.thresh = 0.3
+  psc.thresh = 1
+
+  p = subset(all.genes,p.psc.count >= psc.thresh)
+  g = subset(all.genes,g.psc.count >= psc.thresh)
+  l = subset(all.genes,l.psc.count >= psc.thresh)
+
+  print(nrow(p))
+  print(nrow(g))
+  print(nrow(l))
+
+  go.df = go.hs.iea
+  p.enriched = get.enrich.df(p$node_id,all.genes$node_id,go.df)
+  g.enriched = get.enrich.df(g$node_id,all.genes$node_id,go.df)
+  l.enriched = get.enrich.df(l$node_id,all.genes$node_id,go.df)
+
+  write.csv(p.enriched,file="p_psc.csv",row.names=F)
+  write.csv(g.enriched,file="g_psc.csv",row.names=F)
+  write.csv(l.enriched,file="l_psc.csv",row.names=F)
+
+  p = subset(all.genes,p.dnds.m0 >= hi.thresh)
+  g = subset(all.genes,g.dnds.m0 >= hi.thresh)
+  l = subset(all.genes,l.dnds.m0 >= hi.thresh)
+
+  print(nrow(p))
+  print(nrow(g))
+  print(nrow(l))
+  
+  go.df = go.hs.iea
+  p.enriched = get.enrich.df(p$node_id,all.genes$node_id,go.df)
+  g.enriched = get.enrich.df(g$node_id,all.genes$node_id,go.df)
+  l.enriched = get.enrich.df(l$node_id,all.genes$node_id,go.df)
+
+  write.csv(p.enriched,file="p_hi.csv",row.names=F)
+  write.csv(g.enriched,file="g_hi.csv",row.names=F)
+  write.csv(l.enriched,file="l_hi.csv",row.names=F)
+
+}
+
 do.enrichments = function() {
   all.genes = get.all.merged()
   objs = c()
 
   # Add one for primate-greater and glires-greater genes.
-  primates.higher = subset(all.genes, p_dnds > np_dnds)
-  primates.lower = subset(all.genes, p_dnds < np_dnds)
-  primates.morepsc = subset(all.genes, p_psc > np_psc & np_psc == 0)
-  glires.higher = subset(all.genes, g_dnds > ng_dnds)
-  glires.lower = subset(all.genes, g_dnds < ng_dnds)
+  primates.higher = subset(all.genes, p.dnds > np.dnds)
+  primates.lower = subset(all.genes, p.dnds < np.dnds)
+  primates.morepsc = subset(all.genes, p.psc.count > np.psc.count & np.psc.count == 0)
+  glires.higher = subset(all.genes, g.dnds > ng.dnds)
+  glires.lower = subset(all.genes, g.dnds < ng.dnds)
 
   assign('go.primates.higher',get.enrich.df(primates.higher$node_id,all.genes$node_id,go.hs),pos=.GlobalEnv)
   assign('go.primates.lower',get.enrich.df(primates.lower$node_id,all.genes$node_id,go.hs),pos=.GlobalEnv)
@@ -73,10 +115,10 @@ do.enrichments = function() {
     pset.name = param.sets[param.set,]$name
     pset.shortname = param.sets[param.set,]$shortname
     
-    col.dnds = paste(pset.shortname,'_dnds',sep="")
-    col.psc = paste(pset.shortname,'_psc',sep="")
+    col.dnds = paste(pset.shortname,'.dnds',sep="")
+    col.psc.count = paste(pset.shortname,'.psc.count',sep="")
     hi.genes = all.genes[all.genes[[col.dnds]] > 0.4,]
-    psc.genes = all.genes[all.genes[[col.psc]] >= 1,]
+    psc.genes = all.genes[all.genes[[col.psc.count]] >= 1,]
     
     print(paste("Param set:",pset.name,
                 "Num genes:",nrow(all.genes),
@@ -174,4 +216,4 @@ main = function() {
   assign("main.done",TRUE,pos=.GlobalEnv)
 }
 
-if (!main.done) {main()}
+#if (!main.done) {main()}

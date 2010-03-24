@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Copyright (c) 1999-2010 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -145,9 +145,8 @@ sub check_remarks_and_update_names {
     }
   }
 
-  #patch transcript names according to length and CDS
+  ##patch transcript names according to length and CDS
   $gene_c++;
-  my @trans = $gene->get_all_Transcripts();
 
   #separate coding and non_coding transcripts
   my $coding_trans = [];

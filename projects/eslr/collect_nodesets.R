@@ -1,7 +1,7 @@
 library(RMySQL)
 drv <- dbDriver('MySQL')
 if (!exists('con')) {
-  con <- dbConnect(drv, host='compara2', port=3306, user='ensadmin', password='ensembl',dbname='gj1_57')
+  con <- dbConnect(drv, host='ens-research', port=5306, user='ensadmin', password='ensembl',dbname='gj1_nodesets_57')
 }
 
 # Get the sim_sets.

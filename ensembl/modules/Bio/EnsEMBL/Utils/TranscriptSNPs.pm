@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Copyright (c) 1999-2010 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -129,6 +129,9 @@ sub get_all_peptide_variations {
     #calculate the peptide coordinate of the snp
     my $peptide = ($start - $translation_start +
 		   ($codon_length - $codon_pos)) / $codon_length;
+	
+	# skip this SNP if it falls in a partial codon
+	next if $start - $codon_pos + $codon_length > length($cdna);
 
     #retrieve the codon
     my $codon = substr($cdna, $start - $codon_pos-1, $codon_length);

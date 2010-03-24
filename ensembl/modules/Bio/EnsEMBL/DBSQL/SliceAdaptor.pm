@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Copyright (c) 1999-2010 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -1465,11 +1465,13 @@ sub store_assembly{
           "the component Slice Coord_system" );
   }
 
-  my @path = $asm_cs->adaptor->get_mapping_path($asm_cs,$cmp_cs);
-  if(!@path) {
-    throw("No mapping path defined between ".
-          $asm_cs->name . " and " .
-          $cmp_cs->name);
+  my @path =
+    @{ $asm_cs->adaptor()->get_mapping_path( $asm_cs, $cmp_cs ) };
+
+  if ( !@path ) {
+    throw("No mapping path defined between "
+        . $asm_cs->name() . " and "
+        . $cmp_cs->name() );
   }
 
   if( $asm_slice->length != $cmp_slice->length ){

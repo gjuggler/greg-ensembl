@@ -232,8 +232,35 @@ Went to Chris Tyler-Smith's talk on preliminary results on 1k genomes project.
 
 Get the final version of Ensembl 57!
  - Dump important compara tables:
-> mysqldump -uensadmin -pensembl -hcompara2 -P5316 --opt --routines lg4_ensembl_compara_57 meta ncbi_taxa_node ncbi_taxa_name genome_db sequence sequence_cds member protein_tree_node protein_tree_member protein_tree_tag
+> mysqldump -uensadmin -pensembl -hcompara2 -P5316 --opt --routines lg4_ensembl_compara_57 meta ncbi_taxa_node ncbi_taxa_name genome_db sequence sequence_cds member subset subset_member protein_tree_node protein_tree_member protein_tree_tag protein_tree_stable_id species_set species_set_tag method_link method_link_species_set
 
 ### 2010-02-19 ###
 
 Start the v57 pipeline run!!
+
+
+### 2010-02-24 ###
+
+(compara1 gj1_eslr_57)
+
+mysql> select tag,count(*) from sitewise_tag group by tag;
++-----------------+----------+
+| tag             | count(*) |
++-----------------+----------+
+| ACC             |   565611 |
+| ACT_SITE        |     2663 |
+| BINDING         |     2458 |
+| CARBOHYD        |    14741 |
+| DISULFID        |    23788 |
+| DNA_BIND        |    41141 |
+| DOMAIN          |  4342447 |
+| DSSP            |   565611 |
+| EXON            | 16542315 |
+| METAL           |     3866 |
+| MOD_RES         |    34323 |
+| SIGNAL          |    70549 |
+| SPLICE_DISTANCE | 16542315 |
+| TRANSMEM        |   383531 |
++-----------------+----------+
+14 rows in set (13 min 7.13 sec)
+

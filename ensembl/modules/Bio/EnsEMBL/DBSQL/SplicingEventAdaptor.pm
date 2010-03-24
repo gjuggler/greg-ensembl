@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Copyright (c) 1999-2010 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -36,10 +36,6 @@ storage of SplicingEvent objects
     Bio::EnsEMBL::Registry->get_adaptor( "human", "core", "SplicingEvent" );
 
   $se = $se_adaptor->fetch_by_dbID(12);
-
-  @ses = $se_adaptor->fetch_by_stable_id('ENSG00000184129');
-
-  @sess = @{ $se_adaptor->fetch_by__name('...-CNE-1') };
 
   $slice_adaptor =
     Bio::EnsEMBL::Registry->get_adaptor( "human", "core", "slice" );

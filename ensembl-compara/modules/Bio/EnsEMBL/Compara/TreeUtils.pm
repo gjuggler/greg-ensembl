@@ -2,6 +2,7 @@ package Bio::EnsEMBL::Compara::TreeUtils;
 
 use Bio::TreeIO;
 use Bio::EnsEMBL::Compara::LocalMember;
+use File::Path;
 
 #
 # A grab bag of useful methods for tree manipulations.
@@ -14,6 +15,81 @@ my $COMPARA = "Bio::EnsEMBL::Compara::ComparaUtils";
 my $TREEI = "Bio::Tree::TreeI";
 my $NSET = "Bio::EnsEMBL::Compara::NestedSet";
 my $PTREE = "Bio::EnsEMBL::Compara::ProteinTree";
+
+sub robinson_foulds_dist {
+  # Setup steps:
+  # 1) Download http://hashrf.googlecode.com/files/hashrf-6.0.1.tgz . Extract to directory.
+  # 2) >./configure
+  # 3) >make
+  # 4) >cp hashrf ~/bin
+
+  my $class = shift;
+  my $tree_a = shift;
+  my $tree_b = shift;
+  my $params = shift;
+
+  my $temp_dir = $params->{temp_dir};
+  if (!defined $temp_dir) {
+    $temp_dir = '/tmp/rfdist/';
+    rmtree([$temp_dir]);
+    mkpath([$temp_dir]);
+  }
+
+  my $string = "";
+  $string .= $TREE->to_newick($tree_a);
+  $string .= "\n";
+  $string .= $TREE->to_newick($tree_b);
+  $string .= "\n";
+
+  my $file_in = $temp_dir."trees.tre";
+  open(OUT,">$file_in");
+  print OUT $string;
+  close(OUT);
+  
+  my $file_out = $temp_dir."result.rf";
+  my $cmd = "hashrf $file_in 0 -o $file_out ";
+  if ($params->{weighted_dist}) {
+    $cmd .= " -w";
+  }
+
+  print $cmd."\n";
+  system($cmd);
+
+  open(IN,"$file_out");
+  while (<IN>) {
+    print $_;
+  }
+  close(IN);
+  
+}
+
+sub k_tree_dist {
+  # 1) Get http://molevol.cmima.csic.es/castresana/Ktreedist/Ktreedist_v1.tar.gz
+  # 2) > cp Ktreedist.pl ~/bin
+
+  my $class = shift;
+  my $tree_a = shift;
+  my $tree_b = shift;
+  my $params = shift;
+
+  my $temp_dir = $params->{temp_dir};
+  if (!defined $temp_dir) {
+    $temp_dir = '/tmp/ktreedist/';
+    rmtree([$temp_dir]);
+    mkpath([$temp_dir]);
+  }
+
+  my $file_a = $temp_dir."tree_a.nh";
+  my $file_b = $temp_dir."tree_b.nh";
+
+  $class->to_file($tree_a,$file_a);
+  $class->to_file($tree_b,$file_b);
+
+  my $cmd = "Ktreedist.pl -rt $file_a -ct $file_b -r";
+  system($cmd);
+  
+}
+
 
 # Root a tree at its midpoint.
 sub midpoint_root {
@@ -357,9 +433,42 @@ sub to_file {
 
   open(OUT,">".$out_file);
   print OUT $newick;
-  print $newick."\n";
+  #print $newick."\n";
   close(OUT);
   return $out_file;
+}
+
+sub remove_elbows {
+  my $class = shift;
+  my $tree = shift;
+
+  if (scalar @{$self->children} == 1) {
+    return 
+  }
+  
+  my @del_nodes = ();
+  foreach my $node ($tree->nodes) {
+    my @children = @{$node->children};
+    if (scalar @children == 1 && defined $node->parent) {
+      print "Deleting: ".$node->name."\n";
+      push @del_nodes, $node;
+    }
+
+    if (defined $node->parent && !defined $node->parent->parent) {
+      my @p_children = @{$node->parent->children};
+      print scalar @p_children."\n";
+      if (scalar @p_children == 1) {
+	print "DELETING PARENT\n";
+#	push @del_nodes, $node;
+      }
+    }
+  }
+
+  foreach my $del_me (@del_nodes) {
+    $tree->remove_nodes([$del_me]);
+  }
+
+  return $tree;
 }
 
 # Deletes the lineage leading to $del_me.

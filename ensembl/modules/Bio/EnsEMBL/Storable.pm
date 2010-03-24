@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Copyright (c) 1999-2010 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -182,9 +182,10 @@ sub is_stored {
   #
   # Databases are the same if they share the same port, host and username
   #
-  if($db->port   == $cur_db->port &&
-     $db->host   eq $cur_db->host &&
-     $db->dbname eq $cur_db->dbname) {
+  if ( $db->port() eq $cur_db->port()
+    && $db->host()   eq $cur_db->host()
+    && $db->dbname() eq $cur_db->dbname() )
+  {
     return 1;
   }
 

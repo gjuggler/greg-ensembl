@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Copyright (c) 1999-2010 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -298,14 +298,12 @@ sub get_available_adaptors {
     # Firstly those that just have an adaptor named after there object
     # in the main DBSQL directory.
     map( { $_ => "Bio::EnsEMBL::DBSQL::${_}Adaptor" } qw(
-        AffyFeature              AffyArray            AffyProbe
         Analysis                 ArchiveStableId      Attribute
         AssemblyExceptionFeature AssemblyMapper       CoordSystem
         CompressedSequence       DBEntry              DnaAlignFeature
         DensityFeature           DensityType          Exon
         Gene                     KaryotypeBand        MiscSet
-        MiscFeature              OligoArray           OligoFeature
-        OligoProbe               PredictionTranscript PredictionExon
+        MiscFeature              PredictionTranscript PredictionExon
         ProteinFeature           ProteinAlignFeature  RepeatConsensus
         RepeatFeature            Sequence             SimpleFeature
         Slice                    SupportingFeature    Transcript
@@ -328,7 +326,8 @@ sub get_available_adaptors {
     'TranscriptCollection' => 'Bio::EnsEMBL::Collection::Transcript',
     'ExonCollection'       => 'Bio::EnsEMBL::Collection::Exon',
     'RepeatFeatureCollection' =>
-      'Bio::EnsEMBL::Collection::RepeatFeature' );
+      'Bio::EnsEMBL::Collection::RepeatFeature'
+  );
 
   return ( \%pairs );
 } ## end sub get_available_adaptors

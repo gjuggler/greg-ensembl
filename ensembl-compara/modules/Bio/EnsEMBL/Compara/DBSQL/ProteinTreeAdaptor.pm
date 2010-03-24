@@ -68,46 +68,15 @@ sub delete_all_from_treeset {
 
 }
 
-sub fetch_treeset_by_name {
-    my $self = shift;
-    my $name = shift;
-    my $create_if_not_found = shift || 0;
-
-    my @roots = @{$self->fetch_all_roots};
-
-    foreach my $root (@roots) {
-	#print $root->node_id."\n";
-	my $cur_name = $root->name;
-
-	if (defined $cur_name) {
-	    print $cur_name."\n";
-	    return $root if ($cur_name eq $name);
-	}
-    }
-
-    if ($create_if_not_found) {
-	print "Tree set with name $name not found -- creating new!\n";
-	
-	# We didn't find it, so create a new clusterset with this name.
-	my $new_root = Bio::EnsEMBL::Compara::ProteinTree->new();
-	$new_root->name($name);
-	
-	my $new_id = $self->store($new_root);
-	return $self->fetch_node_by_node_id($new_id);
-    } else {
-	warn("Treeset $name not found! Returning undefined...\n");
-	return undef;
-    }
-}
-
-
 =head2 fetch_by_Member_root_id
 
   Arg[1]     : Bio::EnsEMBL::Compara::Member
   Arg[2]     : [optional] int clusterset_id (def. 1)
   Example    : $protein_tree = $proteintree_adaptor->fetch_by_Member_root_id($member);
 
-  Description: Fetches from the database the protein_tree that contains the member
+  Description: Fetches from the database the protein_tree that contains the
+               member. If you give it a clusterset id of 0 this will cause
+               the search span across all known clustersets.
   Returntype : Bio::EnsEMBL::Compara::ProteinTree
   Exceptions :
   Caller     :
@@ -116,17 +85,31 @@ sub fetch_treeset_by_name {
 
 
 sub fetch_by_Member_root_id {
-  my ($self, $member, $root_id) = @_;
-  $root_id = $root_id || 1;
+  my ($self, $member, $clusterset_id) = @_;
+  $clusterset_id = 1 if ! defined $clusterset_id;
 
+  my $root_id = $self->gene_member_id_is_in_tree($member->member_id);
+  return undef unless (defined $root_id);
   my $aligned_member = $self->fetch_AlignedMember_by_member_id_root_id
     (
-     $member->get_longest_peptide_Member->member_id,
-     $root_id);
+     $member->get_canonical_peptide_Member->member_id,
+     $clusterset_id);
   return undef unless (defined $aligned_member);
   my $node = $aligned_member->subroot;
   return undef unless (defined $node);
   my $protein_tree = $self->fetch_node_by_node_id($node->node_id);
+
+  return $protein_tree;
+}
+
+
+sub fetch_by_gene_Member_root_id {
+  my ($self, $member, $clusterset_id) = @_;
+  $clusterset_id = 1 if ! defined $clusterset_id;
+
+  my $root_id = $self->gene_member_id_is_in_tree($member->member_id);
+  return undef unless (defined $root_id);
+  my $protein_tree = $self->fetch_node_by_node_id($root_id);
 
   return $protein_tree;
 }
@@ -141,7 +124,7 @@ sub fetch_by_Member_root_id {
       my $aligned_member = $proteintree_adaptor->
                             fetch_AlignedMember_by_member_id_root_id
                             (
-                             $member->get_longest_peptide_Member->member_id
+                             $member->get_canonical_peptide_Member->member_id
                             );
 
   Description: Fetches from the database the protein_tree that contains the member_id
@@ -153,14 +136,48 @@ sub fetch_by_Member_root_id {
 
 
 sub fetch_AlignedMember_by_member_id_root_id {
-  my ($self, $member_id, $root_id) = @_;
-    
+  my ($self, $member_id, $clusterset_id) = @_;
+
   my $constraint = "WHERE tm.member_id = $member_id and m.member_id = $member_id";
-  $constraint .= " AND t.root_id = $root_id" if($root_id and $root_id>0);
+  $constraint .= " AND t.clusterset_id = $clusterset_id" if($clusterset_id and $clusterset_id>0);
   my $final_clause = "order by tm.node_id desc";
   $self->final_clause($final_clause);
   my ($node) = @{$self->_generic_fetch($constraint)};
   return $node;
+}
+
+# This is experimental -- use at your own risk
+sub fetch_first_shared_ancestor_indexed {
+  my $self = shift;
+  my $node1 = shift;
+  my $node2 = shift;
+
+  my $root_id1 = $node1->_root_id; # This depends on the new root_id field in the schema
+  my $root_id2 = $node2->_root_id;
+
+  return undef unless ($root_id1 eq $root_id2);
+
+  my $left_node_id1 = $node1->left_index;
+  my $left_node_id2 = $node2->left_index;
+
+  my $right_node_id1 = $node1->right_index;
+  my $right_node_id2 = $node2->right_index;
+
+  my $min_left;
+  $min_left = $left_node_id1 if ($left_node_id1 < $left_node_id2);
+  $min_left = $left_node_id2 if ($left_node_id2 < $left_node_id1);
+
+  my $max_right;
+  $max_right = $right_node_id1 if ($right_node_id1 > $right_node_id2);
+  $max_right = $right_node_id2 if ($right_node_id2 > $right_node_id1);
+
+  my $constraint = "WHERE t.root_id=$root_id1 AND left_index < $min_left";
+  $constraint .= " AND right_index > $max_right";
+  $constraint .= " ORDER BY (right_index-left_index) LIMIT 1";
+
+  my $ancestor = $self->_generic_fetch($constraint)->[0];
+
+  return $ancestor;
 }
 
 =head2 fetch_AlignedMember_by_member_id_mlssID
@@ -192,6 +209,28 @@ sub fetch_AlignedMember_by_member_id_mlssID {
   return $node;
 }
 
+sub gene_member_id_is_in_tree {
+  my ($self, $member_id) = @_;
+
+  my $sth = $self->prepare("SELECT ptm1.root_id FROM member m1, protein_tree_member ptm1 WHERE ptm1.member_id=m1.member_id AND m1.gene_member_id=? LIMIT 1");
+  $sth->execute($member_id);
+  my($root_id) = $sth->fetchrow_array;
+
+  if (defined($root_id)) {
+    return $root_id;
+  } else {
+    return undef;
+  }
+}
+
+sub fetch_all_AlignedMembers_by_root_id {
+  my ($self, $root_id) = @_;
+
+  my $constraint = "WHERE tm.root_id = $root_id";
+  my $nodes = $self->_generic_fetch($constraint);
+  return $nodes;
+
+}
 
 ###########################
 # STORE methods
@@ -458,7 +497,7 @@ sub local_mode {
 sub columns {
   my $self = shift;
 
-  #$self->local_mode(1); # Override to turn off local mode.
+  $self->local_mode(-1); # Override to turn off local mode.
   unless ($self->local_mode == -1 || $self->local_mode == 1) {
     my $cmd = 'SHOW FIELDS FROM member LIKE "%cdna%";';
     my $sth = $self->dbc->prepare($cmd);

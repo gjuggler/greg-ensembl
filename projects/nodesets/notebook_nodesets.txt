@@ -1,0 +1,179 @@
+### 2010-03-10 ###
+
+Ran the new NodeSetsB analysis on Ensembl v57. 
+
+Parameters:
+  if ($method_name eq 'Primates') {
+    $params = $self->replace_params($base_p, {
+      cc_Primates => 0.5,
+    });
+  } elsif ($method_name eq 'Glires') {
+    $params = $self->replace_params($base_p, {
+      cc_Glires => 0.5,
+    });
+  } elsif ($method_name eq 'Laurasiatheria') {
+    $params = $self->replace_params($base_p, {
+      cc_Laurasiatheria => 0.5,
+    });
+  } elsif ($method_name eq 'Mammals') {
+    $params = $self->replace_params($base_p, {
+      cc_Primates => 0.2,
+      cc_Glires => 0.2,
+      cc_Laurasiatheria => 0.2,
+    });    
+  } elsif ($method_name eq 'MammalPlusOutgroup') {
+    $params = $self->replace_params($base_p, {
+      cc_Eutheria => 0.2,
+      cc_any => ['Sauria','Clupeocephala','Ciona','Marsupialia']
+    });
+  } elsif ($method_name eq 'Fish') {
+    $params = $self->replace_params($base_p, {
+      cc_Clupeocephala => 0.5
+    });
+  } elsif ($method_name eq 'Sauria') {
+    $params = $self->replace_params($base_p, {
+      cc_Sauria => 0.5
+    });
+  }
+
+Results:
+
+mysql> select tag,count(*) from protein_tree_tag where tag LIKE "cc_%" group by tag;
++----------------------------+----------+
+| tag                        | count(*) |
++----------------------------+----------+
+| cc_Clupeocephala           |   129945 |
+| cc_Glires                  |   307333 |
+| cc_Laurasiatheria          |   355144 |
+| cc_Primates                |   348095 |
+| cc_root_Fish               |    18085 |
+| cc_root_Glires             |    17099 |
+| cc_root_Laurasiatheria     |    16573 |
+| cc_root_MammalPlusOutgroup |    17308 |
+| cc_root_Mammals            |    18263 |
+| cc_root_Primates           |    18302 |
+| cc_root_Sauria             |    15721 |
+| cc_Sauria                  |   123893 |
++----------------------------+----------+
+12 rows in set (0.00 sec)
+
+
+Next, will try with slightly more lenient parameters.
+
+Results with more leniency:
+
+  if ($method_name eq 'Primates') {
+    $params = $self->replace_params($base_p, {
+      cc_Primates => 0.3,
+    });
+  } elsif ($method_name eq 'Glires') {
+    $params = $self->replace_params($base_p, {
+      cc_Glires => 0.3,
+    });
+  } elsif ($method_name eq 'Laurasiatheria') {
+    $params = $self->replace_params($base_p, {
+      cc_Laurasiatheria => 0.3,
+    });
+  } elsif ($method_name eq 'Mammals') {
+    $params = $self->replace_params($base_p, {
+      cc_Primates => 0.1,
+      cc_Glires => 0.1,
+      cc_Laurasiatheria => 0.1,
+    });    
+  } elsif ($method_name eq 'MammalPlusOutgroup') {
+    $params = $self->replace_params($base_p, {
+      cc_Eutheria => 0.1,
+      cc_any => ['Sauria','Clupeocephala','Ciona','Marsupialia']
+    });
+  } elsif ($method_name eq 'Fish') {
+    $params = $self->replace_params($base_p, {
+      cc_Clupeocephala => 0.3
+    });
+  } elsif ($method_name eq 'Sauria') {
+    $params = $self->replace_params($base_p, {
+      cc_Sauria => 0.3
+    });
+  }
+
+
+mysql> select tag,count(*) from protein_tree_tag where tag LIKE "cc_%" group by tag;
++----------------------------+----------+
+| tag                        | count(*) |
++----------------------------+----------+
+| cc_Clupeocephala           |   129945 |
+| cc_Glires                  |   307333 |
+| cc_Laurasiatheria          |   355144 |
+| cc_Primates                |   348095 |
+| cc_root_Fish               |    24186 |
+| cc_root_Glires             |    21039 |
+| cc_root_Laurasiatheria     |    22019 |
+| cc_root_MammalPlusOutgroup |    17852 |
+| cc_root_Mammals            |    22373 |
+| cc_root_Primates           |    22215 |
+| cc_root_Sauria             |    15721 |
+| cc_Sauria                  |   123893 |
++----------------------------+----------+
+12 rows in set (0.00 sec)
+
+ -> Now, try with a minimum tree size constraint of FOUR LEAVES.
+
+  if ($method_name eq 'Primates') {
+    $params = $self->replace_params($base_p, {
+      cc_Primates => 0.3,
+    });
+  } elsif ($method_name eq 'Glires') {
+    $params = $self->replace_params($base_p, {
+      cc_Glires => 0.3,
+    });
+  } elsif ($method_name eq 'Laurasiatheria') {
+    $params = $self->replace_params($base_p, {
+      cc_Laurasiatheria => 0.3,
+    });
+  } elsif ($method_name eq 'Mammals') {
+    $params = $self->replace_params($base_p, {
+      cc_Primates => 0.1,
+      cc_Glires => 0.1,
+      cc_Laurasiatheria => 0.1,
+    });    
+  } elsif ($method_name eq 'MammalPlusOutgroup') {
+    $params = $self->replace_params($base_p, {
+      cc_Eutheria => 0.1,
+      cc_any => ['Sauria','Clupeocephala','Ciona','Marsupialia']
+    });
+  } elsif ($method_name eq 'MammalPlusTwoOutgroups') {
+    $params = $self->replace_params($base_p, {
+      cc_Eutheria => 0.1,
+      cc_Sauria => 0.01,
+      cc_Clupeocephala => 0.01
+    });
+  } elsif ($method_name eq 'Fish') {
+    $params = $self->replace_params($base_p, {
+      cc_Clupeocephala => 0.2
+    });
+  } elsif ($method_name eq 'Sauria') {
+    $params = $self->replace_params($base_p, {
+      cc_Sauria => 0.2
+    });
+  }
+
+mysql> select tag,count(*) from protein_tree_tag where tag LIKE "cc_%" group by tag;
++--------------------------------+----------+
+| tag                            | count(*) |
++--------------------------------+----------+
+| cc_Clupeocephala               |   129945 |
+| cc_Glires                      |   307333 |
+| cc_Laurasiatheria              |   355144 |
+| cc_Primates                    |   348095 |
+| cc_root_Fish                   |    20139 |
+| cc_root_Glires                 |    20530 |
+| cc_root_Laurasiatheria         |    22019 |
+| cc_root_MammalPlusOutgroup     |    17852 |
+| cc_root_MammalPlusTwoOutgroups |    13850 |
+| cc_root_Mammals                |    22373 |
+| cc_root_Primates               |    21593 |
+| cc_root_Sauria                 |    17652 |
+| cc_Sauria                      |   123893 |
++--------------------------------+----------+
+13 rows in set (0.00 sec)
+
+ -> Hmm... now to decide which is best??!?

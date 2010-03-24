@@ -61,6 +61,8 @@ my $gene_stats_def = {
   kappa                 => 'float',
   slr_lnl               => 'float',
 
+  mean_copy_count       => 'float',
+
 # Coming soon...
 #  ins_rate              => 'float',
 #  del_rate              => 'float'
@@ -82,15 +84,14 @@ my $site_stats_def = {
   chr_start             => 'int',
   chr_end               => 'int',
 
-
 # Should we integrate these into the table now, or let this be done in R?
-#  column_entropy        => 'float',
+  column_entropy        => 'float',
 #  indel_count           => 'int',
-#  pfam_domain           => 'string',
-#  sec_structure         => 'string',
-#  solvent_acc           => 'int',
-#  exon_type             => 'string',
-#  splice_dist           => 'int',
+  pfam_domain           => 'string',
+  sec_structure         => 'string',
+  solvent_acc           => 'int',
+  exon_type             => 'string',
+  splice_distance       => 'int',
 
   unique_keys            => 'aln_position,node_id,parameter_set_id'  
 };
@@ -197,11 +198,11 @@ sub get_gene_data {
     $cur_params->{'human_protein'} = $first_human_member->stable_id;
     $cur_params->{'human_gene'} = $first_human_member->get_Gene->stable_id;
 
-    my $tscr = $first_human_member->get_Transcript;
-    $tscr = $tscr->transform("chromosome");
+    my $tscr_orig = $first_human_member->get_Transcript;
+    my $tscr = $tscr_orig->transform("chromosome");
     if (defined $tscr) {
       my $chr = "chr".$tscr->slice->seq_region_name;
-      my $strand = $tscr->slice->strand;
+      my $strand = $tscr->strand;
       my $start = $tscr->coding_region_start;
       my $end = $tscr->coding_region_end;
       $cur_params->{human_chr} = $chr;
@@ -213,19 +214,26 @@ sub get_gene_data {
     }
   }
 
+  $cur_params->{'mean_copy_count'} = $utils->mean_copy_count($tree);
+
   $cur_params->{'duplication_count'} = $utils->mysql_getval($tree,"SELECT num_dups_under_node($node_id)");
   $cur_params->{'duplication_fraction'} = sprintf "%.3f", $utils->mysql_getval($tree,"SELECT num_dups_under_node($node_id)/node_count($node_id)");
 
   my $psc_hash = $utils->get_psc_hash($dba->dbc,$cur_params);
-  $cur_params->{'psc_count'} = $utils->psc_count($psc_hash,0);
-  $cur_params->{'weak_psc_count'} = $utils->psc_count($psc_hash,1);
-  $cur_params->{'omega_mean'} = $utils->omega_average($psc_hash);
-  $cur_params->{'omega_mean_excl_pscs'} = $utils->omega_average_exclude_pscs($psc_hash);
- 
-  my $ps = $cur_params->{'parameter_set_id'};
-  $cur_params->{'omega_m0'} = $cur_params->{'slr_omega_'.$ps};
-  $cur_params->{'kappa'} = $cur_params->{'slr_kappa_'.$ps};
-  $cur_params->{'slr_lnl'} = $cur_params->{'slr_lnL_'.$ps};
+
+  if (scalar(keys(%$psc_hash)) > 0) {
+
+    $cur_params->{'psc_count'} = $utils->psc_count($psc_hash,0);
+    $cur_params->{'weak_psc_count'} = $utils->psc_count($psc_hash,1);
+    $cur_params->{'omega_mean'} = $utils->omega_average($psc_hash);
+    $cur_params->{'omega_mean_excl_pscs'} = $utils->omega_average_exclude_pscs($psc_hash);
+    
+    my $ps = $cur_params->{'parameter_set_id'};
+    $cur_params->{'omega_m0'} = $cur_params->{'slr_omega_'.$ps};
+    $cur_params->{'kappa'} = $cur_params->{'slr_kappa_'.$ps};
+    $cur_params->{'slr_lnl'} = $cur_params->{'slr_lnL_'.$ps};
+    
+  }
 
 # Indel rates aren't yet implemented (need to speed up Indelign first.)
 #  my ($ins,$del,$ins_rate,$del_rate) = Bio::EnsEMBL::Compara::AlignUtils->indelign($sa_nogap,$tree,$cur_params);
@@ -235,6 +243,8 @@ sub get_gene_data {
   # Store values in our output table.
   my $table = $cur_params->{'collect_eslr_stats_genes_table'};
   $self->store_params_in_table($dba,$table,$cur_params);
+
+  $tree->release_tree;
 }
 
 
@@ -253,15 +263,23 @@ sub get_sites_data {
   eval {
     ($tree,$sa_aln,$cdna_aln) = Bio::EnsEMBL::Compara::ComparaUtils->tree_aln_cdna($dba,$cur_params);
   };
-  return if ($@);
+  if ($@) {
+    print "Sites data collection error!\n";
+    return;
+  }
   
-  my $psc_params = $self->replace_params($cur_params,{genome => 1});
+  my @column_entropies;
+  @column_entropies = Bio::EnsEMBL::Compara::AlignUtils->column_entropies($cdna_aln);
+  my $psc_params = $self->replace_params($cur_params,{'genome' => 1});
   my $psc_hash = $utils->get_psc_hash($dba->dbc,$psc_params);
+  my $tag_hash = $utils->get_tag_hash($dba->dbc,$psc_params);
+
+  Bio::EnsEMBL::Compara::ComparaUtils->hash_print($psc_params);
 
   my $aln_length = $sa_aln->length;
 
-  foreach my $key (sort {$a <=> $b} keys %$psc_hash) {
-    my $site = $psc_hash->{$key};
+  foreach my $aln_position (sort {$a <=> $b} keys %$psc_hash) {
+    my $site = $psc_hash->{$aln_position};
     
     $cur_params->{omega} = $site->{omega};
     $cur_params->{omega_lower} = $site->{omega_lower};
@@ -278,10 +296,29 @@ sub get_sites_data {
     $cur_params->{'chr_start'} = $site->{chr_start};
     $cur_params->{'chr_end'} = $site->{chr_end};
 
+    $cur_params->{'column_entropy'} = $column_entropies[$aln_position];
+
+    my $pfam_domain = $tag_hash->{'DOMAIN.'.$aln_position};
+    $cur_params->{'pfam_domain'} = $pfam_domain if (defined $pfam_domain);
+
+    my $sec_structure = $tag_hash->{'DSSP.'.$aln_position};
+    $cur_params->{'sec_structure'} = $sec_structure if (defined $sec_structure);
+
+    my $solvent_acc = $tag_hash->{'ACC.'.$aln_position};
+    $cur_params->{'solvent_acc'} = $solvent_acc if (defined $solvent_acc);
+
+    my $exon_type = $tag_hash->{'EXON.'.$aln_position};
+    $cur_params->{'exon_type'} = $exon_type if (defined $exon_type);
+
+    my $splice_distance = $tag_hash->{'SPLICE_DISTANCE.'.$aln_position};
+    $cur_params->{'splice_distance'} = $splice_distance if (defined $splice_distance);
+
     # Store values in our output table.
     my $table = $cur_params->{'collect_eslr_stats_sites_table'};
     $self->store_params_in_table($dba,$table,$cur_params);
+
   }
+  $tree->release_tree;
 }
 
 1;

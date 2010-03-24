@@ -21,13 +21,93 @@ my $ALN = "Bio::EnsEMBL::Compara::AlignUtils";
 my $COMPARA = "Bio::EnsEMBL::Compara::ComparaUtils";
 
 if ($ENV{'USER'} =~ /gj1/) {
-  Bio::EnsEMBL::Registry->load_registry_from_db(-host => 'ens-livemirror',
-                                                -user => 'ensro'
-    );
+  Bio::EnsEMBL::Registry->load_registry_from_multiple_dbs(
+#							  {
+#							    -host => 'ens-staging',
+#							    -user => 'ensro',
+#							    #-verbose => 1
+#							    },
+#							  {
+#							    -host => 'ens-staging1',
+#							    -user => 'ensro',
+#							    #-verbose => 1
+#							    },
+#							  {
+#							    -host => 'ens-staging2',
+#							    -user => 'ensro',
+#							    #-verbose => 1
+#							    },
+							  {
+							    -host => 'ens-livemirror',
+							    -user => 'ensro',
+							    #-verbose => 1
+							  }
+							  );
   Bio::EnsEMBL::Registry->set_disconnect_when_inactive(1);
-} else {
-  Bio::EnsEMBL::Registry->no_version_check(1);
+  } else {
+  #Bio::EnsEMBL::Registry->no_version_check(1);
 }
+
+sub protein_tree_taxonomy_distance {
+  my $class = shift;
+  my $orig_tree = shift;
+  
+  my $tree = $orig_tree->copy;
+
+  # First, we need to create a newick string with the protein tree IDs normalized into taxon_id_[n]
+  my %taxon_hash;
+  foreach my $member ($tree->leaves) {
+    my $taxon_id = $member->taxon_id;    
+    $taxon_hash{$taxon_id} = 0 if (!defined $taxon_hash{$taxon_id});
+    $taxon_hash{$taxon_id} = $taxon_hash{$taxon_id} + 1;
+    $member->stable_id("'".$taxon_id."X".$taxon_hash{$taxon_id}."'");
+  }
+
+  # Now, take the NCBI taxonomy tree and normalize in a similar way. Insert sister nodes where we have more than one
+  # sequence per species in the above tree.
+  my $ncbi_tree = $class->get_genome_taxonomy_below_level($orig_tree->adaptor->db);
+
+  # Remove taxa where we have no genes.
+  my @remove_me = ();
+  foreach my $member ($ncbi_tree->leaves) {
+    my $taxon_id = $member->taxon_id;
+    push @remove_me, $member if (!defined $taxon_hash{$taxon_id});
+  }
+  foreach my $node (@remove_me) {
+    $TREE->delete_lineage($tree,$node);
+    $tree->minimize_tree;
+  }
+  $tree->minimize_tree;
+  
+  # Duplicate nodes where we have more than one gene per taxon.
+  foreach my $member ($ncbi_tree->leaves) {
+    my $taxon_id = $member->taxon_id;
+    my $gene_count_for_taxon = $taxon_hash{$taxon_id};
+    $member->name("'".$taxon_id."X1'");
+    my $dist = $member->distance_to_parent;
+    for (my $i=2; $i <= $gene_count_for_taxon; $i++) {
+      my $new_leaf = new Bio::EnsEMBL::Compara::NCBITaxon;
+      $member->parent->add_child($new_leaf);
+      $new_leaf->name("'".$taxon_id."X".$i."'");
+      #$new_leaf->distance_to_parent($dist);
+      $new_leaf->distance_to_parent(0);
+    }
+  }
+  
+  # Format names a bit.
+  foreach my $member ($ncbi_tree->nodes) {
+    if (!$member->is_leaf) {
+      $member->name('');
+    }
+  }
+  $ncbi_tree = $TREE->remove_elbows($ncbi_tree);  
+
+  print $tree->newick_format."\n";
+  print $ncbi_tree->newick_format."\n";
+  $TREE->robinson_foulds_dist($tree,$ncbi_tree);
+  $TREE->k_tree_dist($tree,$ncbi_tree);
+}
+
 
 sub cigar_line {
   my ($class,$str) = @_;
@@ -761,9 +841,9 @@ sub get_quality_string_for_member {
 
   # GJ 2009-07-01
   my $gdb = $member->genome_db;
-  my $name = $gdb->name;
+  my $name = $gdb->short_name;
   $name =~ s/ /_/g;
-  my $index_file = $qual_base . $name . ".quals.fa";
+  my $index_file = $qual_base . $name . ".assembly.quals";
 
   print "Quals index file: ".$index_file."\n";
   if (!-e $index_file) {
@@ -772,7 +852,7 @@ sub get_quality_string_for_member {
 
   my $tx = $member->transcript;
   print $tx->stable_id."\n";
-  print "STRAND: ".$member->gene->strand."\n";
+  my $strand = $tx->strand;
   return if (!defined $tx || !defined $tx->adaptor);
   my $adaptor = $tx->adaptor;
   my $db = $adaptor->db;
@@ -785,7 +865,7 @@ sub get_quality_string_for_member {
     $ens_to_index->{$index_file} = $if_qual;
   }
 
-  my $base_file = $qual_base.$name.".bases.fa";
+  my $base_file = $qual_base.$name.".assembly.bases";
   my $if_base = undef;
   if (-e $base_file) {
     print "Bases index file: ".$base_file."\n";
@@ -797,33 +877,36 @@ sub get_quality_string_for_member {
   my $genome_dna = "";
   my @whole_qual_array = ();
 
-  my $obj_seq = $member->sequence_exon_bounded;
-  my @pep_exons = split(/[obj]/,$obj_seq);
-  
   foreach my $exon (@{$tx->get_all_translateable_Exons}) {
-    my $pep_exon = shift @pep_exons;
+    my $pep_exon = $exon->peptide($tx);
 
-    my $length = $exon->length;
     my $slice = $exon->slice;
     $exon = $exon->transfer($tx->slice);
-    if (!defined $exon) {
-      print "Error transferring exon!\n";
-      $ens_dna .= "N" x $length;
-      next;
-    }
+    #if (!defined $exon) {
+    #  print "Error transferring exon!\n";
+    #  $ens_dna .= "N" x $length;
+    #  next;
+    #}
+
     my $dna_seq = $exon->seq->seq;
+    my $ens_seq = new Bio::PrimarySeq(-seq => $dna_seq);
+    print "pe:".$pep_exon->seq."\n";
+    print "es:".$ens_seq->translate->seq."\n";
+
     $ens_dna .= $dna_seq;
     
     $exon = $exon->transform("contig");
     if (defined $exon) {
       my $contig_name = $exon->slice->seq_region_name;
+      my $exon_strand = $exon->slice->strand;
+      #print "exon slice:". $exon->slice->strand."\n";
       my $start = $exon->start-1;
       my $end = $exon->end;
       my $len = $end - $start;
 
       print "e: ".$exon->seq->seq."\n";
 
-      #print "$contig_name $start-$end\n";
+      print "$contig_name $start-$end\n";
       #my $qual_str = $if_qual->get_sequence($contig_name);
       #my @quals = split(" ",$qual_str);
       #my @qual_slice = @quals[$start .. $end-1];
@@ -834,7 +917,7 @@ sub get_quality_string_for_member {
 	return undef;
       }
       my @quals = split(" ",$qual_str);
-      @quals = reverse(@quals) if ($tx->strand == -1);
+      @quals = reverse(@quals) if ($exon_strand == -1);
       push @whole_qual_array,@quals;
 
       if (defined $if_base) {
@@ -842,11 +925,14 @@ sub get_quality_string_for_member {
 	my @bases = split("",$base_str);
 	my @bases_slice = @bases[$start .. $end-1];
 	my $bases_seq = join("",@bases_slice);
-	if ($tx->strand == -1) {
+	#my $bases_seq = $if_base->get_sequence_region($contig_name,$start,$end);
+	if ($exon_strand == -1) { # || $bases_seq ne $exon->seq->seq) {
 	  $bases_seq = new Bio::PrimarySeq(-seq=>$bases_seq)->revcom()->seq;
 	}
 	$genome_dna .= $bases_seq;
 	print "f: ".$bases_seq."\n";
+
+	die "Not equal!" unless ($bases_seq eq $exon->seq->seq);
       }
     } else {
       $genome_dna .= "N" x $length;
@@ -857,11 +943,11 @@ sub get_quality_string_for_member {
   if (defined $if_base) {
     my $ens_seq = new Bio::PrimarySeq(-seq => $ens_dna);
     $genome_seq = new Bio::PrimarySeq(-seq => $genome_dna);
-    printf "%s \n",$ens_seq->seq;
-    printf "%s \n",$genome_seq->seq;
-    printf "%s \n",join(" ",@whole_qual_array);
-    printf "%s \n",$ens_seq->translate->seq;
-    printf "%s \n",$genome_seq->translate->seq;
+    printf "ens:  %s \n",$ens_seq->seq;
+    printf "gnm:  %s \n",$genome_seq->seq;
+    printf "q  :  %s \n",join(" ",@whole_qual_array);
+    printf "enp:  %s \n",$ens_seq->translate->seq;
+    printf "gnp:  %s \n",$genome_seq->translate->seq;
   }
   
   my @avg_array = ();
@@ -885,7 +971,7 @@ sub get_quality_string_for_member {
 sub get_genome_taxonomy_below_level {
   my $class = shift;
   my $dba = shift;
-  my $root_taxon_id = shift;
+  my $root_taxon_id = shift || 'Fungi/Metazoa group';
   my $verbose = shift || 0;
 
   my @gdbs = $class->get_all_genomes($dba);

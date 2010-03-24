@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Copyright (c) 1999-2010 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -42,13 +42,13 @@ instead if possible.
   # and Slices will now have ExternalFeatures on them
   $contig =
     $db_adaptor->get_RawContigAdaptor->fetch_by_name('AC00056.00001');
-  @external = $contig->get_all_ExternalFeatures();
+  @external = @{ $contig->get_all_ExternalFeatures() };
 
   # this works on Slices as well
   $slice =
     $db_adaptor->get_SliceAdaptor->fetch_by_chr_start_end( '12', 10000,
     30000 );
-  @external = $slice->get_all_ExternalFeatures();
+  @external = @{ $slice->get_all_ExternalFeatures() };
 
 =head1 DESCRIPTION
 

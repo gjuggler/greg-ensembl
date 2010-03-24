@@ -1,7 +1,7 @@
 
 =head1 LICENSE
 
-  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Copyright (c) 1999-2010 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -591,7 +591,7 @@ ORDER BY closure.distance);
 
   $sth->finish();
 
-  my @terms = @{ $this->fetch_by_dbID_list( [ keys(%id_chart) ] ) };
+  my @terms = @{ $this->fetch_all_by_dbID_list( [ keys(%id_chart) ] ) };
 
   foreach my $term (@terms) {
     $id_chart{ $term->dbID() }{'term'}       = $term;
@@ -659,7 +659,7 @@ WHERE   ontology.ontology_id = term.ontology_id
   return $term;
 } ## end sub fetch_by_dbID
 
-sub fetch_by_dbID_list {
+sub fetch_all_by_dbID_list {
   my ( $this, $dbids ) = @_;
 
   if ( !@{$dbids} ) { return [] }
@@ -711,7 +711,7 @@ WHERE   ontology.ontology_id = term.ontology_id
   $sth->finish();
 
   return \@terms;
-} ## end sub fetch_by_dbID_list
+} ## end sub fetch_all_by_dbID_list
 
 sub fetch_all {
   my ($this) = @_;

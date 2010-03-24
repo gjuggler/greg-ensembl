@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Copyright (c) 1999-2010 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -184,7 +184,7 @@ sub map {
     last if($cs->rank >= $from_rank);
 
     #check if a mapping path even exists to this coordinate system
-    my @mapping_path = $csa->get_mapping_path($cs,$other_cs);
+    my @mapping_path = @{ $csa->get_mapping_path( $cs, $other_cs ) };
 
     if(@mapping_path) {
 
@@ -325,7 +325,7 @@ sub _list {
     last if($cs->rank >= $from_rank);
 
     #check if a mapping path even exists to this coordinate system
-    my @mapping_path = $csa->get_mapping_path($cs, $other_cs);
+    my @mapping_path = @{ $csa->get_mapping_path( $cs, $other_cs ) };
 
     if(@mapping_path) {
 

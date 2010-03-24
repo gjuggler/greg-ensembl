@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Copyright (c) 1999-2010 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -72,6 +72,28 @@ sub fetch_all_by_Marker {
   my $constraint = 'm.marker_id = ' . $marker->dbID;
 
   return $self->generic_fetch($constraint, @_);
+}
+
+=head2 fetch_all_by_Slice_and_MarkerName
+
+  Arg [1]    : Bio::EnsEMBL::Slice $slice
+  Arg [2]    : string marker name
+  Example    : @ms = @{$marker_feature_adaptor->fetch_all_by_Slice_and_MarkerName($slice, $name)};
+  Description: Retrieves a list of MarkerFeatures for a given marker name
+  Returntype : listref of Bio::EnsEMBL::Map::MarkerFeatures
+  Exceptions : none
+  Caller     : general
+  Status     : stable
+
+=cut
+
+sub fetch_all_by_Slice_and_MarkerName {
+  my ($self, $slice, $name) = @_;
+  return unless $slice && $name;
+
+  my $constraint = 'ms.name = "' . $name . '"';
+  my $results = $self->fetch_all_by_Slice_constraint($slice, $constraint);
+  return $results;
 }
 
 

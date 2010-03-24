@@ -1,6 +1,6 @@
 =head1 LICENSE
 
-  Copyright (c) 1999-2009 The European Bioinformatics Institute and
+  Copyright (c) 1999-2010 The European Bioinformatics Institute and
   Genome Research Limited.  All rights reserved.
 
   This software is distributed under a modified Apache license.
@@ -181,4 +181,4 @@ sub _default_where_clause {
 
 1;
 
-# $Id: Gene.pm,v 1.10 2009/03/04 10:58:13 ak4 Exp $
+# $Id: Gene.pm,v 1.11 2010-02-02 19:24:43 ak4 Exp $
