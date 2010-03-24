@@ -217,8 +217,6 @@ sub fetch_masked_alignment
   my $ps_params = $class->load_params_from_param_set($dbc,$params->{'parameter_set_id'});
   $params = $class->replace_params($params,$ps_params);
 
-  #$class->hash_print($params);
-
   my $aln;
   $aln = $cdna_aln if ($cdna_option);
   $aln = $aa_aln if (!$cdna_option);
@@ -237,10 +235,12 @@ sub fetch_masked_alignment
   };
   $params = $class->replace_params($default_params,$params);
 
+  #$class->hash_print($params);
 
   # Mask out bits of alignment.
   if ($params->{'alignment_score_filtering'}) {
     # Load up all the site-wise alignment quality scores.
+    my $table = $params->{'alignment_score_table'};
     my $pta = $tree->adaptor;
     my $use_alignment_scores = 1;
     my $hash_ref;
@@ -248,7 +248,6 @@ sub fetch_masked_alignment
       # Grab the score line for each leaf node.
       my $id = $leaf->stable_id; # Must be stable_id to match the aln object.
       my $member_id = $leaf->member_id;
-      my $table = $params->{'alignment_score_table'};
       my $cmd = "SELECT cigar_line FROM $table where member_id=$member_id;";
       my $sth = $pta->prepare($cmd);
       $sth->execute();
@@ -278,6 +277,10 @@ sub fetch_masked_alignment
 	@arr = map { ($_ . '') x 3 } @arr;
       }
       $aln_score_string = join("",@arr);
+      printf "%20s %10s  aln:%d  score:%d\n", $leaf->stable_id, $leaf->member_id,length($leaf->alignment_string),length($aln_score_string);
+      #print $leaf->alignment_string."\n";
+      #print $aln_score_string . "\n";
+      
       $hash_ref->{$id} = $aln_score_string;
     }
 
