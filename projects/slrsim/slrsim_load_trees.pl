@@ -51,18 +51,21 @@ create_simsets();
 sub create_simsets {
   my $i=1;
   my $base_length = 1;
-
+  
   my $base_params = {
-    slrsim_replicates => 50,
+    slrsim_replicates => 1,
     slrsim_file => 'artificial.nh',
     slrsim_tree_mult => 1,
-
+    
     phylosim_simulation_program => 'indelible',
     phylosim_seq_length => 400,
-    phylosim_ins_rate => 0,
-    phylosim_del_rate => 0
+    phylosim_insertrate => 0,
+    phylosim_deleterate => 0,
+    
+    sitewise_name => 'None',
+    sitewise_action => ''
   };
-
+  
   my $tree_anisimova_bglobin = 'anisimova_01_bglobin.nh';
   my $tree_anisimova_artificial = 'anisimova_01_artificial.nh';
   my $full = '2x_v.nh';
@@ -72,6 +75,7 @@ sub create_simsets {
   my $fortyfourmammals = '44mammals.nh';
   my $twoxmammals = '2xmammals.nh';
   my $ensembl = 'ensembl.nh';
+  my $ensembl_two = 'ensembl_2.nh';
 
   my $anisimova_02_M3 = {
     slrsim_scheme_name => "Anisimova 2002 M3",
@@ -95,6 +99,15 @@ sub create_simsets {
   };
   # the same set of params was used by anisimova et al:
   my $anisimova_02_M8 = $massingham_05_A;  
+
+  my $massingham_05_A2 = {
+    slrsim_scheme_name => "Massingham 2005-A2 (M8, 15% pos-sel)",
+    phylosim_omega_distribution => 'M8',
+    phylosim_p0 => 0.85,
+    phylosim_p => 0.572,
+    phylosim_q => 2.172,
+    phylosim_w => 2.081
+  };
 
   my $massingham_05_B = {
     slrsim_scheme_name => "Massingham 2005-B (M3)",    
@@ -140,64 +153,270 @@ sub create_simsets {
     paml_model_b => 'M3'
   };
   
-  my $sim_p = replace($massingham_05_B, {
-    slrsim_file => '',
-    slrsim_tree_mult => 1,
-    phylosim_insertmodel => 'NB 0.18 2',
-    phylosim_deletemodel => 'NB 0.18 2'
-                      });
-  my @sim_params;
-
-  my (@tree_params,@mult_params,@aln_params,@filter_params,@species_params,@sitewise_params);
-
-  $sim_p = replace($massingham_05_A, {
-    slrsim_file => '',
+  my $sim_p = replace($massingham_05_A, {
     slrsim_tree_mult => 1,
     phylosim_insertmodel => 'NB 0.18 2',
     phylosim_deletemodel => 'NB 0.18 2'
                    });
 
-
-  # FILTERING TEST
-  @sim_params = ();
-  foreach my $indel (0.05) {
-    push @sim_params, replace($sim_p,{phylosim_ins_rate => $indel,phylosim_del_rate => $indel});
-  }
-  @tree_params = map {tree_param($_)} ($fortyfourmammals);
-  @mult_params = map {mult_param($_)} (1,4);
-  @aln_params = map {aln_param($_)} ('mcoffee','prank');
-  @filter_params = map {filter_param($_)} ('none','mcoffee','indelign','trimal','prank_mean','prank_minimum','prank_treewise');
-  @species_params = map {species_param($_)} ('Human');
-  @sitewise_params = ($slr);
-  foreach my $sim (@sim_params) {
-    foreach my $tr (@tree_params) {
-      foreach my $mult (@mult_params) {
-        foreach my $aln (@aln_params) {
-          foreach my $f (@filter_params) {
-            foreach my $sp (@species_params) {
-              foreach my $sw (@sitewise_params) {
-                my $p = replace($base_params,$sim,$tr,$mult,$aln,$f,$sp,$sw);
-                verify_params($p);
-                push @simulation_sets,$p;
-              }
-            }
-          }
-        }
-      }  
+  my $sim_p_b = replace($massingham_05_B, {
+    slrsim_tree_mult => 1,
+    phylosim_insertmodel => 'POW 2.2 30',
+    phylosim_deletemodel => 'POW 2.2 30'
+                         });
+  
+  sub indel_models {
+    my @sets = ();
+    my @sim_params = ();
+    my @tree_params = 
+    
+    my $cur_params = replace($base_params,$sitewise_none,aln_param('true'),{
+      slrsim_ref => 'Human',
+      omega_table => 'sitewise_omega'
+                             }); 
+    my $indel = 0.05;
+    # Power-law sweep.
+    my $max_length = 100;
+    foreach my $a (1.6, 1.8, 2.0, 2.2) {
+      my $p = replace($sim_p_b,{
+        phylosim_insertrate => $indel,
+        phylosim_deleterate => $indel,
+        phylosim_insertmodel => "POW $a $max_length",
+        phylosim_deletemodel => "POW $a $max_length"
+                      });
+      push @sim_params, $p;
+    }    
+    # Negative binomial sweep.
+    foreach my $a (0.2, 0.3, 0.4) {
+      my $p = replace($sim_p_b, {
+        phylosim_insertrate => $indel,
+        phylosim_deleterate => $indel,
+        phylosim_insertmodel => "NB $a 2",
+        phylosim_deletemodel => "NB $a 2",        
+                      });
+      push @sim_params, $p;
     }
+
+    foreach my $tr (map {tree_param($_)} ($fortyfourmammals,$tree_anisimova_artificial)) {
+      foreach my $sp (@sim_params) {
+        my $p = replace($cur_params,$tr,$sp);
+        Bio::EnsEMBL::Compara::ComparaUtils->hash_print($p);
+        verify_params($p);
+        push @sets,$p;
+      }
+    }  
+    return @sets;
   }
 
-}  
+  sub indel_rates {
+    my @sets = ();
+    my @sim_params = ();
+    
+    my $cur_params = replace($base_params,$sitewise_none,aln_param('true'),{
+      slrsim_ref => 'Human',
+      omega_table => 'sitewise_omega'
+                             }); 
+    foreach my $indel (0.01, 0.02, 0.05, 0.1, 0.2) {
+      my $p = replace($sim_p_b,{
+        phylosim_insertrate => $indel,
+        phylosim_deleterate => $indel,
+        phylosim_insertmodel => "POW 1.8 50",
+        phylosim_deletemodel => "POW 1.8 50"
+                      });
+      push @sim_params, $p;
+    }    
+
+    foreach my $mult (0.5, 1, 2) {
+      my $p = replace($sim_p_b,{
+        phylosim_insertrate => 0.05,
+        phylosim_deleterate => 0.05,
+        phylosim_insertmodel => "POW 1.8 50",
+        phylosim_deletemodel => "POW 1.8 50",
+        slrsim_tree_mult => $mult
+                      });
+      push @sim_params, $p;      
+    }
+    
+    foreach my $tr (map {tree_param($_)} ($fortyfourmammals,$tree_anisimova_bglobin,$tree_anisimova_artificial)) {
+      foreach my $sp (@sim_params) {
+        my $p = replace($cur_params,$tr,$sp);
+        Bio::EnsEMBL::Compara::ComparaUtils->hash_print($p);
+        verify_params($p);
+        push @sets,$p;
+      }
+    }  
+    return @sets;
+  }
+  
+  sub all_trees {
+    my @sets = ();
+    my $cur_params = replace($base_params,$sim_p_b,$sitewise_none,aln_param('true'),{
+      slrsim_ref => 'Human',
+      omega_table => 'sitewise_omega',
+      phylosim_insertmodel => 'POW 1.8 50',
+      phylosim_deletemodel => 'POW 1.8 50',
+      phylosim_insertrate => 0.05,
+      phylosim_deleterate => 0.05,
+      slrsim_tree_mult => 1
+                             }); 
+    
+    my @tree_params = map {tree_param($_)} (
+      $ensembl,
+      $ensembl_two,
+      $twoxmammals,
+      $tree_anisimova_artificial,
+      $tree_anisimova_bglobin,
+      $full,
+      $primates,
+      $glires,
+      $nox,
+      $fortyfourmammals
+    );
+    foreach my $tr (@tree_params) {
+      my $p = replace($cur_params,$tr);
+      verify_params($p);
+      push @sets, $p;
+    }
+    return @sets;
+  }
+  
+  sub filtering_sim {
+    my @sets = ();
+    my $cur_params = replace($base_params,
+                             $sim_p_b,
+                             $sitewise_none,{
+                             slrsim_ref => 'Human',
+                             omega_table => 'sitewise_omega',
+                             phylosim_insertmodel => 'POW 1.8 50',
+                             phylosim_deletemodel => 'POW 1.8 50',
+                             phylosim_insertrate => 0.05,
+                             phylosim_deleterate => 0.05,
+                             slrsim_tree_mult => 1
+      });
+
+    my @filter_params = ();
+     foreach my $threshold (0,2,5,7) {
+      my $p = replace(filter_param('prank_treewise'),{alignment_score_threshold => $threshold});
+      push @filter_params,$p;
+    }
+ 
+    foreach my $threshold (0,2,5,7) {
+      my $p = replace(filter_param('prank_mean'),{alignment_score_threshold => $threshold});
+      push @filter_params,$p;
+    }
+
+    foreach my $threshold (0,2,5,7) {
+      my $p = replace(filter_param('indelign'),{alignment_score_threshold => $threshold});
+      push @filter_params,$p;
+    }
+    
+    foreach my $threshold (0,5) { # TrimAl is on-or-off, no need to sweep here.
+      my $p = replace(filter_param('trimal'),{alignment_score_threshold => $threshold});
+      push @filter_params,$p;
+    }
+
+    foreach my $threshold (0,2,5,7) {
+      my $p = replace(filter_param('tcoffee'),{alignment_score_threshold => $threshold});
+      push @filter_params,$p;
+    }
+
+    my @tree_params = map {tree_param($_)} ($fortyfourmammals);
+    my @aln_params = map {aln_param($_)} ('true','mcoffee','prank','prank_f','prank_codon_f');
+    foreach my $tr (@tree_params) {
+      foreach my $aln (@aln_params) {
+        foreach my $fp (@filter_params) {
+          my $p = replace($cur_params,$aln,$tr,$fp);
+          verify_params($p);
+          push @sets, $p;
+        }
+      }
+    }
+    return @sets;
+  }  
+    
+  sub sitewise_sim {
+    my @sets = ();
+    my $cur_params = replace($base_params,
+                             $massingham_05_A2, # Sitewise sim.
+                             $slr, # Sitewise analysis.
+                             {
+                               slrsim_ref => 'Human',
+                               phylosim_insertmodel => 'POW 1.8 50',
+                               phylosim_deletemodel => 'POW 1.8 50',
+                               phylosim_insertrate => 0.05,
+                               phylosim_deleterate => 0.05,
+                               alignment_score_threshold => 5,
+                               slrsim_tree_mult => 1,
+                               slrsim_replicates => 100
+                             });
+
+    my @tree_params = map {tree_param($_)} ($fortyfourmammals);
+    my @filter_params = map {filter_param($_)} ('none','prank_treewise','prank_mean','indelign','trimal','tcoffee');
+    my @aln_params = map {aln_param($_)} ('true','mcoffee','prank_f');#,'prank_f','prank_codon_f');
+    foreach my $tr (@tree_params) {
+      foreach my $aln (@aln_params) {
+        foreach my $fp (@filter_params) {
+          my $p = replace($cur_params,$aln,$tr,$fp);
+          verify_params($p);
+          push @sets, $p;
+        }
+      }
+    }
+    return @sets;
+  }  
+
+  sub ref_sim {
+    my @sets = ();
+    my $cur_params = replace($base_params,
+                             $massingham_05_A2, # Sitewise sim.
+                             $slr, # Sitewise analysis.
+                             {
+                               phylosim_insertmodel => 'POW 1.8 50',
+                               phylosim_deletemodel => 'POW 1.8 50',
+                               phylosim_insertrate => 0.05,
+                               phylosim_deleterate => 0.05,
+                               alignment_score_threshold => 5,
+                               slrsim_tree_mult => 1,
+                               slrsim_replicates => 50,
+                               slrsim_file => $fortyfourmammals
+                             });
+    my @species_params = map {species_param($_)} ('Human','Mouse','Xtropicalis','Stickleback');
+    my @aln_params = map {aln_param($_)} ('true','mcoffee','prank_f');
+    my @filter_params = map {filter_param($_)} ('none','tcoffee');
+    foreach my $sp (@species_params) {
+      foreach my $aln (@aln_params) {
+        foreach my $fp (@filter_params) {
+          my $p = replace($cur_params,$sp,$aln,$fp);
+          verify_params($p);
+          push @sets, $p;
+        }
+      }
+    }
+    return @sets;
+  }
+  
+  @simulation_sets = ref_sim();
+  #@simulation_sets = sitewise_sim();
+  #@simulation_sets = filtering_sim();
+  #@simulation_sets = all_trees();
+  #@simulation_sets = indel_models();
+  #@simulation_sets = indel_rates();
+}
+
 
 sub verify_params {
   my $p = shift;
 
+  $p->{alignment_table} = 'aln' unless defined ($p->{alignment_table});
+  $p->{alignment_scores_action} = '' unless defined ($p->{alignment_scores_action});
+  $p->{omega_table} = 'sitewise_omega' unless defined ($p->{omega_table});
+
   # Check that we have proper filter and alignment tables.
-  $p->{alignment_score_table} = $p->{alignment_table}.'_'.$p->{alignment_scores_action};
+  #$p->{alignment_score_table} = $p->{alignment_table}.'_'.$p->{alignment_scores_action};
+  $p->{alignment_score_table} = $p->{alignment_table}.'_scores';
   create_filter_table($p->{alignment_score_table});
 
   create_aln_table($p->{alignment_table});
-  create_aln_table($p->{alignment_table}.'_score');
   create_omega_table($p->{omega_table});
 }
 
@@ -219,7 +438,7 @@ sub aln_param {
     alignment_table => 'aln',
     omega_table => 'omega'
   };
-  if ($aln eq 'none') {
+  if ($aln eq 'none' || $aln eq 'true') {
     $aln_params = {
       alignment_name => "True Alignment",
       alignment_method => 'none',
@@ -240,12 +459,6 @@ sub filter_param {
     alignment_score_threshold => 5
   };
 
-  $f->{alignment_score_threshold} = 4 if ($filter eq 'indelign');
-  $f->{alignment_score_threshold} = 2 if ($filter eq 'prank_minimum');
-
-  if ($filter eq 'mcoffee') {
-    $f->{alignment_scores_action} = 'score';
-  }
   if ($filter eq 'none') {
     $f = {
       filtering_name => 'None',
@@ -288,12 +501,12 @@ foreach my $params (@simulation_sets) {
   my $file = $tree_dir.'/'.$params->{'slrsim_file'};
   open(IN,"$file");
   my $newick_str = join("",<IN>);
+  $newick_str =~ s/\n//g;
   close(IN);
   
   my $base_node = Bio::EnsEMBL::Compara::TreeUtils->from_newick($newick_str);
-  
   foreach my $sim_rep (1 .. $replicates) {
-    print "$file $sim_set $sim_rep\n";
+    print "$file $sim_rep\n";
     my $node = $base_node->copy;
 
     my $md5 = Digest::MD5->new;
@@ -311,17 +524,20 @@ foreach my $params (@simulation_sets) {
     }
     my $final_length = Bio::EnsEMBL::Compara::TreeUtils->total_distance($node);
     my $mean_length = $final_length / scalar($node->nodes);
-    printf "  -> total: %.3f  mean: %.3f\n",$final_length,$mean_length;
+#    printf "  -> total: %.3f  mean: %.3f\n",$final_length,$mean_length;
 
     # Go through each leaf and store the member objects.
     foreach my $leaf ($node->leaves) {
       $leaf->stable_id($leaf->name);
       $leaf->source_name($unique_string);
       $mba->store($leaf);
+      $leaf->adaptor(undef);
     }
-    
+
     # Store the tree in the XYZ_node table.
     $pta->store($node);
+
+    printf "  > %.50s\n",$node->newick_format;
     
     # Store all parameters as tags.
     $params->{'slrsim_rep'} = $sim_rep;
@@ -337,6 +553,7 @@ foreach my $params (@simulation_sets) {
 
 foreach my $node (@{$pta->fetch_all_roots}) {
   print $node->get_tagvalue("input_file")."\t".$node->node_id."\t" . scalar(@{$node->get_all_leaves}) . "\n";
+  printf "  > %.50s\n",$node->newick_format;
 }
 
 

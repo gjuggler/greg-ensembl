@@ -90,6 +90,7 @@ my $tags;
 my $tree;
 my $sa;
 my $sa_exons;
+my $sa_cds;
 
 my $output_file;
 my $sa_aligned;
@@ -115,7 +116,7 @@ sub fetch_input {
       alignment_executable             => '',
       
       alignment_prank_codon_model => 0,
-      alignment_prank_f           => 1
+      alignment_prank_f           => 0
     };  
     
     #########################
@@ -194,7 +195,7 @@ sub fetch_input {
       throw("Mcoffee job too big: try something else and FAIL it");
     }
 
-    $sa = Bio::EnsEMBL::Compara::ComparaUtils->get_ProteinTree_seqs($tree,0);
+    $sa = $tree->get_SimpleAlign;
 
     # Export exon-cased if necessary.
     my $use_exons = $params->{'alignment_use_exon_boundaries'};
@@ -213,8 +214,16 @@ sub run
     my $method = $params->{'alignment_method'};
     if ($method =~ '(coffee|muscle)') {
       $sa_aligned = $self->align_with_mcoffee($sa,$tree,$params);
-    } elsif ($method =~ 'prank') {
-      $sa_aligned = $self->align_with_prank($sa,$tree,$params);
+    } elsif ($method =~ m/prank/) {
+      $params->{alignment_prank_f} = 1 if ($method =~ m/_f/);
+      if ($method =~ m/_codon/) {
+        $params->{alignment_prank_codon_model} = 1;
+        $sa_cds = $tree->get_SimpleAlign(-cdna => 1);
+        my $cds_aligned = $self->align_with_prank($sa_cds,$tree,$params);
+        $sa_aligned = Bio::EnsEMBL::Compara::AlignUtils->translate($cds_aligned);
+      } else {
+        $sa_aligned = $self->align_with_prank($sa,$tree,$params);
+      }
     }
 }
 
@@ -277,7 +286,7 @@ sub align_with_prank {
   $extra_params .= ' -codon ' if ($params->{'alignment_prank_codon_model'});
   $extra_params .= ' +F ' if ($params->{'alignment_prank_f'});
   
-  my $cmd = qq^$executable -d=$aln_file -t=$tree_file -o=$output_file $extra_params^;
+  my $cmd = qq^$executable $extra_params -d=$aln_file -t=$tree_file -o=$output_file^;
   
   $output_file .= '.1.fas';
 
@@ -538,10 +547,10 @@ sub parse_and_store_alignment_into_proteintree
 	  # Do a manual insert of the *scores* into the correct score output table.
       
       if (%score_hash) {
-        my $score_string = $score_hash{$member->stable_id};
-        $score_string =~ s/[^\d-]/9/g;   # Convert non-digits and non-dashes into 9s. This is necessary because t_coffee leaves some leftover letters.
-        printf("Updating $score_table %.10s : %.30s ...\n",$member->stable_id,$score_string) if ($self->debug);
-        $sth2->execute($member->node_id,$member->member_id,$member->method_link_species_set_id,$score_string,$score_string);
+        #my $score_string = $score_hash{$member->stable_id};
+        #$score_string =~ s/[^\d-]/9/g;   # Convert non-digits and non-dashes into 9s. This is necessary because t_coffee leaves some leftover letters.
+        #printf("Updating $score_table %.10s : %.30s ...\n",$member->stable_id,$score_string) if ($self->debug);
+        #$sth2->execute($member->node_id,$member->member_id,$member->method_link_species_set_id,$score_string,$score_string);
       }
       sleep(0.05);
   }

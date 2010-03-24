@@ -558,3 +558,24 @@ Code for Slrsim testing different tree sizes / indel rates:
   }
 ---
 
+
+
+### 2010-02-25 ###
+
+Indelign install:
+ libgsl:
+  > ./configure --prefix=/homes/greg/lib
+  > make
+  > make install
+ Indelign:
+  > ./configure LDFLAGS="-L/homes/greg/lib/ -lgsl -lgslcblas" --prefix=/homes/greg/lib
+  > make
+  > make install
+
+
+
+### 2010-03-17 ###
+
+Trying to get together a decent set of plots for meeting w/ Nick tomorrow. Working on the collect_slrsim.R and plot.proteins.R
+scripts...
+

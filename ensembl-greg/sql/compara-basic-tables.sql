@@ -558,6 +558,23 @@ RETURN (SELECT gm.stable_id
    LIMIT 1
 );
 
+DROP PROCEDURE IF EXISTS sequences_under_node;
+DELIMITER //
+CREATE PROCEDURE sequences_under_node(IN n INT(20))
+READS SQL DATA
+   BEGIN 
+   	SELECT s.sequence_id,m.stable_id,s.sequence
+	   FROM protein_tree_node n, protein_tree_node n2, protein_tree_member ptm, member m, sequence s
+	   WHERE n.node_id=n
+	   AND n2.left_index BETWEEN n.left_index and n.right_index
+	   AND ptm.node_id=n2.node_id
+	   AND m.member_id=ptm.member_id
+	   AND s.sequence_id = m.sequence_id
+	;
+   END //
+DELIMITER ;
+
+
 DROP PROCEDURE IF EXISTS genes_under_node;
 DELIMITER //
 CREATE PROCEDURE genes_under_node(IN n INT(20))

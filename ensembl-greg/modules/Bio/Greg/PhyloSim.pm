@@ -19,6 +19,8 @@ use Bio::Greg::ProcessUtils;
 
 use Bio::AlignIO;
 
+use String::CRC32;
+
 our @ISA = qw(Bio::EnsEMBL::Hive::Process Bio::Greg::ProcessUtils);
 
 my $p_pre = "phylosim_";
@@ -30,6 +32,7 @@ my $params;
 
 my $tree;
 my @sitewise_omegas;
+my $class_to_omega;
 my $aln;
 
 sub fetch_input {
@@ -69,11 +72,30 @@ sub fetch_input {
     phylosim_num_bins => 20,
     phylosim_omega_distribution => 'M3',
 
+    # We can start to simulate based on domains using this type of format:
+#    phylosim_domains => [
+#      {
+#        length => 30,
+#        insertrate => 0.05,
+#        deleterate => 0.05
+#      },
+#      {
+#        length => 30,
+#        insertrate => 0.001,
+#        deleterate => 0.001,
+#      },
+#      {
+#        length => 30,
+#        insertrate => 0.1,
+#        deleterate => 0.1
+#      }
+#      ],
+    
+    phylosim_simulation_program => 'indelible',
     phylosim_seq_length => 500,
     phylosim_kappa => 4,
-    phylosim_ins_rate => 0.05,
-    phylosim_del_rate => 0.05,
-    phylosim_simulation_program => 'indelible',
+    phylosim_insertrate => 0.05,
+    phylosim_deleterate => 0.05,
     phylosim_insertmodel => 'NB 0.2 2',
     phylosim_deletemodel => 'NB 0.2 2',
   };
@@ -113,6 +135,8 @@ sub write_output {
   my $self = shift;
 
   my $final_cdna = $aln;
+  #$final_cdna = Bio::EnsEMBL::Compara::AlignUtils->remove_blank_columns_in_threes($final_cdna);
+
   Bio::EnsEMBL::Compara::AlignUtils->pretty_print($final_cdna,{length => 200});
   my $final_aa = Bio::EnsEMBL::Compara::AlignUtils->translate($final_cdna);
   
@@ -122,20 +146,20 @@ sub write_output {
   print "STORING OMEGAS\n";
   $self->_store_sitewise_omegas("sitewise_omega",\@sitewise_omegas,$final_aa,$params);
 
-  my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
-  my $aa_aln = $tree->get_SimpleAlign();
-  my $cdna_aln = $tree->get_SimpleAlign(-cdna => 1);
-  $cdna_aln = Bio::EnsEMBL::Compara::AlignUtils->sort_by_tree($cdna_aln,$treeI);
-  my $alnout = Bio::AlignIO->new
-    ('-format'      => 'phylip',
-     '-file'          => $self->worker_temp_directory,
-     '-interleaved' => 0,
-     '-idlinebreak' => 1,
-     '-idlength'    => $cdna_aln->maxdisplayname_length + 1);
-  $alnout->write_aln($cdna_aln);
-  $alnout->close();
+#  my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
+#  my $aa_aln = $tree->get_SimpleAlign();
+#  my $cdna_aln = $tree->get_SimpleAlign(-cdna => 1);
+#  $cdna_aln = Bio::EnsEMBL::Compara::AlignUtils->sort_by_tree($cdna_aln,$treeI);
+#  my $alnout = Bio::AlignIO->new
+#    ('-format'      => 'phylip',
+#     '-file'          => $self->worker_temp_directory,
+#     '-interleaved' => 0,
+#     '-idlinebreak' => 1,
+#     '-idlength'    => $cdna_aln->maxdisplayname_length + 1);
+#  $alnout->write_aln($cdna_aln);
+#  $alnout->close();
 
-  #Bio::EnsEMBL::Compara::AlignUtils->pretty_print($aa_aln,{length => 1500});
+  Bio::EnsEMBL::Compara::AlignUtils->pretty_print($final_aa,{length => 200});
 }
 
 sub throw_error {
@@ -153,80 +177,54 @@ sub simulate_alignment_indelible {
   my $tree = shift;
   my $params = shift;
 
-  #$tree = Bio::EnsEMBL::Compara::TreeUtils->scale($tree,1.95);
+  $tree = Bio::EnsEMBL::Compara::TreeUtils->scale($tree,1.95);
 
-  my $newick = $tree->newick_format;
-  # Add some padding to zero-length branches.
-  $newick =~ s/(:0\.?0+)([;,()])/:0.0005$2/g;
-  # Get rid of branch length on root.
-  $newick =~ s/:\d\.?\d+;/;/g;
-  print $newick."\n";
+  my $models_trees_partitions = '';
 
-  my $length = get('seq_length');
-  if ($length eq 'sample') {
-    ($length) = $self->get_r_numbers("rlnorm(1,meanlog=6.03,sdlog=0.685);");
-    $length = int($length);
+  my $domains_object = $params->{phylosim_domains};
+  if (defined $domains_object) {
+    # Use the domain-parameter list to create a partitioned simulation.
+    $models_trees_partitions = $self->domains_to_indelible_setup($domains_object,$tree,$params);
+  } else {
+    my $length = $params->{phylosim_seq_length};
+    my $ins_rate = $params->{phylosim_ins_rate};
+    my $del_rate = $params->{phylosim_del_rate};
+    my $ins_model = $params->{phylosim_insertmodel};
+    my $del_model = $params->{phylosim_deletemodel};
+    
+    my $domain = [
+      {
+        length => $length,
+        insertrate => $ins_rate,
+        deleterate => $del_rate,
+        insertmodel => $ins_model,
+        deletemodel => $del_model
+      }
+      ];
+    $models_trees_partitions = $self->domains_to_indelible_setup($domain,$tree,$params);
   }
-  my $ins_rate = get('ins_rate');
-  my $del_rate = get('del_rate');
-
-  print "Simulating sequence with $length codons...\n";
   
   my $tmp_dir = $self->worker_temp_directory . $tree->node_id . '/';
   print "Temp dir: $tmp_dir\n";
-  #use File::Path qw(mkpath rmtree);
   mkpath([$tmp_dir]);
 
   my $output_f = $tmp_dir."sim.txt";
   my $ctrl_f = $tmp_dir."control.txt";
 
-  my @bins = $self->get_equally_spaced_bins($params);
-  my @probs = $self->get_equally_spaced_probs($params);
-  my @final_bins;
-  my @final_probs;
-  for (my $i=0; $i < scalar(@probs); $i++) {
-    my $prob = $probs[$i];
-#    if ($prob > 0) {
-      push @final_bins, $bins[$i];
-      push @final_probs, $prob;
-#    }
-  }
-  @probs = @final_probs;
-  @bins = @final_bins;
-  print "probs: @probs\n";
-  print "bins: @bins\n";
-  pop @probs; # Remove the last probability; Indelible only wants (n-1) probabilities in its input!
-  
-  my $kappa = get('kappa');
-  my $submodel_str = $kappa."\n\t". join(" ",@probs) . "\n\t" . join(" ",@bins);
-
-  my $class_to_omega;
-  for (my $i=0; $i < scalar(@bins); $i++) {
-    $class_to_omega->{$i} = $bins[$i];
-  }
-
-  my $node_id = $tree->node_id . time();
+  my $randomseed_string = $models_trees_partitions;
+  $randomseed_string .= $params->{slrsim_rep};
+  my $randomseed = crc32($randomseed_string);
 
   my $ctrl_str = qq^
 [TYPE] CODON 1
 [SETTINGS]
   [output] FASTA
   [printrates] TRUE
-  [randomseed] $node_id
+  [randomseed] $randomseed
 
-[MODEL] model1
-  [submodel] $submodel_str
-  [insertmodel] NB 0.35 1
-  [deletemodel] NB 0.35 1
-  [insertrate] $ins_rate
-  [deleterate] $del_rate
+$models_trees_partitions
 
-[TREE] tree1 $newick
-
-
-[PARTITIONS] partition1
-  [tree1 model1 $length]
-  [EVOLVE] partition1 1 $output_f
+[EVOLVE] partition 1 $output_f
   ^;
   print $ctrl_str."\n";
   open(OUT,">$ctrl_f");
@@ -273,6 +271,79 @@ sub simulate_alignment_indelible {
   chdir($cwd);
 
   return $aln;
+}
+
+sub get_submodel_string {
+  my $self = shift;
+  my $params = shift;
+
+  my @bins = $self->get_equally_spaced_bins($params);
+  my @probs = $self->get_equally_spaced_probs($params);
+  my @final_bins;
+  my @final_probs;
+  for (my $i=0; $i < scalar(@probs); $i++) {
+    my $prob = $probs[$i];
+      push @final_bins, $bins[$i];
+      push @final_probs, $prob;
+  }
+  @probs = @final_probs;
+  @bins = @final_bins;
+  print "probs: @probs\n";
+  print "bins: @bins\n";
+  pop @probs; # Remove the last probability; Indelible only wants (n-1) probabilities in its input!
+
+  for (my $i=0; $i < scalar(@bins); $i++) {
+    $class_to_omega->{$i} = $bins[$i];
+  }
+  
+  my $kappa = $params->{phylosim_kappa};
+  my $submodel_str = $kappa."\n\t". join(" ",@probs) . "\n\t" . join(" ",@bins);
+  return $submodel_str;
+}
+
+sub domains_to_indelible_setup {
+  my $self = shift;
+  my $domains_object = shift;
+  my $tree = shift;
+  my $params = shift;
+
+  my $newick = $tree->newick_format;
+  # Add some padding to zero-length branches.
+  $newick =~ s/(:0\.?0+)([;,()])/:0.0005$2/g;
+  # Get rid of branch length on root.
+  $newick =~ s/:\d\.?\d+;/;/g;
+  
+  my $defaults = {
+    insertmodel => $params->{phylosim_insertmodel},
+    deletemodel => $params->{phylosim_deletemodel},
+    insertrate => $params->{phylosim_insertrate},
+    deleterate => $params->{phylosim_deleterate}
+  };
+
+  my $str = "";
+  $str .= "[TREE] tree $newick\n";
+
+  # Print out the model definition.
+  my $i=0;
+  foreach my $obj (@$domains_object) {
+    my $model_name = "model".$i++;
+    $str .= "[MODEL] $model_name\n";
+    foreach my $key (qw^insertmodel deletemodel insertrate deleterate^) {
+      my $value = $defaults->{$key};
+      $value = $obj->{$key} if (defined $obj->{$key});
+      $str .= "  [$key]\t$value\n";
+    }
+    $str .= "  [submodel] " . $self->get_submodel_string($params) . "\n";
+  }
+
+  my $i=0;
+  $str .= "[PARTITIONS] partition\n";
+  foreach my $obj (@$domains_object) {
+    my $length = $obj->{length};
+    my $model_name = "model".$i++;
+    $str .= "  [tree $model_name $length]\n";
+  }
+  return $str;
 }
 
 sub simulate_alignment_phylosim {
@@ -335,9 +406,9 @@ sub _store_sitewise_omegas {
 #  $self->dbc->do("LOCK TABLES $output_table WRITE");
   my @insert_strings = ();
   foreach my $hr (@{$sitewise_ref}) {
+    #Bio::EnsEMBL::Compara::ComparaUtils->hash_print($hr);
     #print "hr: $hr\n";
     #printf "%d %d\n",$hr->{aln_position},$hr->{omega};
-    my $ncod = Bio::EnsEMBL::Compara::AlignUtils->get_nongaps_at_column($sa,$hr->{aln_position});
 
     my $type;
     if ($hr->{omega} <= 1) {
@@ -347,6 +418,7 @@ sub _store_sitewise_omegas {
     }
 
     my $aln_position_fraction = $hr->{aln_position} / $sa->length;
+    my $ncod = Bio::EnsEMBL::Compara::AlignUtils->get_nongaps_at_column($sa,$hr->{aln_position});
 
     push @insert_strings, sprintf('(%d,%.5f,%d,%d,%.5f,%.5f,%.5f,"%s",%d)',
                               $hr->{aln_position},
@@ -354,34 +426,21 @@ sub _store_sitewise_omegas {
                               $hr->{node_id},
                               $parameter_set_id,
                               $hr->{omega},
-                              $hr->{omega_lower},
-                              $hr->{omega_upper},
+                              $hr->{omega},
+                              $hr->{omega},
                               $type,
                               $ncod);
-#    $sth->execute(
-#$hr->{aln_position},
-#                  $aln_position_fraction,
-#		  $hr->{node_id},
-#		  $parameter_set_id,
-#		  $hr->{omega},
-#		  $hr->{omega_lower},
-#		  $hr->{omega_upper},
-#                  $type,
-#		  $ncod);
-#    sleep(0.1);
   }
   
   my $insert = join(",",@insert_strings);
   $self->dbc->do("INSERT IGNORE INTO $output_table (aln_position,aln_position_fraction,node_id,parameter_set_id,omega,omega_lower,omega_upper,type,ncod) values $insert ;");
-#  $sth->finish();
-#  $self->dbc->do("UNLOCK TABLES;");
   };
-  if ($@) {
-    open(OUT,">/homes/greg/tmp/".$tree->node_id.".txt");
-    print OUT $@."\n";
-    close(OUT);
-    die($@);
-  }
+#  if ($@) {
+#    open(OUT,">/homes/greg/tmp/".$tree->node_id.".txt");
+#    print OUT $@."\n";
+#    close(OUT);
+#    die($@);
+#  }
 }
 
 sub get_m3_bins {

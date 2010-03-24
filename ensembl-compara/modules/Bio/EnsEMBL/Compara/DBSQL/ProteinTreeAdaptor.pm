@@ -253,8 +253,6 @@ sub store_all {
   # Store the node structure.
   $self->store($node);
 
-  
-
 }
 
 sub store {
@@ -267,8 +265,7 @@ sub store {
   $self->store_node($node);
   
   # recursively do all the children
-  my $children = $node->children;
-  foreach my $child_node (@$children) {  
+  foreach my $child_node (@{$node->sorted_children}) {  
     $self->store($child_node);
   }
   
@@ -290,7 +287,7 @@ sub store_node {
       #print "Node ".$node->node_id." already stored, just updating!\n";
       return $self->update_node($node);
   }
-  
+
   my $parent_id = 0;
   my $root_id = 0;
 
@@ -302,7 +299,7 @@ sub store_node {
       $parent_id = 0;
       $root_id = 0;
   }
-#  printf("INSERT NODE parent_id = %d, root_id = %d\n", $parent_id, $root_id);
+  #printf("INSERT NODE parent_id = %d, root_id = %d\n", $parent_id, $root_id);
   
   my $ptn = $self->protein_tree_node;
   my $sth = $self->prepare("INSERT IGNORE INTO $ptn

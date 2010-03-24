@@ -25,6 +25,57 @@ get.all.data = function() {
   return(data)
 }
 
+get.all.nodes = function() {
+  query = sprintf("SELECT * FROM stats_slrsim GROUP BY node_id")
+  data = get.vector(con,query,columns='all')
+  return(data)
+}
+
+get.all.first.reps = function() {
+  nodes = get.all.nodes()
+  first.reps = subset(nodes,slrsim_rep == 1);
+  return(first.reps)
+}
+
+dump.protein = function(node_id,base=node_id,tree_file=NA,aln_file=NA,sw_file=NA,params_file=NA) {
+  if (is.na(tree_file)) {
+    tree_file = paste(base,".nh",sep="")
+  }
+  if (is.na(aln_file)) {
+    aln_file = paste(base,".fa",sep="")
+  }
+  if (is.na(sw_file)) {
+    sw_file = paste(base,".csv",sep="")
+  }
+  if (is.na(params_file)) {
+    params_file = paste(base,".txt",sep="")
+  }
+
+  url = "mysql://slrsim:slrsim@mysql-greg.ebi.ac.uk:4134/slrsim_anisimova"
+  system(paste("perl ~/lib/greg-ensembl/scripts/tree_dump.pl",
+    " --url=",url,
+    " --id=",node_id,
+    " --tree=",tree_file,
+    " --aln=",aln_file,
+    " --sw=",sw_file,
+    " --sw_table=","stats_slrsim",
+    " --params=",params_file,
+    sep="")
+  )  
+}
+
+dump.nodes = function(nodes,base) {
+  for (i in 1:nrow(nodes)) {
+    node = nodes[i,]
+    dump.protein(node$node_id,base=paste(base,node$node_id,sep=""))
+  }
+}
+
+dump.all.nodes = function(base) {
+  nodes = get.all.nodes()
+  dump.nodes(nodes,base)
+}
+
 get.test.data = function() {
   query = sprintf("SELECT * FROM stats_slrsim LIMIT 500000");
   data = get.vector(con,query,columns='all')
@@ -39,7 +90,9 @@ is.paml = function(df) {
   } 
 }
 
-df.stats = function(df,thresh=3.8,paml_thresh=0.95,type='all') {
+df.stats = function(df,
+    thresh=3.8,
+    paml_thresh=0.95,type='all') {
 
   aln_thresh = 1
   if (is.paml(df)) {
@@ -85,7 +138,10 @@ df.stats = function(df,thresh=3.8,paml_thresh=0.95,type='all') {
   ))
 }
 
-df.swfwer = function(df,thresh=3.8,paml_thresh=0.95) {
+df.swfwer = function(df,
+    thresh=3.8,
+    paml_thresh=0.95) {
+
   aln_thresh = 1
   if (is.paml(df)) {
     thresh = paml_thresh
@@ -120,7 +176,7 @@ df.gene.detection.rate = function(df) {
 }
 
 df.cor = function(df) {
-  return(list(cor=cor(df$true_dnds,df$aln_dnds,method='spearman')))
+  return(list(cor=cor(df$true_dnds,df$aln_dnds,method='spearman',use='complete.obs')))
 }
 
 df.alignment.accuracy = function(df) {
@@ -149,7 +205,7 @@ df.alignment.accuracy = function(df) {
 summarize.results = function(data,thresh=3.8,paml_thresh=0.95) {
 
   # Paste together some metadata so that we have one ID per experiment.
-  attrs = c('slrsim_file','alignment_name','filtering_name','species_name','sitewise_name','phylosim_ins_rate','slrsim_tree_length')
+  attrs = c('slrsim_file','alignment_name','filtering_name','slrsim_ref','sitewise_name','phylosim_insertrate','slrsim_tree_length')
 
   ids = rep("",nrow(data))
   for (attr in attrs) {
@@ -192,15 +248,16 @@ plot.roc = function(df,color='black',lty='solid',lwd=1,overlay=T) {
     plot(c(),xlim=c(0,0.1),ylim=c(0,1))
   }
 
-  if (!is.paml(df)) {
-    # Create a signed LRT if it's SLR-based data.
-    df$lrt = sign(df$aln_dnds-1)*df$lrt
-  }
   a = get.perf(df)
-  plot(a,col=color,lty=lty,lwd=lwd,add=overlay)
+  plot(a,col=color,lty=lty,lwd=lwd,add=overlay,colorize=F)
 }
 
 get.perf = function(df,...) {
+  if (!is.paml(df)) {
+    #print("Signed LRT...")
+    # Create a signed LRT if it's SLR-based data.
+    df$lrt = sign(df$aln_dnds-1)*df$lrt
+  }
   truth = as.integer( df$true_dnds > 1 )
   
   require(ROCR)
@@ -209,8 +266,68 @@ get.perf = function(df,...) {
   return(perf)
 }
 
+get.perf.df = function(label="unlabeled",df) {
+  perf = get.perf(df)
+  df = data.frame(label=label,fpr=unlist(perf@x.values),tpr=unlist(perf@y.values))
+  return(df)
+}
+
 empty.plot = function() {
   plot(c(),xlim=c(0,0.1),ylim=c(0,1),xlab='',ylab='')
+}
+
+filtering.roc = function(data) {
+  require(ggplot2)
+  png("~/public_html/blank.png")
+
+  comb = data.frame()
+#  for (aln in c('mcoffee','prank_f','True Alignment')) {
+#    for (filt in c('None','tcoffee')) {
+  for (aln in c('prank_f','True Alignment')) {
+    for (filt in c('None','prank_mean','prank_treewise','indelign','tcoffee')) {
+      if (aln == 'True Alignment' && filt != 'None') {
+        next;
+      }
+      sub = subset(data, alignment_name==aln & filtering_name==filt)
+      sub.df = get.perf.df(label=paste(aln,filt,sep="/"),sub)
+      sub.df$filter = as.factor(filt)
+      sub.df$aln = as.factor(aln)
+      comb = rbind(sub.df,comb)
+    }
+  }
+  print(nrow(comb))
+  p <- ggplot(comb,aes(x=fpr,y=tpr,group=label,colour=label)) + geom_line() + xlim(0,0.1)
+  ggsave("~/public_html/slrsim_filt.png",width=8,height=6)
+  dev.off()
+}
+
+gg.df.cor = function(df) {
+  return(cor(df$true_dnds,df$aln_dnds,method='spearman',use='complete.obs'))
+}
+
+gg.df.fpr = function(df) {
+  df.res = df.stats(df)
+  return(df.res[['fpr']])
+}
+
+correlation.boxplot = function(data,variable,n=5,title="") {
+  png("~/public_html/blank.png")  
+
+  dx = (max(data[[variable]]) - min(data[[variable]])) / (n-1)
+  data$var_orig = data[[variable]]
+  data$var = round_any(data[[variable]],dx)
+
+  cor = ddply(data,.(var),'gg.df.cor')
+
+  p <- qplot(x=var,y=gg.df.cor,data=cor) + xlab(variable) + ylab("Spearman dN/dS Correlation") + ylim(0,1)
+  gr <- geom_rug(data=data,aes(x=var_orig,alpha=0.05,size=0.1))
+  p + gr + opts(legend.position="none") + opts(title=title)
+
+  #p + geom_histogram(data=data,aes(x=var, y=..density..))
+  #p + stat_summary(fun.data=fun,colour="red",geom="point",size=3)
+  #p + geom_boxplot() + xlab(variable) + ylab("Error")
+  ggsave("~/public_html/slrsim_cor.png",width=8,height=6)
+  dev.off()
 }
 
 do.some.plots = function(data) {
