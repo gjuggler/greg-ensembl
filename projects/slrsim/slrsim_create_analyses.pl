@@ -43,7 +43,8 @@ sub clean_tables {
     my @truncate_tables = qw^
 sequence
 analysis analysis_job dataflow_rule hive
-sitewise_omega sitewise_stats stats_slrsim
+sitewise_omega
+stats_slrsim
 parameter_set
 node_set_member node_set
       ^;
@@ -59,7 +60,7 @@ sub simulate_alignments {
   my $params = {
     
   };
-  _create_analysis($analysis_id,$logic_name,$module,$params,20,1);
+  _create_analysis($analysis_id,$logic_name,$module,$params,30,1);
 
   my $cmd = "SELECT node_id FROM protein_tree_node WHERE parent_id=0 AND root_id=0 $LIMIT;";
   my @nodes = _select_node_ids($cmd);

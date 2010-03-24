@@ -23,6 +23,7 @@ my $pta;
 
 # INPUT FILES / OBJECTS.
 my $tree;
+my $aln;
 my $params;
 
 # OUTPUT FILES / OBJECTS / STATES.
@@ -60,6 +61,10 @@ sub fetch_input {
   Bio::EnsEMBL::Compara::ComparaUtils->hash_print($params);
 
   $dba->dbc->disconnect_when_inactive(1);
+
+  my $no_filter_param = $self->replace_params($params,{alignment_score_filtering => 0});
+  ($tree,$aln) = Bio::EnsEMBL::Compara::ComparaUtils->get_tree_and_alignment($dba,$no_filter_param);
+
 }
 
 sub run {
@@ -67,42 +72,49 @@ sub run {
   
   my $node_id = $params->{'node_id'};
 
-  $tree = Bio::EnsEMBL::Compara::ComparaUtils->get_tree_for_comparative_analysis($dba,$params);
-  $tree = $tree->minimize_tree;
+  #$tree = Bio::EnsEMBL::Compara::ComparaUtils->get_tree_for_comparative_analysis($dba,$params);
+  #$tree = $tree->minimize_tree;
   
   my $input_table = $params->{'alignment_table'};
   my $action = $params->{'alignment_scores_action'};
+  my $table = $params->{'alignment_score_table'};
 
   if ($action =~ m/gblocks/i) {
     print " -> RUN GBLOCKS\n";
-    my $score_hash = $self->run_gblocks($tree,$params);
-    $self->store_scores($tree,$score_hash,$input_table."_".'gblocks');
+    my $score_hash = $self->run_gblocks($tree,$aln,$params);
+    $self->store_scores($tree,$score_hash,$table);
   }
 
   if ($action =~ 'prank') {
     print " -> RUN PRANK\n";
     $params->{prank_filtering_scheme} = $action;
-    my $score_hash = $self->run_prank($tree,$params);
-    $self->store_scores($tree,$score_hash,$input_table."_".$action);
+    my $score_hash = $self->run_prank($tree,$aln,$params);
+    $self->store_scores($tree,$score_hash,$table);
   }
 
   if ($action =~ m/trimal/i) {
     print " -> RUN TRIMAL\n";
-    my $score_hash = $self->run_trimal($tree,$params);
-    $self->store_scores($tree,$score_hash,$input_table."_".'trimal');
+    my $score_hash = $self->run_trimal($tree,$aln,$params);
+    $self->store_scores($tree,$score_hash,$table);
   }    
 
   if ($action =~ m/indelign/i) {
     print " -> RUN INDELIGN\n";
     eval {
-      my $score_hash = $self->run_indelign($tree,$params);
-      $self->store_scores($tree,$score_hash,$input_table."_".'indelign');
+      my $score_hash = $self->run_indelign($tree,$aln,$params);
+      $self->store_scores($tree,$score_hash,$table);
     };
     if ($@) {
       print "Indelign error: $@\n";
     }
   }
 
+  if ($action =~ m/(coffee|score)/i) {
+    print " -> RUN TCOFFEE\n";
+    my $score_hash = $self->run_tcoffee($tree,$aln,$params);
+    $self->store_scores($tree,$score_hash,$table);
+  }
+  
 }
 
 sub store_scores {
@@ -112,14 +124,14 @@ sub store_scores {
   my $output_table = shift;
 
   $dba->dbc->do("CREATE TABLE IF NOT EXISTS $output_table LIKE protein_tree_member_score");
-  my $sth = $tree->adaptor->prepare("INSERT INTO $output_table (node_id,member_id,cigar_line) VALUES (?,?,?) ON DUPLICATE KEY UPDATE cigar_line=?");
+  my $sth = $tree->adaptor->prepare("REPLACE INTO $output_table (node_id,member_id,cigar_line) VALUES (?,?,?)");
   foreach my $leaf ($tree->leaves) {
     my $score_string = $score_hash->{$leaf->stable_id};
+    throw("No score string found when saving!") unless (defined $score_string);
     $sth->execute($leaf->node_id,
                   $leaf->member_id,
-                  $score_string,
                   $score_string);
-    print $score_string."\n";
+    printf "%20s %10s %s\n", $leaf->stable_id, $leaf->member_id, $score_string;
   }
   $sth->finish;
 }
@@ -127,9 +139,8 @@ sub store_scores {
 sub run_indelign {
   my $self = shift;
   my $tree = shift;
+  my $aln = shift;
   my $params = shift;
-
-  my $aln = $tree->get_SimpleAlign();
 
   my ($i_obj,$d_obj,$ins_rate,$del_rate) = Bio::EnsEMBL::Compara::AlignUtils->indelign($aln,$tree,$params,$self->worker_temp_directory);
   my @ins = @$i_obj;
@@ -139,7 +150,8 @@ sub run_indelign {
   my $tree_length = Bio::EnsEMBL::Compara::TreeUtils->total_distance($tree);
   my $rate_sum = $ins_rate+$del_rate;
   my $max_allowed_indels = $rate_sum*$tree_length * 1;
-  $max_allowed_indels = ceil($max_allowed_indels);
+  $max_allowed_indels = floor($max_allowed_indels);
+  $max_allowed_indels = 1 if ($max_allowed_indels < 1);
 
   my $blocks_string = "1" x $aln->length;  
   for (my $i=0; $i < $aln->length; $i++) {
@@ -166,12 +178,87 @@ sub run_indelign {
   return \%scores_hash;
 }
 
+sub run_tcoffee {
+  my $self = shift;
+  my $tree = shift;
+  my $aln = shift;
+  my $params = shift;
+
+  Bio::EnsEMBL::Compara::AlignUtils->pretty_print($aln,{length=>200});
+
+  my $node_id = $tree->node_id;
+  my $tmpdir = $self->worker_temp_directory . "${node_id}/";
+  mkdir($tmpdir);
+  my $filename = "$tmpdir". "tcoffee_aln_${node_id}.fasta";
+  my $tmpfile = Bio::AlignIO->new
+    (-file => ">$filename",
+     -format => 'fasta');
+  $tmpfile->write_aln($aln);
+  $tmpfile->close;
+
+  my $prefix = "export HOME_4_TCOFFEE=\"$tmpdir\";";
+  $prefix .= "export DIR_4_TCOFFEE=\"$tmpdir\";";
+  $prefix .= "export TMP_4_TCOFFEE=\"$tmpdir\";";
+  $prefix .= "export CACHE_4_TCOFFEE=\"$tmpdir\";";
+  $prefix .= "export NO_ERROR_REPORT_4_TCOFFEE=1;";
+  $prefix .= "export MAFFT_BINARIES=/nfs/users/nfs_g/gj1/bin/mafft-bins/binaries;";  # GJ 2008-11-04. What a hack!
+  
+  my $outfile = $filename.".score_ascii";
+
+  my $cmd = qq^t_coffee -mode=evaluate -infile=$filename -outfile=$outfile -output=score_ascii^;
+  print $cmd."\n";
+  system($prefix.$cmd);
+
+  my $scores_file = $outfile;
+  my %score_hash;
+  if (-e $scores_file) {
+    my $FH = IO::File->new();
+    $FH->open($scores_file) || throw("Could not open tcoffee scores file!");
+    <$FH>; #skip header
+    my $i=0;
+    while(<$FH>) {
+      $i++;
+#      next if ($i < 7); # skip first 7 lines.
+      next if($_ =~ /^\s+/);  #skip lines that start with space
+      if ($_ =~ /:/) {
+        #my ($id,$overall_score) = split(/:/,$_);
+        #$id =~ s/^\s+|\s+$//g;
+        #$overall_score =~ s/^\s+|\s+$//g;
+        #print "___".$id."___".$overall_score."___\n";
+        next;
+      }
+      chomp;
+      my ($id, $align) = split;
+      $_ = $id;
+      $id =~ s^/.*^^;
+      $score_hash{$id} = '' if (!exists $score_hash{$id});
+      $score_hash{$id} .= $align;
+      #print $id." ". $align."\n";
+    }
+    $FH->close;
+  }
+
+  foreach my $leaf ($tree->leaves) {
+    my $id = $leaf->stable_id;
+    my $string = $score_hash{$id};
+
+    throw("No score string found!") unless (defined $string);
+
+    $string =~ s/[^\d-]/9/g;   # Convert non-digits and non-dashes into 9s. This is necessary because t_coffee leaves some leftover letters.
+    #print $string."\n";
+    #print $leaf->alignment_string."\n";
+    #exit(0);
+    $score_hash{$id} = $string;
+  }
+
+  return \%score_hash;
+}
+
 sub run_gblocks {
   my $self = shift;
   my $tree = shift;
+  my $aln = shift;
   my $params = shift;
-
-  my $aln = $tree->get_SimpleAlign();
 
   my $defaults = {
     t    => 'p',        # Type of sequence (p=protein,c=codon,d=dna)
@@ -249,21 +336,21 @@ sub _apply_columns_to_leaf {
 
   my $aln_str = $leaf->alignment_string;
   my @aln_chars = split("",$aln_str);
-  
+
   for (my $i=0; $i < scalar(@aln_chars); $i++) {
     if ($aln_chars[$i] ne '-') {
-      $aln_chars[$i] = $column_scores[$i];
+      $aln_chars[$i] = $column_scores[$i] || '0';
     }
   }
+  
   return join("",@aln_chars);
 }
 
 sub run_trimal {
   my $self = shift;
   my $tree = shift;
+  my $aln = shift;
   my $params = shift;
-
-  my $aln = $tree->get_SimpleAlign();
 
   # Write temporary alignment.
   my $dir = $self->worker_temp_directory;
@@ -271,9 +358,10 @@ sub run_trimal {
   Bio::EnsEMBL::Compara::AlignUtils->to_file($aln,$aln_f);
   
   # Build a command for TrimAl.
-  my $trim_params = '-cons 30 -gt 0.2 -st 0.001';
+  my $trim_params = '';
   $trim_params = $params->{'trimal_filtering_params'} if ($params->{'trimal_filtering_params'}); # Custom parameters if desired.
-  my $cmd = "trimal -in $aln_f -out $aln_f -colnumbering $trim_params";
+  my $cmd = "trimal -gt 0.5 -cons 30 -in $aln_f -out $aln_f -colnumbering $trim_params";
+  print "CMD: $cmd\n";
   my $output = `$cmd`;
   #print "OUTPUT:". $output."\n";
   
@@ -298,9 +386,9 @@ sub run_trimal {
 sub run_prank {
   my $self = shift;
   my $tree = shift;
+  my $aln = shift;
   my $params = shift;
 
-  my $aln = $tree->get_SimpleAlign();
   my $threshold = $params->{'prank_filtering_threshold'} || 7;
   my ($scores,$blocks) = Bio::EnsEMBL::Compara::AlignUtils->get_prank_filter_matrices($aln,$tree,$params);
 

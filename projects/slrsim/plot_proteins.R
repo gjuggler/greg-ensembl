@@ -52,13 +52,14 @@ ran.main = FALSE
 main = function() {
   source("collect_slrsim.R")
 
-  data = get.data.alt()
+  data = get.all.data()
   
   # Set up the plotting params.
   pdf("~/public_html/slrsim.pdf")
   par(mfrow=c(10,1))
 
-  attrs = c('slrsim_file','slrsim_tree_length','phylosim_ins_rate','alignment_name')
+#  attrs = c('slrsim_file','slrsim_tree_length','phylosim_ins_rate','alignment_name','filtering_name')
+   attrs = c('slrsim_file','phylosim_insertmodel','phylosim_insertrate','filtering_name')
   ids = rep("",nrow(data))
   for (attr in attrs) {ids = paste(ids,data[[attr]],sep=" ")} 
   unique_ids = unique(ids)
@@ -77,5 +78,5 @@ main = function() {
 }
 
 if (!ran.main) {
-   main()
+#   main()
 }
