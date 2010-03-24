@@ -385,17 +385,17 @@ sub delete_lineage {
   return $tree;
 }
 
-sub remove_members_by_member_id {
+sub remove_members_by_node_id {
   my $class = shift;
   my $tree = shift;
   my $node_list = shift;
 
-  my @node_ids = split(",",$node_list);
+  my @node_ids = @{$node_list};
   my $ids_hash;
   map {$ids_hash{$_}=1} @node_ids;
 
-  print "Removing specified nodes from tree: @node_ids \n";
-  print "  Before:" . scalar($tree->leaves) . " leaves\n";
+  #print "Removing specified nodes from tree: @node_ids \n";
+  #print "  Before:" . scalar($tree->leaves) . " leaves\n";
 
   foreach my $node ($tree->nodes) {
     if (exists $ids_hash{$node->node_id}) {
@@ -403,7 +403,7 @@ sub remove_members_by_member_id {
       $tree->minimize_tree();
     }
   }
-  print "  After:" . scalar($tree->leaves) . " leaves\n";
+    #print "  After:" . scalar($tree->leaves) . " leaves\n";
   return $tree;
 }
 

@@ -56,6 +56,7 @@ sub fetch_input {
     alignment_quality_filtering => 0,
     sequence_quality_filtering => 0,
 
+    sitewise_store_opt_tree         => 1,
     sitewise_store_gaps             => 0,
     sitewise_parameter_sets         => 'all',
     sitewise_action                 => 'slr',                # Which action(s) to perform. Space-delimited.
@@ -489,6 +490,12 @@ sub run_sitewise_dNdS
       print "  -> Branch lengths updated!\n";
       $dont_write_output = 1;
       return;
+    }
+
+    # if the setting is set, store the optimized tree as a protein_tree_tag.
+    if ($params->{sitewise_store_opt_tree}) {
+      my $tree_key = "slr_tree_".$params->{parameter_set_id};
+      $tree->store_tag($tree_key,$new_pt->newick_format);
     }
     
     if (!-e "$tmpdir/$outfile") {
