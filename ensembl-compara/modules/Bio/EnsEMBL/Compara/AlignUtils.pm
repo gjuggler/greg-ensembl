@@ -197,32 +197,69 @@ sub total_column_score {
   my $true_obj = $class->to_arrayrefs($true_aln);
   my $test_obj = $class->to_arrayrefs($test_aln);
 
-  # Put aligned columns into hashtables.
-  my %true_cols;
-  foreach my $i (1..$true_aln->length) {
-    my $col_string = '';
-    foreach my $key (keys %$true_obj) {
-      $col_string .= $key.'.'.$true_obj->{$key}->[$i+1];
-    }
-    #print $col_string;
-    $true_cols{$col_string} = 1;
-  }
-
-  my %test_cols;
-  foreach my $i (1..$test_aln->length) {
-    my $col_string = '';
-    foreach my $key (keys %$test_obj) {
-      $col_string .= $key.'.'.$test_obj->{$key}->[$i+1];
-    }
-    #print $col_string;
-    $test_cols{$col_string} = 1;
-  }
-
-  my $true_col_count = scalar(keys %true_cols);
+  # Alternative method, allowing us to count columns with filtered sites in the test alignment as being correct.
   my $correct_col_count = 0;
-  foreach my $key (keys %test_cols) {
-    $correct_col_count++ if ($true_cols{$key});
+  my $true_col_count = $true_aln->length;
+  TRUE_COL: foreach my $i (1..$true_aln->length) {
+    my $has_match_in_test_aln = 0;
+
+    TEST_COL: foreach my $j (1..$test_aln->length) {      
+      my @test_resnums = ();
+      my @true_resnums = ();
+      my $good_match_count = 0;
+      ID: foreach my $seq ($true_aln->each_seq) {
+        my $id = $seq->id;
+        my $true_resnum = $true_obj->{$id}->[$i-1];
+        my $test_resnum = $test_obj->{$id}->[$j-1];
+
+        $good_match_count++ if ($true_resnum eq $test_resnum && $true_resnum ne '-');
+
+        push @test_resnums,$test_resnum;
+        push @true_resnums,$true_resnum;
+
+        if ($true_resnum ne $test_resnum && $test_resnum ne 'X') {
+          next TEST_COL;
+        }
+      }
+      if ($good_match_count == 0) {
+        #next TEST_COL;
+      }
+      $has_match_in_test_aln = 1;
+      last TEST_COL;
+    }
+
+    if ($has_match_in_test_aln) {
+      $correct_col_count++;
+    }
   }
+  
+  # Put aligned columns into hashtables.
+#  my %true_cols;
+#  foreach my $i (1..$true_aln->length) {
+#    my $col_string = '';
+#    foreach my $key (keys %$true_obj) {
+#      $col_string .= $key.'.'.$true_obj->{$key}->[$i+1];
+#    }
+#    #print $col_string;
+#    $true_cols{$col_string} = 1;
+#  }
+#
+#  my %test_cols;
+#  foreach my $i (1..$test_aln->length) {
+#    my $col_string = '';
+#    foreach my $key (keys %$test_obj) {
+#      print $test_obj->{$key}->[$i+1];
+#      $col_string .= $key.'.'.$test_obj->{$key}->[$i+1];
+#    }
+#    #print $col_string;
+#    $test_cols{$col_string} = 1;
+#  }
+#
+#  my $true_col_count = scalar(keys %true_cols);
+#  my $correct_col_count = 0;
+#  foreach my $key (keys %test_cols) {
+#    $correct_col_count++ if ($true_cols{$key});
+#  }
   
   return ($correct_col_count / $true_col_count);
 }
@@ -259,21 +296,27 @@ sub store_pairs {
   my $pair_string;
   foreach my $i (1..$aln->length) {
     foreach my $key_a (keys %$obj) {
-      my $codon_a = $obj->{$key_a}->[$i+1];
-      next if ($codon_a eq '-');
+      my $resnum_a = $obj->{$key_a}->[$i+1];
+      next if ($resnum_a =~ /-X/i); # Ignore pairs with gaps or filtered sites.
 
       foreach my $key_b (keys %$obj) {
         next if ($key_a eq $key_b);
-        my $codon_b = $obj->{$key_b}->[$i+1];
-        next if ($codon_b eq '-');
+        my $resnum_b = $obj->{$key_b}->[$i+1];
+        next if ($resnum_b =~ /-X/i); # Ignore pairs with gaps for filtered sites.
 
-        $pair_string = join('.',$key_a,$codon_a,$key_b,$codon_b);
+        $pair_string = join('.',$key_a,$resnum_a,$key_b,$resnum_b);
         $pairs{$pair_string} = 1;
       }
     }
   }
 
   return \%pairs;
+}
+
+sub check_against_possibly_filtered_resnum_list {
+  my $class = shift;
+  my @resnum_a = shift;
+  my @resnum_b = shift;
 }
 
 # Encode an alignment as an array of arrayrefs of residue numbers.
@@ -286,7 +329,10 @@ sub to_arrayrefs {
     my @sites;
     foreach my $i (1..$aln->length) {
       my $range = $seq->location_from_column($i);
-      if (!defined $range) {
+      my $aa = $seq->subseq($i,$i);
+      if ($aa =~ m/X/i) {
+        push @sites, 'X';
+      } elsif (!defined $range) {
         push @sites, '-';
       } elsif ($range->location_type eq 'EXACT') {
         push @sites, $range->start
@@ -294,7 +340,6 @@ sub to_arrayrefs {
         push @sites, '-';
       }
     }
-    #print "@sites\n";
     $seq_objs->{$seq->id} = \@sites;
   }
   return $seq_objs;
@@ -367,6 +412,31 @@ sub get_nongaps_at_column {
     $nongap_count++ if ($residue !~ /[-x]/i);
   }
   return $nongap_count;
+}
+
+sub get_ungapped_branchlength {
+  my $class = shift;
+  my $aln = shift;
+  my $in_tree = shift;
+  my $pos = shift;
+
+  my $tree = $in_tree->copy;
+
+  #print " -> $pos\n";
+  my @keep_node_ids = ();
+  foreach my $seq ($aln->each_seq) {
+    #print " ID: ". $seq->id."\n";
+    my $residue = $seq->subseq($pos,$pos);
+    if ($residue !~ /[-x]/i) {
+      my $leaf = $tree->find_leaf_by_name($seq->id);
+      push @keep_node_ids, $leaf->node_id;
+    }
+  }
+
+  my $subtree = Bio::EnsEMBL::Compara::TreeUtils->extract_subtree_from_leaves($tree,\@keep_node_ids);
+  my $total = Bio::EnsEMBL::Compara::TreeUtils->total_distance($subtree);
+  #print " -> $total\n";
+  return $total;
 }
 
 sub get_column_array {
@@ -753,6 +823,7 @@ sub get_prank_filter_matrices {
             }
             $node = $parent;
           }
+          $bl_sum = 0.01 if ($bl_sum == 0);
           my $sitewise_score = $pp_sum / 10 / $bl_sum;
           $sitewise_score = 0 if ($sitewise_score < 0);
           $sitewise_score = 9 if ($sitewise_score > 9);
