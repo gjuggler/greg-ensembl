@@ -4,7 +4,11 @@ if (exists('drv')) {
   library(RMySQL)
   drv <- dbDriver('MySQL')
 }
-con <- dbConnect(drv, host='ens-research', port=3306, user='ensro', password='', dbname='gj1_eslr_57')
+connect.db = function(dbname='gj1_eslr_57') {
+  con <- dbConnect(drv, host='ens-research', port=3306, user='ensro', password='', dbname=dbname)
+  return(con)
+}
+con = connect.db("gj1_eslr_57")
 
 get.vector = function(con,query,columns=1) {
   res = dbSendQuery(con,query)
@@ -24,22 +28,28 @@ get.psets = function() {
   return(get.vector(con,query,columns='all'))
 }
 
-get.genes = function(parameter.set.id=1) {
-  query = sprintf("SELECT * FROM stats_genes where parameter_set_id=%s",parameter.set.id);
+get.sites = function(parameter.set.id=1,db="gj1_eslr_57",limit="") {
+  query = sprintf("SELECT * from %s.stats_sites WHERE parameter_set_id=%s %s",db,parameter.set.id,limit)
+  sites = get.vector(con,query,columns='all')
+  return(sites)
+}
+
+
+get.genes = function(parameter.set.id=1,db="gj1_eslr_57") {
+  query = sprintf("SELECT * FROM %s.stats_genes where parameter_set_id=%s",db,parameter.set.id);
   data = get.vector(con,query,columns='all')
 
   return(data)
 }
 
-get.all.merged = function() {
-  all.node.ids = get.vector(con,'SELECT DISTINCT(node_id) FROM stats_genes')
+get.genes.merged = function(db="gj1_eslr_57") {
+  all.node.ids = get.vector(con,sprintf('SELECT DISTINCT(node_id) FROM %s.stats_genes',db))
   
   param.sets = get.psets()
-
-  genes = get.genes(1)
+  genes = get.genes(1,db=db)
   
   for (pset in param.sets$id) {
-    cur.genes = get.genes(pset)
+    cur.genes = get.genes(pset,db=db)
 
     create.name = function(ext) {paste(param.sets[pset,]$shortname,ext,sep='')}
     
