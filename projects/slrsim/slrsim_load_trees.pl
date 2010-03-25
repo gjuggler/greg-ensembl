@@ -377,7 +377,7 @@ sub create_simsets {
                                phylosim_deleterate => 0.05,
                                alignment_score_threshold => 5,
                                slrsim_tree_mult => 1,
-                               slrsim_replicates => 50,
+                               slrsim_replicates => 1,
                                slrsim_file => $fortyfourmammals
                              });
     my @species_params = map {species_param($_)} ('Human','Mouse','Xtropicalis','Stickleback');

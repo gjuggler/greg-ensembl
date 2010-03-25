@@ -1,12 +1,3 @@
-use strict;
-use File::Path;
-use Bio::EnsEMBL::Compara::ComparaUtils;
-use Bio::EnsEMBL::Compara::AlignUtils; 
-use Bio::EnsEMBL::Compara::TreeUtils;
-use Bio::Greg::EslrUtils;
-
-my $cmd = qq^
-
 #!/usr/bin/env Rscript
 library(R.oo)
 library(ape)
@@ -45,15 +36,15 @@ sampleStates(seq);
 #del<-DiscreteDeletor(rate=0.05,sizes=c(1:5),probs=c(1,1,1,1,1));
 
 # Set the template sequence for the insertion process:
-#ins.template\$processes<-list(list(p,ins,del));
+#ins.template$processes<-list(list(p,ins,del));
 
 # Unset write protection on insertion process:
-#ins\$writeProtected<-FALSE;
+#ins$writeProtected<-FALSE;
 # Set insert template:
-#ins\$templateSeq<-ins.template;
+#ins$templateSeq<-ins.template;
 
 # Set an insert hook for the insertion process:
-#ins\$insertHook<-function(seq){
+#ins$insertHook<-function(seq){
 
   # For some reason have to specify the full method name here. To be fixed.
 #  setOmegas.CodonSequence(seq,p,value=c(0.5,0.6,0.7));
@@ -62,7 +53,7 @@ sampleStates(seq);
 #}
 
 # Attach the indel processes to root sequence:
-#seq\$processes<-list(list(p));
+#seq$processes<-list(list(p));
 
 # Create the simulation object:
 sim<-PhyloSim(
@@ -73,10 +64,10 @@ sim<-PhyloSim(
 print(summary(sim))# Summary for the simulation object.
 
 # Set the log file:
-  sim\$logFile<-"phylosim.log";
+  sim$logFile<-"phylosim.log";
 
 # Set the log level to 0, only messages passed through Log() will be logged.
-sim\$logLevel<-0;
+sim$logLevel<-0;
 
 # Run the simulation:
 Simulate(sim);
@@ -86,8 +77,3 @@ saveAlignment(
   sim,  # the phylo object
   file="codon_example.fas"# filename for the saved alignment
   );
-
-
-^;
-
-Bio::Greg::EslrUtils->run_r($cmd);

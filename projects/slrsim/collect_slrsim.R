@@ -289,17 +289,60 @@ filtering.roc = function(data) {
         next;
       }
       sub = subset(data, alignment_name==aln & filtering_name==filt)
-      sub.df = get.perf.df(label=paste(aln,filt,sep="/"),sub)
-      sub.df$filter = as.factor(filt)
-      sub.df$aln = as.factor(aln)
-      comb = rbind(sub.df,comb)
+      sub.roc = slr.roc(sub)
+      sub.roc$filter = as.factor(filt)
+      sub.roc$aln = as.factor(aln)
+      sub.roc$label = paste(aln,filt,sep="/")
+      comb = rbind(sub.roc,comb)
     }
   }
   print(nrow(comb))
-  p <- ggplot(comb,aes(x=fpr,y=tpr,group=label,colour=label)) + geom_line() + xlim(0,0.1)
+  p <- ggplot(comb,aes(x=fp,y=tp,group=label,colour=label)) + geom_line()
   ggsave("~/public_html/slrsim_filt.png",width=8,height=6)
   dev.off()
 }
+
+slr.roc = function(df) {
+  library(doBy)
+  library(plyr)
+
+  if (!is.paml(df)) {
+    # Create a signed LRT if it's SLR-based data.
+    df$score = sign(df$aln_dnds-1)*df$lrt
+  } else {
+    df$score = df$lrt
+  }
+  df$truth = as.integer( df$true_dnds > 1 )
+  df <- orderBy(~-score,data=df)
+  print(df[1:10,])
+  df$tp = cumsum(df$truth)
+  df$fp = cumsum(1-df$truth)
+  
+  return(df)
+}
+
+my.own.roc = function(data, score.field='score', truth.fun=NULL) {
+  library(doBy)
+  library(plyr)
+
+  #png("~/public_html/test.png")
+  #n <- 2000
+  #truth <- rbinom(n,1,0.8)
+  #score <- rnorm(n)
+
+  truth <- adply(df, 1, truth.fun);
+  score <- data[[score.field]]
+
+  data$truth = truth
+  data$score = score
+  data <- orderBy(~+score,data=data)
+
+  data$tp = cumsum(data$truth)
+  data$fp = cumsum(1-data$truth)
+
+  return(data)
+}
+
 
 gg.df.cor = function(df) {
   return(cor(df$true_dnds,df$aln_dnds,method='spearman',use='complete.obs'))
