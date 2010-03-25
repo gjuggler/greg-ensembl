@@ -126,6 +126,7 @@ sub create_table_from_params {
   print "Creating new table $table_name ...\n";
 
   my $unique_keys = delete $params->{'unique_keys'};
+  my $extra_key = delete $params->{'extra_key'};
   eval {
     
     foreach my $key (sort keys %$params) {
@@ -147,6 +148,10 @@ sub create_table_from_params {
       $unique_cmd = qq^ALTER TABLE $table_name ADD UNIQUE ($unique_keys)^;
     }
     $dbh->do($unique_cmd);
+
+    if ($extra_key) {
+      $key_cmd = qq^ALTER TABLE $table_name ADD KEY ($extra_key)^;
+    }
   };
 
 }
