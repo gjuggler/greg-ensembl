@@ -169,20 +169,19 @@ sub store_SimpleAlign_into_table {
       $node->sequence($aa_seq);
     }
     if (defined $cdna_aln) {
+      
       #print "CDNA ID:".$node->cdna_sequence_id."\n";
-        $pta->dbc->do("UPDATE member set cdna_sequence_id=NULL where member_id=".$node->member_id.";");
+      #$pta->dbc->do("UPDATE member set cdna_sequence_id=NULL where member_id=".$node->member_id.";");
       #if ($node->cdna_sequence_id) {
       #  my $cmd = "DELETE FROM sequence WHERE sequence_id=".$node->cdna_sequence_id.";";
       #  $pta->dbc->do($cmd);
       #}
       my $cdna_seq = $ALN->get_seq_with_id($cdna_aln,$name)->seq;
-      bless($node,"Bio::EnsEMBL::Compara::LocalMember");
       $cdna_seq =~ s/-//g;
-      $node->cdna_sequence($cdna_seq);
+      $node->sequence_cds($cdna_seq);
     }
 
     $node->sequence_id(0);
-    $node->cdna_sequence_id(0);
 
     # Call the ProteinTreeAdaptor method to do the actual database dirty work.
     $pta->store($node);

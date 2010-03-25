@@ -693,7 +693,7 @@ sub sequence_cds {
     $self->{'_sequence_cds'} = $self->adaptor->db->get_MemberAdaptor->_fetch_sequence_cds_by_member_id($self->member_id);
   }
 
-  if(!defined($self->{'_sequence_cds'})) {
+  if(!defined $self->{'_sequence_cds'} && defined $self->transcript) {
     $self->{'_sequence_cds'} = $self->transcript->translateable_seq;
   }
 

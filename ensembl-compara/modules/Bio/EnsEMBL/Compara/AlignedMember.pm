@@ -243,7 +243,7 @@ sub cdna_alignment_string {
     if ($@) {
       throw("can't connect to CORE to get transcript and cdna for "
             . "genome_db_id:" . $self->genome_db_id )
-        unless($self->transcript);
+        unless($self->transcript || $self->isa('Bio::EnsEMBL::Compara::LocalMember'));
       $cdna = $self->transcript->translateable_seq;
     }
 

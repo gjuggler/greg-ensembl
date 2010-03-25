@@ -814,7 +814,7 @@ sub store {
     . "not a $member");
   }
 
-   $self->dbc->do("LOCK TABLES member WRITE, sequence WRITE");
+   $self->dbc->do("LOCK TABLES member WRITE, sequence WRITE, sequence_cds WRITE");
    #$self->dbc->do("LOCK TABLES sequence WRITE");
 
 #  $member->source_id($self->store_source($member->source_name));
@@ -861,8 +861,6 @@ sub store {
       $member->adaptor($self);
   }
 
-  $self->dbc->do("UNLOCK TABLES");
-#  $self->dbc->do("LOCK TABLE sequence WRITE");
   #
   # Store the sequence and cdna sequence.
   #
@@ -873,20 +871,25 @@ sub store {
       my $sth3 = $self->prepare("UPDATE member SET sequence_id=? WHERE member_id=?");
       $sth3->execute($member->sequence_id, $member->dbID);
       $sth3->finish;
-
   }
 
-  if ($member->isa("Bio::EnsEMBL::Compara::LocalMember")) {
-      if (defined($member->cdna_sequence) and $member->cdna_sequence_id == 0) {
-	  $member->cdna_sequence_id($self->db->get_SequenceAdaptor->store($member->cdna_sequence));
-	  
-	  my $sth3 = $self->prepare("UPDATE member SET cdna_sequence_id=? WHERE member_id=?");
-	  $sth3->execute($member->cdna_sequence_id, $member->dbID);
-	  $sth3->finish;
-      }
+  my $member_id = $member->dbID;
+  my $sequence_cds = $member->sequence_cds;
+  if (defined $member_id & defined $sequence_cds) {
+    my $sth4 = $self->dbc->prepare("SELECT sequence_cds_id FROM sequence_cds WHERE member_id = ?");
+    $sth4->execute($member_id);
+    my ($seqID) = $sth4->fetchrow_array();
+    $sth4->finish;
+    
+    if(!$seqID) {
+      my $length = length($sequence_cds);
+      my $sth5 = $self->dbc->prepare("INSERT INTO sequence_cds (member_id, sequence_cds, length) VALUES (?,?,?)");
+      $sth5->execute($member_id, $sequence_cds, $length);
+      $sth5->finish;
+    }
   }
 
-#  $self->dbc->do("UNLOCK TABLES");
+  $self->dbc->do("UNLOCK TABLES");
   return $member->dbID;
 }
 

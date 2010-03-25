@@ -22,6 +22,9 @@ CREATE TABLE IF NOT EXISTS meta (
 
 ) ENGINE=InnoDB;
 
+# Add schema version to database
+REPLACE INTO meta (meta_key, species_id, meta_value) VALUES ("schema_version", NULL, 57);
+REPLACE INTO meta (meta_key, species_id, meta_value) VALUES ("schema_version", 1, 57);
 
 #
 # Table structure for tables 'ncbi_taxa_node' and 'ncbi_taxa_name'
@@ -170,7 +173,7 @@ CREATE TABLE IF NOT EXISTS member (
 # Table structure for table 'subset'
 #
 
-CREATE TABLE subset (
+CREATE TABLE IF NOT EXISTS subset (
  subset_id      int(10) NOT NULL auto_increment,
  description    varchar(255),
  dump_loc       varchar(255),
@@ -183,7 +186,7 @@ CREATE TABLE subset (
 # Table structure for table 'subset_member'
 #
 
-CREATE TABLE subset_member (
+CREATE TABLE IF NOT EXISTS subset_member (
  subset_id   int(10) NOT NULL,
  member_id   int(10) NOT NULL,
 
@@ -439,10 +442,6 @@ CREATE TABLE IF NOT EXISTS go_terms (
   KEY `member_id` (`member_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 
-
-
-# Add schema version to database
-REPLACE INTO meta (meta_key, meta_value) VALUES ("schema_version", "57");
 
 DROP FUNCTION IF EXISTS dubious_dup;
 CREATE FUNCTION dubious_dup (n int(20))

@@ -22,7 +22,6 @@ package Bio::EnsEMBL::Compara::DBSQL::ProteinTreeAdaptor;
 use strict;
 use Bio::EnsEMBL::Compara::ProteinTree;
 use Bio::EnsEMBL::Compara::AlignedMember;
-use Bio::EnsEMBL::Compara::LocalMember;
 use Bio::EnsEMBL::Utils::Exception qw(throw warning);
 
 use Bio::EnsEMBL::Compara::DBSQL::NestedSetAdaptor;
@@ -486,34 +485,11 @@ sub _store_tagvalue {
 #
 ##################################
 
-sub local_mode {
-    my $self = shift;
-    my $local_mode = shift;
-    $self->{'_local_mode'} = $local_mode if (defined $local_mode);
-    $self->{'_local_mode'} = 0 unless (defined $self->{'_local_mode'});
-    return $self->{'_local_mode'};
-}
-
 sub columns {
   my $self = shift;
 
-  $self->local_mode(-1); # Override to turn off local mode.
-  unless ($self->local_mode == -1 || $self->local_mode == 1) {
-    my $cmd = 'SHOW FIELDS FROM member LIKE "%cdna%";';
-    my $sth = $self->dbc->prepare($cmd);
-    $sth->execute();
-    if ($sth->fetchrow_arrayref) {
-      $self->local_mode(1);
-    }
-    $sth->finish;
-  }
-
   my @cols;
-  if ($self->local_mode == 1) {
-      @cols =  @{Bio::EnsEMBL::Compara::DBSQL::MemberAdaptor->columns_local};
-  } else {
-      @cols = @{Bio::EnsEMBL::Compara::DBSQL::MemberAdaptor->columns};
-  }
+  @cols = @{Bio::EnsEMBL::Compara::DBSQL::MemberAdaptor->columns};
   return ['t.node_id',
           't.parent_id',
           't.root_id',
@@ -549,9 +525,7 @@ sub create_instance_from_rowhash {
   my $rowhash = shift;
   
   my $node;  
-  if ($rowhash->{'cdna_sequence_id'}) {
-    $node = new Bio::EnsEMBL::Compara::LocalMember;
-  } elsif($rowhash->{'member_id'}) {
+  if($rowhash->{'member_id'}) {
     $node = new Bio::EnsEMBL::Compara::AlignedMember;    
   } else {
     $node = new Bio::EnsEMBL::Compara::ProteinTree;
@@ -581,13 +555,7 @@ sub init_instance_from_rowhash {
   #SUPER is NestedSetAdaptor
   $self->SUPER::init_instance_from_rowhash($node, $rowhash);
 
-  if ($rowhash->{'cdna_sequence_id'}) {
-    use Bio::EnsEMBL::Compara::DBSQL::LocalMemberAdaptor;
-    Bio::EnsEMBL::Compara::DBSQL::LocalMemberAdaptor->init_instance_from_rowhash($node, $rowhash);
-      
-    $node->cigar_line($rowhash->{'cigar_line'});
-      
-  } elsif ($rowhash->{'member_id'}) {
+  if ($rowhash->{'member_id'}) {
      Bio::EnsEMBL::Compara::DBSQL::MemberAdaptor->init_instance_from_rowhash($node, $rowhash);
 	
 	$node->cigar_line($rowhash->{'cigar_line'});
