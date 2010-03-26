@@ -40,6 +40,7 @@ sub fetch_input {
   ### DEFAULT PARAMETERS ###
   $params = {
     flow_node_set => 'Primates',
+    flow_parent_and_children => 0,
     debug => 0
   };
   ##########################
@@ -77,6 +78,38 @@ sub run {
   $self->tag_nodes_with_clade_coverage($tree, "Sauria");
   $self->tag_nodes_with_clade_coverage($tree, "Clupeocephala");
 
+}
+
+sub write_output {
+  my $self = shift;
+  
+  if (defined $params->{flow_node_set}) {
+    my $flow_set = $params->{flow_node_set};
+    
+    foreach my $node ($tree->nodes) {
+      next if ($node->is_leaf);
+      
+      my $id = $node->node_id;
+      if ($node->has_tag("cc_root_".$flow_set)) {
+	print " -> Flowing node $id\n";
+
+        my $output_id = Bio::EnsEMBL::Compara::ComparaUtils->hash_to_string({ node_id => $id } );
+        $self->dataflow_output_id( $output_id, 1 );
+        if ( $params->{flow_parent_and_children} ) {
+          my $i = 0;
+          foreach my $child ( @{ $node->children } ) {
+            my $output_id =
+              Bio::EnsEMBL::Compara::ComparaUtils->hash_to_string({ 
+		node_id => $child->node_id,
+		node_set_parent_id => $id, node_set_child_number => $i++ 
+		} );
+            $self->dataflow_output_id( $output_id, 1 );
+            print "  --> Flowing child $output_id\n";
+          }
+        }
+      }
+    }
+  }
 }
 
 sub tag_root_nodes {
