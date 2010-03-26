@@ -35,7 +35,7 @@ get.genes = function(parameter.set.id=1,db="gj1_eslr_57") {
   return(data)
 }
 
-get.all.merged = function(db="gj1_eslr_57") {
+get.genes.merged = function(db="gj1_eslr_57") {
   all.node.ids = get.vector(con,sprintf('SELECT DISTINCT(node_id) FROM %s.stats_genes',db))
   
   param.sets = get.psets()

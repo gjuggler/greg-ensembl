@@ -28,13 +28,6 @@ get.psets = function() {
   return(get.vector(con,query,columns='all'))
 }
 
-get.sites = function(parameter.set.id=1,db="gj1_eslr_57",limit="") {
-  query = sprintf("SELECT * from %s.stats_sites WHERE parameter_set_id=%s %s",db,parameter.set.id,limit)
-  sites = get.vector(con,query,columns='all')
-  return(sites)
-}
-
-
 get.genes = function(parameter.set.id=1,db="gj1_eslr_57") {
   query = sprintf("SELECT * FROM %s.stats_genes where parameter_set_id=%s",db,parameter.set.id);
   data = get.vector(con,query,columns='all')
@@ -76,4 +69,10 @@ get.genes.merged = function(db="gj1_eslr_57") {
     genes = merge(genes,genes.subset,all.x=T)
   }
   return(genes);
+}
+
+get.sites = function(parameter.set.id=1,db="gj1_eslr_57",limit="") {
+  query = sprintf("SELECT * from %s.stats_sites WHERE parameter_set_id=%s %s",db,parameter.set.id,limit)
+  sites = get.vector(con,query,columns='all')
+  return(sites)
 }
