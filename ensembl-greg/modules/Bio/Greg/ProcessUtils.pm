@@ -151,7 +151,8 @@ sub create_table_from_params {
     $dbh->do($unique_cmd);
 
     if ($extra_key) {
-      $key_cmd = qq^ALTER TABLE $table_name ADD KEY ($extra_key)^;
+      my $key_cmd = qq^ALTER TABLE $table_name ADD KEY ($extra_key)^;
+      $dbh->do($unique_cmd);
     }
   };
 
