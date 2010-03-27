@@ -101,6 +101,38 @@ sub get_params {
   return $param_object;
 }
 
+sub load_params_from_param_set {
+  my $class = shift;
+  my $dba = shift;
+  my $param_set_id = shift;
+
+  my $dbh = $dba->dbc->db_handle;
+
+  return {} unless (defined $param_set_id);
+
+  my $params;
+
+  my $cmd = qq^SELECT parameter_value FROM parameter_set WHERE parameter_set_id=$param_set_id AND parameter_name="params";  ^;
+  my $sth = $dbh->prepare($cmd);
+  $sth->execute();
+  my @row;
+  while (@row = $sth->fetchrow_array) {
+    $params = eval($row[0]);
+  }
+  $sth->finish;
+
+  my $cmd = qq^SELECT parameter_value FROM parameter_set WHERE parameter_set_id=$param_set_id AND parameter_name="name";  ^;
+  $sth = $dbh->prepare($cmd);
+  $sth->execute();
+  my @row;
+  while (@row = $sth->fetchrow_array) {
+    $params->{parameter_set_name} = $row[0];
+  }
+  $sth->finish;
+
+  return $params;
+}
+
 sub create_table_from_params {
   my $self       = shift;
   my $dba        = shift;

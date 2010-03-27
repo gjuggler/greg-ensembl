@@ -35,8 +35,6 @@ sub fetch_input {
   $dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new( -DBCONN => $self->db->dbc );
   $pta = $dba->get_ProteinTreeAdaptor;
 
-  $pta->local_mode(-1);
-
   ### DEFAULT PARAMETERS ###
   $params = {
     flow_node_set => 'Primates',
@@ -84,6 +82,7 @@ sub write_output {
   my $self = shift;
   
   if (defined $params->{flow_node_set}) {
+    $self->autoflow_inputjob(0);
     my $flow_set = $params->{flow_node_set};
     
     foreach my $node ($tree->nodes) {
@@ -274,7 +273,7 @@ sub does_tree_have_clade_coverage {
       return 0 unless ( $coverage >= $value );
     }
   }
-
+  
   return 1;
 }
 
@@ -292,7 +291,9 @@ sub generic_parent_has_good_children {
   my $parent           = $node->parent;
   my @parents_children = @{ $parent->children };
   if ( $parent->node_id == 1 ) {
-    return $inclusion_function->( $node, $params );
+    my $value = $inclusion_function->($self, $node, $params );
+    #print "Root node. Values is $value\n";
+    return $value;
   }
 
   my $sister;

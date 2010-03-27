@@ -671,6 +671,18 @@ RETURN (SELECT ptn.node_id
    LIMIT 1
 );
 
+DROP FUNCTION IF EXISTS  root_node_for_node;
+CREATE FUNCTION root_node_for_node (n INT(20))
+RETURNS INT(20)
+READS SQL DATA
+RETURN (SELECT ptn.node_id
+   FROM protein_tree_node ptn, protein_tree_node ptn2 WHERE
+   ptn.node_id = n AND
+   ptn2.left_index BETWEEN ptn.left_index AND ptn.right_index AND
+   ptn2.parent_id=1
+   LIMIT 1
+);
+
 DROP FUNCTION IF EXISTS  num_dups_under_node;
 CREATE FUNCTION num_dups_under_node (n INT(20))
 RETURNS INT(20)
@@ -799,3 +811,4 @@ RETURN (
        sa.note != 'random'
        LIMIT 1
 );
+
