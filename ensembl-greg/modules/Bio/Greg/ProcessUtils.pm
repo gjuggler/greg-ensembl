@@ -199,16 +199,17 @@ sub store_params_in_table {
   my $dbh = $dba->dbc->db_handle;
 
   my @fields;
-  if ( !defined $params->{_fields_arrayref} ) {
+  my $cache_key = '_fields_arrayref_'.$table_name;
+  if ( !defined $self->{$cache_key} ) {
     my $sth = $dbh->prepare("SHOW FIELDS FROM $table_name");
     $sth->execute;
     my $hashref = $sth->fetchall_hashref( ['Field'] );
     $sth->finish;
     @fields = keys %$hashref;
 
-    $params->{_fields_arrayref} = \@fields;
+    $self->{$cache_key} = \@fields;
   } else {
-    @fields = @{ $params->{_fields_arrayref} };
+    @fields = @{ $self->{$cache_key} };
   }
 
   my $fields_string = '(`' . join( '`,`', @fields ) . '`)';
