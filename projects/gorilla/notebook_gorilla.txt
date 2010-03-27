@@ -1,0 +1,40 @@
+### 2010-03-27 ###
+
+mysql> select pattern,count(*) from counts_sites where has_cpg=0 and gap=0 group by pattern;
++---------+----------+
+| pattern | count(*) |
++---------+----------+
+| C.G.H   |     5137 |
+| C.GH    |    76222 |
+| CGH     |  7461546 |
+| G.CH    |   170475 |
+| H.CG    |    54708 |
++---------+----------+
+5 rows in set (1 min 48.44 sec)
+
+mysql> select pattern,count(*) from counts_sites where has_cpg=0 and gap=1 group by pattern;
++---------+----------+
+| pattern | count(*) |
++---------+----------+
+| C.G.H   |    24897 |
+| C.GH    |   335683 |
+| G.CH    |   325918 |
+| H.CG    |    62089 |
++---------+----------+
+4 rows in set (16.88 sec)
+
+mysql> select tree_pattern,count(*) from counts_genes group by tree_pattern;
++--------------+----------+
+| tree_pattern | count(*) |
++--------------+----------+
+| C.GH         |     3446 |
+| G.CH         |     8700 |
+| H.CG         |     2910 |
++--------------+----------+
+3 rows in set (0.20 sec)
+
+
+R scripts: 
+
+> source("../../scripts/collect_sitewise.R")
+> gor.sites = get.vector(con=con,query="select * from gj1_gor_57.counts_sites")
