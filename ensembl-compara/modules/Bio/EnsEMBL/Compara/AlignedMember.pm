@@ -260,7 +260,7 @@ sub cdna_alignment_string {
     my $start = 0;
     my $cdna_align_string = '';
 
-    printf "%s %s\n", $self->stable_id,$self->member_id;
+    #printf "%s %s\n", $self->stable_id,$self->member_id;
     # foreach my $pep (split(//, $self->alignment_string)) { # Speed up below
     my $alignment_string = $self->alignment_string;
     foreach my $pep (unpack("A1" x length($alignment_string), $alignment_string)) {
