@@ -33,8 +33,65 @@ mysql> select tree_pattern,count(*) from counts_genes group by tree_pattern;
 +--------------+----------+
 3 rows in set (0.20 sec)
 
-
 R scripts: 
 
 > source("../../scripts/collect_sitewise.R")
 > gor.sites = get.vector(con=con,query="select * from gj1_gor_57.counts_sites")
+
+
+### 2010-03-29 ###
+
+mysql> select tree_pattern,count(*) from counts_genes group by tree_pattern;
++--------------+----------+
+| tree_pattern | count(*) |
++--------------+----------+
+| C.GH         |     3446 |
+| G.CH         |     8700 |
+| H.CG         |     2911 |
++--------------+----------+
+3 rows in set (0.32 sec)
+
+mysql> select pattern,count(*) from counts_sites where type!="gap" group by pattern;
++---------+----------+
+| pattern | count(*) |
++---------+----------+
+| C.G.H   |     8172 |
+| C.GH    |    96195 |
+| CGH     |  7906589 |
+| G.CH    |   206369 |
+| H.CG    |    71583 |
++---------+----------+
+5 rows in set (2 min 13.20 sec)
+
+mysql> select pattern,count(*) from counts_sites where type="gap" group by pattern;
++---------+----------+
+| pattern | count(*) |
++---------+----------+
+| C.G.H   |    31606 |
+| C.GH    |   364830 |
+| G.CH    |   353035 |
+| H.CG    |    70406 |
++---------+----------+
+4 rows in set (19.67 sec)
+
+mysql> select pattern,count(*) from counts_sites where type="synonymous" group by pattern;
++---------+----------+
+| pattern | count(*) |
++---------+----------+
+| C.G.H   |      878 |
+| C.GH    |    46410 |
+| G.CH    |    84857 |
+| H.CG    |    41803 |
++---------+----------+
+4 rows in set (10.12 sec)
+
+mysql> select pattern,count(*) from counts_sites where type="nonsynonymous" group by pattern;
++---------+----------+
+| pattern | count(*) |
++---------+----------+
+| C.G.H   |     7294 |
+| C.GH    |    49785 |
+| G.CH    |   121512 |
+| H.CG    |    29780 |
++---------+----------+
+4 rows in set (10.18 sec)

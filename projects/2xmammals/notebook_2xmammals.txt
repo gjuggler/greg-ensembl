@@ -1,0 +1,100 @@
+### 2010-03-31 ###
+
+Examples of experimental validation in mammals:
+ - Sawyer et al. 2005 PNAS - Trim5alpha
+   - http://www.pnas.org/content/102/8/2832.full
+ - Ivarsson et al. 2002 J Biol Chem - Glutathione transferase
+   - http://www.jbc.org/content/278/10/8733.full
+ - Elde et al. 2009 Nature - Protein kinase R (pos-sel), eIF2 (no pos-sel)
+   - Noted that other members of the same kinase family do not experience similar levels of
+     pos-sel.
+ - Gupta et al. 2009 PLoS Pathogens - Human Tetherin/BST-2/CD317
+   - The gene has a single residue shift (at a pos-sel site)  that substantially impacts on
+     sensitivity to HIV-1 Vpu.
+
+Experimental validation elsewhere:
+ - Bielawski et al. 2004 PNAS - proteorhodopsin - bacterial
+
+
+Speculation without validation:
+ - Wlasiuk et al. 2009 Mol Biol Evol - Toll-like recepfor 5 (TLR5)
+ - Weadick and Chang 2009 Mol Biol Evol - BY Lens Crystallin (pretty crap)
+
+Reviews / summaries:
+ - Yang 2005 PNAS - The power of phylogenetic comparison in revealing protein function
+ - Oleksyk et al. Phil Trans R Soc B 2010 - Genome-wide scans for footprints of natural selection
+
+
+
+
+# Nice quote from Bielawski et al. 2004:
+
+Application of statistical methods has led to the discovery of many
+genes evolving under positive selection, with the majority relating to
+the immune response or sexual reproduction (20, 31). In such cases,
+these genes are typically called .fast. genes, because the
+evolutionary arms-race between host and parasite, or the evolutionary
+forces associated with sexual competition or conflict, leads to rapid
+evolution under diversifying selection. An alternative model exists
+for .directional. evolution for altered function in a novel
+environment; this model is strongly influenced by the extensive study
+of adaptive alteration of oxygen affinity in vertebrate hemoglobins
+(32, 33). Under the globin model, directional evolution proceeds by
+rare adaptive modifications of the protein at one or very few key
+positions, with all other substitutions being functionally neutral
+(32, 33). Indeed, direct examination of functional change in response
+to site-directed mutagenesis indicates that a large phenotypic change
+can arise in a variety of proteins, including PRs, from just one or a
+few amino acid changes (7, 30, 34). However, the results of
+site-directed mutagenesis do not constitute a proof of a hypothesis of
+natural selection. Observing a functional change in response to a
+substitution by site-directed mutagenesis does not mean that if an
+organism bore such a substitution it was subject to natural
+selection. Likewise, the lack of a detectable effect from a
+substitution is not proof that such a change did not have fitness
+consequences in the natural environment. All one can do is evaluate
+and refine a hypothesis about patterns and mechanisms of adaptive
+molecular evolution in light of all of the available evidence. In the
+case of PRs, the combination of phylogeny-based statistical analysis
+and site-directed mutagenesis suggested that substitutions with small
+or no measurable effect on absorption maxima might have had important
+fitness consequences in the oceanic environment. Although we suspect
+that much evolutionary change in proteins such as PRs is indeed
+neutral, we argue that the globin model for directional evolution,
+i.e., assuming that changes at other than the major-effect sites are
+selectively neutral (32, 33), should be treated cautiously.
+
+
+# List from Oleksyk et al. 2010 - selection in human populations
+
+chromo- some	    gene      location		author		discovered by	test(s)		population(s)	found by scan (same locus)   found by scan (nearby locus)
+1	FY	    1q21.q22  Hamblin & Di Rienzo (2000)	frequency spectrum, population differentiation	Fay and Wu's H, FST	     Africans		   by 50 kb (Frazer et al. 2007)
+1	AGT	    1q42.q43  Nakajima et al. (2004)		unusual LD	    tight LD   Africans		    
+1	ASPM	    1q31      Mekel-Bobrov et al. (2005)	comparative methods	  Ka/Ks			    World   
+2	LCT	    2q21      Bersaglieri et al. (2004)		unusual LD  iHs, EHH	  Europeans, World	    Frazer et al. (2007); Nielsen et al. (2005); Voight et al. (2006)  
+2	CAPN10	    2q37.3    Fullerton et al. (2002)		population differences	  FST	     Africans versus non-African	  
+3	CCR5	    3p21.31   Stephens et al. (1998)		population differences	  FST and low heterozygosity			  Europeans  Oleksyk et al. (2008)  
+4	ADH1B	    4q21.q23  Osier et al. (2004, 2002)		unusual LD, and population differences					  LD, FST    Asians  Frazer et al. (2007)  by 100 kb (Voight et al. 2006)
+5	IL13	    5q31      Sakagami et al. (2004)		population differences	   FST						  World		     by 200 kb (Oleksyk et al. 2008)
+5	IL4	    5q31.1    Rockman et al. (2003)		population differences	   FST						  World			by 200 kb (Oleksyk et al. 2008)
+6	HFE	    6p21.3    Toomajian & Kreitman (2002)	multiple   Ka/Ks, LD, FST  Asians								by 100 kb (Voight et al. 2006)
+6	TRPV6	    7q33.q34  Akey et al. (2006)   low diversity and frequency spectrum	   Tajima's D, and low diversity					Africans	  at different coordinates (Carlson et al. 2005)
+7	CYP3A5	    7q21.1    Thompson et al. (2004, 2006)	 frequency spectrum	   Tajima's D  Europeans, Asians					Carlson et al. (2005); Oleksyk et al. (2008)	    by 200 kb (Voight et al. 2006)
+7	FOXP2	    7q31      Enard et al. (2002)    comparative methods   Ka/Ks	   World    Oleksyk et al. (2008)					
+8	MCPH1	    8p23.1    Evans et al. (2006a)   comparative methods   Ka/Ks	   World    Bustamante et al. (2005) (negative)				
+8	NAT2	    8p22      Patin et al. (2006)    unusual LD	 REHH	   Europeans		    
+9	CDK5RAP2    9q33.2    Evans et al. (2006b)   comparative methods   Ka/Ks		    World		
+10	FGFR2	    10q26     Goriely et al. (2003); Goriely et al. (2005)			    n.a.		distribution of mutations in sperm skewed  World   
+11	DRD4	    11p15.5   Ding et al. (2002); Wang et al. (2004)				    unusual LD		LD	     World	     
+11	HBB	    11p15.5   Ayodo et al. (2007)      population differences			    FST	    Africans		     by 100 kb (Frazer et al. 2007)
+11	MMP3	    11q22.3   Rockman et al. (2004)    low diversity and population differences	    FST, low heterozygosity,	     Europeans		  
+11	CASP12P1    11q22.3   Xue et al. (2006)	       frequency spectrum and unusual LD	    Tajima's D, Fay and Wu's H, LD   World		   
+13	CENPJ	    13q12.12  Evans et al. (2006b)     comparative methods    Ka/Ks   World	    Frazer et al. (2007)     by 200 kb (Voight et al. 2006)
+15	SLC24A5	    15q21.1   Lamason et al. (2005)    low diversity	      Low heterozygosity    Europeans	  Sabeti et al. (2007)	       by 80 kb (Voight et al. 2006)
+16	MC1R	    16q24.3   Makova & Norton (2005); Makova et al. (2001)    low diversity and frequency spectrum	 pi, theta, Fu and Li F	  Africans, Europeans, Asians   
+17	TTL.6	    17q21.32  Chen et al. 2006)	      comparative methods     Ka/Ks	    World			 by 50 kb (Akey et al. 2002)
+X	DMD	    Xp21.2    Nachman & Crowell (2000)		  reduced variation and unusual LD			 HKA, LD  non-African  Frazer et al. (2007)  
+X	CD40LG (TNFSF5)	      X26     Sabeti et al. (2002)	  unusual LD	    EHH		Africans		      
+X	FIX    Xq27.1.q27.2   Harris & Hey (2001)   low diversity and frequency spectrum	low diversity, Tajima's D     World   
+X	G6PD   Xq28	      Sabeti et al. (2002); Tishkoff et al. (2001)	unusual LD	EHH	       Africans		      
+X	MAOA   Xp11.3	      Andres et al. (2004); Gilad et al. (2002)		comparative methods	       Ka/Ks		      World   
