@@ -35,12 +35,11 @@ sub fetch_input {
   $dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new( -DBCONN => $self->db->dbc );
   $pta = $dba->get_ProteinTreeAdaptor;
 
-  $pta->local_mode(-1);
-
   ### DEFAULT PARAMETERS ###
   $params = {
     flow_node_set => 'Primates',
-    debug         => 0
+    flow_parent_and_children => 0,
+    debug => 0
   };
   ##########################
 
@@ -77,6 +76,39 @@ sub run {
   $self->tag_nodes_with_clade_coverage( $tree, "Sauria" );
   $self->tag_nodes_with_clade_coverage( $tree, "Clupeocephala" );
 
+}
+
+sub write_output {
+  my $self = shift;
+  
+  if (defined $params->{flow_node_set}) {
+    $self->autoflow_inputjob(0);
+    my $flow_set = $params->{flow_node_set};
+    
+    foreach my $node ($tree->nodes) {
+      next if ($node->is_leaf);
+      
+      my $id = $node->node_id;
+      if ($node->has_tag("cc_root_".$flow_set)) {
+	print " -> Flowing node $id\n";
+
+        my $output_id = Bio::EnsEMBL::Compara::ComparaUtils->hash_to_string({ node_id => $id } );
+        $self->dataflow_output_id( $output_id, 1 );
+        if ( $params->{flow_parent_and_children} ) {
+          my $i = 0;
+          foreach my $child ( @{ $node->children } ) {
+            my $output_id =
+              Bio::EnsEMBL::Compara::ComparaUtils->hash_to_string({ 
+		node_id => $child->node_id,
+		node_set_parent_id => $id, node_set_child_number => $i++ 
+		} );
+            $self->dataflow_output_id( $output_id, 1 );
+            print "  --> Flowing child $output_id\n";
+          }
+        }
+      }
+    }
+  }
 }
 
 sub tag_root_nodes {
@@ -241,7 +273,7 @@ sub does_tree_have_clade_coverage {
       return 0 unless ( $coverage >= $value );
     }
   }
-
+  
   return 1;
 }
 
@@ -259,7 +291,9 @@ sub generic_parent_has_good_children {
   my $parent           = $node->parent;
   my @parents_children = @{ $parent->children };
   if ( $parent->node_id == 1 ) {
-    return $inclusion_function->( $node, $params );
+    my $value = $inclusion_function->($self, $node, $params );
+    #print "Root node. Values is $value\n";
+    return $value;
   }
 
   my $sister;

@@ -394,21 +394,22 @@ sub sorted_children {
 
 sub get_all_nodes {
   my $self = shift;
-  my $node_hash = shift;
+  my $node_arrayref = shift;
 
   my $toplevel = 0;
-  unless($node_hash) {
-   $node_hash = {};
+  unless($node_arrayref) {
+   $node_arrayref = [];
    $toplevel =1;
   }
 
-  $node_hash->{$self->obj_id} = $self; 
-  foreach my $child (@{$self->children}) {
-    $child->get_all_nodes($node_hash);
+  #$node_hash->{$self->obja_id} = $self; 
+  push @{$node_arrayref}, $self;
+  foreach my $child (@{$self->sorted_children}) {
+    $child->get_all_nodes($node_arrayref);
   }
 
   if ($toplevel) {
-    return [values(%$node_hash)];
+    return $node_arrayref;
   }
   return undef;
 }
@@ -1043,6 +1044,9 @@ sub _internal_newick_format {
     }
     $newick .= ")";
   }
+  if ($format_mode eq "no_bl") {
+    $newick .= sprintf("%s", $self->name);    
+  }
   if ($format_mode eq "no_zero_branch_length") {
     $newick .= sprintf("%s", $self->name);
     $newick .= sprintf(":%1.4f", $self->distance_to_parent) if ($self->distance_to_parent != 0);
@@ -1480,28 +1484,25 @@ sub remove_nodes {
     if ($node->is_leaf) {
       $node->disavow_parent;
     } elsif (defined $node->parent) {
-      my $node_children = $node->children;
+      my $node_children = $node->sorted_children;
       foreach my $child (@{$node_children}) {
 	$node->parent->add_child($child);
       }
       $node->disavow_parent;
     } else {
 	print "remove_nodes: $node neither parent nor leaf!\n";
-	next;
-    }
-    # Delete dangling one-child trees (help memory manager)
-    if ($self->get_child_count == 1) {
-      my $child = $self->children->[0];
-      $child->parent->merge_children($child);
-      $child->disavow_parent;
-      return undef;
-    }
-    # Could be zero if all asked to delete, so return undef instead of
-    # fake one-node tree.
-    if ($self->get_child_count < 2) {
 	return undef;
     }
+
   }
+
+  if ($self->get_child_count == 1) {
+    #print "remove_nodes: Root has single child. Returning only child!\n";
+    my $child = $self->sorted_children->[0];
+    $child->disavow_parent;
+    return $child->minimize_tree;
+  }
+
   return $self->minimize_tree;
 }
 

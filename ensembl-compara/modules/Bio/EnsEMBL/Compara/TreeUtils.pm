@@ -529,15 +529,37 @@ sub remove_members_by_taxon_id {
   print "Pruning leaves with taxon_ids: ". join(",",sort(@tax_ids))."\n";
   print "  Before: " . scalar($tree->leaves) . "\n";
 
+  # Take the complement of the "delete me" set and extract a subtree.
+  my @keep_me;
   foreach my $leaf ($tree->leaves) {
-    if (exists $tax_hash{$leaf->taxon_id}) {
-      $class->delete_lineage($tree,$leaf);
-      $tree->minimize_tree();
+    if (!exists $tax_hash{$leaf->taxon_id}) {
+      push @keep_me, $leaf->node_id;
+      #$class->delete_lineage($tree,$leaf);
+      #$tree->minimize_tree();
     }
   }
 
+  $tree = $class->extract_subtree_from_leaves($tree,\@keep_me);
+  
   print "  After: " . scalar($tree->leaves) . "\n";
   return $tree;
+}
+
+sub get_leaves_for_species {
+  my $class = shift;
+  my $tree = shift;
+  my $taxon_ids_obj = shift;
+
+  my @taxon_ids = @{$taxon_ids_obj};
+
+  my @leaves = ();
+  foreach my $leaf ($tree->leaves) {
+    #printf "%s %s\n",$leaf->taxon_id,$leaf->stable_id;
+    if (grep {$leaf->taxon_id == $_} @taxon_ids) {
+      push @leaves, $leaf;
+    }
+  }
+  return @leaves;
 }
 
 # Returns a list of all taxon IDs within a given tree. 
@@ -601,6 +623,7 @@ sub prune_leaves_outside_taxon {
 }
 
 # Extracts a subtree given a ProteinTree and an arrayref of node_ids.
+# @updated GJ 2010-03-27 : Overhaul for Gorilla project, lots of stuff was broken here.
 # @updated GJ 2009-01-14 : Smarter version, uses the inner method NestedSetAdaptor->_build_tree_from_nodes.
 # @created GJ 2009-01-12
 sub extract_subtree_from_leaves {
@@ -610,37 +633,39 @@ sub extract_subtree_from_leaves {
 
   die("Object not a NestedSet!") unless ($tree->isa("Bio::EnsEMBL::Compara::NestedSet"));
 
-  my $copy = $tree->copy;
   my @keepers = @{$node_ids};
-  my @all = @{$copy->get_all_nodes};
 
   # Add all ancestors of kept nodes to the keep list.
-  my @all_keepers = ();
-  foreach my $keeper (@keepers) {
-    my $node = $copy->find_node_by_node_id($keeper);
+  my %keepers_node_id_hash;
+  foreach my $keep_id (@keepers) {
+    my $node = $tree->find_node_by_node_id($keep_id);
     if (!defined $node) {
-      #$node = $copy->find_node_by_name($keeper);
-      if (!defined $node) {
-	print "Node $keeper not found in tree $tree\n";
-	next;
-      }
+      printf "Node [%s] not found in tree [%s]!\n", $keep_id, $tree->newick_format;
+      return undef;
     }
-
-    push @all_keepers, $keeper;
+    
+    $keepers_node_id_hash{$node->node_id} = 1;
 
     my $parent = $node->parent;
     while (defined $parent) {
-      push @all_keepers, $parent->node_id;
+      $keepers_node_id_hash{$parent->node_id} = 1;
       $parent = $parent->parent;
     }
   }
 
+  # Remove all nodes NOT in the keepers hash.
   my @remove_me = ();
-  foreach my $node (@all) {
-    push @remove_me, $node unless (grep {$node->node_id == $_} @all_keepers);
+  foreach my $node ($tree->nodes) {
+    if ($keepers_node_id_hash{$node->node_id}) {
+      #print $node->node_id."\n";
+    } else {
+      push @remove_me, $node;
+    }
   }
-  $copy->remove_nodes(\@remove_me);
-  return $copy;
+  
+  $tree = $tree->remove_nodes(\@remove_me);
+  #$tree = $tree->minimize_tree;
+  return $tree;
 }
 
 sub get_minimum_ancestor_from_leaves {

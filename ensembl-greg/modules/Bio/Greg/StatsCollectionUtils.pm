@@ -166,14 +166,21 @@ sub get_psc_hash {
   my $table   = $params->{'omega_table'};
   my $pset    = $params->{'parameter_set_id'};
   my $node_id = $params->{'node_id'};
+  
+  my $CLEAN_WHERE = qq^
+    AND o.note != 'random' AND o.omega_upper < 99
+    ^;
+
   my $cmd     = qq^SELECT aln_position,omega,omega_lower,omega_upper,lrt_stat,ncod,type,note 
-    FROM $table WHERE parameter_set_id=$pset and node_id=$node_id
-    AND ncod > 4 AND note != 'random' AND omega_upper > omega^;
+    FROM $table o WHERE parameter_set_id=$pset and node_id=$node_id $CLEAN_WHERE
+    ^;
+  print $cmd."\n";
   my $id_field = 'aln_position';
 
   if ( $params->{genome} ) {
     $cmd = qq^SELECT * from $table o, sitewise_genome g WHERE o.parameter_set_id=$pset AND 
-      o.node_id=$node_id AND ncod > 4 AND note != 'random' AND omega_upper > omega AND o.node_id=g.node_id
+      o.node_id=$node_id
+      AND o.node_id=g.node_id
       AND o.aln_position=g.aln_position^;
   }
 
@@ -198,6 +205,22 @@ sub psc_count {
   }
 
   return scalar(@psc_objs);
+}
+
+sub omega_median {
+  my $class = shift;
+  my $hash  = shift;
+
+  my @obj_array = map { $hash->{$_} } keys %$hash;
+
+  my @omega_values = map {$_->{omega}} @obj_array;
+  
+  @omega_values = sort {$a <=> $b} @omega_values;
+
+  my $median = $omega_values[scalar(@omega_values)/2];
+
+  return 'NA' if ( scalar @obj_array == 0 );
+  return sprintf "%.3f", $median;
 }
 
 sub omega_average {
