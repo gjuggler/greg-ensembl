@@ -1,7 +1,7 @@
 package Bio::EnsEMBL::Compara::RunnableDB::Sitewise_dNdS;
 
 use strict;
-#use Time::HiRes qw(time gettimeofday tv_interval sleep);
+use Time::HiRes qw(sleep);
 use Cwd;
 use Bio::AlignIO;
 
@@ -35,6 +35,9 @@ my $cluster_too_small;
 my $dont_write_output;
 my $aa_map;
 
+my $aln_map_aa;
+my $aln_map_cdna;
+
 sub debug {1;}
 
 sub fetch_input {
@@ -56,6 +59,8 @@ sub fetch_input {
 
     sitewise_store_opt_tree         => 1,
     sitewise_store_gaps             => 0,
+    sitewise_minimum_leaf_count     => 3,
+    sitewise_strip_gaps             => 0,
     sitewise_parameter_sets         => 'all',
     sitewise_action                 => 'slr',                # Which action(s) to perform. Space-delimited.
                                                     # 'slr' - SLR sitewise omegas.
@@ -70,6 +75,8 @@ sub fetch_input {
     slr_aminof                 => 1,                    # Options: 0, 1, 2 (default 1)
     slr_codonf                 => 0,                    # Options: 0, 1, 2 (default 0)
     slr_freqtype               => 0,                    # Options: 0, 1, 2 (default 0)
+    slr_skipsitewise           => 0,                    # Options: 0, 1 (default 0)
+    slr_malloc_check           => 0,
 
     # PAML Parameters
     #paml_model                  => 'M3',                 # Used for Bayes Empirical Bayes sitewise analysis.
@@ -119,14 +126,20 @@ sub run {
     Bio::EnsEMBL::Compara::ComparaUtils->hash_print($new_params);
 
     # Load the tree. This logic has been delegated to ComparaUtils.
+
     $tree = Bio::EnsEMBL::Compara::ComparaUtils->get_tree_for_comparative_analysis($dba,$new_params);
+    print $tree->newick_format."\n";
     $tree = $tree->minimize_tree;
-    
+
     # Think of reasons why we want to fail the job.
     my @leaves = $tree->leaves;
-    if (scalar(@leaves) <= 3) {
+    if (scalar(@leaves) < $params->{sitewise_minimum_leaf_count}) {
+      my $value = sprintf "Too small (%d < %d)",scalar(@leaves),$params->{sitewise_minimum_leaf_count};
+      $self->store_tag("slr_skipped_".$params->{parameter_set_id},$value,$params);
       next;
     } elsif (scalar(@leaves) > 300) {
+      my $value = sprintf "Too big (%d > %d)",scalar(@leaves),300;
+      $self->store_tag("slr_skipped_".$params->{parameter_set_id},$value,$params);
       next;
     }
     foreach my $leaf (@leaves) {
@@ -137,9 +150,31 @@ sub run {
     }
     
     eval {
-    $self->run_with_params($new_params,$tree);
-      $tree->release_tree;
+      $self->run_with_params($new_params,$tree);
     };
+    if ($@) {
+      print "ERROR - Trying with removed gaps...\n";
+      $new_params->{sitewise_strip_gaps} = 1;
+      
+      eval {
+	$self->run_with_params($new_params,$tree);
+      };
+      if ($@) {
+	print "ERROR - Trying with malloc_check...\n";
+	
+	$new_params->{sitewise_malloc_check} = 1;
+	
+	eval {
+	  $self->run_with_params($new_params,$tree);
+	};
+	if ($@) {
+	  print "ERROR - GIVING UP! Parameter set $param_set\n";
+	  $self->store_tag('slr_error_'.$param_set,1,$params);
+	  sleep(2);
+	}
+      }
+    }
+    $tree->release_tree;
   }
 }
 
@@ -147,8 +182,6 @@ sub run_with_params {
   my $self = shift;
   my $params = shift;
   my $tree = shift;
-
-  #$self->check_job_fail_options;
 
   print "Getting alignments...\n";
   my $aa_aln = $tree->get_SimpleAlign();
@@ -161,23 +194,32 @@ sub run_with_params {
   $input_aa = Bio::EnsEMBL::Compara::ComparaUtils->fetch_masked_alignment($aa_aln,$cdna_aln,$tree,$params,0);
   $input_cdna = Bio::EnsEMBL::Compara::ComparaUtils->fetch_masked_alignment($aa_aln,$cdna_aln,$tree,$params,1);
 
+  my ($slim_cdna,$cdna_new_to_old,$cdna_old_to_new) = Bio::EnsEMBL::Compara::AlignUtils->remove_blank_columns_in_threes($input_cdna);
+  my ($slim_aa,$aa_new_to_old,$aa_old_to_new) = Bio::EnsEMBL::Compara::AlignUtils->remove_blank_columns($input_aa);
+
+  $input_cdna = $slim_cdna;
+  $input_aa = $slim_aa;
+  $aln_map_aa = $aa_new_to_old;
+  $aln_map_cdna = $cdna_new_to_old;
+
   Bio::EnsEMBL::Compara::AlignUtils->pretty_print($input_aa,{length => 100});
   Bio::EnsEMBL::Compara::AlignUtils->pretty_print($input_cdna,{length => 100});
 
   if (get('action') =~ m/slr/i) {
     $self->run_sitewise_dNdS($tree,$input_cdna,$params);
+    sleep(2);
   } elsif (get('action') =~ m/paml/i) {
     $self->run_paml($tree,$input_cdna,$params);
   } elsif (get('action') =~ m/wobble/i) {
     $params->{'slr_wobble'} = 0;
     my $results_nowobble = $self->run_wobble($tree,$input_cdna,$params);
-    $tree->store_tag("lnl_nowobble",$results_nowobble->{'lnL'});
+    $self->store_tag("lnl_nowobble",$results_nowobble->{'lnL'},$params);
 
     sleep(2);
 
     $params->{'slr_wobble'} = 1;
     my $results_wobble = $self->run_wobble($tree,$input_cdna,$params);    
-    $tree->store_tag("lnl_wobble",$results_wobble->{'lnL'});
+    $self->store_tag("lnl_wobble",$results_wobble->{'lnL'},$params);
   }
 
 }
@@ -285,7 +327,6 @@ sub run_wobble {
   my $cwd = cwd();
   chdir($tmpdir);
 
-  my $rc = 1;
   my $results;
   my $error_string;
   {
@@ -304,8 +345,6 @@ sub run_wobble {
       push @output, $_;
     }
 
-    $exit_status = close($run);
-    
     foreach my $outline (@output) {
       if ($outline =~ /lnL\s+(\S+)/) {
 	$results->{'lnL'} = $1;
@@ -356,17 +395,14 @@ sub run_sitewise_dNdS
   my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
   
   # LOAD VARIABLES FROM PARAMS.
-  my $slrexe = get_slr('executable');
-  my $gencode = get_slr('gencode');
-  my $aminof = get_slr('aminof');
-  my $codonf = get_slr('codonf');
-  my $freqtype = get_slr('freqtype');
+  my $slrexe = $params->{slr_executable};
+  my $gencode = $params->{slr_gencode};
+  my $aminof = $params->{slr_aminof};
+  my $codonf = $params->{slr_codonf};
+  my $freqtype = $params->{slr_freqtype};
+  my $skipsitewise = $params->{slr_skipsitewise};
 
-#  $slrexe = "/nfs/users/nfs_g/gj1/bin/Slr_ensembl" if (! -e $slrexe);
-#  $slrexe = "/nfs/users/nfs_g/gj1/bin/Slr" if (! -e $slrexe);
-#  $slrexe = "/nfs/users/nfs_g/gj1/bin/Slr2" if (! -e $slrexe);
-#  $slrexe = "/nfs/users/nfs_g/gj1/bin/Slr_Linux_static" if (! -e $slrexe);
-  $slrexe = "/nfs/users/nfs_g/gj1/build_scratch/slr/bin/Slr";
+  $slrexe = "/nfs/users/nfs_g/gj1/bin/Slr_gj1" if (! -e $slrexe);
   $slrexe = "/homes/greg/bin/Slr" if (! -e $slrexe);
 
   throw("can't find an slr executable to run\n") if (!-e $slrexe);
@@ -411,97 +447,93 @@ sub run_sitewise_dNdS
   print SLR "aminof\: $aminof\n";
   print SLR "codonf\: $codonf\n";
   print SLR "freqtype\: $freqtype\n";
+  print SLR "skipsitewise\: $skipsitewise\n";
   print SLR "seed\: 1\n";
   close(SLR);
   
-  my $rc = 1;
   my $results;
-  my $error_string;
-  {
-    my $cwd = cwd();
-    chdir($tmpdir);
-    my $exit_status = 0;
+  
+  my $cwd = cwd();
+  chdir($tmpdir);
+  
+  #
+  # Run SLR and grab the output.
+  #
+  my $run;
+  my $quiet = '';
+  #$quiet = ' 2>/dev/null' unless ($self->debug);
+  
+  #print "RETRY COUNT: ".$self->input_job->retry_count."\n";
+  my $prefix = "";
+  if ($params->{sitewise_malloc_check}) {
+    $prefix= "export MALLOC_CHECK_=1;";
+  } else {
+    $prefix= "unset MALLOC_CHECK_;";
+  }
+  
+  print "Running!\n";
+  open($run, "$prefix $slrexe |") or $self->throw("Cannot open exe $slrexe");
+  my @output = <$run>;
+  
+  my $exited_well = close($run);
+  if (!$exited_well) {
+    throw("Slr didn't exit well!");
+  }
 
-    #
-    # Run SLR and grab the output.
-    #
-    my $run;
-    my $quiet = '';
-    $quiet = ' 2>/dev/null' unless ($self->debug);
-
-    #print "RETRY COUNT: ".$self->input_job->retry_count."\n";
-    #my $prefix = "";
-    #if ($self->input_job->retry_count > 0) {
-    my $prefix= "export MALLOC_CHECK_=1;";
-    #}
-
-    print "Running!\n";
-    open($run, "$prefix $slrexe |") or $self->throw("Cannot open exe $slrexe");
-    my @output = <$run>;
-
-    $exit_status = close($run);
-    #$dba->dbc->disconnect_when_inactive(0);
-    $error_string = (join('',@output));
-
-    print $error_string."\n";
-    
-    foreach my $outline (@output) {
-      if ($outline =~ /lnL = (\S+)/) {
-	$results->{"lnL"} = $1;
-      }
-      if ($outline =~ /kappa = (\S+)/i) {
-	$results->{'kappa'} = $1;
-      }
-      if ($outline =~ /omega = (\S+)/i) {
-	$results->{'omega'} = $1;
-      }
+  foreach my $outline (@output) {
+    if ($outline =~ /lnL = (\S+)/) {
+      $results->{"lnL"} = $1;
     }
-
-    if ( (grep { /\berr(or)?: /io } @output)  || !$exit_status) {
-      print "@output\n";
-      throw("There was an error running SLR!");
-      $rc = 0;
+    if ($outline =~ /kappa = (\S+)/i) {
+      $results->{'kappa'} = $1;
     }
-
-    # Collect SLR's reoptimized tree.
-    my $next_line_is_it = 0;
-    my $new_pt;
-    foreach my $outline (@output) {
-      if ($next_line_is_it) {
-        my $new_tree = $outline;
-        $new_pt = Bio::EnsEMBL::Compara::TreeUtils->from_newick($new_tree);
-        print "Original tree   : ".$tree->newick_format."\n";
-        print "Reoptimised tree: ".$new_pt->newick_format."\n";
-        last;
-      }
-      # We know that the new tree will show up just after the LnL line.
-      $next_line_is_it = 1 if ($outline =~ /lnL =/);
+    if ($outline =~ /omega = (\S+)/i) {
+      $results->{'omega'} = $1;
     }
-
-    # Reoptimise action.
-    if (get('action') =~ m/reoptimise/i) {
-      # Store new branch lengths back in the original protein_tree_node table.
-      foreach my $leaf ($tree->leaves) {
-        my $new_leaf = $new_pt->find_leaf_by_name($leaf->name);
-        $leaf->distance_to_parent($new_leaf->distance_to_parent);
-        $leaf->store;
-      }
-      print "  -> Branch lengths updated!\n";
-      $dont_write_output = 1;
-      return;
     }
-
-    # if the setting is set, store the optimized tree as a protein_tree_tag.
-    if ($params->{sitewise_store_opt_tree}) {
-      my $tree_key = "slr_tree_".$params->{parameter_set_id};
-      $tree->store_tag($tree_key,$new_pt->newick_format);
+  
+  if ( (grep { /\berr(or)?: /io } @output)) {
+    throw("There was an error running SLR!");
+  }
+  
+  # Collect SLR's reoptimized tree.
+  my $next_line_is_it = 0;
+  my $new_pt;
+  foreach my $outline (@output) {
+    if ($next_line_is_it) {
+      my $new_tree = $outline;
+      $new_pt = Bio::EnsEMBL::Compara::TreeUtils->from_newick($new_tree);
+      print "Original tree   : ".$tree->newick_format."\n";
+      print "Reoptimised tree: ".$new_pt->newick_format."\n";
+      last;
     }
-    
+    # We know that the new tree will show up just after the LnL line.
+    $next_line_is_it = 1 if ($outline =~ /lnL =/);
+  }
+  
+  # Reoptimise action.
+  if (get('action') =~ m/reoptimise/i) {
+    # Store new branch lengths back in the original protein_tree_node table.
+    foreach my $leaf ($tree->leaves) {
+      my $new_leaf = $new_pt->find_leaf_by_name($leaf->name);
+      $leaf->distance_to_parent($new_leaf->distance_to_parent);
+      $leaf->store;
+    }
+    print "  -> Branch lengths updated!\n";
+    $dont_write_output = 1;
+    return;
+  }
+  
+  # if the setting is set, store the optimized tree as a protein_tree_tag.
+  if ($params->{sitewise_store_opt_tree}) {
+    my $tree_key = "slr_tree_".$params->{parameter_set_id};
+    $self->store_tag($tree_key,$new_pt->newick_format,$params);
+  }  
+  
+  if (!$skipsitewise) {
     if (!-e "$tmpdir/$outfile") {
       throw("Error running SLR (no output file!!)\n");
     }
-
-    #eval {
     open RESULTS, "$tmpdir/$outfile" or die "couldnt open results file: $!";
     my $okay = 0;
     my @sites;
@@ -515,7 +547,7 @@ sub run_sitewise_dNdS
       if ( /^\#/ ) {
 	next;
       }
-
+      
       # Parse the notes.
       if ( /All gaps/i ) {
 	$note = 'all_gaps';
@@ -525,7 +557,7 @@ sub run_sitewise_dNdS
 	$note = 'single_char';
       } elsif ( /Synonymous/i ) {
 	$note = 'synonymous';
-      }	elsif (/\!/) {                # Make sure to parse the random note last, because it's sometimes shown alongside other notes.
+      } elsif (/\!/) {                # Make sure to parse the random note last, because it's sometimes shown alongside other notes.
 	$note = 'random';
       }
       
@@ -557,27 +589,35 @@ sub run_sitewise_dNdS
     }
     $results->{'sites'} = \@sites;
     close RESULTS;
-    #};
-    if ( $@ ) {
-      #warn($error_string);
-      warn($@);
-    }
-    chdir($cwd);
   }
+  chdir($cwd);
   
-  $results->{'rc'} = $rc;
-
   # Store the results in the database.
   my $kappa_key = "slr_kappa_".$params->{parameter_set_id};
   my $omega_key = "slr_omega_".$params->{parameter_set_id};
   my $lnl_key = "slr_lnL_".$params->{parameter_set_id};
-    
-  $tree->store_tag($kappa_key,$results->{'kappa'});
-  $tree->store_tag($omega_key,$results->{'omega'});
-  $tree->store_tag($lnl_key,$results->{'lnL'});
+  
+  print "$omega_key ".$results->{omega}."\n";
+  
+  $self->store_tag($kappa_key,$results->{'kappa'},$params);
+  $self->store_tag($omega_key,$results->{'omega'},$params);
+  $self->store_tag($lnl_key,$results->{'lnL'},$params);
   $self->store_sitewise($results,$tree,$params);
 }
 
+
+sub store_tag {
+  my $self = shift;
+  my $tag = shift;
+  my $value = shift;
+  my $params = shift;
+
+  my $node_id = $params->{node_id};
+  my $tree = $pta->fetch_node_by_node_id($node_id);
+
+  print "  -> Storing tag $tag -> $value\n";
+  $tree->store_tag($tag,$value);
+}
 
 sub run_paml {
   my $self = shift;
@@ -726,9 +766,7 @@ sub store_sitewise {
   my $tree = shift;
   my $params = shift;
 
-  my $tree_node_id = 0;
-  $tree_node_id = $tree->subroot->node_id if (defined $tree->subroot);
-  my $node_id = $tree->node_id;
+  my $node_id = $params->{node_id};
 
   my $table = 'sitewise_aln';
   $table = $params->{'omega_table'} if ($params->{'omega_table'});
@@ -746,11 +784,13 @@ sub store_sitewise {
 
     my $mapped_site = $site;
     my $original_site = $site;
-    if (defined $aa_map) {
-      $mapped_site = $aa_map->{$site};
+    if (defined $aln_map_aa) {
+      $mapped_site = $aln_map_aa->{$site};
       if (defined $mapped_site) {
 	$original_site = $site;
 	$site = $mapped_site;
+      } else {
+	die "Something went wrong! NO mapped site for $site!\n";
       }
     }
 

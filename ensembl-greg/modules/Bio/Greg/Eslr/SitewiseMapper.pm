@@ -39,8 +39,6 @@ sub fetch_input {
   $dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new( -DBCONN => $self->db->dbc );
   $pta = $dba->get_ProteinTreeAdaptor;
 
-  $pta->local_mode(-1);
-
   ### DEFAULT PARAMETERS ###
   $params->{'omega_table'}     = 'sitewise_omega';
   $params->{'do_mapping'}      = 1;
@@ -50,6 +48,7 @@ sub fetch_input {
   $params->{'collect_go'}      = 1;
   $params->{'pfam_taxon_ids'}  = '9606,10090';
   $params->{'go_taxon_ids'}    = '9606,10090';
+  $params->{'genome_taxon_id'} = 9606;
 
   $params->{'collect_tags'}     = 0;
   $params->{'collect_dup_tags'} = 0;
@@ -67,7 +66,6 @@ sub fetch_input {
   Bio::EnsEMBL::Compara::ComparaUtils->hash_print($params);
 
   $tree = Bio::EnsEMBL::Compara::ComparaUtils->get_tree_for_comparative_analysis( $dba, $params );
-  $tree = $tree->minimize_tree;
 }
 
 sub run {
@@ -78,8 +76,8 @@ sub run {
   $dba->dbc->disconnect_when_inactive(1);
 
   # Select all codons.
-  my $table   = $params->{'omega_table'};
-  my $node_id = $tree->node_id;
+  my $table   = $params->{omega_table};
+  my $node_id = $params->{node_id};
 
   if ( $params->{'do_mapping'} ) {
     print "Mapping sitewise to genome...\n";
@@ -134,41 +132,49 @@ sub run {
 sub do_mapping {
   my $self = shift;
 
-  my $node_id = $tree->node_id;
-  my $table   = $params->{'omega_table'};
+  my $node_id = $params->{node_id};
+  my $table   = $params->{omega_table};
   print "Mapping sitewise $node_id to genome...\n";
 
+  my $parameter_set_id = $params->{parameter_set_id};
   my $omega_cmd = qq^
       SELECT distinct(aln_position) aln_position FROM $table WHERE
-      ncod >= 4
-      AND note != "random"
-      AND omega_upper > omega
-      AND node_id=$node_id
+      node_id=$node_id
       ;
     ^;
   my $sth = $dba->dbc->prepare($omega_cmd);
   $sth->execute();
   my @hashrefs = @{ $sth->fetchall_arrayref( {} ) };
-  map { $pos_values->{ $_->{'aln_position'} } = 1 } @hashrefs;
+  map { $pos_values->{ $_->{aln_position} } = 1 } @hashrefs;
 
   # Run the genomic mapping code.
   use Bio::Greg::EslrUtils;
-  my $mapped_omegas = Bio::Greg::EslrUtils->mapSitewiseToGenome( $tree, 9606, $pos_values );
+  my $mapping_taxon = $params->{genome_taxon_id};
+  my $mapped_omegas = Bio::Greg::EslrUtils->mapSitewiseToGenome( $tree, $mapping_taxon, $pos_values );
 
-  #$dba->dbc->do("LOCK TABLE sitewise_genome WRITE;");
-  my $insert_cmd = qq^
-    REPLACE INTO sitewise_genome 
-    (node_id,aln_position,member_id,chr_name,chr_start,chr_end)
-    VALUES (?,?,?,?,?,?);^;
-  $sth = $dba->dbc->prepare($insert_cmd);
-
+  my @array_of_strings;
   foreach my $map ( @{$mapped_omegas} ) {
-    $sth->execute( $map->{'node_id'}, $map->{'aln_position'},
-      $map->{'member_id'}, $map->{'chr'}, $map->{'start'}, $map->{'end'} );
-    print join( " ", $map->{aln_position}, $map->{'chr'}, $map->{'start'} ) . "\n";
-    sleep(0.05);
+    my @values =
+      ( $node_id, 
+	$parameter_set_id,
+	$map->{aln_position},
+	$map->{member_id},
+	'"'.$map->{chr}.'"',
+	$map->{start},
+	$map->{end});
+    my $string = '(' . join( ',', @values ) . ')';
+    #print $string."\n";
+    push @array_of_strings, $string;
   }
-  $sth->finish();
+
+  if ( scalar(@array_of_strings) > 0 ) {
+    my $values_string = join( ",", @array_of_strings );
+    my $cmd =
+      "REPLACE INTO sitewise_genome (node_id,parameter_set_id,aln_position,member_id,chr_name,chr_start,chr_end) VALUES $values_string";
+    my $sth = $dba->dbc->prepare($cmd);
+    $sth->execute;
+    $sth->finish;
+  }
 }
 
 sub collect_gene_tags {
@@ -184,7 +190,6 @@ sub collect_dup_tags {
 sub collect_go {
   my $self = shift;
 
-  my $tree   = $pta->fetch_node_by_node_id( $tree->node_id );
   my @leaves = @{ $tree->get_all_leaves };
 
   my @taxon_ids;
@@ -215,8 +220,8 @@ sub collect_go {
 
           # Don't insert!
         } else {
-          $self->insert_go_term( $tree->node_id, $leaf, $db_e );
-          sleep(0.1);
+          $self->insert_go_term( $params->{node_id}, $leaf, $db_e );
+          sleep(0.05);
         }
       }
     }
@@ -302,7 +307,7 @@ sub collect_uniprot {
 
       next if ( !$seq_pos );
 
-      my $node_id          = $tree->node_id;
+      my $node_id          = $params->{node_id};
       my $parameter_set_id = $params->{parameter_set_id};
       my $aln_position     = $sa->column_from_residue_number( $stable_id, $seq_pos );
 
@@ -370,7 +375,7 @@ sub collect_exons {
         foreach my $pos ( $aln_start .. $aln_end ) {
 
           # Store whether we're in a first, middle, or last exon.
-          $sth->execute( $tree->node_id, $pos, $params->{parameter_set_id},
+          $sth->execute( $params->{node_id}, $pos, $params->{parameter_set_id},
             'EXON', $exon_position, "EnsEMBL" );
 
           # Store the smallest distance to an exon junction.
@@ -382,7 +387,7 @@ sub collect_exons {
             $dist = $dist_right;
           }
 
-          $sth->execute( $tree->node_id, $pos, $params->{parameter_set_id},
+          $sth->execute( $params->{node_id}, $pos, $params->{parameter_set_id},
             'SPLICE_DISTANCE', $dist, "EnsEMBL" );
         }
 
@@ -464,7 +469,7 @@ sub create_plot {
   my $self = shift;
 
   my $base_dir = "/lustre/scratch103/ensembl/gj1/2xmammals_plots";
-  my $node_id  = $tree->node_id;
+  my $node_id  = $params->{node_id};
 
   use Digest::MD5 qw(md5_hex);
   my $digest       = md5_hex($node_id);
@@ -494,7 +499,7 @@ sub create_plot {
       sitewise_table       => 'sitewise_aln'
     };
     use Bio::Greg::EslrPlots;
-    my $fresh_tree = $pta->fetch_node_by_node_id($node_id);
+    my $fresh_tree = $tree->copy;
     Bio::Greg::EslrPlots->plotTreeWithOmegas( $output_file, $params, $fresh_tree );
     $fresh_tree->release_tree;
   }

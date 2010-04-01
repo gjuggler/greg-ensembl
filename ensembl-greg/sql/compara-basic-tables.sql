@@ -350,22 +350,22 @@ CREATE TABLE IF NOT EXISTS `sitewise_omega` (
 ;
 
 
-CREATE TABLE IF NOT EXISTS `sitewise_pfam` (
-  `node_id` int unsigned NOT NULL,
-  `parameter_set_id` tinyint unsigned NOT NULL,
-  `aln_position` mediumint unsigned NOT NULL,
-  `pfam_id` char(12) NOT NULL DEFAULT '',
-
-  `pf_position` mediumint unsigned NOT NULL,
-  `score` float(10,5) DEFAULT NULL,
-
+#CREATE TABLE IF NOT EXISTS `sitewise_pfam` (
+#  `node_id` int unsigned NOT NULL,
+#  `parameter_set_id` tinyint unsigned NOT NULL,
+#  `aln_position` mediumint unsigned NOT NULL,
+#  `pfam_id` char(12) NOT NULL DEFAULT '',
+#
+#  `pf_position` mediumint unsigned NOT NULL,
+#  `score` float(10,5) DEFAULT NULL,
+#
 #  FOREIGN KEY (node_id) REFERENCES protein_tree_node(node_id) ON DELETE CASCADE ON UPDATE CASCADE,
 #  FOREIGN KEY (parameter_set_id) REFERENCES parameter_set(parameter_set_id) ON DELETE CASCADE ON UPDATE CASCADE,
-
-  UNIQUE (node_id,parameter_set_id,aln_position,pfam_id),
-  KEY `pfam_id` (`pfam_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=latin1 
-;
+#
+#  UNIQUE (node_id,parameter_set_id,aln_position,pfam_id),
+#  KEY `pfam_id` (`pfam_id`)
+#) ENGINE=InnoDB DEFAULT CHARSET=latin1 
+#;
 
 CREATE table if not exists sitewise_tag (
   node_id int unsigned NOT NULL,

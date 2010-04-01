@@ -28,12 +28,15 @@ parameter_sets();
 node_sets();
 count_sites();
 omegas();
+mapping();
 collect_stats();
 
 # Connect the dots.
 connect_analysis("NodeSets","CountSites",1);
 connect_analysis("CountSites","Omegas",1);
-connect_analysis("Omegas","CollectStats",1);
+connect_analysis("Omegas","Mapping",1);
+connect_analysis("Mapping","CollectStats",1);
+
 
 sub node_sets {
   my $logic_name = "NodeSets";
@@ -41,7 +44,7 @@ sub node_sets {
   my $params = {
     flow_node_set => 'Primates'
   };
-  _create_analysis($logic_name,$module,$params,100,1);
+  my $analysis_id = _create_analysis($logic_name,$module,$params,100,1);
 
   # Add all root nodes to this analysis.
   $params = {};
@@ -62,7 +65,9 @@ sub omegas {
   my $logic_name = "Omegas";
   my $module = "Bio::EnsEMBL::Compara::RunnableDB::Sitewise_dNdS";
   my $base_params = {
-    parameter_sets => "all",
+    sitewise_parameter_sets => "all",
+    sitewise_minimum_leaf_count => 0,
+
     sequence_quality_filtering => 0,
     alignment_score_filtering => 0,
     };
@@ -70,9 +75,25 @@ sub omegas {
 
 }
 
+sub mapping {
+  my $logic_name = "Mapping";
+  my $module = "Bio::Greg::Eslr::SitewiseMapper";
+  my $params = {
+    genome_taxon_id => 9593,
+    do_mapping => 1,
+    collect_pfam => 1,
+    collect_uniprot => 0,
+    collect_exons => 0,
+    collect_go => 1,
+    go_taxon_ids => '9606',
+    pfam_taxon_ids => '9606,9593'
+  };
+  _create_analysis($logic_name,$module,$params,200,1);
+}
+
 sub collect_stats {
   my $logic_name = "CollectStats";
-  my $module = "Bio::Greg::Gorilla::CollectStats";
+  my $module = "Bio::Greg::Eslr::CollectEslrStats";
   my $params = {
   };
   _create_analysis($logic_name,$module,$params,80,1);
@@ -116,10 +137,10 @@ sub parameter_sets {
 
   my @all = clade_taxon_ids();
   my @mamms = clade_taxon_ids("Eutheria");
-  my $not_mammals = join(",",subtract(\@all,\@mamms));
+  my @primates = clade_taxon_ids("Primates");
+  my @homininae = clade_taxon_ids("Homininae");
 
   my $everything = join(",",clade_taxon_ids());
-  my $mammals = join(",",clade_taxon_ids("Eutheria"));
 
   my $primates = join(",",clade_taxon_ids("Primates"));
   my $homininae = join(",",clade_taxon_ids("Homininae"));
@@ -131,6 +152,8 @@ sub parameter_sets {
   my $glires = join(",",clade_taxon_ids("Glires"));
   my $laurasiatheria = join(",",clade_taxon_ids("Laurasiatheria"));
   my $afrotheria = join(",",clade_taxon_ids("Afrotheria"));
+
+  my $mammals = join(",",clade_taxon_ids("Eutheria"));
 
   $params = {
     parameter_set_name => "Homininae",
@@ -196,6 +219,13 @@ sub parameter_sets {
   };
   _add_parameter_set($params);
 
+  $params = {
+    parameter_set_name => "Mammals",
+    shortname => 'm',
+    keep_species => $mammals
+  };
+  _add_parameter_set($params);
+
 }
 
 our $param_set_counter;
@@ -231,8 +261,8 @@ sub clean_tables {
       analysis analysis_job analysis_stats dataflow_rule hive
       parameter_set
       node_set_member node_set
-      sitewise_omega sitewise_tag sitewise_genome sitewise_pfam
-      go_terms      
+      sitewise_omega sitewise_tag sitewise_genome
+      go_terms
       counts_sites counts_genes
       stats_sites stats_genes
       ^;
@@ -247,7 +277,7 @@ sub clean_tables {
 #-------~~~~~~~~~-------#
 ########*********########
 
-our $analysis_counter = 1;
+our $analysis_counter = 0;
 sub _create_analysis {
   my $logic_name = shift;
   my $module = shift;
@@ -255,7 +285,7 @@ sub _create_analysis {
   my $hive_capacity = shift || 500;
   my $batch_size = shift || 1;
 
-  my $analysis_id = $analysis_counter++;
+  my $analysis_id = ++$analysis_counter;
   
   $analysis_hash->{$logic_name} = $analysis_id;
   my $param_string = Bio::EnsEMBL::Compara::ComparaUtils->hash_to_string($params);
@@ -273,6 +303,7 @@ sub _create_analysis {
 	      batch_size=$batch_size
 	      ;};
   $dbc->do($cmd);
+  return $analysis_id;
 }
 
 sub connect_analysis {

@@ -65,6 +65,7 @@ sub mapSitewiseToGenome {
 
   my $sa      = $tree->get_SimpleAlign;
   my $aln_len = $sa->length;
+  Bio::EnsEMBL::Compara::AlignUtils->pretty_print($sa,{length=>200});
 
   my @leaves         = $tree->leaves;
   my @genomic_coords = ();
@@ -84,6 +85,7 @@ sub mapSitewiseToGenome {
         my $char = substr( $seq_str, $i - 1, 1 );
 
         my $loc = $seq->location_from_column($i);
+	#print "$i $char $loc\n";
         next if ( !defined $loc || $loc->location_type() eq 'IN-BETWEEN' );
 
         #next if ($char eq '-');

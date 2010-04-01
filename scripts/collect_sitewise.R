@@ -27,9 +27,11 @@ factorize = function(data,columns=names(data)) {
 }
 
 # Get the parameter sets.
-get.psets = function() {
-  query = paste('SELECT n.parameter_set_id AS id,sn.parameter_value AS shortname, n.parameter_value AS name FROM parameter_set n, parameter_set sn',
-    'WHERE n.parameter_set_id=sn.parameter_set_id AND n.parameter_name="name" AND sn.parameter_name="shortname";')
+get.psets = function(db='gj1_eslr_57') {
+  query = sprintf(
+    paste('SELECT n.parameter_set_id AS id,sn.parameter_value AS shortname, n.parameter_value AS name FROM %s.parameter_set n, %s.parameter_set sn',
+      'WHERE n.parameter_set_id=sn.parameter_set_id AND n.parameter_name="name" AND sn.parameter_name="shortname";'),
+    db,db)
   return(get.vector(con,query,columns='all'))
 }
 
@@ -40,12 +42,19 @@ get.genes = function(parameter.set.id=1,db="gj1_eslr_57") {
   return(data)
 }
 
+get.genes.list = function(db="gj1_eslr_57") {
+  query = sprintf("SELECT * FROM %s.stats_genes",db);
+  data = get.vector(con,query,columns='all')
+  return(data)
+}
+
 get.genes.merged = function(db="gj1_eslr_57") {
   all.node.ids = get.vector(con,sprintf('SELECT DISTINCT(node_id) FROM %s.stats_genes',db))
   
-  param.sets = get.psets()
-
-  genes = get.genes(1)
+  param.sets = get.psets(db=db)
+  print(param.sets)
+  
+  genes = get.genes(1,db=db)
   
   for (pset in param.sets$id) {
     cur.genes = get.genes(pset,db=db)

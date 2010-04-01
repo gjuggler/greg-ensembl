@@ -5,7 +5,7 @@ if (exists('drv')) {
   drv <- dbDriver('MySQL')
 }
 connect.db = function(dbName) {
-  con <- dbConnect(drv, host='ens-research', port=3306, user='ensro', password='', dbname='gj1_eslr_57')
+  con <- dbConnect(drv, host='ens-research', port=3306, user='ensro', password='', dbname='gj1_2x_57')
   return(con)
 }
 con = connect.db("gj1_2x_57")
@@ -28,14 +28,14 @@ get.psets = function() {
   return(get.vector(con,query,columns='all'))
 }
 
-get.genes = function(parameter.set.id=1,db="gj1_eslr_57") {
+get.genes = function(parameter.set.id=1,db="gj1_2x_57") {
   query = sprintf("SELECT * FROM %s.stats_genes where parameter_set_id=%s",db,parameter.set.id);
   data = get.vector(con,query,columns='all')
 
   return(data)
 }
 
-get.genes.merged = function(db="gj1_eslr_57") {
+get.genes.merged = function(db="gj1_2x_57") {
   all.node.ids = get.vector(con,sprintf('SELECT DISTINCT(node_id) FROM %s.stats_genes',db))
   
   param.sets = get.psets()

@@ -529,13 +529,18 @@ sub remove_members_by_taxon_id {
   print "Pruning leaves with taxon_ids: ". join(",",sort(@tax_ids))."\n";
   print "  Before: " . scalar($tree->leaves) . "\n";
 
+  # Take the complement of the "delete me" set and extract a subtree.
+  my @keep_me;
   foreach my $leaf ($tree->leaves) {
-    if (exists $tax_hash{$leaf->taxon_id}) {
-      $class->delete_lineage($tree,$leaf);
-      $tree->minimize_tree();
+    if (!exists $tax_hash{$leaf->taxon_id}) {
+      push @keep_me, $leaf->node_id;
+      #$class->delete_lineage($tree,$leaf);
+      #$tree->minimize_tree();
     }
   }
 
+  $tree = $class->extract_subtree_from_leaves($tree,\@keep_me);
+  
   print "  After: " . scalar($tree->leaves) . "\n";
   return $tree;
 }
