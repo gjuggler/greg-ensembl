@@ -178,7 +178,7 @@ sub simulate_alignment_indelible {
   my $tree   = shift;
   my $params = shift;
 
-  $tree = Bio::EnsEMBL::Compara::TreeUtils->scale( $tree, 1.95 );
+  #$tree = Bio::EnsEMBL::Compara::TreeUtils->scale( $tree, 1.95 );
 
   my $models_trees_partitions = '';
 

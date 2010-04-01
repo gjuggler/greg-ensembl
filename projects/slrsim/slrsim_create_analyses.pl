@@ -41,7 +41,7 @@ connect_analysis( "Omegas",      "CollectStats", 1 );
 sub clean_tables {
   if ($clean) {
     my @truncate_tables = qw^
-      sequence
+      sequence sequence_cds
       analysis analysis_job dataflow_rule hive
       sitewise_omega
       stats_slrsim

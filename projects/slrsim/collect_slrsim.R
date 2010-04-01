@@ -101,15 +101,15 @@ df.stats = function(df,
   }
 
     # Collect stats for SLR-type runs.
-    pos_pos = nrow(subset(df,true_type=="positive1" & lrt>thresh & aln_dnds>aln_thresh))
-    neg_pos = nrow(subset(df,true_type!="positive1" & lrt>thresh & aln_dnds>aln_thresh))
-    neg_neg = nrow(subset(df,true_type!="positive1" & !(lrt>thresh & aln_dnds>aln_thresh)))
-    pos_neg = nrow(subset(df,true_type=="positive1" & !(lrt>thresh & aln_dnds>aln_thresh)))
+    pos_pos = nrow(subset(df,true_type=="positive1" & aln_lrt>thresh & aln_dnds>aln_thresh))
+    neg_pos = nrow(subset(df,true_type!="positive1" & aln_lrt>thresh & aln_dnds>aln_thresh))
+    neg_neg = nrow(subset(df,true_type!="positive1" & !(aln_lrt>thresh & aln_dnds>aln_thresh)))
+    pos_neg = nrow(subset(df,true_type=="positive1" & !(aln_lrt>thresh & aln_dnds>aln_thresh)))
 
     pos_all = nrow(subset(df,true_type=="positive1"))
     neg_all = nrow(subset(df,true_type!="positive1"))
-    all_pos = nrow(subset(df,lrt>thresh & aln_dnds>aln_thresh))
-    all_neg = nrow(subset(df,!(lrt>thresh & aln_dnds>aln_thresh)))
+    all_pos = nrow(subset(df,aln_lrt>thresh & aln_dnds>aln_thresh))
+    all_neg = nrow(subset(df,!(aln_lrt>thresh & aln_dnds>aln_thresh)))
 
   all = nrow(df)
 
@@ -149,7 +149,7 @@ df.swfwer = function(df,
   }
 
   df.fp = function(df,thresh) {
-    fps = nrow(subset(df,true_type!="positive1" & lrt>thresh & aln_dnds>aln_thresh))
+    fps = nrow(subset(df,true_type!="positive1" & aln_lrt>thresh & aln_dnds>aln_thresh))
     return(fps)
   }
 
@@ -205,7 +205,7 @@ df.alignment.accuracy = function(df) {
 summarize.results = function(data,thresh=3.8,paml_thresh=0.95) {
 
   # Paste together some metadata so that we have one ID per experiment.
-  attrs = c('slrsim_file','alignment_name','filtering_name','slrsim_ref','sitewise_name','phylosim_insertrate','slrsim_tree_length')
+  attrs = c('slrsim_file','alignment_name','filtering_name','alignment_score_threshold','slrsim_ref','sitewise_name','phylosim_insertrate','slrsim_tree_length')
 
   ids = rep("",nrow(data))
   for (attr in attrs) {
@@ -256,12 +256,12 @@ get.perf = function(df,...) {
   if (!is.paml(df)) {
     #print("Signed LRT...")
     # Create a signed LRT if it's SLR-based data.
-    df$lrt = sign(df$aln_dnds-1)*df$lrt
+    df$aln_lrt = sign(df$aln_dnds-1)*df$aln_lrt
   }
   truth = as.integer( df$true_dnds > 1 )
   
   require(ROCR)
-  pred = prediction(df$lrt,truth)
+  pred = prediction(df$aln_lrt,truth)
   perf = performance(pred,measure="tpr",x.measure="fpr")
   return(perf)
 }
@@ -302,21 +302,73 @@ filtering.roc = function(data) {
   dev.off()
 }
 
+filter.sweep.roc = function(data) {
+  comb = data.frame()
+  for (aln in c('mcoffee')) {
+    for (filt in c('prank_treewise')) {
+      for (thresh in c(0,2,4,6,8,10)) {
+        if (aln == 'True Alignment' && (filt != 'None' || thresh != 5)) {
+          next;
+        }
+
+        sub = subset(data, alignment_name==aln & filtering_name==filt & alignment_score_threshold==thresh)
+        print(paste(aln,filt,thresh,nrow(sub),sep="/"))
+        if (nrow(sub)==0) {next}
+        sub.roc = slr.roc(sub)
+        sub.roc$filter = as.factor(filt)
+        sub.roc$aln = as.factor(aln)
+        sub.roc$thresh = as.factor(thresh)
+        sub.roc$label = paste(aln,filt,thresh,sep="/")
+        comb = rbind(sub.roc,comb)      
+      }
+    }
+  }
+  return(comb)
+}
+
+plot.roc = function(data) {
+  require(ggplot2)
+  require(grid)
+  print(nrow(data))
+  png(file="~/public_html/roc.png",width=600,height=600)
+
+  # See http://learnr.wordpress.com/2009/05/26/ggplot2-two-or-more-plots-sharing-the-same-legend/
+  lay = grid.layout(nrow=2,ncol=2,
+    widths=unit(c(2,0.5),c("null","null")),
+    heights=unit(c(1,1),c("null","null")))
+  vplayout = function(...) {grid.newpage();pushViewport(viewport(layout=lay))}
+  subplot = function(x,y){viewport(layout.pos.row=x,layout.pos.col=y)}
+    
+  vplayout()
+
+  p <- ggplot(data,aes(x=tn,y=tp,group=label,colour=label)) + geom_line()
+  no.leg = opts(legend.position="none")
+
+  p1 <- p + no.leg
+  p2 <- p + xlim(0,1000) + no.leg
+  leg <- p + opts(keep="legend_box")
+
+  print(p1,vp=subplot(1,1))
+  print(p2,vp=subplot(2,1))
+  print(leg,vp=subplot(1:2,2))
+  dev.off()  
+}
+
 slr.roc = function(df) {
   library(doBy)
   library(plyr)
 
   if (!is.paml(df)) {
     # Create a signed LRT if it's SLR-based data.
-    df$score = sign(df$aln_dnds-1)*df$lrt
+    df$score = sign(df$aln_dnds-1)*df$aln_lrt
   } else {
-    df$score = df$lrt
+    df$score = df$aln_lrt
   }
   df$truth = as.integer( df$true_dnds > 1 )
   df <- orderBy(~-score,data=df)
-  print(df[1:10,])
+  #print(df[1:10,])
   df$tp = cumsum(df$truth)
-  df$fp = cumsum(1-df$truth)
+  df$tn = cumsum(1-df$truth)
   
   return(df)
 }

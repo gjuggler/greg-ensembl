@@ -27,9 +27,12 @@ my $results;
 
 my $slrsim_stats_def = {
   aln_position => 'int',
+  seq_position => 'int',
 
+  slrsim_project_name => 'string',
   slrsim_scheme_name => 'string',
   alignment_name     => 'string',
+  alignment_score_threshold => 'float',
   filtering_name     => 'string',
   sitewise_name      => 'string',
   species_name       => 'string',
@@ -46,7 +49,7 @@ my $slrsim_stats_def = {
   phylosim_deleterate         => 'float',
   phylosim_insertmodel        => 'string',
   phylosim_deletemodel        => 'string',
-  phylosim_domains            => 'string',
+#  phylosim_domains            => 'string',
 
   parameter_set_name => 'string',
 
@@ -61,12 +64,14 @@ my $slrsim_stats_def = {
   true_dnds              => 'float',
   true_type              => 'string',
   true_entropy           => 'float',
+  true_ncod              => 'int',
+  true_ungapped_branch_length => 'float',
   aln_dnds               => 'float',
   aln_type               => 'string',
   aln_entropy            => 'float',
-  ungapped_branch_length => 'float',
-  ncod                   => 'int',
-  lrt                    => 'float',
+  aln_ungapped_branch_length => 'float',
+  aln_ncod                   => 'int',
+  aln_lrt                    => 'float',
 
   gene_lrt_paml  => 'float',
   gene_lnl_slr   => 'float',
@@ -84,7 +89,6 @@ my $slrsim_stats_def = {
   site_count                => 'float',
   unfiltered_site_count     => 'float',
   unfiltered_site_fraction  => 'float',
-  alignment_score_threshold => 'float',
 
   unique_keys => 'aln_position,node_id,parameter_set_id'
 };
@@ -139,6 +143,8 @@ sub get_data_for_node {
   my $node_id          = shift;
   my $parameter_set_id = shift;
 
+  $dba->dbc->disconnect_when_inactive(1) if ($dba);
+
   my $param_set_params =
     Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_param_set( $dba->dbc, $parameter_set_id );
   my $cur_params = $self->replace_params( $params, $param_set_params );
@@ -160,15 +166,16 @@ sub get_data_for_node {
     ( $tree, $sa_true, $cdna_true ) =
       Bio::EnsEMBL::Compara::ComparaUtils->tree_aln_cdna( $dba, $true_aln_params );
 
-    $true_aln_params = $self->replace_params( $cur_params, { alignment_score_filtering => 0 } );
     ( $tree, $sa_aln, $cdna_aln ) =
       Bio::EnsEMBL::Compara::ComparaUtils->tree_aln_cdna( $dba, $cur_params );
 
-    Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $sa_true, { length => 200 } );
-    Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $sa_aln,  { length => 200 } );
+    Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $cdna_true, { length => 180 } );
+    Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $cdna_aln,  { length => 180 } );
 
     @true_entropies = Bio::EnsEMBL::Compara::AlignUtils->column_entropies($cdna_true);
     @aln_entropies  = Bio::EnsEMBL::Compara::AlignUtils->column_entropies($cdna_aln);
+    #@true_entropies = ();
+    #@aln_entropies = ();
     $sum_of_pairs_score =
       Bio::EnsEMBL::Compara::AlignUtils->sum_of_pairs_score( $sa_true, $sa_aln );
     $total_column_score =
@@ -253,6 +260,7 @@ sub get_data_for_node {
     my $true_col = $sa_true->column_from_residue_number( $ref_name, $i );
     my $aln_col = $sa_aln->column_from_residue_number( $ref_name, $i );
 
+    $obj->{seq_position} = $i;
     $obj->{aln_position} = $aln_col;
     $obj->{true_dnds}    = $true_omegas->{$true_col}->{'omega'};
     $obj->{aln_dnds}     = $aln_omegas->{$aln_col}->{'omega'};
@@ -273,26 +281,29 @@ sub get_data_for_node {
         }
       }
     }
-    my @array = Bio::EnsEMBL::Compara::AlignUtils->get_column_array( $sa_aln, $aln_col );
-
+    #my @array = Bio::EnsEMBL::Compara::AlignUtils->get_column_array( $sa_aln, $aln_col );
     #print join("",@array)." ".$obj->{aln_dnds}." ".$aln_omegas->{$aln_col}->{'note'}."\n";
 
     $obj->{aln_type}  = $aln_omegas->{$aln_col}->{'type'}   || '';
     $obj->{true_type} = $true_omegas->{$true_col}->{'type'} || '';
     $obj->{aln_note}  = $aln_omegas->{$aln_col}->{'note'}   || '';
-    $obj->{ncod}      = $aln_omegas->{$aln_col}->{'ncod'}   || 0;
+    $obj->{true_ncod} = $true_omegas->{$true_col}->{'ncod'} || '';
+    $obj->{aln_ncod}      = $aln_omegas->{$aln_col}->{'ncod'}   || '';
+    $obj->{aln_lrt} = $aln_omegas->{$aln_col}->{'lrt_stat'} || 99;
     $obj->{true_entropy} = sprintf( "%.3f", $true_entropies[$true_col] || 0 );
     $obj->{aln_entropy}  = sprintf( "%.3f", $aln_entropies[$aln_col]   || 0 );
-    $obj->{lrt} = $aln_omegas->{$aln_col}->{'lrt_stat'} || 99;
 
-    $obj->{ungapped_branch_length} =
-      Bio::EnsEMBL::Compara::AlignUtils->get_ungapped_branchlength( $sa_aln, $tree, $aln_col );
+    #$obj->{aln_ungapped_branch_length} =
+    #  Bio::EnsEMBL::Compara::AlignUtils->get_ungapped_branchlength( $sa_aln, $tree, $aln_col );
 
     # Store values in our output table.
     $obj = $self->replace_params( $obj, $cur_params );
     my $table = $cur_params->{'collect_slrsim_stats_table'};
     $self->store_params_in_table( $dba, $table, $obj );
   }
+
+  $dba->dbc->disconnect_when_inactive(0) if ($dba);
+
 }
 
 1;

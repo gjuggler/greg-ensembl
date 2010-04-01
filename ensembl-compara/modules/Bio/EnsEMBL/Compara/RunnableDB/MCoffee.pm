@@ -183,7 +183,9 @@ sub fetch_input {
 	@array = @mcoffee_order;
       }
       $index = scalar(@array) -1 if ($index > scalar(@array) - 1);
-      $params->{'alignment_method'} = $array[$index];
+      if (defined $array[$index] && $array[$index] ne '') {
+        $params->{'alignment_method'} = $array[$index];
+      }
     }
 
     print "Alignment method: ".$params->{'alignment_method'}."\n";
@@ -212,10 +214,12 @@ sub run
     $self->check_if_exit_cleanly;
 
     my $method = $params->{'alignment_method'};
-    if ($method =~ '(coffee|muscle)') {
+    if ($method =~ '(coffee|muscle|clustalw)') {
       $sa_aligned = $self->align_with_mcoffee($sa,$tree,$params);
     } elsif ($method =~ m/prank/) {
-      $params->{alignment_prank_f} = 1 if ($method =~ m/_f/);
+      if ($method =~ m/_f/) {
+        $params->{alignment_prank_f} = 1;
+      }
       if ($method =~ m/_codon/) {
         $params->{alignment_prank_codon_model} = 1;
         $sa_cds = $tree->get_SimpleAlign(-cdna => 1);
@@ -224,6 +228,8 @@ sub run
       } else {
         $sa_aligned = $self->align_with_prank($sa,$tree,$params);
       }
+    } elsif ($method =~ m/papaya/) {
+      $sa_aligned = $self->align_with_papaya($sa,$tree,$params);
     }
 }
 
@@ -307,6 +313,49 @@ sub align_with_prank {
   return $aln;
 }
 
+sub align_with_papaya {
+  my $self = shift;
+  my $aln = shift;
+  my $tree = shift;
+  my $params = shift;
+
+  my $tmp = $self->worker_temp_directory;
+  print "$tmp\n";
+  
+  # Output alignment.
+  my $aln_file = $tmp . "aln.fasta";
+  Bio::EnsEMBL::Compara::AlignUtils->to_file($aln,$aln_file); # Write the alignment out to file.
+  
+  my $tree_file = $tmp . "tree.nh";
+  my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
+  Bio::EnsEMBL::Compara::TreeUtils->to_file($treeI,$tree_file);
+
+  $output_file = $tmp . "output";
+  
+  my $executable = $params->{'alignment_executable'} || 'papaya';
+  my $extra_params = '';
+  
+  my $cmd = qq^$executable $extra_params --seqfile $aln_file --treefile $tree_file --outfile $output_file^;
+
+  # Run the command.
+  $dba->dbc->disconnect_when_inactive(1);
+  my $rc = system($cmd);
+  $dba->dbc->disconnect_when_inactive(0);
+
+  unless($rc == 0) {
+    print "Papaya error!\n";
+    die;
+  }
+  
+  $output_file .= '.fas';
+
+  use Bio::AlignIO;
+  my $alignio = Bio::AlignIO->new(-file => $output_file,
+                                  -format => "fasta");
+  my $aln = $alignio->next_aln();
+  return $aln;
+}
+
 
 sub align_with_mcoffee
 {
@@ -377,8 +426,8 @@ sub align_with_mcoffee
 	
 	# PRANK: phylogeny-aware alignment.
 	$method_string .= "prank_msa";
-    }  else {
-	
+    }  elsif ($method eq 'clustalw') {
+	$method_string .= "clustalw_msa";
     }
     # GJ 2008-11-17: Use exon boundaries if desired.
     if ($params->{'use_exons'}) {
@@ -465,32 +514,32 @@ sub parse_and_store_alignment_into_proteintree
   }
 
   # Read in the scores file manually.
-  my %score_hash;
-  if ($mcoffee_scores_f && -e $mcoffee_scores_f) {
-    my %overall_score_hash;
-    my $FH = IO::File->new();
-    $FH->open($mcoffee_scores_f) || throw("Could not open alignment scores file [$mcoffee_scores_f]");
-    <$FH>; #skip header
-    my $i=0;
-    while(<$FH>) {
-      $i++;
-      next if ($i < 7); # skip first 7 lines.
-      next if($_ =~ /^\s+/);  #skip lines that start with space
-      if ($_ =~ /:/) {
-        my ($id,$overall_score) = split(/:/,$_);
-        $id =~ s/^\s+|\s+$//g;
-        $overall_score =~ s/^\s+|\s+$//g;
-        print "___".$id."___".$overall_score."___\n";
-        next;
-      }
-      chomp;
-      my ($id, $align) = split;
-      $score_hash{$id} = '' if (!exists $score_hash{$id});
-      $score_hash{$id} .= $align;
-      print $id." ". $align."\n";
-    }
-    $FH->close;
-  }
+  #my %score_hash;
+  #if ($mcoffee_scores_f && -e $mcoffee_scores_f) {
+  #  my %overall_score_hash;
+  #  my $FH = IO::File->new();
+  #  $FH->open($mcoffee_scores_f) || throw("Could not open alignment scores file [$mcoffee_scores_f]");
+  #  <$FH>; #skip header
+  #  my $i=0;
+  #  while(<$FH>) {
+  #    $i++;
+  #    next if ($i < 7); # skip first 7 lines.
+  #    next if($_ =~ /^\s+/);  #skip lines that start with space
+  #    if ($_ =~ /:/) {
+  #      my ($id,$overall_score) = split(/:/,$_);
+  #      $id =~ s/^\s+|\s+$//g;
+  #      $overall_score =~ s/^\s+|\s+$//g;
+  #      print "___".$id."___".$overall_score."___\n";
+  #      next;
+  #    }
+  #    chomp;
+  #    my ($id, $align) = split;
+  #    $score_hash{$id} = '' if (!exists $score_hash{$id});
+  #    $score_hash{$id} .= $align;
+  #    print $id." ". $align."\n";
+  #  }
+  #  $FH->close;
+  #}
 
   # Convert alignment strings into cigar_lines
   my $alignment_length;
@@ -546,12 +595,12 @@ sub parse_and_store_alignment_into_proteintree
       }
 	  # Do a manual insert of the *scores* into the correct score output table.
       
-      if (%score_hash) {
+      #if (%score_hash) {
         #my $score_string = $score_hash{$member->stable_id};
         #$score_string =~ s/[^\d-]/9/g;   # Convert non-digits and non-dashes into 9s. This is necessary because t_coffee leaves some leftover letters.
         #printf("Updating $score_table %.10s : %.30s ...\n",$member->stable_id,$score_string) if ($self->debug);
         #$sth2->execute($member->node_id,$member->member_id,$member->method_link_species_set_id,$score_string,$score_string);
-      }
+      #}
       sleep(0.05);
   }
 

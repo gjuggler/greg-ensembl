@@ -137,17 +137,17 @@ sub create_simsets {
     sitewise_name   => 'None',
     sitewise_action => ''
   };
-  my $slr = {
+  my $sitewise_slr = {
     sitewise_name   => 'SLR',
     sitewise_action => 'slr'
   };
-  my $paml = {
+  my $sitewise_paml = {
     sitewise_name   => 'PAML M8A/M8B',
     sitewise_action => 'paml_sitewise paml_lrt',
     paml_model_a    => 'M8a',
     paml_model_b    => 'M8'
   };
-  my $paml_alt = {
+  my $sitewise_paml_alt = {
     sitewise_name   => 'PAML M2/M3',
     sitewise_action => 'paml_sitewise paml_lrt',
     paml_model_a    => 'M2',
@@ -171,16 +171,17 @@ sub create_simsets {
   );
 
   my $indel_model_a = {
-    phylosim_insertmodel = 'POW 1.8 50',
-    phylosim_deletemodel = 'POW 1.8 50',
-    phylosim_insertrate => 0.05,
-    phylosim_deleterate => 0.05
+    phylosim_insertmodel => 'POW 1.8 50',
+    phylosim_deletemodel => 'POW 1.8 50',
+    phylosim_insertrate  => 0.05,
+    phylosim_deleterate  => 0.05
   };
 
   my $slrsim_base_a = replace(
     $base_params,
     $massingham_05_A2,
     $indel_model_a,
+    $sitewise_slr,
     tree_param($fortyfourmammals),
     species_param('Human'), {
       slrsim_tree_mult          => 1,
@@ -384,7 +385,7 @@ sub create_simsets {
     my $cur_params = replace(
       $base_params,
       $massingham_05_A2,    # Sitewise sim.
-      $slr,                 # Sitewise analysis.
+      $sitewise_slr,        # Sitewise analysis.
       {
         slrsim_ref                => 'Human',
         phylosim_insertmodel      => 'POW 1.8 50',
@@ -420,7 +421,7 @@ sub create_simsets {
     my $cur_params = replace(
       $base_params,
       $massingham_05_A2,    # Sitewise sim.
-      $slr,                 # Sitewise analysis.
+      $sitewise_slr,        # Sitewise analysis.
       {
         phylosim_insertmodel      => 'POW 1.8 50',
         phylosim_deletemodel      => 'POW 1.8 50',
@@ -451,27 +452,57 @@ sub create_simsets {
   sub filter_sweeps {
     my @sets = ();
 
-    my @aln_params = map { aln_param($_) } ( 'true', 'mcoffee', 'prank_f' );
+    my $final_params = {
+      slrsim_replicates   => 50,
+      slrsim_project_name => "Filter sweeps 2010-03-25"
+    };
+
+    my $p = replace( $slrsim_base_a, aln_param('true'), filter_param('none'), $final_params );
+    push @sets, $p;
+
+    my @aln_params = map { aln_param($_) } ( 'mcoffee', 'prank_f' );
     my @filter_params =
       map { filter_param($_) } ( 'tcoffee', 'indelign', 'prank_treewise', 'prank_mean' );
 
     foreach my $aln (@aln_params) {
       foreach my $fp (@filter_params) {
         foreach my $threshold ( 0, 2, 4, 6, 8, 10 ) {
-          my $p = replace(
-            $slrsim_base_a,
-            $aln, $fp, {
-
-            }
-          );
+          my $p =
+            replace( $slrsim_base_a, $aln, $fp, $final_params,
+            { alignment_score_threshold => $threshold, } );
+          push @sets, $p;
         }
       }
     }
-
+    return @sets;
   }
 
-  @simulation_sets = ref_sim();
+  sub aligner_comparison {
+    my @sets;
 
+    my $final_params = {
+      slrsim_replicates   => 50,
+      slrsim_project_name => "Alignment Comparison 2010-03-27"
+    };
+
+    my $filter_p = filter_param('none');
+    my @aln_params =
+      map { aln_param($_) }
+      ( 'clustalw', 'muscle', 'mcoffee', 'prank', 'prank_f', 'prank_codon', 'papaya' );
+
+    foreach my $aln (@aln_params) {
+      my $p = replace( $slrsim_base_a, $aln, $filter_p, $final_params );
+      verify_params($p);
+      push @sets, $p;
+    }
+
+    return @sets;
+  }
+
+  @simulation_sets = aligner_comparison();
+
+  #@simulation_sets = filter_sweeps();
+  #@simulation_sets = ref_sim();
   #@simulation_sets = sitewise_sim();
   #@simulation_sets = filtering_sim();
   #@simulation_sets = all_trees();
@@ -483,7 +514,7 @@ sub verify_params {
   my $p = shift;
 
   $p->{alignment_table}         = 'aln'            unless defined( $p->{alignment_table} );
-  $p->{alignment_scores_action} = ''               unless defined( $p->{alignment_scores_action} );
+  $p->{alignment_scores_action} = 'none'           unless defined( $p->{alignment_scores_action} );
   $p->{omega_table}             = 'sitewise_omega' unless defined( $p->{omega_table} );
 
   # Check that we have proper filter and alignment tables.
@@ -537,7 +568,7 @@ sub filter_param {
   if ( $filter eq 'none' ) {
     $f = {
       filtering_name            => 'None',
-      alignment_scores_action   => 'score',
+      alignment_scores_action   => 'none',
       alignment_score_filtering => 0
     };
   }
