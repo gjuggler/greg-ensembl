@@ -69,6 +69,7 @@ sub fetch_input {
                                                     # 'slr_reoptimise' - reoptimise with SLR
                                                     # 'paml_reoptimise' - reoptimise with PAML
                                                     # 'paml_lrt' - likelihood ratio test with PAML
+                                                    # 'hyphy_dnds' - Calculate dn/ds with HYPHY, along with confidence intervals.
 
     # SLR Parameters
     slr_gencode                => 'universal',
@@ -185,7 +186,7 @@ sub run_with_params {
 
   print "Getting alignments...\n";
   my $aa_aln = $tree->get_SimpleAlign();
-  my $cdna_aln = $tree->get_SimpleAlign(-cdna => 1);
+  my $cdna_aln = $tree->get_SimpleAlign(-cdna => 1, -hide_positions => 1);
 
   foreach my $leaf ($tree->leaves) {
     #print $leaf->member_id."\n";
@@ -205,12 +206,13 @@ sub run_with_params {
   Bio::EnsEMBL::Compara::AlignUtils->pretty_print($input_aa,{length => 100});
   Bio::EnsEMBL::Compara::AlignUtils->pretty_print($input_cdna,{length => 100});
 
-  if (get('action') =~ m/slr/i) {
+  my $action = get('action');
+  if ($action =~ m/slr/i) {
     $self->run_sitewise_dNdS($tree,$input_cdna,$params);
     sleep(2);
-  } elsif (get('action') =~ m/paml/i) {
+  } elsif ($action =~ m/paml/i) {
     $self->run_paml($tree,$input_cdna,$params);
-  } elsif (get('action') =~ m/wobble/i) {
+  } elsif ($action =~ m/wobble/i) {
     $params->{'slr_wobble'} = 0;
     my $results_nowobble = $self->run_wobble($tree,$input_cdna,$params);
     $self->store_tag("lnl_nowobble",$results_nowobble->{'lnL'},$params);
@@ -220,6 +222,10 @@ sub run_with_params {
     $params->{'slr_wobble'} = 1;
     my $results_wobble = $self->run_wobble($tree,$input_cdna,$params);    
     $self->store_tag("lnl_wobble",$results_wobble->{'lnL'},$params);
+  } elsif ($action =~ m/hyphy_dnds/i) {
+    $self->run_hyphy($tree,$input_cdna,$params);
+  } elsif ($action =~ m/xrate_indels/i) {
+    $self->run_xrate_indels($tree,$input_cdna,$params);
   }
 
 }
@@ -232,6 +238,103 @@ sub get {
 sub get_slr {
   my $key = shift;
   return $params->{'slr_'.$key};
+}
+
+sub run_hyphy {
+  my $self = shift;
+  my $tree = shift;
+  my $cdna_aln = shift;
+  my $params = shift;
+
+  my $cwd = cwd();
+  my $tmpdir = $self->worker_temp_directory;
+  chdir($tmpdir);
+
+  # OUTPUT THE ALIGNMENT.
+  my $aln_f = $tmpdir. "aln.fa";
+  open(OUT,">$aln_f");
+  foreach my $seq ($cdna_aln->each_seq) {
+    my $name = $seq->id;
+    print OUT ">$name\n";
+    print OUT $seq->seq."\n";
+  }
+  close(OUT);
+
+  # OUTPUT THE TREE.
+  my $tree_f = $tmpdir . "tree.nh";
+  my $tree_newick = Bio::EnsEMBL::Compara::TreeUtils->to_newick($tree);
+  open(OUT,">$tree_f");
+  print OUT $tree_newick . "\n";
+  close(OUT);
+
+  my $control_f = $tmpdir . "control.txt";
+  my $model_filename = "gy94.bf";
+  open(OUT,">$control_f");
+  print OUT $aln_f."\n";
+  print OUT $tree_f . "\n";
+  print OUT $model_filename . "\n";
+  close(OUT);
+
+  my $batch_file = "~gj1/src/greg-ensembl/ensembl-greg/scripts/hyphy/fit_codon_model.bf";
+  
+  my $cmd = "HYPHY $batch_file < $control_f";
+  print $cmd."\n";
+  my @output = `$cmd`;
+  print "@output\n";
+
+  my $omega_lo = 0;
+  my $omega_hi = 0;
+  my $omega = 0;
+  foreach my $line (@output) {
+    $omega_lo = $1 if ($line =~ m/omega_lo:(.*)/);
+    $omega_hi = $1 if ($line =~ m/omega_hi:(.*)/);
+    $omega = $1 if ($line =~ m/omega:(.*)/);
+  }
+  
+  print "$omega_lo $omega $omega_hi\n";
+
+  my $ps = $params->{parameter_set_id};
+  $self->store_tag("hyphy_omega_$ps",$omega,$params);
+  $self->store_tag("hyphy_omega_lo_$ps",$omega_lo,$params);
+  $self->store_tag("hyphy_omega_hi_$ps",$omega_hi,$params);
+
+  chdir($cwd);
+
+}
+
+sub run_xrate_indels {
+  my $self = shift;
+  my $tree = shift;
+  my $cdna_aln = shift;
+  my $params = shift;
+
+  my $cwd = cwd();
+  my $tmpdir = $self->worker_temp_directory;
+  chdir($tmpdir);
+
+  print "OUTPUTTING ALN\n";
+  # OUTPUT THE ALIGNMENT.
+  my $aln_f = $tmpdir. "aln";
+  my $coll = $cdna_aln->annotation;
+  print "1\n";
+
+  use Bio::Annotation::AnnotationFactory;
+  my $factory = Bio::Annotation::AnnotationFactory->new(-type => 'Bio::Annotation::SimpleValue');
+  my $tree_newick = Bio::EnsEMBL::Compara::TreeUtils->to_newick($tree);
+  my $rfann = $factory->create_object(-value => $tree_newick, 
+				      -tagname => 'NH');
+  $coll->add_Annotation('custom', $rfann);
+  my $alnout = Bio::AlignIO->new
+    ('-format'      => 'stockholm',
+     '-file'          => ">$aln_f");
+  $alnout->write_aln($cdna_aln);
+  $alnout->close;
+
+  my $cmd = "cat $aln_f";
+  print "$aln_f\n";
+  `$cmd`;
+  
+  exit(0);
 }
 
 sub run_wobble {

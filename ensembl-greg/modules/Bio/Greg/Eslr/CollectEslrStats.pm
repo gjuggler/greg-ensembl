@@ -59,9 +59,11 @@ my $gene_stats_def = {
   psc_count            => 'int',
   weak_psc_count       => 'int',
   omega_mean           => 'float',
-  omega_median           => 'float',
   omega_mean_excl_pscs => 'float',
   omega_m0             => 'float',
+  hyphy_omega          => 'float',
+  hyphy_omega_lo       => 'float',
+  hyphy_omega_hi       => 'float',
   kappa                => 'float',
   slr_lnl              => 'float',
 
@@ -240,7 +242,6 @@ sub get_gene_data {
     $cur_params->{'psc_count'}      = $utils->psc_count( $psc_hash, 0 );
     $cur_params->{'weak_psc_count'} = $utils->psc_count( $psc_hash, 1 );
     $cur_params->{'omega_mean'}     = $utils->omega_average($psc_hash);
-    $cur_params->{'omega_median'}     = $utils->omega_median($psc_hash);
     $cur_params->{'omega_mean_excl_pscs'} = $utils->omega_average_exclude_pscs($psc_hash);
   }
 
@@ -248,6 +249,9 @@ sub get_gene_data {
   $cur_params->{'omega_m0'} = $cur_params->{ 'slr_omega_' . $ps };
   $cur_params->{'kappa'}    = $cur_params->{ 'slr_kappa_' . $ps };
   $cur_params->{'slr_lnl'}  = $cur_params->{ 'slr_lnL_' . $ps };
+  $cur_params->{'hyphy_omega'} = $cur_params->{ 'hyphy_omega_' . $ps };
+  $cur_params->{'hyphy_omega_lo'} = $cur_params->{ 'hyphy_omega_lo_' . $ps };
+  $cur_params->{'hyphy_omega_hi'} = $cur_params->{ 'hyphy_omega_hi_' . $ps };
 
 # Indel rates aren't yet implemented (need to speed up Indelign first.)
 #  my ($ins,$del,$ins_rate,$del_rate) = Bio::EnsEMBL::Compara::AlignUtils->indelign($sa_nogap,$tree,$cur_params);

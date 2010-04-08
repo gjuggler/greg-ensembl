@@ -20,7 +20,7 @@
 
 ModelMatrixDimension = 0;
 
-global		R = 1;
+global		omega = 1;
 global     AC = 1;
 global 	   AT = 1;
 global     CG = 1;
@@ -45,7 +45,7 @@ function PopulateModelMatrix (ModelMatrixName&, EFV)
 		}
 	}
 	
-	R  = R;
+	omega  = omega;
 	AT = AT;
 	CG = CG;
 	CT = CT;
@@ -122,8 +122,8 @@ function PopulateModelMatrix (ModelMatrixName&, EFV)
 							{
 								if (modelType)
 								{
-									ModelMatrixName[h-hshift][v-vshift] := AC*R*synRate*EFV__[transition__][nucPosInCodon__];
-									ModelMatrixName[v-vshift][h-hshift] := AC*R*synRate*EFV__[transition2__][nucPosInCodon__];
+									ModelMatrixName[h-hshift][v-vshift] := AC*omega*synRate*EFV__[transition__][nucPosInCodon__];
+									ModelMatrixName[v-vshift][h-hshift] := AC*omega*synRate*EFV__[transition2__][nucPosInCodon__];
 								}
 								else
 								{
@@ -145,8 +145,8 @@ function PopulateModelMatrix (ModelMatrixName&, EFV)
 								{
 									if (modelType)
 									{
-										ModelMatrixName[h-hshift][v-vshift] := R*synRate*EFV__[transition__][nucPosInCodon__];
-										ModelMatrixName[v-vshift][h-hshift] := R*synRate*EFV__[transition2__][nucPosInCodon__];
+										ModelMatrixName[h-hshift][v-vshift] := omega*synRate*EFV__[transition__][nucPosInCodon__];
+										ModelMatrixName[v-vshift][h-hshift] := omega*synRate*EFV__[transition2__][nucPosInCodon__];
 									}
 									else
 									{
@@ -166,8 +166,8 @@ function PopulateModelMatrix (ModelMatrixName&, EFV)
 								{
 									if (modelType)
 									{
-										ModelMatrixName[h-hshift][v-vshift] := AT*R*synRate*EFV__[transition__][nucPosInCodon__];
-										ModelMatrixName[v-vshift][h-hshift] := AT*R*synRate*EFV__[transition2__][nucPosInCodon__];
+										ModelMatrixName[h-hshift][v-vshift] := AT*omega*synRate*EFV__[transition__][nucPosInCodon__];
+										ModelMatrixName[v-vshift][h-hshift] := AT*omega*synRate*EFV__[transition2__][nucPosInCodon__];
 									}
 									else
 									{
@@ -193,8 +193,8 @@ function PopulateModelMatrix (ModelMatrixName&, EFV)
 								{
 									if (modelType)
 									{
-										ModelMatrixName[h-hshift][v-vshift] := CG*R*synRate*EFV__[transition__][nucPosInCodon__];
-										ModelMatrixName[v-vshift][h-hshift] := CG*R*synRate*EFV__[transition2__][nucPosInCodon__];
+										ModelMatrixName[h-hshift][v-vshift] := CG*omega*synRate*EFV__[transition__][nucPosInCodon__];
+										ModelMatrixName[v-vshift][h-hshift] := CG*omega*synRate*EFV__[transition2__][nucPosInCodon__];
 									}
 									else
 									{
@@ -214,8 +214,8 @@ function PopulateModelMatrix (ModelMatrixName&, EFV)
 								{
 									if (modelType)
 									{
-										ModelMatrixName[h-hshift][v-vshift] := CT*R*synRate*EFV__[transition__][nucPosInCodon__];
-										ModelMatrixName[v-vshift][h-hshift] := CT*R*synRate*EFV__[transition2__][nucPosInCodon__];
+										ModelMatrixName[h-hshift][v-vshift] := CT*omega*synRate*EFV__[transition__][nucPosInCodon__];
+										ModelMatrixName[v-vshift][h-hshift] := CT*omega*synRate*EFV__[transition2__][nucPosInCodon__];
 									}
 									else
 									{
@@ -237,8 +237,8 @@ function PopulateModelMatrix (ModelMatrixName&, EFV)
 							{
 								if (modelType)
 								{
-									ModelMatrixName[h-hshift][v-vshift] := GT*R*synRate*EFV__[transition__][nucPosInCodon__];
-									ModelMatrixName[v-vshift][h-hshift] := GT*R*synRate*EFV__[transition2__][nucPosInCodon__];
+									ModelMatrixName[h-hshift][v-vshift] := GT*omega*synRate*EFV__[transition__][nucPosInCodon__];
+									ModelMatrixName[v-vshift][h-hshift] := GT*omega*synRate*EFV__[transition2__][nucPosInCodon__];
 								}
 								else
 								{
@@ -315,8 +315,8 @@ function PopulateModelMatrix (ModelMatrixName&, EFV)
 							}
 							else
 							{
-								ModelMatrixName[h-hshift][v-vshift] := AC*c*R*synRate*EFV__[transition__][nucPosInCodon__];
-								ModelMatrixName[v-vshift][h-hshift] := AC*c*R*synRate*EFV__[transition2__][nucPosInCodon__];
+								ModelMatrixName[h-hshift][v-vshift] := AC*c*omega*synRate*EFV__[transition__][nucPosInCodon__];
+								ModelMatrixName[v-vshift][h-hshift] := AC*c*omega*synRate*EFV__[transition2__][nucPosInCodon__];
 							}
 						}
 						else
@@ -330,8 +330,8 @@ function PopulateModelMatrix (ModelMatrixName&, EFV)
 								}
 								else
 								{
-									ModelMatrixName[h-hshift][v-vshift] := c*R*synRate*EFV__[transition__][nucPosInCodon__];
-									ModelMatrixName[v-vshift][h-hshift] := c*R*synRate*EFV__[transition2__][nucPosInCodon__];
+									ModelMatrixName[h-hshift][v-vshift] := c*omega*synRate*EFV__[transition__][nucPosInCodon__];
+									ModelMatrixName[v-vshift][h-hshift] := c*omega*synRate*EFV__[transition2__][nucPosInCodon__];
 								}							
 							}
 							else
@@ -343,8 +343,8 @@ function PopulateModelMatrix (ModelMatrixName&, EFV)
 								}
 								else
 								{
-									ModelMatrixName[h-hshift][v-vshift] := AT*c*R*synRate*EFV__[transition__][nucPosInCodon__];
-									ModelMatrixName[v-vshift][h-hshift] := AT*c*R*synRate*EFV__[transition2__][nucPosInCodon__];
+									ModelMatrixName[h-hshift][v-vshift] := AT*c*omega*synRate*EFV__[transition__][nucPosInCodon__];
+									ModelMatrixName[v-vshift][h-hshift] := AT*c*omega*synRate*EFV__[transition2__][nucPosInCodon__];
 								}							
 							}
 						}
@@ -362,8 +362,8 @@ function PopulateModelMatrix (ModelMatrixName&, EFV)
 								}
 								else
 								{
-									ModelMatrixName[h-hshift][v-vshift] := CG*c*R*synRate*EFV__[transition__][nucPosInCodon__];
-									ModelMatrixName[v-vshift][h-hshift] := CG*c*R*synRate*EFV__[transition2__][nucPosInCodon__];
+									ModelMatrixName[h-hshift][v-vshift] := CG*c*omega*synRate*EFV__[transition__][nucPosInCodon__];
+									ModelMatrixName[v-vshift][h-hshift] := CG*c*omega*synRate*EFV__[transition2__][nucPosInCodon__];
 								}
 							}
 							else
@@ -375,8 +375,8 @@ function PopulateModelMatrix (ModelMatrixName&, EFV)
 								}
 								else
 								{
-									ModelMatrixName[h-hshift][v-vshift] := CT*c*R*synRate*EFV__[transition__][nucPosInCodon__];
-									ModelMatrixName[v-vshift][h-hshift] := CT*c*R*synRate*EFV__[transition2__][nucPosInCodon__];
+									ModelMatrixName[h-hshift][v-vshift] := CT*c*omega*synRate*EFV__[transition__][nucPosInCodon__];
+									ModelMatrixName[v-vshift][h-hshift] := CT*c*omega*synRate*EFV__[transition2__][nucPosInCodon__];
 								}							
 							}
 						}
@@ -389,8 +389,8 @@ function PopulateModelMatrix (ModelMatrixName&, EFV)
 							}
 							else
 							{
-								ModelMatrixName[h-hshift][v-vshift] := GT*c*R*synRate*EFV__[transition__][nucPosInCodon__];
-								ModelMatrixName[v-vshift][h-hshift] := GT*c*R*synRate*EFV__[transition2__][nucPosInCodon__];
+								ModelMatrixName[h-hshift][v-vshift] := GT*c*omega*synRate*EFV__[transition__][nucPosInCodon__];
+								ModelMatrixName[v-vshift][h-hshift] := GT*c*omega*synRate*EFV__[transition2__][nucPosInCodon__];
 							}							
 						}
 					}
@@ -466,11 +466,11 @@ if (!SKIP_MODEL_PARAMETER_LIST)
 			done = 1;
 		}
 	}	
-}		
+}
+modelDesc = "010010";
 			
 MGCustomRateBiasTerms = {{"AC","1","AT","CG","CT","GT"}};
 paramCount	  = 0;
-modelDesc = "010010";
 
 MGCustomModelConstraintString = "";
 
