@@ -41,6 +41,8 @@ use strict;
 use Bio::EnsEMBL::DBSQL::DBConnection;
 use Bio::EnsEMBL::DBSQL::DBAdaptor;
 
+use Bio::EnsEMBL::Utils::Argument;
+
 @ISA = qw( Bio::EnsEMBL::DBSQL::DBAdaptor );
 
 
@@ -48,6 +50,35 @@ sub get_Queen {
   my $self = shift;
 
   return $self->get_QueenAdaptor();
+}
+
+sub new {
+  my ($class, @args) = @_;
+
+  my ($conf_file, $url, $species) = rearrange(['CONF_FILE', 'URL', 'SPECIES'], @args);
+
+  if ($url and $url =~ /mysql\:\/\/([^\@]+\@)?([^\:\/]+)(\:\d+)?\/(.+)/) {
+    my $user_pass = $1;
+    my $host = $2;
+    my $port = $3;
+    my $dbname = $4;
+
+    $user_pass =~ s/\@$//;
+    my ($user, $pass) = $user_pass =~ m/([^\:]+)(\:.+)?/;
+    $pass =~ s/^\:// if ($pass);
+    $port =~ s/^\:// if ($port);
+    push(@args, "-user" => $user) if ($user);
+    push(@args, "-pass" => $pass) if ($pass);
+    push(@args, "-port" => $port) if ($port);
+    push(@args, "-host" => $host);
+    push(@args, "-dbname" => $dbname);
+    if (!$species) {
+      push(@args, "-species" => $dbname);
+    }
+  }
+
+  my $self = $class->SUPER::new(@args);
+  return $self;
 }
 
 sub get_available_adaptors {
