@@ -51,7 +51,7 @@ connect_analysis("Mapping","CollectStats",1);
 
 sub node_sets {
   my $logic_name = "NodeSets";
-  my $module = "Bio::Greg::NodeSetsB";
+  my $module = "Bio::Greg::Hive::NodeSets";
   my $params = {
     flow_node_set => 'Primates'
   };

@@ -32,10 +32,16 @@ mapping();
 collect_stats();
 
 # Connect the dots.
-connect_analysis("NodeSets","Align",1);
-connect_analysis("Align","Omegas",1);
-connect_analysis("Omegas","Mapping",1);
-connect_analysis("Mapping","CollectStats",1);
+connect_analysis("NodeSets","Align");
+connect_analysis("Align","SplitByParameterSet");
+connect_analysis("SplitByParameterSet","SplitByProteinDomain");
+connect_analysis("SplitByProteinDomain","GeneOmegas");
+connect_analysis("GeneOmegas","SitewiseOmegas");
+connect_analysis("SitewiseOmegas","CollectStats");
+
+connect_analysis("Align","Mapping");
+wait_for("CollectStats",["Mapping"]);
+wait_for("OutputTabularData",["CollectStats"]);
 
 sub parameter_sets {
   my $params;
@@ -72,102 +78,89 @@ sub parameter_sets {
     return keys %$hash;
   }
 
-  my @all = clade_taxon_ids();
-  my @mamms = clade_taxon_ids("Eutheria");
-  my $not_mammals = join(",",subtract(\@all,\@mamms));
+  my @all_arr = clade_taxon_ids();
+  my @mammals_arr = clade_taxon_ids("Eutheria");
+  my @primates_arr = clade_taxon_ids("Primates");
+  my @homininae_arr = clade_taxon_ids("Homininae");
+  my @hominidae_arr = clade_taxon_ids("Hominidae");
 
   my $everything = join(",",clade_taxon_ids());
-  my $mammals = join(",",clade_taxon_ids("Eutheria"));
+
   my $primates = join(",",clade_taxon_ids("Primates"));
+  my $homininae = join(",",clade_taxon_ids("Homininae"));
+  my $hominidae = join(",",clade_taxon_ids("Hominidae"));
+  my $non_homininae = join(",",subtract(\@primates_arr,\@homininae_arr));
+  my $non_hominidae = join(",",subtract(\@primates_arr,\@hominidae_arr));
+  my $non_gorilla = join(",",subtract(\@hominidae_arr,[9593]));
+  my $simiiformes = join(",",clade_taxon_ids("Simiiformes"));
+  my $haplorrhini = join(",",clade_taxon_ids("Haplorrhini"));
+
   my $glires = join(",",clade_taxon_ids("Glires"));
   my $laurasiatheria = join(",",clade_taxon_ids("Laurasiatheria"));
   my $afrotheria = join(",",clade_taxon_ids("Afrotheria"));
 
-  my $sauria = join(",",clade_taxon_ids("Sauria"));
-  my $fish = join(",",clade_taxon_ids("Clupeocephala"));
-  
-  # Get only hi-coverage genomes.
-  my $hi_coverage = join(",",coverage_taxon_ids("high"));
-  my $lo_coverage = join(",",coverage_taxon_ids("low"));
+  my $mammals = join(",",clade_taxon_ids("Eutheria"));
 
+  my $non_primates = join(",",subtract(\@mammals_arr,\@primates_arr));
+ 
   $params = {
-    parameter_set_name => "Mammals",
-    shortname => 'm',
-    keep_species => $mammals,
-  };
-  $params = _combine_hashes($base_params,$params);
+    parameter_set_name => "Homininae",
+    parameter_set_shortname => 'hmn',
+    keep_species => $homininae,
+    gorilla_count_species => '9593,9598,9606'
+    };
   _add_parameter_set($params);
-
+  
+  $params = {
+    parameter_set_name => "Hominidae",
+    parameter_set_shortname => 'hmd',
+    keep_species => $hominidae
+    };
+  _add_parameter_set($params);
+  
+  $params = {
+    parameter_set_name => "NonHominidPrimates",
+    parameter_set_shortname => 'nonhom',
+    keep_species => $non_hominidae
+    };
+  _add_parameter_set($params);
+  
+  $params = {
+    parameter_set_name => "Haplorrhini",
+    parameter_set_shortname => 'hpl',
+    keep_species => $haplorrhini
+    };
+  _add_parameter_set($params);
+  
   $params = {
     parameter_set_name => "Primates",
-    shortname => 'p',
+    parameter_set_shortname => 'p',
     keep_species => $primates
-  };
-  $params = _combine_hashes($base_params,$params);
+    };
   _add_parameter_set($params);
-
+  
   $params = {
-    parameter_set_name => "Glires",
-    shortname => 'g',
-    keep_species => $glires
-  };
-  $params = _combine_hashes($base_params,$params);
+    parameter_set_name => "Mammals",
+    parameter_set_shortname => 'm',
+    keep_species => $mammals
+    };
   _add_parameter_set($params);
-
+  
   $params = {
-    parameter_set_name => "Laurasiatheria",
-    shortname => 'l',
-    keep_species => $laurasiatheria
-  };
-  $params = _combine_hashes($base_params,$params);
+    parameter_set_name => "NonPrimateMammals",
+    parameter_set_shortname => 'nonprm',
+    keep_species => $non_primates
+    };
   _add_parameter_set($params);
-
-  $params = {
-    parameter_set_name => "No 2x",
-    shortname => 'n2',
-    keep_species => $hi_coverage,
-    remove_species => $not_mammals
-  };
-  $params = _combine_hashes($base_params,$params);
-  _add_parameter_set($params);
-
-  $params = {
-    parameter_set_name => "2x Only",
-    shortname => '2o',
-    keep_species => $lo_coverage,
-    remove_species => $not_mammals
-  };
-  $params = _combine_hashes($base_params,$params);
-  _add_parameter_set($params);
-
-  $params = {
-    parameter_set_name => "No Primates",
-    shortname => 'np',
-    keep_species => $mammals,
-    remove_species => $primates
-  };
-  $params = _combine_hashes($base_params,$params);
-  _add_parameter_set($params);
-
-  $params = {
-    parameter_set_name => "No Glires",
-    shortname => 'ng',
-    keep_species => $mammals,
-    remove_species => $glires
-  };
-  $params = _combine_hashes($base_params,$params);
-  _add_parameter_set($params);
-
 }
 
 sub node_sets {
-  my $analysis_id=101;
   my $logic_name = "NodeSets";
-  my $module = "Bio::Greg::NodeSets";
+  my $module = "Bio::Greg::Hive::NodeSets";
   my $params = {
-    flow_node_set => 11 # Primates n=4 node sets
+    flow_node_set => 'Primates'
   };
-  _create_analysis($analysis_id,$logic_name,$module,$params,50,1);
+  my $analysis_id = _create_analysis($logic_name,$module,$params,50,1);
 
   # Add all root nodes to this analysis.
   $params = {};
@@ -177,28 +170,24 @@ sub node_sets {
 }
 
 sub align {
-  my $analysis_id = 102;
   my $logic_name = "Align";
   my $module = "Bio::EnsEMBL::Compara::RunnableDB::MCoffee";
   my $params = {
-    alignment_method => 'prank',
-    alignment_prank_f => 1
+    alignment_method => 'prank_f',
   };
 
-  _create_analysis($analysis_id,$logic_name,$module,$params,400,1);
+  _create_analysis($logic_name,$module,$params,400,1);
 }
 
 sub sequence_quality {
-  my $analysis_id=103;
   my $logic_name = "SequenceQuality";
   my $module = "Bio::Greg::SequenceQualityLoader";
   my $params = {};
   
-  _create_analysis($analysis_id,$logic_name,$module,$params,100,1);
+  _create_analysis($logic_name,$module,$params,100,1);
 }
 
 sub omegas {
-  my $analysis_id = 105;
   my $logic_name = "Omegas";
   my $module = "Bio::EnsEMBL::Compara::RunnableDB::Sitewise_dNdS";
   my $base_params = {
@@ -206,28 +195,47 @@ sub omegas {
     sequence_quality_filtering => 0,
     alignment_score_filtering => 1,
     };
-  _create_analysis($analysis_id,$logic_name,$module,$base_params,500,1);
-
+  _create_analysis($logic_name,$module,$base_params,500,1);
 }
 
 sub mapping {
-  my $analysis_id=106;
   my $logic_name = "Mapping";
   my $module = "Bio::Greg::SitewiseMapper";
   my $params = {
   };
-  _create_analysis($analysis_id,$logic_name,$module,$params,200,1);
+  _create_analysis($logic_name,$module,$params,200,1);
 }
 
 
 sub collect_stats {
-  my $analysis_id=107;
   my $logic_name = "CollectStats";
   my $module = "Bio::Greg::Eslr::CollectEslrStats";
   my $params = {
   };
-  _create_analysis($analysis_id,$logic_name,$module,$params,80,1);
+  _create_analysis($logic_name,$module,$params,80,1);
 }
+
+
+sub clean_tables {
+  if ($clean) {    
+    my @truncate_tables = qw^
+      analysis analysis_job analysis_stats dataflow_rule hive
+      parameter_set
+      node_set_member node_set
+      sitewise_omega sitewise_tag sitewise_genome
+      go_terms
+      stats_sites stats_genes
+      ^;
+    map {
+      print "$_\n";
+      eval {$dba->dbc->do("truncate table $_");}} @truncate_tables;
+  }
+}
+
+
+########*********########
+#-------~~~~~~~~~-------#
+########*********########
 
 sub _combine_hashes {
   my @hashes = @_;
@@ -255,46 +263,26 @@ sub _add_parameter_set {
     $dbc->do($name_cmd);
   }
 
-  if (exists $params->{'shortname'} ) {
-    my $shortname = $params->{'shortname'} || '';
-    my $shortname_cmd = "REPLACE INTO parameter_set VALUES ('$parameter_set_id','shortname',\"$shortname\");";
+  if (exists $params->{'parameter_set_shortname'} ) {
+    my $parameter_set_shortname = $params->{'parameter_set_shortname'} || '';
+    my $shortname_cmd = "REPLACE INTO parameter_set VALUES ('$parameter_set_id','parameter_set_shortname',\"$parameter_set_shortname\");";
     $dbc->do($shortname_cmd);
   }
-
   
   my $param_string = Bio::EnsEMBL::Compara::ComparaUtils->hash_to_string($params);
   my $cmd = "REPLACE INTO parameter_set VALUES ('$parameter_set_id','params',\"$param_string\");";
   $dbc->do($cmd);
 }
 
-sub clean_tables {
-  if ($clean) {    
-    my @truncate_tables = qw^
-      analysis analysis_job analysis_stats dataflow_rule hive
-      parameter_set
-      node_set_member node_set
-      sitewise_omega sitewise_tag sitewise_genome sitewise_pfam
-      go_terms      
-      ^;
-    map {
-      print "$_\n";
-      eval {$dba->dbc->do("truncate table $_");}} @truncate_tables;
-  }
-}
-
-
-
-########*********########
-#-------~~~~~~~~~-------#
-########*********########
-
+our $analysis_counter = 0;
 sub _create_analysis {
-  my $analysis_id = shift;
   my $logic_name = shift;
   my $module = shift;
   my $params = shift;
   my $hive_capacity = shift || 500;
   my $batch_size = shift || 1;
+
+  my $analysis_id = ++$analysis_counter;
   
   $analysis_hash->{$logic_name} = $analysis_id;
   my $param_string = Bio::EnsEMBL::Compara::ComparaUtils->hash_to_string($params);
@@ -309,24 +297,52 @@ sub _create_analysis {
   $cmd = qq{REPLACE INTO analysis_stats SET
 	      analysis_id=$analysis_id,
 	      hive_capacity=$hive_capacity,
-	      batch_size=$batch_size
+	      batch_size=$batch_size,
+	      failed_job_tolerance=20000
 	      ;};
   $dbc->do($cmd);
+  return $analysis_id;
 }
 
 sub connect_analysis {
   my $from_name = shift;
   my $to_name = shift;
   my $branch_code = shift;
-
-  my $from_id = $analysis_hash->{$from_name};
   $branch_code = 1 unless (defined $branch_code);
-  my $cmd = qq{REPLACE INTO dataflow_rule SET
-		 from_analysis_id=$from_id,
-		 to_analysis_url="$to_name",
-		 branch_code=$branch_code
-		 ;};
-  $dbc->do($cmd);
+
+  my $dataflow_rule_adaptor = $hive_dba->get_DataflowRuleAdaptor;
+  my $analysis_adaptor = $hive_dba->get_AnalysisAdaptor;
+
+  my $from_analysis = $analysis_adaptor->fetch_by_logic_name($from_name);
+  my $to_analysis = $analysis_adaptor->fetch_by_logic_name($to_name);
+  
+  if($from_analysis and $to_analysis) {
+    $dataflow_rule_adaptor->create_rule( $from_analysis, $to_analysis, $branch_code);
+    warn "Created DataFlow rule: [$branch_code] $from_name -> $to_name\n";
+  } else {
+    die "Could not fetch analyses $from_analysis -> $to_analysis to create a dataflow rule";
+  }
+}
+
+sub wait_for {
+  my $waiting_name = shift;
+  my $wait_for_list = shift;
+  
+  my $ctrl_rule_adaptor = $hive_dba->get_AnalysisCtrlRuleAdaptor;
+  my $analysis_adaptor = $hive_dba->get_AnalysisAdaptor;
+
+  my $waiting_analysis = $analysis_adaptor->fetch_by_logic_name($waiting_name);
+
+  foreach my $wait_for_name (@$wait_for_list) {
+    my $wait_for_analysis = $analysis_adaptor->fetch_by_logic_name($wait_for_name);
+
+    if($waiting_analysis and $wait_for_analysis) {
+      $ctrl_rule_adaptor->create_rule( $wait_for_analysis, $waiting_analysis);
+      warn "Created Control rule: $waiting_name will wait for $wait_for_name\n";
+    } else {
+      die "Could not fetch $waiting_name -> $wait_for_name to create a control rule";
+    }
+  }
 }
 
 sub _add_nodes_to_analysis {

@@ -52,7 +52,7 @@ wait_for("OutputTabularData",["CollectStats"]);
 
 sub node_sets {
   my $logic_name = "NodeSets";
-  my $module = "Bio::Greg::NodeSetsB";
+  my $module = "Bio::Greg::Hive::NodeSets";
   my $params = {
     flow_node_set => 'MammalsPlusOutgroup'
   };
@@ -303,6 +303,28 @@ sub output_data {
 
 
 
+sub clean_tables {
+  if ($clean) {    
+    my @truncate_tables = qw^
+      analysis analysis_job analysis_stats dataflow_rule hive
+      parameter_set
+      node_set_member node_set
+      sitewise_omega sitewise_tag sitewise_genome
+      go_terms      
+      stats_sites stats_genes
+      ^;
+    map {
+      print "$_\n";
+      eval {$dba->dbc->do("truncate table $_");}} @truncate_tables;
+  }
+}
+
+
+
+########*********########
+#-------~~~~~~~~~-------#
+########*********########
+
 sub _combine_hashes {
   my @hashes = @_;
 
@@ -339,28 +361,6 @@ sub _add_parameter_set {
   my $cmd = "REPLACE INTO parameter_set VALUES ('$parameter_set_id','params',\"$param_string\");";
   $dbc->do($cmd);
 }
-
-sub clean_tables {
-  if ($clean) {    
-    my @truncate_tables = qw^
-      analysis analysis_job analysis_stats dataflow_rule hive
-      parameter_set
-      node_set_member node_set
-      sitewise_omega sitewise_tag sitewise_genome
-      go_terms      
-      stats_sites stats_genes
-      ^;
-    map {
-      print "$_\n";
-      eval {$dba->dbc->do("truncate table $_");}} @truncate_tables;
-  }
-}
-
-
-
-########*********########
-#-------~~~~~~~~~-------#
-########*********########
 
 our $analysis_counter = 0;
 sub _create_analysis {
