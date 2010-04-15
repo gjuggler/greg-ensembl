@@ -1,2 +1,0 @@
-perl /ecs2/work2/avilella/src/ensembl_main/ensembl-hive/scripts/beekeeper.pl -url mysql://ensro@compara1:3306/avilella_compara_homology_41 -reset_all_jobs_but_failed_from_analysis 71
-beekeeper.pl -url mysql://ensadmin:ensembl@compara2/avilella_hive_generic -worker_stats -verbose_stats 1
