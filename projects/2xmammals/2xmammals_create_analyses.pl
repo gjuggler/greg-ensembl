@@ -229,7 +229,7 @@ sub parameter_sets {
 
 sub align {
   my $logic_name = "Align";
-  my $module = "Bio::EnsEMBL::Compara::RunnableDB::MCoffee";
+  my $module = "Bio::Greg::Hive::Align";
   my $params = {
     alignment_method => 'none'
   };
@@ -249,7 +249,7 @@ sub split_by_parameter_set {
 sub sequence_quality {
   my $analysis_id=103;
   my $logic_name = "SequenceQuality";
-  my $module = "Bio::Greg::SequenceQualityLoader";
+  my $module = "Bio::Greg::Hive::SequenceQualityLoader";
   my $params = {};
   
   _create_analysis($logic_name,$module,$params,50,1);
@@ -257,27 +257,27 @@ sub sequence_quality {
 
 sub gene_omegas {
   my $logic_name = "GeneOmegas";
-  my $module = "Bio::EnsEMBL::Compara::RunnableDB::Sitewise_dNdS";
+  my $module = "Bio::Greg::Hive::PhyloAnalysis";
   my $base_params = {
     sequence_quality_filtering => 1,
-    sitewise_action => 'none'
+    analysis_action => 'none'
     };
   _create_analysis($logic_name,$module,$base_params,500,1);
 }
 
 sub sitewise_omegas {
   my $logic_name = "SitewiseOmegas";
-  my $module = "Bio::EnsEMBL::Compara::RunnableDB::Sitewise_dNdS";
+  my $module = "Bio::Greg::Hive::PhyloAnalysis";
   my $base_params = {
     sequence_quality_filtering => 1,
-    sitewise_action => 'none'
+    analysis_action => 'none'
     };
   _create_analysis($logic_name,$module,$base_params,500,1);
 }
 
 sub mapping {
   my $logic_name = "Mapping";
-  my $module = "Bio::Greg::Eslr::SitewiseMapper";
+  my $module = "Bio::Greg::Hive::SitewiseMapper";
   my $params = {
   };
   _create_analysis($logic_name,$module,$params,50,1);
@@ -295,7 +295,7 @@ sub collect_stats {
 
 sub output_data {
   my $logic_name = "OutputTabularData";
-  my $module = "Bio::Greg::Mammals::OutputData";
+  my $module = "Bio::Greg::Mammals::OutputMammalsData";
   my $params = {
   };
   _create_analysis($logic_name,$module,$params,50,1);

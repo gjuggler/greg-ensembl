@@ -6,6 +6,7 @@ use DBI;
 use Getopt::Long;
 use Bio::EnsEMBL::Registry;
 use Bio::EnsEMBL::Compara::DBSQL::DBAdaptor;
+use Bio::EnsEMBL::Hive::DBSQL::DBAdaptor;
 use Bio::EnsEMBL::Compara::ComparaUtils;
 use Bio::Greg::EslrUtils;
 use File::Path;
@@ -15,6 +16,7 @@ my ($url) = undef;
 GetOptions('url=s' => \$url);
 my $clean = 1;
 my $dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new(-url => $url);
+my $hive_dba = Bio::EnsEMBL::Hive::DBSQL::DBAdaptor->new(-url => $url);
 my $dbc = $dba->dbc;
 my $analysis_hash; # Hash to store mapping between analysis names and ID numbers.
 
@@ -27,7 +29,10 @@ parameter_sets();
 # Create analyses.
 node_sets();
 align();
-omegas();
+split_by_parameter_set();
+split_by_domains();
+gene_omegas();
+sitewise_omegas();
 mapping();
 collect_stats();
 
@@ -171,7 +176,7 @@ sub node_sets {
 
 sub align {
   my $logic_name = "Align";
-  my $module = "Bio::EnsEMBL::Compara::RunnableDB::MCoffee";
+  my $module = "Bio::Greg::Hive::Align";
   my $params = {
     alignment_method => 'prank_f',
   };
@@ -181,26 +186,58 @@ sub align {
 
 sub sequence_quality {
   my $logic_name = "SequenceQuality";
-  my $module = "Bio::Greg::SequenceQualityLoader";
+  my $module = "Bio::Greg::Hive::SequenceQualityLoader";
   my $params = {};
   
   _create_analysis($logic_name,$module,$params,100,1);
 }
 
-sub omegas {
-  my $logic_name = "Omegas";
-  my $module = "Bio::EnsEMBL::Compara::RunnableDB::Sitewise_dNdS";
+sub split_by_parameter_set {
+  my $logic_name = "SplitParams";
+  my $module = "Bio::Greg::Hive::SplitByParameterSet";
+  my $params = {
+    flow_parameter_sets => 'all'
+  };
+  my $analysis_id = _create_analysis($logic_name,$module,$params,50,1);
+}
+
+sub split_by_domains {
+  my $logic_name = "SplitDomains";
+  my $module = "Bio::Greg::Hive::SplitByProteinDomain";
+  my $params = {
+  };
+  my $analysis_id = _create_analysis($logic_name,$module,$params,50,1);
+}
+
+sub gene_omegas {
+  my $logic_name = "GeneOmegas";
+  my $module = "Bio::Greg::Hive::PhyloAnalysis";
   my $base_params = {
-    parameter_sets => "all",
+    sitewise_minimum_leaf_count => 0,
     sequence_quality_filtering => 0,
-    alignment_score_filtering => 1,
+    alignment_score_filtering => 0,
+
+    analysis_action => 'hyphy_dnds'
+    };
+  _create_analysis($logic_name,$module,$base_params,500,1);
+}
+
+sub sitewise_omegas {
+  my $logic_name = "SitewiseOmegas";
+  my $module = "Bio::Greg::Hive::PhyloAnalysis";
+  my $base_params = {
+    sitewise_minimum_leaf_count => 0,
+    sequence_quality_filtering => 0,
+    alignment_score_filtering => 0,
+    
+    analysis_action => 'slr'
     };
   _create_analysis($logic_name,$module,$base_params,500,1);
 }
 
 sub mapping {
   my $logic_name = "Mapping";
-  my $module = "Bio::Greg::SitewiseMapper";
+  my $module = "Bio::Greg::Hive::SitewiseMapper";
   my $params = {
   };
   _create_analysis($logic_name,$module,$params,200,1);
@@ -209,7 +246,7 @@ sub mapping {
 
 sub collect_stats {
   my $logic_name = "CollectStats";
-  my $module = "Bio::Greg::Eslr::CollectEslrStats";
+  my $module = "Bio::Greg::PrimateHIV::CollectPrimateHIVStats";
   my $params = {
   };
   _create_analysis($logic_name,$module,$params,80,1);

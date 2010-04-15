@@ -163,7 +163,7 @@ sub parameter_sets {
 sub node_sets {
   my $analysis_id=101;
   my $logic_name = "NodeSets";
-  my $module = "Bio::Greg::NodeSets";
+  my $module = "Bio::Greg::Hive::NodeSets";
   my $params = {
     flow_node_set => 11 # Primates n=4 node sets
   };

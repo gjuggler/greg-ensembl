@@ -6,6 +6,7 @@ use DBI;
 use Getopt::Long;
 use Bio::EnsEMBL::Registry;
 use Bio::EnsEMBL::Compara::DBSQL::DBAdaptor;
+use Bio::EnsEMBL::Hive::DBSQL::DBAdaptor;
 use Bio::EnsEMBL::Compara::ComparaUtils;
 use Bio::Greg::EslrUtils;
 use File::Path;
@@ -15,6 +16,7 @@ my ($url) = undef;
 GetOptions('url=s' => \$url);
 my $clean = 1;
 my $dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new(-url => $url);
+my $hive_dba = Bio::EnsEMBL::Hive::DBSQL::DBAdaptor->new(-url => $url);
 my $dbc = $dba->dbc;
 my $analysis_hash; # Hash to store mapping between analysis names and ID numbers.
 
@@ -104,59 +106,59 @@ sub count_sites_outgroup {
 
 sub gene_omegas {
   my $logic_name = "GeneOmegas";
-  my $module = "Bio::EnsEMBL::Compara::RunnableDB::Sitewise_dNdS";
+  my $module = "Bio::Greg::Hive::PhyloAnalysis";
   my $base_params = {
     sitewise_minimum_leaf_count => 0,
     sequence_quality_filtering => 0,
     alignment_score_filtering => 0,
 
-    sitewise_action => 'hyphy_dnds'
+    analysis_action => 'hyphy_dnds'
     };
   _create_analysis($logic_name,$module,$base_params,500,1);
 }
 
 sub sitewise_omegas {
   my $logic_name = "SitewiseOmegas";
-  my $module = "Bio::EnsEMBL::Compara::RunnableDB::Sitewise_dNdS";
+  my $module = "Bio::Greg::Hive::PhyloAnalysis";
   my $base_params = {
     sitewise_minimum_leaf_count => 0,
     sequence_quality_filtering => 0,
     alignment_score_filtering => 0,
     
-    sitewise_action => 'slr'
+    analysis_action => 'slr'
     };
   _create_analysis($logic_name,$module,$base_params,500,1);
 }
 
 sub xrate {
   my $logic_name = "XRate";
-  my $module = "Bio::EnsEMBL::Compara::RunnableDB::Sitewise_dNdS";
+  my $module = "Bio::Greg::Hive::PhyloAnalysis";
   my $base_params = {
     sitewise_minimum_leaf_count => 0,
     sequence_quality_filtering => 0,
     alignment_score_filtering => 0,
     
-    sitewise_action => 'xrate_indels'
+    analysis_action => 'xrate_indels'
     };
   _create_analysis($logic_name,$module,$base_params,500,1);
 }
 
 sub indelign {
   my $logic_name = "Indelign";
-  my $module = "Bio::EnsEMBL::Compara::RunnableDB::Sitewise_dNdS";
+  my $module = "Bio::Greg::Hive::PhyloAnalysis";
   my $base_params = {
     sitewise_minimum_leaf_count => 0,
     sequence_quality_filtering => 0,
     alignment_score_filtering => 0,
     
-    sitewise_action => 'indelign'
+    analysis_action => 'indelign'
     };
   _create_analysis($logic_name,$module,$base_params,500,1);
 }
 
 sub mapping {
   my $logic_name = "Mapping";
-  my $module = "Bio::Greg::Eslr::SitewiseMapper";
+  my $module = "Bio::Greg::Hive::SitewiseMapper";
   my $params = {
     genome_taxon_id => 9593,
     do_mapping => 1,
