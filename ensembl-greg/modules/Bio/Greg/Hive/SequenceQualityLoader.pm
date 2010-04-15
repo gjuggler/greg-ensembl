@@ -1,4 +1,4 @@
-package Bio::Greg::SequenceQualityLoader;
+package Bio::Greg::Hive::SequenceQualityLoader;
 
 use strict;
 use Time::HiRes qw(time gettimeofday tv_interval sleep);

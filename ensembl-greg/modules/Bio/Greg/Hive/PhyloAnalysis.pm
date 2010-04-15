@@ -1,4 +1,4 @@
-package Bio::EnsEMBL::Compara::RunnableDB::Sitewise_dNdS;
+package Bio::Greg::Hive::PhyloAnalysis;
 
 use strict;
 use Bio::EnsEMBL::Utils::Argument;

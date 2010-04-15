@@ -1,4 +1,4 @@
-package Bio::Greg::Eslr::SitewiseMapper;
+package Bio::Greg::Hive::SitewiseMapper;
 
 use strict;
 

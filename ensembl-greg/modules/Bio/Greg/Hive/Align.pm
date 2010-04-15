@@ -1,59 +1,4 @@
-#
-# You may distribute this module under the same terms as perl itself
-#
-# POD documentation - main docs before the code
-
-=pod 
-    
-=head1 NAME
-
-Bio::EnsEMBL::Compara::RunnableDB::MCoffee
-
-=cut
-
-=head1 SYNOPSIS
-
-my $db     = Bio::EnsEMBL::Compara::DBAdaptor->new($locator);
-my $mcoffee = Bio::EnsEMBL::Compara::RunnableDB::Mcoffee->new ( 
-                                                    -db      => $db,
-                                                    -input_id   => $input_id,
-                                                    -analysis   => $analysis );
-$mcoffee->fetch_input(); #reads from DB
-$mcoffee->run();
-$mcoffee->output();
-$mcoffee->write_output(); #writes to DB
-
-=cut
-
-=head1 DESCRIPTION
-
-This Analysis/RunnableDB is designed to take a Family (or Homology) as input
-Run a MCOFFEE multiple alignment on it, and store the resulting alignment
-back into the family_member table.
-
-input_id/parameters format eg: "{'family_id'=>1234,'options'=>'-maxiters 2'}"
-    family_id       : use family_id to run multiple alignment on its members
-    protein_tree_id : use 'id' to fetch a cluster from the ProteinTree
-    options         : commandline options to pass to the 'mcoffee' program
-
-=cut
-
-=head1 CONTACT
-
-  Contact Jessica Severin on module implemetation/design detail: jessica@ebi.ac.uk
-  Contact Abel Ureta-Vidal on EnsEMBL/Compara: abel@ebi.ac.uk
-  Contact Ewan Birney on EnsEMBL in general: birney@sanger.ac.uk
-
-=cut
-
-=head1 APPENDIX
-
-The rest of the documentation details each of the object methods. 
-Internal methods are usually preceded with a _
-
-=cut
-
-package Bio::EnsEMBL::Compara::RunnableDB::MCoffee;
+package Bio::Greg::Hive::Align;
 
 use strict;
 use Getopt::Long;
@@ -71,7 +16,6 @@ use Bio::EnsEMBL::Compara::ComparaUtils;
 use POSIX qw(ceil floor);
 
 use base ('Bio::Greg::Hive::Process');
-
 
 #
 # Some global-ish variables.
