@@ -20,6 +20,45 @@ sub get_tree {
   return $tree;
 }
 
+sub get_aln {
+  my $self = shift;
+  my $params = shift;
+
+  return $self->_get_aln($self,$params,0);
+}
+
+sub get_cdna_aln {
+  my $self = shift;
+  my $params = shift;
+
+  return $self->_get_aln($params,1);
+}
+
+sub _get_aln {
+  my $self = shift;
+  my $params = shift;
+  my $cdna = shift;
+
+  $params = $self->params unless (defined $params);
+  my $tree = $self->get_tree;
+
+  my $aa_aln = $tree->get_SimpleAlign();
+  my $cdna_aln = $tree->get_SimpleAlign(-cdna => 1, -hide_positions => 1);
+
+  if ($params->{alignment_slice}) {
+    my $slice_string = $params->{alignment_slice};
+    my ($lo,$hi) = split("-",$slice_string);
+    
+    $aa_aln = $aa_aln->slice($lo,$hi);
+    $cdna_aln = $cdna_aln->slice($lo*3-2,$hi*3-2);
+  }
+
+  my $aln = Bio::EnsEMBL::Compara::ComparaUtils->fetch_masked_alignment($aa_aln,$cdna_aln,$tree,$params,$cdna);
+
+  return $aln;
+}
+
+
 sub compara_dba {
   my $self = shift;
 

@@ -87,6 +87,7 @@ sub data_for_site {
   my $aln_position = shift;
 
   my $data = $self->SUPER::data_for_site($aln_position);
+  return undef unless (defined $data);
 
   my $tag_hash = $self->param('tag_hash');
   if (!defined $tag_hash) {
@@ -95,7 +96,7 @@ sub data_for_site {
   }
 
   my $site_tags = $tag_hash->{$aln_position};
-  #$self->hash_print($site_tags);
+  $self->hash_print($site_tags);
   if (defined $site_tags) {
     $data->{'filter_value'} = $site_tags->{'FILTER'};
     $data->{'domain'} = $site_tags->{'DOMAIN'};
