@@ -124,8 +124,55 @@ mysql> select pattern,count(*) from outgroup_sites where type!='gap' group by pa
 15 rows in set (1 min 48.19 sec)
 
 
-Look at outgroup patterns to resolve mutation events:
-
-
 # SQL query to merge sites tables:
 mysql> select * FROM counts_sites a, outgroup_sites b WHERE a.node_id=b.node_id AND a.aln_position=b.aln_position and a.type!='gap' limit 10;
+
+
+ -> Look at outgroup patterns to resolve mutation events:
+
+mysql> select a.pattern AS hgc,b.pattern AS orang,count(*) FROM counts_sites a, outgroup_sites b WHERE a.node_id=b.node_id AND a.aln_position=b.aln_position and a.type!='gap' and b.type!='gap' group by a.pattern,b.pattern;
++-------+---------+----------+
+| hgc   | orang   | count(*) |
++-------+---------+----------+
+| C.G.H | C.G.H.O |      171 |
+| C.G.H | C.G.HO  |      257 |
+| C.G.H | C.H.GO  |      135 |
+| C.G.H | G.H.CO  |      421 |
+| C.GH  | C.GHO   |     3671 |
+| C.GH  | C.O.GH  |      669 |
+| C.GH  | CO.GH   |     3442 |
+| CGH   | CGHO    |   229016 |
+| CGH   | O.CGH   |     7668 |
+| G.CH  | CH.GO   |     1167 |
+| G.CH  | G.CHO   |    19519 |
+| G.CH  | G.O.CH  |      847 |
+| H.CG  | CG.HO   |      206 |
+| H.CG  | H.CGO   |     2251 |
+| H.CG  | H.O.CG  |      159 |
++-------+---------+----------+
+15 rows in set (2 min 39.21 sec)
+
+
+ -> All outgroup patterns:
+
+mysql> select pattern,count(*) from outgroup_sites group by pattern;
++---------+----------+
+| pattern | count(*) |
++---------+----------+
+| C.G.H.O |     3177 |
+| C.G.HO  |    12407 |
+| C.GHO   |   236902 |
+| C.H.GO  |     5566 |
+| C.O.GH  |    22814 |
+| CG.HO   |    22205 |
+| CGHO    |  6779623 |
+| CH.GO   |    52886 |
+| CO.GH   |   153245 |
+| G.CHO   |   429515 |
+| G.H.CO  |    14755 |
+| G.O.CH  |    32130 |
+| H.CGO   |    97686 |
+| H.O.CG  |     9427 |
+| O.CGH   |   585610 |
++---------+----------+
+15 rows in set (1 min 57.26 sec)
