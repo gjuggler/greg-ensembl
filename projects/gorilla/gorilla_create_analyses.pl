@@ -26,15 +26,26 @@ parameter_sets();
 
 # Create analyses.
 node_sets();
+filter_one_to_one();
 count_sites();
-omegas();
+count_sites_outgroup();
+split_by_parameter_set();
+gene_omegas();
+sitewise_omegas();
+#xrate();
+#indelign();
 mapping();
 collect_stats();
 
 # Connect the dots.
-connect_analysis("NodeSets","CountSites",1);
-connect_analysis("CountSites","Omegas",1);
-connect_analysis("Omegas","Mapping",1);
+connect_analysis("NodeSets","FilterOneToOne",1);
+connect_analysis("FilterOneToOne","CountSites",1);
+connect_analysis("FilterOneToOne","CountSitesOutgroup",1);
+connect_analysis("FilterOneToOne","SplitByParameterSet",1);
+
+connect_analysis("SplitByParameterSet","GeneOmegas",1);
+connect_analysis("GeneOmegas","SitewiseOmegas",1);
+connect_analysis("SitewiseOmegas","Mapping",1);
 connect_analysis("Mapping","CollectStats",1);
 
 
@@ -53,26 +64,94 @@ sub node_sets {
   _add_nodes_to_analysis($analysis_id,$params,\@nodes);
 }
 
+sub filter_one_to_one {
+  my $logic_name = "FilterOneToOne";
+  my $module = "Bio::Greg::Hive::FilterOneToOneOrthologs";
+  my $params = {
+    one_to_one_taxon_list => '9593,9598,9606,9600'
+  };
+  my $analysis_id = _create_analysis($logic_name,$module,$params,100,1);
+}
+
+sub split_by_parameter_set {
+  my $logic_name = "SplitByParameterSet";
+  my $module = "Bio::Greg::Hive::SplitByParameterSet";
+  my $params = {
+    flow_parameter_sets => 'all'
+  };
+  my $analysis_id = _create_analysis($logic_name,$module,$params,100,1);
+}
+
 sub count_sites {
   my $logic_name = "CountSites";
   my $module = "Bio::Greg::Gorilla::CountSites";
   my $params = {
+    gorilla_count_species => '9593,9598,9606'
   };
   _create_analysis($logic_name,$module,$params,50,1);
 }
 
-sub omegas {
-  my $logic_name = "Omegas";
+sub count_sites_outgroup {
+  my $logic_name = "CountSitesOutgroup";
+  my $module = "Bio::Greg::Gorilla::CountSites";
+  my $params = {
+    gorilla_count_species => '9593,9598,9606,9600',
+    counts_sites_table => 'outgroup_sites',
+    counts_genes_table => 'outgroup_genes'
+  };
+  _create_analysis($logic_name,$module,$params,50,1);
+}
+
+sub gene_omegas {
+  my $logic_name = "GeneOmegas";
   my $module = "Bio::EnsEMBL::Compara::RunnableDB::Sitewise_dNdS";
   my $base_params = {
-    sitewise_parameter_sets => "all",
     sitewise_minimum_leaf_count => 0,
-
     sequence_quality_filtering => 0,
     alignment_score_filtering => 0,
+
+    sitewise_action => 'hyphy_dnds'
     };
   _create_analysis($logic_name,$module,$base_params,500,1);
+}
 
+sub sitewise_omegas {
+  my $logic_name = "SitewiseOmegas";
+  my $module = "Bio::EnsEMBL::Compara::RunnableDB::Sitewise_dNdS";
+  my $base_params = {
+    sitewise_minimum_leaf_count => 0,
+    sequence_quality_filtering => 0,
+    alignment_score_filtering => 0,
+    
+    sitewise_action => 'slr'
+    };
+  _create_analysis($logic_name,$module,$base_params,500,1);
+}
+
+sub xrate {
+  my $logic_name = "XRate";
+  my $module = "Bio::EnsEMBL::Compara::RunnableDB::Sitewise_dNdS";
+  my $base_params = {
+    sitewise_minimum_leaf_count => 0,
+    sequence_quality_filtering => 0,
+    alignment_score_filtering => 0,
+    
+    sitewise_action => 'xrate_indels'
+    };
+  _create_analysis($logic_name,$module,$base_params,500,1);
+}
+
+sub indelign {
+  my $logic_name = "Indelign";
+  my $module = "Bio::EnsEMBL::Compara::RunnableDB::Sitewise_dNdS";
+  my $base_params = {
+    sitewise_minimum_leaf_count => 0,
+    sequence_quality_filtering => 0,
+    alignment_score_filtering => 0,
+    
+    sitewise_action => 'indelign'
+    };
+  _create_analysis($logic_name,$module,$base_params,500,1);
 }
 
 sub mapping {
@@ -93,7 +172,7 @@ sub mapping {
 
 sub collect_stats {
   my $logic_name = "CollectStats";
-  my $module = "Bio::Greg::Eslr::CollectEslrStats";
+  my $module = "Bio::Greg::Gorilla::CollectGorillaStats";
   my $params = {
   };
   _create_analysis($logic_name,$module,$params,80,1);
@@ -135,17 +214,20 @@ sub parameter_sets {
     return keys %$hash;
   }
 
-  my @all = clade_taxon_ids();
-  my @mamms = clade_taxon_ids("Eutheria");
-  my @primates = clade_taxon_ids("Primates");
-  my @homininae = clade_taxon_ids("Homininae");
+  my @all_arr = clade_taxon_ids();
+  my @mammals_arr = clade_taxon_ids("Eutheria");
+  my @primates_arr = clade_taxon_ids("Primates");
+  my @homininae_arr = clade_taxon_ids("Homininae");
+  my @hominidae_arr = clade_taxon_ids("Hominidae");
 
   my $everything = join(",",clade_taxon_ids());
 
   my $primates = join(",",clade_taxon_ids("Primates"));
   my $homininae = join(",",clade_taxon_ids("Homininae"));
   my $hominidae = join(",",clade_taxon_ids("Hominidae"));
-  my $non_homininae = join(",",subtract(\@primates,\@homininae));
+  my $non_homininae = join(",",subtract(\@primates_arr,\@homininae_arr));
+  my $non_hominidae = join(",",subtract(\@primates_arr,\@hominidae_arr));
+  my $non_gorilla = join(",",subtract(\@hominidae_arr,[9593]));
   my $simiiformes = join(",",clade_taxon_ids("Simiiformes"));
   my $haplorrhini = join(",",clade_taxon_ids("Haplorrhini"));
 
@@ -155,74 +237,83 @@ sub parameter_sets {
 
   my $mammals = join(",",clade_taxon_ids("Eutheria"));
 
-  $params = {
+  my $non_primates = join(",",subtract(\@mammals_arr,\@primates_arr));
+ 
+ $params = {
     parameter_set_name => "Homininae",
-    shortname => 'hmn',
+    parameter_set_shortname => 'hmn',
     keep_species => $homininae,
     gorilla_count_species => '9593,9598,9606'
   };
   _add_parameter_set($params);
 
   $params = {
-    parameter_set_name => "Non-homininae",
-    shortname => 'nonhmn',
-    keep_species => $non_homininae
-  };
-  _add_parameter_set($params);
-
-  $params = {
     parameter_set_name => "Hominidae",
-    shortname => 'hmd',
+    parameter_set_shortname => 'hmd',
     keep_species => $hominidae
   };
   _add_parameter_set($params);
 
   $params = {
-    parameter_set_name => "Simiiformes",
-    shortname => 'smi',
-    keep_species => $simiiformes
+    parameter_set_name => "NonGorillaHominidae",
+    parameter_set_shortname => 'nongor',
+    keep_species => $non_gorilla
+  };
+  _add_parameter_set($params);
+
+  $params = {
+    parameter_set_name => "NonHominidPrimates",
+    parameter_set_shortname => 'nonhom',
+    keep_species => $non_hominidae
   };
   _add_parameter_set($params);
 
   $params = {
     parameter_set_name => "Haplorrhini",
-    shortname => 'hpl',
+    parameter_set_shortname => 'hpl',
     keep_species => $haplorrhini
   };
   _add_parameter_set($params);
 
   $params = {
     parameter_set_name => "Primates",
-    shortname => 'prm',
+    parameter_set_shortname => 'p',
     keep_species => $primates
   };
   _add_parameter_set($params);
  
   $params = {
     parameter_set_name => "Glires",
-    shortname => 'g',
+    parameter_set_shortname => 'g',
     keep_species => $glires
   };
   _add_parameter_set($params);
 
   $params = {
     parameter_set_name => "Laurasiatheria",
-    shortname => 'l',
+    parameter_set_shortname => 'l',
     keep_species => $laurasiatheria
   };
   _add_parameter_set($params);
 
   $params = {
     parameter_set_name => "Afrotheria",
-    shortname => 'a',
+    parameter_set_shortname => 'a',
     keep_species => $afrotheria
   };
   _add_parameter_set($params);
 
   $params = {
     parameter_set_name => "Mammals",
-    shortname => 'm',
+    parameter_set_shortname => 'm',
     keep_species => $mammals
+  };
+  _add_parameter_set($params);
+
+  $params = {
+    parameter_set_name => "NonPrimateMammals",
+    parameter_set_shortname => 'nonprm',
+    keep_species => $non_primates
   };
   _add_parameter_set($params);
 
@@ -242,9 +333,9 @@ sub _add_parameter_set {
     $dbc->do($name_cmd);
   }
 
-  if (exists $params->{'shortname'} ) {
-    my $shortname = $params->{'shortname'} || '';
-    my $shortname_cmd = "REPLACE INTO parameter_set VALUES ('$parameter_set_id','shortname',\"$shortname\");";
+  if (exists $params->{'parameter_set_shortname'} ) {
+    my $parameter_set_shortname = $params->{'parameter_set_shortname'} || '';
+    my $shortname_cmd = "REPLACE INTO parameter_set VALUES ('$parameter_set_id','parameter_set_shortname',\"$parameter_set_shortname\");";
     $dbc->do($shortname_cmd);
   }
 

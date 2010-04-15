@@ -95,3 +95,37 @@ mysql> select pattern,count(*) from counts_sites where type="nonsynonymous" grou
 | H.CG    |    29780 |
 +---------+----------+
 4 rows in set (10.18 sec)
+
+
+### 2010-04-15 ###
+
+Ran the pipeline including the orangutan as an outgroup:
+
+mysql> select pattern,count(*) from outgroup_sites where type!='gap' group by pattern;
++---------+----------+
+| pattern | count(*) |
++---------+----------+
+| C.G.H.O |      739 |
+| C.G.HO  |     2166 |
+| C.GHO   |    63305 |
+| C.H.GO  |     1302 |
+| C.O.GH  |     4631 |
+| CG.HO   |     5421 |
+| CGHO    |  6783906 |
+| CH.GO   |    21183 |
+| CO.GH   |    13317 |
+| G.CHO   |   149093 |
+| G.H.CO  |     2395 |
+| G.O.CH  |     8291 |
+| H.CGO   |    53608 |
+| H.O.CG  |     3173 |
+| O.CGH   |   260112 |
++---------+----------+
+15 rows in set (1 min 48.19 sec)
+
+
+Look at outgroup patterns to resolve mutation events:
+
+
+# SQL query to merge sites tables:
+mysql> select * FROM counts_sites a, outgroup_sites b WHERE a.node_id=b.node_id AND a.aln_position=b.aln_position and a.type!='gap' limit 10;
