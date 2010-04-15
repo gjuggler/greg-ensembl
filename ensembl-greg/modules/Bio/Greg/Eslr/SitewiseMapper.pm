@@ -17,7 +17,6 @@ sub fetch_input {
 
   ### DEFAULT PARAMETERS ###
   my $params = {};
-  $params->{'omega_table'}     = 'sitewise_omega';
   $params->{'do_mapping'}      = 1;
   $params->{'do_filter'}      = 1;
   $params->{'collect_pfam'}    = 1;
@@ -27,11 +26,6 @@ sub fetch_input {
   $params->{'pfam_taxon_ids'}  = '9606,10090';
   $params->{'go_taxon_ids'}    = '9606,10090';
   $params->{'genome_taxon_id'} = 9606;
-
-  $params->{'collect_tags'}     = 0;
-  $params->{'collect_dup_tags'} = 0;
-  $params->{'create_plot'}      = 0;
-  $params->{'only_run_once'}    = 1;
   #########################
 
   # Fetch parameters from the two possible locations. Input_id takes precedence!
@@ -42,17 +36,11 @@ sub fetch_input {
 
 sub run {
   my $self = shift;
-
-  if ($self->param('only_run_once') && $self->param('parameter_set_id') != 1) {
-    print "No need to run -- we're not the first parameter_set_id!\n";
-    return;
-  }
   
   $self->{'start_time'} = time() * 1000;
   $self->compara_dba->dbc->disconnect_when_inactive(1);
 
-  # Select all codons.
-  my $table   = $self->param('omega_table');
+  $self->param('parameter_set_id',0);
 
   if ($self->param('do_filter')) {
     print "Doing site-wise filter calculations...\n";
@@ -64,18 +52,6 @@ sub run {
     print "Mapping sitewise to genome...\n";
     $self->do_mapping();
     print "  -> Finished mapping values!\n";
-  }
-
-  if ( $self->param('collect_tags') ) {
-    print "Collecting gene tags...\n";
-    $self->collect_gene_tags();
-    print "  -> Finished collecting gene tags!\n";
-  }
-
-  if ( $self->param('collect_dup_tags') ) {
-    print "Collecting duplication tags...\n";
-    $self->collect_dup_tags();
-    print "  -> Finished collecting duplication tags!\n";
   }
 
   if ( $self->param('collect_pfam') ) {
@@ -102,11 +78,6 @@ sub run {
     print "  -> Finished collecting GO terms!\n";
   }
 
-  if ( $self->param('create_plot') ) {
-    $self->create_plot();
-    print "  -> Finished plotting omegas!\n";
-  }
-
   $self->compara_dba->dbc->disconnect_when_inactive(0);
 }
 
@@ -114,31 +85,16 @@ sub do_mapping {
   my $self = shift;
 
   my $node_id = $self->param('node_id');
-  my $table   = $self->param('omega_table');
   print "Mapping sitewise $node_id to genome...\n";
 
-  my $parameter_set_id = $self->param('parameter_set_id');
-  my $omega_cmd = qq^
-      SELECT distinct(aln_position) aln_position FROM $table WHERE
-      node_id=$node_id
-      ;
-    ^;
-  my $sth = $self->compara_dba->dbc->prepare($omega_cmd);
-  $sth->execute();
-  my @hashrefs = @{ $sth->fetchall_arrayref( {} ) };
-
-  my $pos_values;
-  map { $pos_values->{ $_->{aln_position} } = 1 } @hashrefs;
-
-  # Run the genomic mapping code.
   my $mapping_taxon = $self->param('genome_taxon_id');
-  my $mapped_omegas = Bio::Greg::EslrUtils->mapSitewiseToGenome( $self->get_tree, $mapping_taxon, $pos_values );
+  my $mapped_sites = Bio::Greg::EslrUtils->mapSitewiseToGenome( $self->get_tree, $mapping_taxon );
 
   my @array_of_strings;
-  foreach my $map ( @{$mapped_omegas} ) {
+  foreach my $map ( @{$mapped_sites} ) {
     my @values =
       ( $node_id, 
-	$parameter_set_id,
+	$self->param('parameter_set_id'),
 	$map->{aln_position},
 	$map->{member_id},
 	'"'.$map->{chr}.'"',
@@ -157,16 +113,6 @@ sub do_mapping {
     $sth->execute;
     $sth->finish;
   }
-}
-
-sub collect_gene_tags {
-  my $self = shift;
-  my $gene_tags = Bio::Greg::EslrUtils->collectGeneTags( $self->get_tree, $self->params );
-}
-
-sub collect_dup_tags {
-  my $self = shift;
-  my $dup_tags = Bio::Greg::EslrUtils->collectDuplicationTags( $self->get_tree, $self->params );
 }
 
 sub collect_go {
@@ -438,7 +384,7 @@ sub collect_pfam {
     my $score  = $obj->{'score'};
     printf( "%s %s %s %s\n", $id, $pos, $pf_pos, $score );
     my @values =
-      ( $tree->node_id, $pos, $self->param('parameter_set_id'), '"DOMAIN"', '"' . $id . '"', $score );
+      ( $self->param('node_id'), $pos, $self->param('parameter_set_id'), '"DOMAIN"', '"' . $id . '"', $score );
     my $string = '(' . join( ',', @values ) . ')';
     push @array_of_strings, $string;
   }
@@ -579,7 +525,7 @@ sub create_plot {
     print "PLOT OUTPUT: $output_file\n";
 
     my $params = {
-      parameter_set_id     => 14,
+      parameter_set_id     => 0,
       remove_blank_columns => 1,
       mask_outside_subtree => 1,
       remove_subtree       => 0,

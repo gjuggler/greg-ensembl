@@ -40,7 +40,14 @@ sub db_handle {
 sub params {
   my $self = shift;  
   $self->param_init();
-  return $self->{'_param_hash'};
+
+  # Make a copy!
+  my $param_hash = $self->{_param_hash};
+  my $new_params = {};
+  foreach my $key (keys %$param_hash) {
+    $new_params->{$key} = $param_hash->{$key};
+  }
+  return $new_params;
 }
 
 sub load_all_params {

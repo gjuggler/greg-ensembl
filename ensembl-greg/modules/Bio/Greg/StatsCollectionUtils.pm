@@ -6,6 +6,7 @@ use Bio::EnsEMBL::Compara::NestedSet;
 
 our @ISA = qw();
 
+
 sub max_path {
   my $class = shift;
   my $tree  = shift;
@@ -174,19 +175,20 @@ sub get_tag_hash {
 
   # Index tags by the aln_position and tag.
   my $table   = "sitewise_tag";
-  my $pset    = $params->{'parameter_set_id'};
+  my $pset    = $params->{'parameter_set_id'} || 0;
   my $node_id = $params->{'node_id'};
 
   my $cmd = qq^SELECT aln_position,tag,value
     FROM $table WHERE ( parameter_set_id=$pset or parameter_set_id=0 ) and node_id=$node_id
     ^;
-
+  print $cmd."\n";
   my $tag_hash = {};
 
   my $sth = $dbc->prepare($cmd);
   $sth->execute;
   while ( my $obj = $sth->fetchrow_hashref ) {
     my $aln_position = $obj->{'aln_position'};
+    print "$aln_position\n";
     $tag_hash->{$aln_position} = {} if (!defined $tag_hash->{$aln_position});
     $tag_hash->{$aln_position}->{$obj->{'tag'}} = $obj->{'value'};
   }
@@ -212,7 +214,7 @@ sub get_psc_hash {
     ^;
 
   if ( $params->{genome} ) {
-    $cmd = qq^SELECT * from $table o, sitewise_genome g WHERE o.parameter_set_id=$pset AND 
+    $cmd = qq^SELECT * from $table o LEFT JOIN sitewise_genome g WHERE o.parameter_set_id=$pset AND 
       o.node_id=$node_id
       AND o.node_id=g.node_id
       AND o.aln_position=g.aln_position $CLEAN_WHERE^;

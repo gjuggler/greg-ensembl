@@ -61,7 +61,6 @@ sub mapSitewiseToGenome {
   my $class     = shift;
   my $tree      = shift;
   my $taxon_id  = shift;
-  my $pos_value = shift;    # Hashref where key=position, value=value.
 
   my $sa      = $tree->get_SimpleAlign;
   my $aln_len = $sa->length;
@@ -96,10 +95,6 @@ sub mapSitewiseToGenome {
         my $strand = "+";
         $strand = "-" if ( $gc->strand == -1 );
 
-        my $value = -1;
-        $value = $pos_value->{$i} if ( exists $pos_value->{$i} );
-        next if ( $value == -1 );
-
         my $start = $gc->start;
         my $end   = $gc->end;
 
@@ -108,7 +103,6 @@ sub mapSitewiseToGenome {
             chr          => $chr,
             start        => $start,
             end          => $end,
-            value        => $value,
             aln_position => $i,
             char         => $char,
             stable_id    => $leaf->stable_id,

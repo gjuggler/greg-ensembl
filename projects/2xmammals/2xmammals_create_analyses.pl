@@ -6,6 +6,7 @@ use DBI;
 use Getopt::Long;
 use Bio::EnsEMBL::Registry;
 use Bio::EnsEMBL::Compara::DBSQL::DBAdaptor;
+use Bio::EnsEMBL::Hive::DBSQL::DBAdaptor;
 use Bio::EnsEMBL::Compara::ComparaUtils;
 use Bio::Greg::EslrUtils;
 use File::Path;
@@ -16,6 +17,7 @@ GetOptions('url=s' => \$url);
 
 my $clean = 1;
 my $dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new(-url => $url);
+my $hive_dba = Bio::EnsEMBL::Hive::DBSQL::DBAdaptor->new(-url => $url);
 my $dbc = $dba->dbc;
 my $analysis_hash; # Hash to store mapping between analysis names and ID numbers.
 
@@ -28,21 +30,25 @@ parameter_sets();
 # Create analyses.
 node_sets();
 align();
+mapping();
 sequence_quality();
 split_by_parameter_set();
 gene_omegas();
 sitewise_omegas();
-mapping();
 collect_stats();
+output_data();
 
 # Connect the dots.
 connect_analysis("NodeSets","Align");
 connect_analysis("Align","SequenceQuality");
-connect_analysis("SequenceQuality", "SplitByParameterSet");
+connect_analysis("SequenceQuality","SplitByParameterSet");
 connect_analysis("SplitByParameterSet","GeneOmegas");
 connect_analysis("GeneOmegas","SitewiseOmegas");
-connect_analysis("SitewiseOmegas","Mapping");
-connect_analysis("Mapping","CollectStats");
+connect_analysis("SitewiseOmegas","CollectStats");
+
+connect_analysis("Align","Mapping");
+wait_for("CollectStats",["Mapping"]);
+wait_for("OutputTabularData",["CollectStats"]);
 
 sub node_sets {
   my $logic_name = "NodeSets";
@@ -254,24 +260,22 @@ sub gene_omegas {
   my $module = "Bio::EnsEMBL::Compara::RunnableDB::Sitewise_dNdS";
   my $base_params = {
     sequence_quality_filtering => 1,
-    sitewise_action => 'hyphy_dnds'
+    sitewise_action => 'none'
     };
   _create_analysis($logic_name,$module,$base_params,500,1);
 }
 
 sub sitewise_omegas {
-  my $analysis_id = 105;
   my $logic_name = "SitewiseOmegas";
   my $module = "Bio::EnsEMBL::Compara::RunnableDB::Sitewise_dNdS";
   my $base_params = {
     sequence_quality_filtering => 1,
-    sitewise_action => 'slr'
+    sitewise_action => 'none'
     };
   _create_analysis($logic_name,$module,$base_params,500,1);
 }
 
 sub mapping {
-  my $analysis_id=106;
   my $logic_name = "Mapping";
   my $module = "Bio::Greg::Eslr::SitewiseMapper";
   my $params = {
@@ -281,14 +285,23 @@ sub mapping {
 
 
 sub collect_stats {
-  my $analysis_id=107;
   my $logic_name = "CollectStats";
-  my $module = "Bio::Greg::Eslr::CollectEslrStats";
+  my $module = "Bio::Greg::Mammals::CollectMammalsStats";
   my $params = {
     mammals_alignment_filtering_value => 1
   };
   _create_analysis($logic_name,$module,$params,50,1);
 }
+
+sub output_data {
+  my $logic_name = "OutputTabularData";
+  my $module = "Bio::Greg::Mammals::OutputData";
+  my $params = {
+  };
+  _create_analysis($logic_name,$module,$params,50,1);
+}
+
+
 
 sub _combine_hashes {
   my @hashes = @_;
@@ -372,7 +385,8 @@ sub _create_analysis {
   $cmd = qq{REPLACE INTO analysis_stats SET
 	      analysis_id=$analysis_id,
 	      hive_capacity=$hive_capacity,
-	      batch_size=$batch_size
+	      batch_size=$batch_size,
+	      failed_job_tolerance=20000
 	      ;};
   $dbc->do($cmd);
   return $analysis_id;
@@ -382,15 +396,41 @@ sub connect_analysis {
   my $from_name = shift;
   my $to_name = shift;
   my $branch_code = shift;
-
-  my $from_id = $analysis_hash->{$from_name};
   $branch_code = 1 unless (defined $branch_code);
-  my $cmd = qq{REPLACE INTO dataflow_rule SET
-		 from_analysis_id=$from_id,
-		 to_analysis_url="$to_name",
-		 branch_code=$branch_code
-		 ;};
-  $dbc->do($cmd);
+
+  my $dataflow_rule_adaptor = $hive_dba->get_DataflowRuleAdaptor;
+  my $analysis_adaptor = $hive_dba->get_AnalysisAdaptor;
+
+  my $from_analysis = $analysis_adaptor->fetch_by_logic_name($from_name);
+  my $to_analysis = $analysis_adaptor->fetch_by_logic_name($to_name);
+  
+  if($from_analysis and $to_analysis) {
+    $dataflow_rule_adaptor->create_rule( $from_analysis, $to_analysis, $branch_code);
+    warn "Created DataFlow rule: [$branch_code] $from_name -> $to_name\n";
+  } else {
+    die "Could not fetch analyses $from_analysis -> $to_analysis to create a dataflow rule";
+  }
+}
+
+sub wait_for {
+  my $waiting_name = shift;
+  my $wait_for_list = shift;
+  
+  my $ctrl_rule_adaptor = $hive_dba->get_AnalysisCtrlRuleAdaptor;
+  my $analysis_adaptor = $hive_dba->get_AnalysisAdaptor;
+
+  my $waiting_analysis = $analysis_adaptor->fetch_by_logic_name($waiting_name);
+
+  foreach my $wait_for_name (@$wait_for_list) {
+    my $wait_for_analysis = $analysis_adaptor->fetch_by_logic_name($wait_for_name);
+
+    if($waiting_analysis and $wait_for_analysis) {
+      $ctrl_rule_adaptor->create_rule( $wait_for_analysis, $waiting_analysis);
+      warn "Created Control rule: $waiting_name will wait for $wait_for_name\n";
+    } else {
+      die "Could not fetch $waiting_name -> $wait_for_name to create a control rule";
+    }
+  }
 }
 
 sub _add_nodes_to_analysis {
