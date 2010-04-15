@@ -1,5 +1,7 @@
 package Bio::EnsEMBL::Compara::ComparaUtils;
 
+use strict;
+
 use Bio::TreeIO;
 use Bio::EnsEMBL::Compara::LocalMember;
 use Bio::EnsEMBL::Compara::ProteinTree;
@@ -396,7 +398,7 @@ sub fetch_masked_alignment
     } else {
       $threshold = $params->{'alignment_score_threshold'};
     }
-    printf " -> Filtering table: %s  threshold: %d  avg: %.3f)\n",$table,$threshold,$total_avg;
+    #printf " -> Filtering table: %s  threshold: %d  avg: %.3f)\n",$table,$threshold,$total_avg;
     $aln = $ALN->mask_below_score($aln,$threshold,$hash_ref,$params->{'alignment_score_mask_character'});
   }
 
@@ -479,16 +481,6 @@ sub mask_aln_by_sequence_quality {
     my $id = $leaf->stable_id;
     my $member_id = $leaf->member_id;
     my $sequence_id = $leaf->sequence_id;
-
-#    if (!grep {$_ eq $leaf->taxon_id} @twox_ids) {
-#      # Only mask with leaves that are 2x genomes.
-#      #print $leaf->stable_id." (NOT 2x)\n";
-#      
-#      # Put a dummy score string into the hash.
-#      my $len = length($leaf->sequence);
-#      $sequence_quality = '9' x $len;
-#    } else {
-      #print $leaf->stable_id." (IS 2x!)\n";
       
       my $cmd = "SELECT sequence FROM sequence_quality where sequence_id = $sequence_id;";
       my $sth = $pta->prepare($cmd);
@@ -535,7 +527,7 @@ sub fetch_alternate_tree_aln {
     # Grab the correct cigar line for each leaf node.
     my $id = $leaf->member_id;
     my $cmd = "SELECT cigar_line FROM $alt_member_table where member_id=$id;";
-    my $sth = $pta->prepare($cmd);
+    my $sth = $tree->adaptor->prepare($cmd);
     $sth->execute();
     my $data = $sth->fetchrow_hashref();
     $sth->finish();
@@ -656,11 +648,11 @@ sub dump_ProteinTree_tree {
 
   my $treeI = $class->to_TreeI($tree);
   my $treeout = Bio::TreeIO->new('-format' => 'newick',
-                                 '-file'     => ">$file");
+                                 '-file'     => ">$fastafile");
   $treeout->write_tree($tree);
   $treeout->close();
 
-  return $file;
+  return $fastafile;
 }
 
 # Dumps a ProteinTree's sequences to a Fasta file.
@@ -774,8 +766,8 @@ sub get_tree_for_comparative_analysis {
   };
   $params = $class->replace_params($default_params,$params);
 
-  my $ps_params = $class->load_params_from_param_set($dba->dbc,$params->{'parameter_set_id'});
-  $params = $class->replace_params($params,$ps_params);
+  #my $ps_params = $class->load_params_from_param_set($dba->dbc,$params->{'parameter_set_id'});
+  #$params = $class->replace_params($params,$ps_params);
 
   # Fetch the tree.
   my $node_id = $params->{'node_id'};
@@ -822,7 +814,9 @@ sub get_tree_for_comparative_analysis {
 
   # Do the actual removal of everything in the remove_hash.
   my @taxon_ids = keys %remove_hash;
-  $tree = $TREE->remove_members_by_taxon_id($tree,\@taxon_ids);
+  if (scalar @taxon_ids > 0) {
+    $tree = $TREE->remove_members_by_taxon_id($tree,\@taxon_ids);
+  }
 
   # IMPORTANT: Re-root the tree so we get rid of parents above this one.
   $tree->re_root;
@@ -879,45 +873,60 @@ sub get_quality_string_for_member {
   foreach my $exon (@{$tx->get_all_translateable_Exons}) {
     my $pep_exon = $exon->peptide($tx);
 
+
     my $slice = $exon->slice;
     $exon = $exon->transfer($tx->slice);
-    #if (!defined $exon) {
-    #  print "Error transferring exon!\n";
-    #  $ens_dna .= "N" x $length;
-    #  next;
-    #}
-
     my $dna_seq = $exon->seq->seq;
-    my $ens_seq = new Bio::PrimarySeq(-seq => $dna_seq);
-    print "pe:".$pep_exon->seq."\n";
-    print "es:".$ens_seq->translate->seq."\n";
+
+    print $exon->phase."\n";    
+    my $start_inset = 0;
+    my $end_inset = 0;
+
+    my $length = length($dna_seq);
+    printf "length: %d  by 3: %d\n", $length, $length % 3;
+
+    #my $ens_seq = new Bio::PrimarySeq(-seq => $dna_seq);
+    #print "pe:".$pep_exon->seq."\n";
+    #print "es:".$ens_seq->translate->seq."\n";
+    #$ens_dna .= $dna_seq;
 
     $ens_dna .= $dna_seq;
+
+    my $ens_seq = new Bio::PrimarySeq(-seq => $ens_dna);
+    print $ens_seq->translate->seq."\n";
     
     $exon = $exon->transform("contig");
     if (defined $exon) {
       my $contig_name = $exon->slice->seq_region_name;
-      my $exon_strand = $exon->slice->strand;
-      #print "exon slice:". $exon->slice->strand."\n";
-      my $start = $exon->start-1;
-      my $end = $exon->end;
+      
+      #printf "strand: %d start: %d end: %d\n", $exon->strand, $exon->phase,$exon->end_phase;
+      #if ($exon->strand == -1) {
+      #my $tmp_end = $end_inset;
+      #$end_inset = $start_inset;
+      #$start_inset = $tmp_end;
+      #}
+      #print "$start_inset $end_inset \n";
+
+      my $start = $exon->start-1 + $start_inset;
+      my $end = $exon->end - $end_inset;
       my $len = $end - $start;
 
-      print "e: ".$exon->seq->seq."\n";
+      print "e: ".$dna_seq."\n";
 
       print "$contig_name $start-$end\n";
-      #my $qual_str = $if_qual->get_sequence($contig_name);
-      #my @quals = split(" ",$qual_str);
-      #my @qual_slice = @quals[$start .. $end-1];
-      #push @whole_qual_array,@qual_slice;
-
-      my $qual_str = $if_qual->get_sequence_region($contig_name,$start,$end);
-      if (!defined $qual_str) {
-	return undef;
-      }
+      my $qual_str = $if_qual->get_sequence($contig_name);
       my @quals = split(" ",$qual_str);
-      @quals = reverse(@quals) if ($exon_strand == -1);
+      @quals = @quals[$start .. $end-1];
+      @quals = reverse(@quals) if ($exon->strand == -1);
       push @whole_qual_array,@quals;
+
+      #my $qual_str = $if_qual->get_sequence_region($contig_name,$start,$end);
+      #if (!defined $qual_str) {
+      #return undef;
+      #}
+      #my @quals = split(" ",$qual_str);
+      #@quals = reverse(@quals) if ($exon_strand == -1);
+      #push @whole_qual_array,@quals;
 
       if (defined $if_base) {
 	my $base_str = $if_base->get_sequence($contig_name);
@@ -925,13 +934,13 @@ sub get_quality_string_for_member {
 	my @bases_slice = @bases[$start .. $end-1];
 	my $bases_seq = join("",@bases_slice);
 	#my $bases_seq = $if_base->get_sequence_region($contig_name,$start,$end);
-	if ($exon_strand == -1) { # || $bases_seq ne $exon->seq->seq) {
+	if ($exon->strand == -1) {
 	  $bases_seq = new Bio::PrimarySeq(-seq=>$bases_seq)->revcom()->seq;
 	}
 	$genome_dna .= $bases_seq;
 	print "f: ".$bases_seq."\n";
 
-	die "Not equal!" unless ($bases_seq eq $exon->seq->seq);
+	die "Not equal!" unless ($bases_seq eq $dna_seq);
       }
     } else {
       $genome_dna .= "N" x $length;
@@ -941,7 +950,7 @@ sub get_quality_string_for_member {
 
   if (defined $if_base) {
     my $ens_seq = new Bio::PrimarySeq(-seq => $ens_dna);
-    $genome_seq = new Bio::PrimarySeq(-seq => $genome_dna);
+    my $genome_seq = new Bio::PrimarySeq(-seq => $genome_dna);
     printf "ens:  %s \n",$ens_seq->seq;
     printf "gnm:  %s \n",$genome_seq->seq;
     printf "q  :  %s \n",join(" ",@whole_qual_array);

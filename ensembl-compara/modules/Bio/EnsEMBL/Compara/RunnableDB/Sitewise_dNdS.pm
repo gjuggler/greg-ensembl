@@ -1,58 +1,31 @@
 package Bio::EnsEMBL::Compara::RunnableDB::Sitewise_dNdS;
 
 use strict;
+use Bio::EnsEMBL::Utils::Argument;
+use Bio::EnsEMBL::Utils::Exception;
+
 use Time::HiRes qw(sleep);
 use Cwd;
 use Bio::AlignIO;
 
 use Bio::EnsEMBL::Compara::ComparaUtils;
-use Bio::EnsEMBL::Compara::DBSQL::DBAdaptor;
 use Bio::EnsEMBL::Compara::NestedSet;
-use Bio::EnsEMBL::Hive;
-use Bio::EnsEMBL::Hive::Process;
 
 use Bio::Greg::Codeml;
-use Bio::Greg::ProcessUtils;
 
-our @ISA = qw(Bio::EnsEMBL::Hive::Process Bio::Greg::ProcessUtils);
+use base ('Bio::Greg::Hive::Process');
 
 #
 # Some global-ish variables.
 #
-my $dba;
-my $pta;
-
-# INPUT FILES / OBJECTS.
-my $tree;
-my $input_cdna;
-my $input_aa;
-my $params;
-
-# OUTPUT FILES / OBJECTS / STATES.
-my $results;
-my @sitewise_omegas;
-my $cluster_too_small;
-my $dont_write_output;
-my $aa_map;
-
-my $aln_map_aa;
-my $aln_map_cdna;
 
 sub debug {1;}
 
 sub fetch_input {
   my( $self) = @_;
-  
-  # Load up the Compara DBAdaptor.
-  if ($self->{dba}) {
-    $dba = $self->dba;
-  } else {
-    $dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new(-DBCONN=>$self->db->dbc);
-  }
-  $pta = $dba->get_ProteinTreeAdaptor;
-  
+    
   ### DEFAULT PARAMETERS ###
-  $params = {
+  my $params = {
     alignment_table            => 'protein_tree_member',
     omega_table           => 'sitewise_omega',
     parameter_set_id       => 1,
@@ -88,95 +61,64 @@ sub fetch_input {
 
     };
   
-  # For aminof, codonf, and freqtype, see the SLR readme.txt for more info.
+  $self->load_all_params($params);
 
-  #########################
-  print "TEMP: ".$self->worker_temp_directory."\n";
-
-  my $p_params = $self->get_params($self->parameters);
-  my $i_params = $self->get_params($self->input_id);
-  my $node_id = $i_params->{'protein_tree_id'} || $i_params->{'node_id'};
-  my $t_params = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_tree_tags($dba,$node_id);
-  
-  $params = $self->replace_params($params,$p_params,$i_params,$t_params);
-  #########################
-
-  $dba->dbc->disconnect_when_inactive(1);
 }
 
 sub run {
   my $self = shift;  
 
-  my $node_id = $params->{'node_id'};
-  my $param_set_string = get('parameter_sets');
-  print "Param sets: $param_set_string\n";
+  $self->compara_dba->dbc->disconnect_when_inactive(1);
 
-  my @param_sets;
-  if ($param_set_string eq 'all') {
-    my $query = qq^select distinct(parameter_set_id) FROM parameter_set order by parameter_set_id;^;
-    @param_sets = @{$dba->dbc->db_handle->selectcol_arrayref($query)};
-  } else {
-    @param_sets = split(",",$param_set_string);
+  my $tree = $self->get_tree;
+
+  print $tree->newick_format."\n";
+
+  # Think of reasons why we want to fail the job.
+  my @leaves = $tree->leaves;
+  if (scalar(@leaves) < $self->param('sitewise_minimum_leaf_count')) {
+    my $value = sprintf "Too small (%d < %d)",scalar(@leaves),$self->param('sitewise_minimum_leaf_count');
+    $self->store_tag("slr_skipped_".$self->param('parameter_set_id'),$value);
+    next;
+  } elsif (scalar(@leaves) > 300) {
+    my $value = sprintf "Too big (%d > %d)",scalar(@leaves),300;
+    $self->store_tag("slr_skipped_".$self->param('parameter_set_id'),$value);
+    next;
   }
-
-  delete $params->{'parameter_sets'};
-  foreach my $param_set (@param_sets) {
-    my $param_set_params = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_param_set($dba->dbc,$param_set);
-    my $new_params = Bio::EnsEMBL::Compara::ComparaUtils->replace_params($params,$param_set_params);
-
-    Bio::EnsEMBL::Compara::ComparaUtils->hash_print($new_params);
-
-    # Load the tree. This logic has been delegated to ComparaUtils.
-
-    $tree = Bio::EnsEMBL::Compara::ComparaUtils->get_tree_for_comparative_analysis($dba,$new_params);
-    print $tree->newick_format."\n";
-    $tree = $tree->minimize_tree;
-
-    # Think of reasons why we want to fail the job.
-    my @leaves = $tree->leaves;
-    if (scalar(@leaves) < $params->{sitewise_minimum_leaf_count}) {
-      my $value = sprintf "Too small (%d < %d)",scalar(@leaves),$params->{sitewise_minimum_leaf_count};
-      $self->store_tag("slr_skipped_".$params->{parameter_set_id},$value,$params);
-      next;
-    } elsif (scalar(@leaves) > 300) {
-      my $value = sprintf "Too big (%d > %d)",scalar(@leaves),300;
-      $self->store_tag("slr_skipped_".$params->{parameter_set_id},$value,$params);
-      next;
+  foreach my $leaf (@leaves) {
+    if ($leaf->distance_to_parent > 100) {
+      $leaf->distance_to_parent(4);
+      #$self->fail_job("Tree contains a massive branch length -- probably an error in b.l. optimization!");
     }
-    foreach my $leaf (@leaves) {
-      if ($leaf->distance_to_parent > 100) {
-	$leaf->distance_to_parent(4);
-	#$self->fail_job("Tree contains a massive branch length -- probably an error in b.l. optimization!");
-      }
-    }
+  }
+  
+  #eval {
+    $self->run_with_params($self->params,$tree);
+  #};
+  if ($@) {
+    print "ERROR - Trying with removed gaps...\n";
+    $self->param('sitewise_strip_gaps',1);
     
     eval {
-      $self->run_with_params($new_params,$tree);
+      $self->run_with_params($self->param,$tree);
     };
     if ($@) {
-      print "ERROR - Trying with removed gaps...\n";
-      $new_params->{sitewise_strip_gaps} = 1;
+      print "ERROR - Trying with malloc_check...\n";
+      
+      $self->param('sitewise_malloc_check',1);
       
       eval {
-	$self->run_with_params($new_params,$tree);
+	$self->run_with_params($self->params,$tree);
       };
       if ($@) {
-	print "ERROR - Trying with malloc_check...\n";
-	
-	$new_params->{sitewise_malloc_check} = 1;
-	
-	eval {
-	  $self->run_with_params($new_params,$tree);
-	};
-	if ($@) {
-	  print "ERROR - GIVING UP! Parameter set $param_set\n";
-	  $self->store_tag('slr_error_'.$param_set,1,$params);
-	  sleep(2);
-	}
+	my $param_set = $self->param('parameter_set_id');
+	print "ERROR - GIVING UP! Parameter set $param_set\n";
+	$self->store_tag('slr_error_'.$param_set,1);
+	sleep(2);
       }
     }
-    $tree->release_tree;
   }
+  $tree->release_tree;
 }
 
 sub run_with_params {
@@ -192,52 +134,47 @@ sub run_with_params {
     #print $leaf->member_id."\n";
   }
 
-  $input_aa = Bio::EnsEMBL::Compara::ComparaUtils->fetch_masked_alignment($aa_aln,$cdna_aln,$tree,$params,0);
-  $input_cdna = Bio::EnsEMBL::Compara::ComparaUtils->fetch_masked_alignment($aa_aln,$cdna_aln,$tree,$params,1);
+  my $input_aa = Bio::EnsEMBL::Compara::ComparaUtils->fetch_masked_alignment($aa_aln,$cdna_aln,$tree,$params,0);
+  my $input_cdna = Bio::EnsEMBL::Compara::ComparaUtils->fetch_masked_alignment($aa_aln,$cdna_aln,$tree,$params,1);
 
   my ($slim_cdna,$cdna_new_to_old,$cdna_old_to_new) = Bio::EnsEMBL::Compara::AlignUtils->remove_blank_columns_in_threes($input_cdna);
   my ($slim_aa,$aa_new_to_old,$aa_old_to_new) = Bio::EnsEMBL::Compara::AlignUtils->remove_blank_columns($input_aa);
 
-  $input_cdna = $slim_cdna;
-  $input_aa = $slim_aa;
-  $aln_map_aa = $aa_new_to_old;
-  $aln_map_cdna = $cdna_new_to_old;
+  my $input_aa = $slim_aa;
+  my $input_cdna = $slim_cdna;
+  $self->param('input_cdna',$slim_cdna);
+  $self->param('input_aa',$slim_aa);
+  $self->param('aln_map_aa',$aa_new_to_old);
+  $self->param('aln_map_cdna',$cdna_new_to_old);
 
   Bio::EnsEMBL::Compara::AlignUtils->pretty_print($input_aa,{length => 100});
   Bio::EnsEMBL::Compara::AlignUtils->pretty_print($input_cdna,{length => 100});
 
-  my $action = get('action');
+  my $action = $self->param('sitewise_action');
+
   if ($action =~ m/slr/i) {
-    $self->run_sitewise_dNdS($tree,$input_cdna,$params);
+    $self->run_sitewise_dNdS($tree,$input_cdna,$self->params);
     sleep(2);
   } elsif ($action =~ m/paml/i) {
-    $self->run_paml($tree,$input_cdna,$params);
+    $self->run_paml($tree,$input_cdna,$self->params);
   } elsif ($action =~ m/wobble/i) {
-    $params->{'slr_wobble'} = 0;
-    my $results_nowobble = $self->run_wobble($tree,$input_cdna,$params);
-    $self->store_tag("lnl_nowobble",$results_nowobble->{'lnL'},$params);
+    $self->param('slr_wobble',0);
+    my $results_nowobble = $self->run_wobble($tree,$input_cdna,$self->params);
+    $self->store_tag("lnl_nowobble",$results_nowobble->{'lnL'});
 
     sleep(2);
 
-    $params->{'slr_wobble'} = 1;
-    my $results_wobble = $self->run_wobble($tree,$input_cdna,$params);    
-    $self->store_tag("lnl_wobble",$results_wobble->{'lnL'},$params);
+    $self->param('slr_wobble',1);
+    my $results_wobble = $self->run_wobble($tree,$input_cdna,$self->params);    
+    $self->store_tag("lnl_wobble",$results_wobble->{'lnL'});
   } elsif ($action =~ m/hyphy_dnds/i) {
-    $self->run_hyphy($tree,$input_cdna,$params);
+    $self->run_hyphy($tree,$input_cdna,$self->params);
   } elsif ($action =~ m/xrate_indels/i) {
-    $self->run_xrate_indels($tree,$input_cdna,$params);
+    $self->run_xrate_indels($tree,$input_cdna,$self->params);
+  } elsif ($action =~ m/indelign/i) {
+    $self->run_indelign($tree,$input_cdna,$self->params);
   }
 
-}
-
-sub get {
-  my $key = shift;
-  return $params->{'sitewise_'.$key};
-}
-
-sub get_slr {
-  my $key = shift;
-  return $params->{'slr_'.$key};
 }
 
 sub run_hyphy {
@@ -294,47 +231,93 @@ sub run_hyphy {
   print "$omega_lo $omega $omega_hi\n";
 
   my $ps = $params->{parameter_set_id};
-  $self->store_tag("hyphy_omega_$ps",$omega,$params);
-  $self->store_tag("hyphy_omega_lo_$ps",$omega_lo,$params);
-  $self->store_tag("hyphy_omega_hi_$ps",$omega_hi,$params);
+  $self->store_tag("hyphy_omega_$ps",$omega);
+  $self->store_tag("hyphy_omega_lo_$ps",$omega_lo);
+  $self->store_tag("hyphy_omega_hi_$ps",$omega_hi);
 
   chdir($cwd);
 
 }
 
+sub run_indelign {
+  my $self = shift;
+  my $tree = shift;
+  my $aln = shift;
+  my $params = shift;
+
+  my ($ins,$del,$ins_rate,$del_rate) = Bio::EnsEMBL::Compara::AlignUtils->indelign($aln,$tree,$self->params,$self->worker_temp_directory);
+
+  print "ins: $ins_rate del: $del_rate\n";
+
+  my $ps = $params->{parameter_set_id};
+  $self->store_tag("indelign_ins_$ps",$ins_rate);
+  $self->store_tag("indelign_del_$ps",$del_rate);
+}
+
 sub run_xrate_indels {
   my $self = shift;
   my $tree = shift;
-  my $cdna_aln = shift;
+  my $aln = shift;
   my $params = shift;
 
   my $cwd = cwd();
   my $tmpdir = $self->worker_temp_directory;
+  #my $tmpdir = "/tmp/xrate/";
   chdir($tmpdir);
 
-  print "OUTPUTTING ALN\n";
   # OUTPUT THE ALIGNMENT.
   my $aln_f = $tmpdir. "aln";
-  my $coll = $cdna_aln->annotation;
-  print "1\n";
+  my $tree_f = $tmpdir. "tree";
+  my $index_f = $tmpdir."index.txt";
 
   use Bio::Annotation::AnnotationFactory;
   my $factory = Bio::Annotation::AnnotationFactory->new(-type => 'Bio::Annotation::SimpleValue');
+
+  $tree->distance_to_parent(0);
+  #$tree = Bio::EnsEMBL::Compara::TreeUtils->scale($tree,1);
   my $tree_newick = Bio::EnsEMBL::Compara::TreeUtils->to_newick($tree);
   my $rfann = $factory->create_object(-value => $tree_newick, 
 				      -tagname => 'NH');
+  my $coll = $aln->annotation;
+  map {$_->description('')} $aln->each_seq;
   $coll->add_Annotation('custom', $rfann);
   my $alnout = Bio::AlignIO->new
     ('-format'      => 'stockholm',
      '-file'          => ">$aln_f");
-  $alnout->write_aln($cdna_aln);
+  $alnout->write_aln($aln);
   $alnout->close;
 
-  my $cmd = "cat $aln_f";
-  print "$aln_f\n";
-  `$cmd`;
-  
-  exit(0);
+  # OUTPUT THE TREE.
+  open(OUT,">$tree_f");
+  my $string = Bio::EnsEMBL::Compara::TreeUtils->to_newick($tree);
+  $string =~ s/\:[0-9\.]+;/;/g;
+  print "NEWICK : $string\n";
+  print OUT $string."\n";
+  close(OUT);
+
+  open(INDEX,">$index_f");
+  print INDEX "test1 $tree_f $aln_f\n";
+  close(INDEX);
+
+  my $exec_folder = '/nfs/users/nfs_g/gj1/src/dart/bin';
+  my $cmd = "${exec_folder}/tkfidem $index_f -log 9";
+  print "$cmd\n";
+  my @results = `$cmd`;
+
+  my $lambda;
+  my $mu;
+  foreach my $line (@results) {
+    $lambda = $1 if ($line =~ m/lambda:\s*([0-9\.]+)/);
+    $mu = $1 if ($line =~ m/\s*mu:\s*([0-9\.]+)/);
+  }
+
+  print "lambda: $lambda mu: $mu\n";
+
+  my $ps = $params->{parameter_set_id};
+  $self->store_tag("xrate_ins_$ps",$lambda);
+  $self->store_tag("xrate_del_$ps",$mu);
+
+  #print "@results\n";
 }
 
 sub run_wobble {
@@ -615,7 +598,7 @@ sub run_sitewise_dNdS
   }
   
   # Reoptimise action.
-  if (get('action') =~ m/reoptimise/i) {
+  if ($self->param('sitewise_action') =~ m/reoptimise/i) {
     # Store new branch lengths back in the original protein_tree_node table.
     foreach my $leaf ($tree->leaves) {
       my $new_leaf = $new_pt->find_leaf_by_name($leaf->name);
@@ -623,14 +606,13 @@ sub run_sitewise_dNdS
       $leaf->store;
     }
     print "  -> Branch lengths updated!\n";
-    $dont_write_output = 1;
     return;
   }
   
   # if the setting is set, store the optimized tree as a protein_tree_tag.
   if ($params->{sitewise_store_opt_tree}) {
     my $tree_key = "slr_tree_".$params->{parameter_set_id};
-    $self->store_tag($tree_key,$new_pt->newick_format,$params);
+    $self->store_tag($tree_key,$new_pt->newick_format);
   }  
   
   if (!$skipsitewise) {
@@ -702,25 +684,13 @@ sub run_sitewise_dNdS
   
   print "$omega_key ".$results->{omega}."\n";
   
-  $self->store_tag($kappa_key,$results->{'kappa'},$params);
-  $self->store_tag($omega_key,$results->{'omega'},$params);
-  $self->store_tag($lnl_key,$results->{'lnL'},$params);
+  $self->store_tag($kappa_key,$results->{'kappa'});
+  $self->store_tag($omega_key,$results->{'omega'});
+  $self->store_tag($lnl_key,$results->{'lnL'});
   $self->store_sitewise($results,$tree,$params);
 }
 
 
-sub store_tag {
-  my $self = shift;
-  my $tag = shift;
-  my $value = shift;
-  my $params = shift;
-
-  my $node_id = $params->{node_id};
-  my $tree = $pta->fetch_node_by_node_id($node_id);
-
-  print "  -> Storing tag $tag -> $value\n";
-  $tree->store_tag($tag,$value);
-}
 
 sub run_paml {
   my $self = shift;
@@ -733,7 +703,7 @@ sub run_paml {
   my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
   $treeI->get_root_node->branch_length(0);
 
-  if (get('action') =~ m/reoptimize/i) {
+  if ($self->param('sitewise_action') =~ m/reoptimize/i) {
     # Not sure if this works. GJ 2009-10-09
     ### Reoptimize branch lengths.
     print $tree->newick_format."\n";
@@ -750,7 +720,7 @@ sub run_paml {
     }
   }
 
-  if (get('action') =~ m/lrt/i) {
+  if ($self->param('sitewise_action') =~ m/lrt/i) {
 
     ### Perform a likelihood ratio test between two models.
     my $model_b = $params->{'paml_model'} || $params->{'paml_model_b'};
@@ -761,12 +731,10 @@ sub run_paml {
 
     my ($twice_lnL,$codeml_a,$codeml_b) = Bio::Greg::Codeml->NSsites_ratio_test($treeI,$input_cdna,$model_a,$model_b,$self->worker_temp_directory);
     my $test_label = sprintf("PAML LRT M%s-M%s",$model_a,$model_b);
-    my $tags;
-    $tags->{$test_label} = $twice_lnL;
-    Bio::EnsEMBL::Compara::ComparaUtils->store_tags($tree,$tags);
+    $self->store_tag($test_label,$twice_lnL);
   }
 
-  if (get('action') =~ m/sitewise/i) {
+  if ($self->param('sitewise_action') =~ m/sitewise/i) {
     ### Perform a BEB sitewise analysis of omegas.
 
     # Should we be scaling the tree? Dunno... GJ 2009-10-09
@@ -857,7 +825,6 @@ sub fail_job {
   if (defined $input_job) {
     $input_job->update_status('FAILED');
     #print "Failing job! Reason given: $reason\n";
-    $dont_write_output = 1;
     $self->DESTROY;
     throw("Failing job! Reason given: $reason");
   }
@@ -876,9 +843,12 @@ sub store_sitewise {
   
   my $parameter_set_id = 0;
   $parameter_set_id = $params->{'parameter_set_id'} if (defined($params->{'parameter_set_id'}));
+
+  my $aln_map_aa = $self->param('aln_map_aa');
+  my $input_aa = $self->param('input_aa');
   
   foreach my $site (@{$results->{'sites'}}) {
-    sleep(0.08);
+    #sleep(0.08);
 
     # Site  Neutral  Optimal   Omega    lower    upper LRT_Stat    Pval     Adj.Pval    Q-value Result Note
     # 1     4.77     3.44   0.0000   0.0000   1.4655   2.6626 1.0273e-01 8.6803e-01 1.7835e-02  --     Constant;
@@ -898,7 +868,7 @@ sub store_sitewise {
     }
 
     # These two cases are pretty useless, so we'll skip 'em.
-    if (!get('store_gaps')) {
+    if (!$self->param('sitewise_store_gaps')) {
       next if ($note eq 'all_gaps');
       next if ($note eq 'single_char');
     }
@@ -906,7 +876,7 @@ sub store_sitewise {
     my $nongaps = Bio::EnsEMBL::Compara::AlignUtils->get_nongaps_at_column($input_aa,$original_site);
     next if ($nongaps == 0);
 
-    #printf("Site: %s  nongaps: %d  omegas: %3f (%3f - %3f) type: %s note: %s \n",$site,$nongaps,$omega,$lower,$upper,$type,$note);
+    printf("Site: %s  nongaps: %d  omegas: %3f (%3f - %3f) type: %s note: %s \n",$site,$nongaps,$omega,$lower,$upper,$type,$note);
 
     my $sth = $tree->adaptor->prepare
       ("REPLACE INTO $table
@@ -936,8 +906,6 @@ sub store_sitewise {
 
 sub DESTROY {
     my $self = shift;
-    $tree->release_tree if ($tree);
-    $tree = undef;
     $self->SUPER::DESTROY if $self->can("SUPER::DESTROY");
 }
 

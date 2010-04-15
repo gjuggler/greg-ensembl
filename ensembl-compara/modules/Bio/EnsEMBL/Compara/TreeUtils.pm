@@ -554,8 +554,8 @@ sub get_leaves_for_species {
 
   my @leaves = ();
   foreach my $leaf ($tree->leaves) {
-    #printf "%s %s\n",$leaf->taxon_id,$leaf->stable_id;
     if (grep {$leaf->taxon_id == $_} @taxon_ids) {
+      printf "%s %s\n",$leaf->taxon_id,$leaf->stable_id;
       push @leaves, $leaf;
     }
   }

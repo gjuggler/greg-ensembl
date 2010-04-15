@@ -23,7 +23,7 @@ sub indelign{
   my $sa = shift; # SimpleAlign of DNA/codon sequences.
   my $tree = shift; # Note: Indelign requires a ROOTED tree as input!!!
   my $params = shift;
-#  my $temp_dir = shift;
+  my $temp_dir = shift;
   if (!defined $temp_dir) {
     $temp_dir = '/tmp/indelign';
     rmtree([$temp_dir]);
@@ -65,13 +65,13 @@ sub indelign{
     '1_Tree' => Bio::EnsEMBL::Compara::TreeUtils->to_newick($tree),
     '2_Out1' => $out_aln,
     '3_Out2' => $out_anno,
-    '4_LenDist' => 'MGM(2,2)',
-    '5_DiffLenDist' => 'true',
+    '4_LenDist' => 'PL',
+    '5_DiffLenDist' => 'false',
     '6_NotRE' => 'false',
-    '7_prA' => 0.25,
-    '8_prC' => 0.25,
-    '9_prG' => 0.25,
-    '10_prT' => 0.25,
+#    '7_prA' => 0.25,
+#    '8_prC' => 0.25,
+#    '9_prG' => 0.25,
+#    '10_prT' => 0.25,
   };
   open(OUT,">$control_file");
   foreach my $param (sort {$a <=> $b} keys %{$params}) {
@@ -482,7 +482,7 @@ sub get_seq_with_id {
     return $seq if ($seq->id eq $id);
   }
   
-  print("aln_get_seq_with_id: No sequence with id $id found!\n");
+  #print("aln_get_seq_with_id: No sequence with id $id found!\n");
   return undef;
 }
 
@@ -1090,6 +1090,11 @@ sub mask_below_score {
       }
     }
     my $new_str = join "", @seq_array;
+
+    if ($seq->seq ne $new_str) {
+      #print "Old: ".$seq->seq."\n";
+      #print "New: ".$new_str."\n";
+    }
 
     # We've got the new alignment sequence, just put it into the new SimpleAlign.
     my $new_seq = new Bio::LocatableSeq(-seq => $new_str, -id => $label);
