@@ -27,18 +27,37 @@ parameter_sets();
 
 # Create analyses.
 node_sets();
-#sequence_quality();
 align();
-omegas();
+sequence_quality();
+split_by_parameter_set();
+gene_omegas();
+sitewise_omegas();
 mapping();
 collect_stats();
 
 # Connect the dots.
-connect_analysis("NodeSets","Align",1);
-connect_analysis("Align","Omegas",1);
-#connect_analysis("SequenceQuality","Omegas",1);
-connect_analysis("Omegas","Mapping",1);
-connect_analysis("Mapping","CollectStats",1);
+connect_analysis("NodeSets","Align");
+connect_analysis("Align","SequenceQuality");
+connect_analysis("SequenceQuality", "SplitByParameterSet");
+connect_analysis("SplitByParameterSet","GeneOmegas");
+connect_analysis("GeneOmegas","SitewiseOmegas");
+connect_analysis("SitewiseOmegas","Mapping");
+connect_analysis("Mapping","CollectStats");
+
+sub node_sets {
+  my $logic_name = "NodeSets";
+  my $module = "Bio::Greg::NodeSetsB";
+  my $params = {
+    flow_node_set => 'MammalsPlusOutgroup'
+  };
+  my $analysis_id = _create_analysis($logic_name,$module,$params,50,1);
+
+  # Add all root nodes to this analysis.
+  $params = {};
+  my $cmd = "SELECT node_id FROM protein_tree_node WHERE parent_id=1 LIMIT 30;";
+  my @nodes = _select_node_ids($cmd);
+  _add_nodes_to_analysis($analysis_id,$params,\@nodes);  
+}
 
 sub parameter_sets {
   my $params;
@@ -85,7 +104,14 @@ sub parameter_sets {
 
   my @all = clade_taxon_ids();
   my @mamms = clade_taxon_ids("Eutheria");
+  my @primates_arr = clade_taxon_ids("Primates");
+  my @glires_arr = clade_taxon_ids("Glires");
+
+  my $hmrd = join(",",(9606, 10090, 10116, 9615));
+
   my $not_mammals = join(",",subtract(\@all,\@mamms));
+  my $not_primates = join(",",subtract(\@mamms,\@primates_arr));
+  my $not_glires = join(",",subtract(\@mamms,\@glires_arr));
 
   my $everything = join(",",clade_taxon_ids());
   my $mammals = join(",",clade_taxon_ids("Eutheria"));
@@ -95,15 +121,18 @@ sub parameter_sets {
   my $afrotheria = join(",",clade_taxon_ids("Afrotheria"));
 
   my $sauria = join(",",clade_taxon_ids("Sauria"));
-  my $fish = join(",",clade_taxon_ids("Clupeocephala"));
+  my $fishes = join(",",clade_taxon_ids("Clupeocephala"));
   
   # Get only hi-coverage genomes.
-  my $hi_coverage = join(",",coverage_taxon_ids("high"));
-  my $lo_coverage = join(",",coverage_taxon_ids("low"));
+  my @hi_coverage_arr = coverage_taxon_ids("high");
+  my @lo_coverage_arr = coverage_taxon_ids("low");
+
+  my $hi_coverage = join(",",subtract(\@mamms,\@hi_coverage_arr));
+  my $lo_coverage = join(",",subtract(\@mamms,\@lo_coverage_arr));
 
   $params = {
     parameter_set_name => "Mammals",
-    shortname => 'm',
+    parameter_set_shortname => 'm',
     keep_species => $mammals,
   };
   $params = _combine_hashes($base_params,$params);
@@ -111,7 +140,7 @@ sub parameter_sets {
 
   $params = {
     parameter_set_name => "Primates",
-    shortname => 'p',
+    parameter_set_shortname => 'p',
     keep_species => $primates
   };
   $params = _combine_hashes($base_params,$params);
@@ -119,7 +148,7 @@ sub parameter_sets {
 
   $params = {
     parameter_set_name => "Glires",
-    shortname => 'g',
+    parameter_set_shortname => 'g',
     keep_species => $glires
   };
   $params = _combine_hashes($base_params,$params);
@@ -127,76 +156,88 @@ sub parameter_sets {
 
   $params = {
     parameter_set_name => "Laurasiatheria",
-    shortname => 'l',
+    parameter_set_shortname => 'l',
     keep_species => $laurasiatheria
   };
   $params = _combine_hashes($base_params,$params);
   _add_parameter_set($params);
 
   $params = {
-    parameter_set_name => "No 2x",
-    shortname => 'n2',
-    keep_species => $hi_coverage,
-    remove_species => $not_mammals
+    parameter_set_name => "Sauria",
+    parameter_set_shortname => 's',
+    keep_species => $sauria,
+    remove_species => $glires
   };
   $params = _combine_hashes($base_params,$params);
   _add_parameter_set($params);
 
   $params = {
-    parameter_set_name => "2x Only",
-    shortname => '2o',
-    keep_species => $lo_coverage,
-    remove_species => $not_mammals
+    parameter_set_name => "Fishes",
+    parameter_set_shortname => 'f',
+    keep_species => $fishes
+  };
+  $params = _combine_hashes($base_params,$params);
+  _add_parameter_set($params);
+
+  $params = {
+    parameter_set_name => "High Coverage Only",
+    parameter_set_shortname => 'hi',
+    keep_species => $hi_coverage
+  };
+  $params = _combine_hashes($base_params,$params);
+  _add_parameter_set($params);
+
+  $params = {
+    parameter_set_name => "Low Coverage Only",
+    parameter_set_shortname => 'lo',
+    keep_species => $lo_coverage
   };
   $params = _combine_hashes($base_params,$params);
   _add_parameter_set($params);
 
   $params = {
     parameter_set_name => "No Primates",
-    shortname => 'np',
-    keep_species => $mammals,
-    remove_species => $primates
+    parameter_set_shortname => 'np',
+    keep_species => $not_primates,
   };
   $params = _combine_hashes($base_params,$params);
   _add_parameter_set($params);
 
   $params = {
     parameter_set_name => "No Glires",
-    shortname => 'ng',
-    keep_species => $mammals,
-    remove_species => $glires
+    parameter_set_shortname => 'ng',
+    keep_species => $not_glires
+  };
+  $params = _combine_hashes($base_params,$params);
+  _add_parameter_set($params);
+
+  $params = {
+    parameter_set_name => "Human/Mouse/Rat/Dog",
+    parameter_set_shortname => 'hmrd',
+    keep_species => $hmrd
   };
   $params = _combine_hashes($base_params,$params);
   _add_parameter_set($params);
 
 }
 
-sub node_sets {
-  my $analysis_id=101;
-  my $logic_name = "NodeSets";
-  my $module = "Bio::Greg::NodeSets";
-  my $params = {
-    flow_node_set => 11 # Primates n=4 node sets
-  };
-  _create_analysis($analysis_id,$logic_name,$module,$params,50,1);
-
-  # Add all root nodes to this analysis.
-  $params = {};
-  my $cmd = "SELECT node_id FROM protein_tree_node WHERE parent_id=1;";
-  my @nodes = _select_node_ids($cmd);
-  _add_nodes_to_analysis($analysis_id,$params,\@nodes);  
-}
-
 sub align {
-  my $analysis_id = 102;
   my $logic_name = "Align";
   my $module = "Bio::EnsEMBL::Compara::RunnableDB::MCoffee";
   my $params = {
-    alignment_method => 'prank',
-    alignment_prank_f => 1
+    alignment_method => 'none'
   };
 
-  _create_analysis($analysis_id,$logic_name,$module,$params,400,1);
+  _create_analysis($logic_name,$module,$params,400,1);
+}
+
+sub split_by_parameter_set {
+  my $logic_name = "SplitByParameterSet";
+  my $module = "Bio::Greg::Hive::SplitByParameterSet";
+  my $params = {
+    flow_parameter_sets => 'all'
+  };
+  _create_analysis($logic_name,$module,$params,100,1);
 }
 
 sub sequence_quality {
@@ -205,29 +246,37 @@ sub sequence_quality {
   my $module = "Bio::Greg::SequenceQualityLoader";
   my $params = {};
   
-  _create_analysis($analysis_id,$logic_name,$module,$params,100,1);
+  _create_analysis($logic_name,$module,$params,50,1);
 }
 
-sub omegas {
-  my $analysis_id = 105;
-  my $logic_name = "Omegas";
+sub gene_omegas {
+  my $logic_name = "GeneOmegas";
   my $module = "Bio::EnsEMBL::Compara::RunnableDB::Sitewise_dNdS";
   my $base_params = {
-    parameter_sets => "all",
-    sequence_quality_filtering => 0,
-    alignment_score_filtering => 1,
+    sequence_quality_filtering => 1,
+    sitewise_action => 'hyphy_dnds'
     };
-  _create_analysis($analysis_id,$logic_name,$module,$base_params,500,1);
+  _create_analysis($logic_name,$module,$base_params,500,1);
+}
 
+sub sitewise_omegas {
+  my $analysis_id = 105;
+  my $logic_name = "SitewiseOmegas";
+  my $module = "Bio::EnsEMBL::Compara::RunnableDB::Sitewise_dNdS";
+  my $base_params = {
+    sequence_quality_filtering => 1,
+    sitewise_action => 'slr'
+    };
+  _create_analysis($logic_name,$module,$base_params,500,1);
 }
 
 sub mapping {
   my $analysis_id=106;
   my $logic_name = "Mapping";
-  my $module = "Bio::Greg::SitewiseMapper";
+  my $module = "Bio::Greg::Eslr::SitewiseMapper";
   my $params = {
   };
-  _create_analysis($analysis_id,$logic_name,$module,$params,200,1);
+  _create_analysis($logic_name,$module,$params,50,1);
 }
 
 
@@ -236,8 +285,9 @@ sub collect_stats {
   my $logic_name = "CollectStats";
   my $module = "Bio::Greg::Eslr::CollectEslrStats";
   my $params = {
+    mammals_alignment_filtering_value => 1
   };
-  _create_analysis($analysis_id,$logic_name,$module,$params,80,1);
+  _create_analysis($logic_name,$module,$params,50,1);
 }
 
 sub _combine_hashes {
@@ -266,12 +316,11 @@ sub _add_parameter_set {
     $dbc->do($name_cmd);
   }
 
-  if (exists $params->{'shortname'} ) {
-    my $shortname = $params->{'shortname'} || '';
-    my $shortname_cmd = "REPLACE INTO parameter_set VALUES ('$parameter_set_id','shortname',\"$shortname\");";
+  if (exists $params->{'parameter_set_shortname'} ) {
+    my $parameter_set_shortname = $params->{'parameter_set_shortname'} || '';
+    my $shortname_cmd = "REPLACE INTO parameter_set VALUES ('$parameter_set_id','parameter_set_shortname',\"$parameter_set_shortname\");";
     $dbc->do($shortname_cmd);
   }
-
   
   my $param_string = Bio::EnsEMBL::Compara::ComparaUtils->hash_to_string($params);
   my $cmd = "REPLACE INTO parameter_set VALUES ('$parameter_set_id','params',\"$param_string\");";
@@ -284,8 +333,9 @@ sub clean_tables {
       analysis analysis_job analysis_stats dataflow_rule hive
       parameter_set
       node_set_member node_set
-      sitewise_omega sitewise_tag sitewise_genome sitewise_pfam
+      sitewise_omega sitewise_tag sitewise_genome
       go_terms      
+      stats_sites stats_genes
       ^;
     map {
       print "$_\n";
@@ -299,13 +349,15 @@ sub clean_tables {
 #-------~~~~~~~~~-------#
 ########*********########
 
+our $analysis_counter = 0;
 sub _create_analysis {
-  my $analysis_id = shift;
   my $logic_name = shift;
   my $module = shift;
   my $params = shift;
   my $hive_capacity = shift || 500;
   my $batch_size = shift || 1;
+
+  my $analysis_id = ++$analysis_counter;
   
   $analysis_hash->{$logic_name} = $analysis_id;
   my $param_string = Bio::EnsEMBL::Compara::ComparaUtils->hash_to_string($params);
@@ -323,6 +375,7 @@ sub _create_analysis {
 	      batch_size=$batch_size
 	      ;};
   $dbc->do($cmd);
+  return $analysis_id;
 }
 
 sub connect_analysis {

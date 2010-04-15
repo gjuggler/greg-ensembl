@@ -98,3 +98,195 @@ X	CD40LG (TNFSF5)	      X26     Sabeti et al. (2002)	  unusual LD	    EHH		Afric
 X	FIX    Xq27.1.q27.2   Harris & Hey (2001)   low diversity and frequency spectrum	low diversity, Tajima's D     World   
 X	G6PD   Xq28	      Sabeti et al. (2002); Tishkoff et al. (2001)	unusual LD	EHH	       Africans		      
 X	MAOA   Xp11.3	      Andres et al. (2004); Gilad et al. (2002)		comparative methods	       Ka/Ks		      World   
+
+
+### 2010-04-12 ###
+
+Rules from Pollard et al. Genome Research 2010: >=3 primates, >=2 glires, >=1 outgroup (any other).
+
+> wget http://compgen.bscb.cornell.edu/projects/mammal-psg/gene-definitions.txt
+> mv gene-definitions.txt kosiol-gene-definitions.txt
+> mysql --user=genome --host=genome-mysql.cse.ucsc.edu -A -e "select * from hg18.mammalPsg;" > kosiol-gene-table.tsv
+
+> perl ~/src/greg-ensembl/scripts/get_genes_by_location.pl < ../projects/2xmammals/psg_overlaps/kosiol_locs.txt > ../projects/2xmammals/psg_overlaps/kosiol_ensg.txt
+
+R> a = read.delim(file="kosiol-gene-definitions.txt",sep="\t",header=T,stringsAsFactors=F)
+R> b = read.delim(file="kosiol-gene-table.tsv",sep="\t",header=T,stringsAsFactors=F)
+R> mapped = read.delim(file="kosiol_ensg.txt",header=F)
+R> sum(is.na(mapped2))
+[1] 4556
+
+ -> Try using Galaxy to lift over old Kosiol coordinates to new ones.
+
+> wget http://main.g2.bx.psu.edu/datasets/0465e4b2344a83a3/display?to_ext=bed
+
+> sum(!is.na(mapped))
+[1] 16460
+
+ -> Much better!
+
+### 2010-04-13 ###
+
+Goal: analyze overlap between our PSGs and other published datasets.
+
+Chosen publications:
+ -> Kosiol et al. 2008, Patterns of positive selection ...
+  - http://www.citeulike.org/user/gjuggler/article/3072668
+  - Files: 
+    > kosiol-gene-definitions.txt
+    > kosiol-gene-table.tsv
+ -> Nielsen et al. 2005, A scan for positively selected ...
+  - http://www.citeulike.org/user/gjuggler/article/365149
+  - Files:
+    > nielsen-genes.csv (converted from XLS)
+ -> Clark et al. 2003, Inferring nonneutral evolution from ...
+  - http://www.citeulike.org/user/gjuggler/article/669134
+  - Files:
+    > clark-genes.tsv
+ -> Sabeti et al. 2009, 
+  - Files:
+    > sabeti-genes.txt
+
+
+Approach:
+ - Score each gene. Possible scores:
+   - Gene-wide dn/ds (SLR m0)
+   - Lower bound of dn/ds (hyphy dnds_lo)
+   - PSC count (weak.psc.count)
+   - Maximum value of signed LRT within gene
+ - Do ROC plots, where truth = existence in one of the above lists. Plot TP vs TN for each dataset.
+
+
+> wget ftp://ftp.ncbi.nih.gov/gene/DATA/GENE_INFO/Mammalia/Homo_sapiens.gene_info.gz
+R> gene.info = read.delim("Homo_sapiens.gene_info",sep="\t",header=F,stringsAsFactors=F)
+R> names(gene.info) = c("tax_id","GeneID","Symbol","LocusTag","Synonyms","dbXrefs","chromosome","map.location","description","type","symbol.from.nomenclature","full.name.from.nomenclature","nomenclature.status","other.designations","modification.date")
+
+R> sabeti.genes = read.delim("sabeti-genes.txt",header=F,stringsAsFactors=F,col.names='id')
+
+
+Initial results:
+
+Using m.dnds.m0 as the score:
+
+> roc.summary(roc.kosiol)
+         score        tp         tn   p     n thresh
+10374 0.627481 0.0997921 0.01562397  48   236   0.10
+12958 0.480334 0.2494802 0.04389275 120   663   0.25
+5957  0.328389 0.4989605 0.12757365 240  1927   0.50
+10042 0.182538 0.7484407 0.35259848 360  5326   0.75
+15573       NA 1.0000000 1.00000000 481 15105   1.00
+
+> roc.summary(roc.nielsen)
+         score   tp         tn   p     n thresh
+10668 0.643387 0.10 0.01055570  12   121   0.10
+6059  0.496072 0.25 0.03594173  30   412   0.25
+1738  0.346102 0.50 0.10677833  60  1224   0.50
+2733  0.237809 0.75 0.23527872  90  2697   0.75
+11566       NA 1.00 1.00000000 120 11463   1.00
+
+> roc.summary(roc.clark)
+        score         tp         tn   p    n thresh
+2448 0.423730 0.09876543 0.02629696  32  147   0.10
+4169 0.298744 0.25000000 0.08336315  81  466   0.25
+3759 0.217160 0.50000000 0.17549195 162  981   0.50
+5516 0.122820 0.75000000 0.41878354 243 2341   0.75
+5760       NA 1.00000000 1.00000000 324 5590   1.00
+
+Using m.weak.psc.count as the score:
+
+> roc.summary(roc.kosiol)
+      score        tp         tn   p     n thresh
+859      28 0.0997921 0.01290963  48   195   0.10
+2463     14 0.2494802 0.04673949 120   706   0.25
+10094     6 0.4989605 0.14902350 240  2251   0.50
+1691      1 0.7484407 0.41456471 360  6262   0.75
+15573    NA 1.0000000 1.00000000 481 15105   1.00
+
+> roc.summary(roc.nielsen)
+      score   tp         tn   p     n thresh
+7478     33 0.10 0.01116636  12   128   0.10
+5378     13 0.25 0.05967024  30   684   0.25
+4274      6 0.50 0.15283957  60  1752   0.50
+11267     2 0.75 0.39692925  90  4550   0.75
+11566    NA 1.00 1.00000000 120 11463   1.00
+
+> roc.summary(roc.clark)
+     score         tp         tn   p    n thresh
+2154    12 0.09876543 0.02647585  32  148   0.10
+1573     5 0.25000000 0.10107335  81  565   0.25
+2600     2 0.50000000 0.24418605 162 1365   0.50
+921      0 0.75000000 0.53667263 243 3000   0.75
+5760    NA 1.00000000 1.00000000 324 5590   1.00
+
+Using m.psc.count:
+
+> roc.summary(roc.nielsen)
+      score   tp         tn   p     n thresh
+993       3 0.10 0.01038123  12   119   0.10
+5759      1 0.25 0.08776062  30  1006   0.25
+3975      0 0.50 0.42292594  60  4848   0.50
+8122      0 0.75 0.72904126  90  8357   0.75
+11566    NA 1.00 1.00000000 120 11463   1.00
+
+> roc.summary(roc.kosiol)
+      score        tp          tn   p     n thresh
+883       3 0.0997921 0.008672625  48   131   0.10
+3145      1 0.2494802 0.055544522 120   839   0.25
+4658      0 0.4989605 0.385435286 240  5822   0.50
+11992     0 0.7484407 0.791525985 360 11956   0.75
+15573    NA 1.0000000 1.000000000 481 15105   1.00
+
+> roc.summary(roc.clark)
+     score         tp         tn   p    n thresh
+2482     1 0.09876543 0.05974955  32  334   0.10
+549      0 0.25000000 0.17674419  81  988   0.25
+2374     0 0.50000000 0.45080501 162 2520   0.50
+3976     0 0.75000000 0.69731664 243 3898   0.75
+5760    NA 1.00000000 1.00000000 324 5590   1.00
+
+
+SABETI DATA:
+
+Using m.dnds.m0:
+
+> roc.summary(roc.sabeti)
+         score        tp        tn   p     n thresh
+11874 0.403901 0.0990991 0.1096823  22  2013   0.10
+12630 0.291765 0.2477477 0.2060699  55  3782   0.25
+7966  0.186794 0.5000000 0.3801013 111  6976   0.50
+8435  0.094933 0.7477477 0.6432191 166 11805   0.75
+18571       NA 1.0000000 1.0000000 222 18353   1.00
+
+Using p.dnds.m0:
+
+> roc.summary(roc.sabeti)
+         score        tp         tn   p     n thresh
+10665 0.425685 0.0990991 0.09949327  22  1826   0.10
+8223  0.293106 0.2477477 0.20165640  55  3701   0.25
+15094 0.185767 0.5000000 0.34915273 111  6408   0.50
+10137 0.075824 0.7477477 0.58927696 166 10815   0.75
+18573       NA 1.0000000 1.00000000 222 18353   1.00
+
+Using p.weak.psc.count:
+> roc.summary(roc.sabeti)
+      score        tp         tn   p     n thresh
+15405    11 0.0990991 0.03372746  22   619   0.10
+4272      4 0.2477477 0.12433935  55  2282   0.25
+4105      1 0.5000000 0.34076173 111  6254   0.50
+7638      0 0.7477477 0.59930257 166 10999   0.75
+18573    NA 1.0000000 1.00000000 222 18353   1.00
+
+Using m.weak.psc.count:
+
+> roc.summary(roc.sabeti)
+      score        tp         tn   p     n thresh
+10142    22 0.0990991 0.02816978  22   517   0.10
+4053      7 0.2477477 0.13289380  55  2439   0.25
+15798     3 0.5000000 0.31357271 111  5755   0.50
+17325     1 0.7477477 0.55816488 166 10244   0.75
+18571    NA 1.0000000 1.00000000 222 18353   1.00
+
+
+ -> TODO: For each gene, store the MAXIMUM signed LRT value for any codon (post-filtering) and use that for a score.
+
+
