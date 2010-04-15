@@ -1,20 +1,19 @@
-package Bio::Greg::NodeSets;
+package Bio::Greg::NodeSetsB;
 
 use strict;
 use Time::HiRes qw(time gettimeofday tv_interval);
 use Cwd;
 use Bio::AlignIO;
 
-use Bio::EnsEMBL::Compara::ComparaUtils;
 use Bio::EnsEMBL::Compara::DBSQL::DBAdaptor;
 use Bio::EnsEMBL::Compara::NestedSet;
 use Bio::EnsEMBL::Hive;
 use Bio::EnsEMBL::Hive::Process;
 use Time::HiRes qw(sleep);
 use Bio::EnsEMBL::Registry;
-use Bio::Greg::ProcessUtils;
+use Bio::Greg::Hive::Process;
 
-our @ISA = qw(Bio::EnsEMBL::Hive::Process Bio::Greg::ProcessUtils);
+use base ('Bio::Greg::Hive::Process');
 
 #
 # Some global-ish variables.
@@ -36,349 +35,246 @@ sub fetch_input {
   $dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new( -DBCONN => $self->db->dbc );
   $pta = $dba->get_ProteinTreeAdaptor;
 
-  $pta->local_mode(-1);
-
   ### DEFAULT PARAMETERS ###
   $params = {
-    flow_node_set => 0,
-    debug         => 0
+    flow_node_set => 'Primates',
+    flow_parent_and_children => 0,
+    debug => 0
   };
   ##########################
 
-  # Fetch parameters from the two possible locations. Input_id takes precedence!
-  my $p_params = $self->get_params( $self->parameters );
-  my $i_params = $self->get_params( $self->input_id );
-  my $node_id  = $i_params->{'protein_tree_id'} || $i_params->{'node_id'};
-  my $t_params = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_tree_tags( $dba, $node_id );
+  $self->load_all_params;
 
-  $params = $self->replace_params( $params, $p_params, $i_params, $t_params );
-  Bio::EnsEMBL::Compara::ComparaUtils->hash_print($params);
-
-  $tree = Bio::EnsEMBL::Compara::ComparaUtils->get_tree_for_comparative_analysis( $dba, $params );
-  $tree = $tree->minimize_tree;
+  $self->param('tree',$self->get_tree);
 }
 
 sub run {
   my $self = shift;
 
-  print $tree->newick_format . "\n";
+  my $tree = $self->param('tree');
 
-  my $base = {
-    tree          => $tree,
-    node_set_hash => \%node_set_hash,
-    node_set_id   => 1
+  #print $tree->nhx_format('display_label') . "\n";
+
+  $self->tag_root_nodes( $tree, "Primates" );
+  $self->tag_root_nodes( $tree, "Glires" );
+  $self->tag_root_nodes( $tree, "Laurasiatheria" );
+  $self->tag_root_nodes( $tree, "Mammals" );
+  $self->tag_root_nodes( $tree, "MammalPlusOutgroup" );
+  $self->tag_root_nodes( $tree, "MammalPlusTwoOutgroups" );
+
+  $self->tag_root_nodes( $tree, "Fish" );
+  $self->tag_root_nodes( $tree, "Sauria" );
+
+  $self->tag_nodes_with_clade_coverage( $tree, "Primates" );
+  $self->tag_nodes_with_clade_coverage( $tree, "Glires" );
+  $self->tag_nodes_with_clade_coverage( $tree, "Laurasiatheria" );
+  $self->tag_nodes_with_clade_coverage( $tree, "Sauria" );
+  $self->tag_nodes_with_clade_coverage( $tree, "Clupeocephala" );
+
+}
+
+sub write_output {
+  my $self = shift;
+
+  my $tree = $self->param('tree');
+  
+  if (defined $params->{flow_node_set}) {
+    $self->autoflow_inputjob(0);
+    my $flow_set = $params->{flow_node_set};
+    
+    foreach my $node ($tree->nodes) {
+      next if ($node->is_leaf);
+      
+      my $id = $node->node_id;
+      if ($node->has_tag("cc_root_".$flow_set)) {
+	print " -> Flowing node $id\n";
+
+        my $output_id = { node_id => $id };
+        $self->dataflow_output_id( $output_id, 1 );
+        if ( $params->{flow_parent_and_children} ) {
+          my $i = 0;
+          foreach my $child ( @{ $node->children } ) {
+            my $output_id = { 
+	      node_id => $child->node_id,
+	      node_set_parent_id => $id, node_set_child_number => $i++ 
+	      };
+	    $self->dataflow_output_id( $output_id, 1 );
+	    print "  --> Flowing child $output_id\n";
+	  }
+	}
+      }
+    }
+  }
+}
+
+sub tag_root_nodes {
+  my $self        = shift;
+  my $tree        = shift;
+  my $method_name = shift;
+
+  my $base_p = {
+    tree             => $tree,
+    subtree_function => \&does_parent_have_clade_children,
+    cc_min_size      => 4
   };
-  my $p;
 
-  print "Adding human gene subtrees...\n";
-  $p = $self->replace_params(
-    $base, {
-      node_set_id      => 1,
-      subtree_function => \&isa_human_gene_subtree
-    }
-  );
-  $self->add_all_subtrees_to_hash($p);
+  my $params;
 
-  print "Adding small dups...\n";
-  $p = $self->replace_params( $base, { node_set_id => 2 } );
-  $self->add_small_balanced_dups_to_hash($p);
-
-  print "Adding large dups...\n";
-  $p = $self->replace_params( $base, { node_set_id => 3 } );
-  $self->add_large_balanced_dups_to_hash($p);
-
-  print "Adding overlapping dups...\n";
-  $p = $self->replace_params( $base, { node_set_id => 4 } );
-  $self->add_overlapping_dups_to_hash($p);
-
-  print "Adding small subtrees...\n";
-  $p = $self->replace_params(
-    $base, {
-      node_set_id      => 5,
-      subtree_function => \&is_tree_small
-    }
-  );
-  $self->add_all_subtrees_to_hash($p);
-
-  print "Adding med subtrees...\n";
-  $p = $self->replace_params(
-    $base, {
-      node_set_id      => 6,
-      subtree_function => \&is_tree_med
-    }
-  );
-  $self->add_all_subtrees_to_hash($p);
-
-  print "Adding large subtrees...\n";
-  $p = $self->replace_params(
-    $base, {
-      node_set_id      => 7,
-      subtree_function => \&is_tree_large
-    }
-  );
-  $self->add_all_subtrees_to_hash($p);
-
-  print "Adding superfamily subtrees...\n";
-  $p = $self->replace_params(
-    $base, {
-      node_set_id      => 8,
-      subtree_function => \&does_parent_have_superfamily_children
-    }
-  );
-  $self->add_all_subtrees_to_hash($p);
-
-  print "Adding Tim superfamily subtrees...\n";
-  $p = $self->replace_params(
-    $base, {
-      node_set_id      => 9,
-      subtree_function => \&does_parent_have_tim_children
-    }
-  );
-  $self->add_all_subtrees_to_hash($p);
-
-  print "Adding Primate subtrees...\n";
-  $p = $self->replace_params(
-    $base, {
-      node_set_id      => 10,
-      subtree_function => \&does_parent_have_primate_children,
-      num_primates     => 3,
-      num_glires       => 0
-    }
-  );
-  $self->add_all_subtrees_to_hash($p);
-
-  $p = $self->replace_params(
-    $base, {
-      node_set_id      => 11,
-      subtree_function => \&does_parent_have_primate_children,
-      num_primates     => 4,
-      num_glires       => 0
-    }
-  );
-  $self->add_all_subtrees_to_hash($p);
-
-  $p = $self->replace_params(
-    $base, {
-      node_set_id      => 12,
-      subtree_function => \&does_parent_have_primate_children,
-      num_primates     => 5,
-      num_glires       => 0
-    }
-  );
-  $self->add_all_subtrees_to_hash($p);
-
-  $p = $self->replace_params(
-    $base, {
-      node_set_id      => 13,
-      subtree_function => \&does_parent_have_primate_children,
-      num_primates     => 4,
-      num_glires       => 1
-    }
-  );
-  $self->add_all_subtrees_to_hash($p);
-
-  my $sql = "INSERT IGNORE INTO node_set (node_set_id,name,allows_overlap) values (?,?,?)";
-  my $sth = $dba->dbc->prepare($sql);
-  $sth->execute( 1,  "Human Gene Subtrees",          0 );
-  $sth->execute( 2,  "Small Balanced Duplications",  0 );
-  $sth->execute( 3,  "Large Balanced Duplications",  0 );
-  $sth->execute( 4,  "Overlapping Duplications",     1 );
-  $sth->execute( 5,  "Small Subtrees",               0 );
-  $sth->execute( 6,  "Med Subtrees",                 0 );
-  $sth->execute( 7,  "Large Subtrees",               0 );
-  $sth->execute( 8,  "Superfamily Subtrees",         0 );
-  $sth->execute( 9,  "Tim Subtrees",                 0 );
-  $sth->execute( 10, "Primates n=3",                 0 );
-  $sth->execute( 11, "Primates n=4",                 0 );
-  $sth->execute( 12, "Primates n=5",                 0 );
-  $sth->execute( 13, "Primates n=4 plus Glires n=1", 0 );
-  $sth->finish;
-}
-
-sub add_all_subtrees_to_hash {
-  my $self   = shift;
-  my $params = shift;
-
-  my $tree             = $params->{tree};
-  my $hash             = $params->{node_set_hash};
-  my $node_set_id      = $params->{node_set_id};
-  my $subtree_function = $params->{subtree_function};
-
-  my @root_node_ids = $self->get_smallest_subtrees_from_node( $tree, $subtree_function, $params );
-
-  $hash->{$node_set_id} = \@root_node_ids;
-}
-
-sub add_small_balanced_dups_to_hash {
-  my $self   = shift;
-  my $params = shift;
-
-  my $tree        = $params->{tree};
-  my $hash        = $params->{node_set_hash};
-  my $node_set_id = $params->{node_set_id};
-
-  my $subtree_function = \&isa_balanced_good_duplication;
-  my @keeper_ids = $self->get_smallest_subtrees_from_node( $tree, $subtree_function, $params );
-
-  $hash->{$node_set_id} = \@keeper_ids;
-}
-
-sub add_large_balanced_dups_to_hash {
-  my $self   = shift;
-  my $params = shift;
-
-  my $tree        = $params->{tree};
-  my $hash        = $params->{node_set_hash};
-  my $node_set_id = $params->{node_set_id};
-
-  my $subtree_function = \&isa_balanced_good_duplication;
-  my @keeper_ids = $self->get_largest_subtrees_from_node( $tree, $subtree_function, $params );
-
-  $hash->{$node_set_id} = \@keeper_ids;
-}
-
-sub add_overlapping_dups_to_hash {
-  my $self   = shift;
-  my $params = shift;
-
-  my $tree        = $params->{tree};
-  my $hash        = $params->{node_set_hash};
-  my $node_set_id = $params->{node_set_id};
-
-  my @keeper_ids = ();
-  foreach my $node ( $tree->nodes ) {
-
-    #    print "Added ".$node->node_id." to list!\n";
-    push @keeper_ids, $node->node_id if ( is_balanced_dup_node($node) );
+  if ( $method_name eq 'Primates' ) {
+    $params = $self->replace_params( $base_p, { cc_Primates => 0.3, } );
+  } elsif ( $method_name eq 'Glires' ) {
+    $params = $self->replace_params( $base_p, { cc_Glires => 0.3, } );
+  } elsif ( $method_name eq 'Laurasiatheria' ) {
+    $params = $self->replace_params( $base_p, { cc_Laurasiatheria => 0.3, } );
+  } elsif ( $method_name eq 'Mammals' ) {
+    $params = $self->replace_params(
+      $base_p, {
+        cc_Primates       => 0.1,
+        cc_Glires         => 0.1,
+        cc_Laurasiatheria => 0.1,
+      }
+    );
+  } elsif ( $method_name eq 'MammalPlusOutgroup' ) {
+    $params = $self->replace_params(
+      $base_p, {
+        cc_Eutheria => 0.1,
+        cc_any      => [ 'Sauria', 'Clupeocephala', 'Ciona', 'Marsupialia' ]
+      }
+    );
+  } elsif ( $method_name eq 'MammalPlusTwoOutgroups' ) {
+    $params = $self->replace_params(
+      $base_p, {
+        cc_Eutheria      => 0.1,
+        cc_Sauria        => 0.01,
+        cc_Clupeocephala => 0.01
+      }
+    );
+  } elsif ( $method_name eq 'Fish' ) {
+    $params = $self->replace_params( $base_p, { cc_Clupeocephala => 0.2 } );
+  } elsif ( $method_name eq 'Sauria' ) {
+    $params = $self->replace_params( $base_p, { cc_Sauria => 0.2 } );
   }
 
-  $hash->{$node_set_id} = \@keeper_ids;
+  my $tree = $params->{tree};
+
+  #my $subtree_function = $params->{subtree_function};
+  my @root_nodes = $self->get_smallest_subtrees_from_node( $tree, $params );
+
+  foreach my $node (@root_nodes) {
+    printf " -> %s %d %d\n", $method_name, scalar $node->leaves, $node->node_id;
+    $node->store_tag( "cc_root_" . $method_name, 1 );
+  }
 }
 
-# A generic method for gathering a set of small, non-overlapping subtrees.
+sub tag_nodes_with_clade_coverage {
+  my $self  = shift;
+  my $tree  = shift;
+  my $clade = shift;
+
+  print "  -> Tagging clade coverage for clade: $clade...\n";
+
+  foreach my $node ( $tree->nodes ) {
+    next if ( $node->is_leaf );
+
+    my $coverage_fraction = $self->clade_coverage_for_node( $node, $clade );
+
+    if ( $coverage_fraction > 0 ) {
+
+      #printf "%.20s %.3f\n",$node->newick_format,$coverage_fraction;
+      $node->store_tag( "cc_$clade", sprintf( "%.3f", $coverage_fraction ) );
+    }
+  }
+}
+
+sub clade_coverage_for_node {
+  my $self  = shift;
+  my $node  = shift;
+  my $clade = shift;
+
+  my $key = "_taxon_ids_" . $clade;
+  if ( !defined $self->{$key} ) {
+    my @genomes = $self->get_genomes_within_clade( $dba, $clade );
+    my @taxon_ids = map { $_->taxon_id } @genomes;
+    $self->{$key} = \@taxon_ids;
+  }
+  my @taxon_ids = @{ $self->{$key} };
+
+  my $taxon_hash;
+  map { $taxon_hash->{ $_->taxon_id } = 1 } $node->leaves;
+
+  my $total     = scalar @taxon_ids;
+  my $clade_sum = 0;
+  foreach my $genome_taxon (@taxon_ids) {
+    $clade_sum++ if ( $taxon_hash->{$genome_taxon} == 1 );
+  }
+
+  my $coverage_fraction = $clade_sum / $total;
+  return $coverage_fraction;
+}
 
 sub get_smallest_subtrees_from_node {
-  my $self               = shift;
-  my $node               = shift;
-  my $inclusion_function = shift;
-  my $params             = shift;
+  my $self   = shift;
+  my $node   = shift;
+  my $params = shift;
+
+  my $inclusion_function = $params->{subtree_function};
 
   my @children  = @{ $node->children };
   my @node_list = ();
   foreach my $child (@children) {
-    push @node_list, $self->get_smallest_subtrees_from_node( $child, $inclusion_function, $params );
+    push @node_list, $self->get_smallest_subtrees_from_node( $child, $params );
   }
 
   # If none of the children matched, then push ourselves onto the list if applicable.
   if ( scalar(@node_list) == 0 ) {
-    if ( $inclusion_function->( $node, $params ) ) {
-      push @node_list, $node->node_id;
+    if ( $inclusion_function->( $self, $node, $params ) ) {
+      push @node_list, $node;
     }
   }
 
   return @node_list;
 }
 
-# A generic method for gathering a set of large, non-overlapping subtrees.
-sub get_largest_subtrees_from_node {
-  my $self               = shift;
-  my $node               = shift;
-  my $inclusion_function = shift;
-
-  if ( $inclusion_function->($node) ) {
-
-    # Return this node immediately if it satisfies the conditions.
-    print "Added " . $node->node_id . " to list!\n";
-    return ( $node->node_id );
-  }
-
-  # Recurse through child nodes to see if they satisfy the conditions.
-  my @children  = @{ $node->children };
-  my @node_list = ();
-  foreach my $child (@children) {
-    push @node_list, $self->get_largest_subtrees_from_node( $child, $inclusion_function );
-  }
-  return @node_list;
-}
-
-sub isa_human_gene_subtree {
-  my $node = shift;
-
-  return 1 if ( is_tree_big_enough($node) && is_contains_human_genes($node) );
-  return 0;
-}
-
-sub isa_balanced_good_duplication {
-  my $node = shift;
-
-  return 1 if ( is_balanced_dup_node( $node, 6 ) );
-  return 0;
-}
-
-sub is_duplication {
-  my $node = shift;
-
-  my $is_dup = 0;
-  my $val    = $node->get_tagvalue("Duplication");
-  $is_dup = 1 if ( defined($val) && $val ne '' && $val > 0 );
-
-  my $dubious = 0;
-  $dubious = 1 if ( $node->get_tagvalue("dubious_duplication") );
-
-  return 1 if ( $is_dup && !$dubious );
-  return 0;
-}
-
-sub is_contains_human_genes {
-  my $node      = shift;
-  my @leaves    = $node->leaves;
-  my @hum_genes = grep { $_->taxon_id == 9606 } @leaves;
-  return 1 if ( scalar(@hum_genes) > 0 );
-  return 0;
-}
-
-sub is_tree_big_enough {
-  my $node = shift;
-  return is_tree_small($node);
-}
-
-sub is_tree_small {
-  my $node = shift;
-  return ( scalar( $node->leaves ) >= 6 );
-}
-
-sub is_tree_med {
-  my $node = shift;
-  return ( scalar( $node->leaves ) >= 10 );
-}
-
-sub is_tree_large {
-  my $node = shift;
-  return ( scalar( $node->leaves ) >= 20 );
-}
-
-sub does_parent_have_superfamily_children {
-  my $node = shift;
-  return generic_parent_has_good_children( $node, \&does_tree_have_superfamily_coverage );
-}
-
-sub does_parent_have_primate_children {
+sub does_parent_have_clade_children {
+  my $self   = shift;
   my $node   = shift;
   my $params = shift;
-  return generic_parent_has_good_children( $node, \&does_tree_have_primate_coverage, $params );
+
+  return $self->generic_parent_has_good_children( $node, \&does_tree_have_clade_coverage, $params );
 }
 
-sub does_parent_have_primate_children_b {
-  my $node = shift;
-  return generic_parent_has_good_children( $node, \&does_tree_have_primate_coverage, 4 );
-}
+sub does_tree_have_clade_coverage {
+  my $self   = shift;
+  my $tree   = shift;
+  my $params = shift;
 
-sub does_parent_have_tim_children {
-  my $node = shift;
-  return generic_parent_has_good_children( $node, \&does_tree_have_tim_family_coverage );
+  foreach my $key ( keys %$params ) {
+    next unless ( $key =~ /cc_/ );
+    my $value = $params->{$key};
+
+    $key =~ s/cc_//;
+
+    # the 'cc_any' tag signifies we'll take anything from the following clades.
+    if ( $key eq 'any' ) {
+      my $exists_any = 0;
+      foreach my $clade ( @{$value} ) {
+        my $coverage = $self->clade_coverage_for_node( $tree, $clade, $params );
+        $exists_any = 1 if ( $coverage > 0 );
+      }
+      return 0 unless ($exists_any);
+    } elsif ( $key eq 'min_size' ) {
+      return 0 unless ( scalar( $tree->leaves ) >= $value );
+    } else {
+      my $coverage = $self->clade_coverage_for_node( $tree, $key, $params );
+      return 0 unless ( $coverage >= $value );
+    }
+  }
+  
+  return 1;
 }
 
 sub generic_parent_has_good_children {
+  my $self               = shift;
   my $node               = shift;
   my $inclusion_function = shift;
   my $params             = shift;
@@ -391,7 +287,9 @@ sub generic_parent_has_good_children {
   my $parent           = $node->parent;
   my @parents_children = @{ $parent->children };
   if ( $parent->node_id == 1 ) {
-    return $inclusion_function->( $node, $params );
+    my $value = $inclusion_function->($self, $node, $params );
+    #print "Root node. Values is $value\n";
+    return $value;
   }
 
   my $sister;
@@ -399,227 +297,11 @@ sub generic_parent_has_good_children {
     $sister = $ch if ( $ch->node_id != $tree->node_id );
   }
 
-  if ( $inclusion_function->( $node, $params ) && $inclusion_function->( $sister, $params ) ) {
+  if ( $inclusion_function->( $self, $node, $params )
+    && $inclusion_function->( $self, $sister, $params ) ) {
     return 1;
   }
   return 0;
-}
-
-sub does_tree_have_primate_coverage {
-  my $tree   = shift;
-  my $params = shift;
-
-  my $n        = $params->{num_primates};
-  my $n_glires = $params->{num_glires};
-
-  # 1. require coverage in N different primates.
-  my $adaptor = $tree->adaptor;
-  my $ncbi    = $adaptor->db->get_NCBITaxonAdaptor();
-
-  if ( !exists $params->{_primate_taxonomy} ) {
-    $params->{_primate_taxonomy} =
-      Bio::EnsEMBL::Compara::ComparaUtils->get_genome_taxonomy_below_level( $adaptor->db, 9443 );
-  }
-  my $primates = $params->{_primate_taxonomy};
-  my %primate_hash;
-  map { $primate_hash{ $_->taxon_id } = 1 } $primates->leaves;
-
-  if ( !exists $params->{_glires_taxonomy} ) {
-    $params->{_glires_taxonomy} =
-      Bio::EnsEMBL::Compara::ComparaUtils->get_genome_taxonomy_below_level( $adaptor->db, 314147 );
-  }
-  my $glires = $params->{_glires_taxonomy};
-  my %glires_hash;
-  map { $glires_hash{ $_->taxon_id } = 1 } $glires->leaves;
-
-  my %primates_found;
-  my @leaves = $tree->leaves;
-  foreach my $leaf ( $tree->leaves ) {
-    $primates_found{ $leaf->taxon_id } = 1 if ( exists $primate_hash{ $leaf->taxon_id } );
-  }
-
-  my %glires_found;
-  my @leaves = $tree->leaves;
-  foreach my $leaf ( $tree->leaves ) {
-    $glires_found{ $leaf->taxon_id } = 1 if ( exists $glires_hash{ $leaf->taxon_id } );
-  }
-
-  my $num_primates = scalar keys %primates_found;
-  my $num_glires   = scalar keys %glires_found;
-
-  return 1 if ( $num_primates >= $n && $num_glires >= $n_glires );
-  return 0;
-}
-
-sub does_tree_have_superfamily_coverage {
-  my $tree = shift;
-
-# 1. require 2 of 4 mammalian families to be represented (Laurasiatheria, Primates, Glires, Afrotheria)
-# 2. require 1 of 3 outgroups to be represented (Opossum, Chicken, Tetraodon)
-
-  my %mamm_hash = (
-    '314145' => 'Laurasiatheria',
-    '9443'   => 'Primates',
-    '314147' => 'Glires',
-    '311790' => 'Afrotheria'
-  );
-  my %outgroup_hash = (
-    '9031'  => 'Chicken',
-    '13616' => 'Opossum',
-    '99883' => 'Tetraodon'
-  );
-
-  my %fams_found;
-  my %outgroups_found;
-
-  my @nodes = $tree->nodes;
-  foreach my $node (@nodes) {
-    my $tax_id = $node->taxon_id;
-    $fams_found{$tax_id}      = 1 if ( exists $mamm_hash{$tax_id} );
-    $outgroups_found{$tax_id} = 1 if ( exists $outgroup_hash{$tax_id} );
-  }
-
-  my $num_mamm_fams = scalar( keys %fams_found );
-  my $num_outgroups = scalar( keys %outgroups_found );
-
-#  printf "Node ID: %d  Mammal coverage: %d/%d  Outgroups: %d/%d\n",$tree->node_id,$num_mamm_fams,4,$num_outgroups,3;
-  return 1 if ( $num_mamm_fams >= 2 && $num_outgroups >= 1 );
-  return 0;
-}
-
-sub does_tree_have_tim_family_coverage {
-  my $tree = shift;
-
-# 1. require 2 of 4 mammalian families to be represented (Laurasiatheria, Primates, Glires, Afrotheria)
-
-  my %mamm_hash = (
-    '314145' => 'Laurasiatheria',
-    '9443'   => 'Primates',
-    '314147' => 'Glires',
-    '311790' => 'Afrotheria'
-  );
-  my %fams_found;
-
-  my @nodes = $tree->nodes;
-  foreach my $node (@nodes) {
-    my $tax_id = $node->taxon_id;
-    $fams_found{$tax_id} = 1 if ( exists $mamm_hash{$tax_id} );
-  }
-
-  my $num_mamm_fams = scalar( keys %fams_found );
-
-  #printf "Node ID: %d  Mammal coverage: %d/%d\n",$tree->node_id,$num_mamm_fams,4;
-  return 1 if ( $num_mamm_fams >= 2 );
-  return 0;
-}
-
-sub is_tree_tim_worthy {
-  my $tree    = shift;
-  my $node_id = shift;
-
-  my $subtree = $tree->find_node_by_node_id($node_id);
-
-  my @nodes  = $subtree->nodes;
-  my @leaves = $subtree->leaves;
-
-  return 0 if ( scalar(@leaves) < 8 );
-
-  my $dup_count = 0;
-  foreach my $node (@nodes) {
-    $dup_count++ if ( is_duplication($node) );
-    return 0 if ( is_duplication($node) && scalar( $node->leaves ) > 2 );
-  }
-
-  #  $subtree->print_tree;
-  return 1 if ( $dup_count <= 4 );
-  return 0;
-}
-
-sub is_balanced_dup_node {
-  my $node         = shift;
-  my $minimum_size = shift;
-
-  my $dup     = $node->get_tagvalue("Duplication");
-  my $dubious = $node->get_tagvalue("dubious_duplication");
-  if ( $dup && !$dubious ) {
-
-    # Ensure that the subtrees are balanced.
-    my @children = @{ $node->children };
-    if ( scalar(@children) == 2 ) {
-
-      #print "two children!\n";
-      my $a = $children[0];
-      my $b = $children[1];
-
-      my @a_leaves = $a->leaves;
-      my @b_leaves = $b->leaves;
-
-      my $ratio = scalar(@a_leaves) / scalar(@b_leaves);
-      $ratio = 1 / $ratio if ( $ratio > 1 );
-
-      #print "Left-right ratio: $ratio\n";
-
-      my $n_a = scalar @a_leaves;
-      my $n_b = scalar @b_leaves;
-
-      if ( $ratio > 0.5
-        && $n_a >= $minimum_size
-        && $n_b > $minimum_size ) {
-
-        # Only now can we add the dup to the list.
-        return 1;
-      }
-    }
-  }
-  return 0;
-}
-
-sub write_output {
-  my $self = shift;
-  $self->autoflow_inputjob(0);
-
-  my @value_string_array;
-
-  foreach my $key ( sort { $a <=> $b } keys %node_set_hash ) {
-    print "NODE SET ID: $key\n";
-    my @ids = @{ $node_set_hash{$key} };
-    foreach my $id (@ids) {
-      print "  -> Inserting node set member $key -> $id\n";
-      push @value_string_array, "($key,$id)";
-
-      my $tree = $pta->fetch_node_by_node_id($id);
-
-      #      print " ->". $tree->newick_format."\n";
-      if ( $params->{'debug'} ) {
-        foreach my $leaf ( $tree->leaves ) {
-          if ( $leaf->taxon_id == 9606 ) {
-            print "  " . $leaf->stable_id . "\n";
-          }
-        }
-      }
-
-      if ( $key == $params->{'flow_node_set'} ) {
-        my $output_id = Bio::EnsEMBL::Compara::ComparaUtils->hash_to_string( { node_id => $id } );
-        $self->dataflow_output_id( $output_id, 1 );
-        print "  -> Flowing node $output_id\n";
-        if ( $params->{'flow_parent_and_children'} ) {
-          foreach my $child ( @{ $tree->children } ) {
-            my $output_id =
-              Bio::EnsEMBL::Compara::ComparaUtils->hash_to_string( { node_id => $child->node_id } );
-            $self->dataflow_output_id( $output_id, 1 );
-            print "  -> Flowing child $output_id\n";
-          }
-        }
-      }
-    }
-  }
-
-  my $value_string = join( ",", @value_string_array );
-
-  if ( scalar(@value_string_array) > 0 ) {
-    my $sql = "REPLACE INTO node_set_member (node_set_id,node_id) values $value_string";
-    $dba->dbc->do($sql);
-  }
 }
 
 sub DESTROY {
@@ -627,6 +309,106 @@ sub DESTROY {
   $tree->release_tree if ($tree);
   $tree = undef;
   $self->SUPER::DESTROY if $self->can("SUPER::DESTROY");
+}
+
+# Returns the NCBI taxnomy of Ensembl genomes below a given taxonomic clade.
+sub get_genome_taxonomy_below_level {
+  my $self          = shift;
+  my $dba           = shift;
+  my $root_taxon_id = shift || 'Fungi/Metazoa group';
+  my $verbose       = shift || 0;
+
+  my @gdbs = $self->get_all_genomes($dba);
+
+  my @ncbi_ids = map { $_->taxon_id } @gdbs;
+
+  my $taxon_a = $dba->get_NCBITaxonAdaptor;
+
+  # Try first with a taxon label.
+  my $root = $taxon_a->fetch_node_by_name($root_taxon_id);
+  if ( !defined $root ) {
+    $root = $taxon_a->fetch_node_by_taxon_id($root_taxon_id);
+  }
+
+  # Collect all genome_db leaves, plus their internal lineages, into an array.
+  my %keepers;
+  $keepers{ $root->node_id } = $root;
+  foreach my $gdb (@gdbs) {
+    my $tx    = $gdb->taxon;
+    my $tx_id = $tx->taxon_id;
+
+    if ( !$self->has_ancestor_node_id( $tx, $root ) ) {
+
+      #print "not below tax level!!!\n";
+      next;
+    } else {
+      print "Okay: " . $tx->name . "\n" if ($verbose);
+    }
+
+    my $node = $tx;
+    while ( defined $node ) {
+      last if ( !$self->has_ancestor_node_id( $node, $root ) );
+      print $node->name . " " if ($verbose);
+      $keepers{ $node->node_id } = $node;
+      $node = $node->parent;
+    }
+    print "\n" if ($verbose);
+  }
+
+  my @nodes = values %keepers;
+  print "Size: " . scalar(@nodes) . "\n" if ($verbose);
+
+  #$taxon_a->clear_cache;
+  my $new_tree = $taxon_a->_build_tree_from_nodes( \@nodes );
+
+  # The call to "copy" seems to be important here...
+  $new_tree = $new_tree->copy->minimize_tree;
+  return $new_tree;
+}
+
+sub get_genomes_within_clade {
+  my $self  = shift;
+  my $dba   = shift;
+  my $clade = shift || 1;
+
+  my @gdbs = $self->get_all_genomes($dba);
+  my $species_tree = $self->get_genome_taxonomy_below_level( $dba, $clade );
+
+  my @genomes;
+  foreach my $gdb (@gdbs) {
+    my $leaf = $species_tree->find_node_by_node_id( $gdb->taxon->taxon_id );
+    push @genomes, $gdb if ($leaf);
+  }
+
+  return @genomes;
+}
+
+sub get_all_genomes {
+  my $self = shift;
+  my $dba  = shift;
+
+  my $gda     = $dba->get_GenomeDBAdaptor();
+  my $all_dbs = $gda->fetch_all();
+  my @all_genomes;
+  foreach my $db (@$all_dbs) {
+    push @all_genomes, $db if ( $db->taxon );
+  }
+  return @all_genomes;
+}
+
+# Returns whether $node has an ancestor with the same node_id as $ancestor.
+sub has_ancestor_node_id {
+  my $self     = shift;
+  my $node     = shift;
+  my $ancestor = shift;
+  $node->throw("[$ancestor] must be a Bio::EnsEMBL::Compara::NestedSet object")
+    unless ( $ancestor and $ancestor->isa("Bio::EnsEMBL::Compara::NestedSet") );
+  $node = $node->parent;
+  while ($node) {
+    return 1 if ( $node->node_id == $ancestor->node_id );
+    $node = $node->parent;
+  }
+  return 0;
 }
 
 1;
