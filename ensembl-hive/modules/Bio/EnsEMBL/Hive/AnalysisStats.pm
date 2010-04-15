@@ -1,11 +1,10 @@
 #
 # You may distribute this module under the same terms as perl itself
-#
-# POD documentation - main docs before the code
 
 =pod 
 
 =head1 NAME
+
   Bio::EnsEMBL::Hive::AnalysisStats
 
 =head1 SYNOPSIS
@@ -13,13 +12,16 @@
 =head1 DESCRIPTION
 
 =head1 CONTACT
-  Contact Jessica Severin on EnsEMBL::Hive implemetation/design detail: jessica@ebi.ac.uk
-  Contact Ewan Birney on EnsEMBL in general: birney@sanger.ac.uk
+
+  Please contact ehive-users@ebi.ac.uk mailing list with questions/suggestions.
 
 =head1 APPENDIX
+
   The rest of the documentation details each of the object methods.
   Internal methods are usually preceded with a _
+
 =cut
+
 
 package Bio::EnsEMBL::Hive::AnalysisStats;
 
@@ -243,6 +245,13 @@ sub sync_lock {
   return $self->{'_sync_lock'};
 }
 
+sub rc_id {
+    my $self = shift;
+
+    $self->{'_rc_id'} = shift if(@_);
+    return $self->{'_rc_id'};
+}
+
 sub determine_status {
   my $self = shift;
   
@@ -258,15 +267,11 @@ sub determine_status {
         print
             "\n",
             "##################################################\n",
-            "##################################################\n",
-            "##                                              ##\n";
         printf
             "##   ERROR: %-35s ##\n", $self->get_analysis->logic_name." failed!";
         printf
             "##          %4.1f%% jobs failed (tolerance: %3d%%) ##\n", $failure_percentage, $self->failed_job_tolerance;
         print
-            "##                                              ##\n",
-            "##################################################\n",
             "##################################################\n\n";
       } else {
         $self->status('DONE');

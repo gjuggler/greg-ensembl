@@ -7,7 +7,7 @@
 #
 # You may distribute this module under the same terms as perl itself
 
-# POD documentation - main docs before the code
+=pod
 
 =head1 NAME
 
@@ -22,18 +22,15 @@ Bio::EnsEMBL::Hive::DBSQL::DBAdaptor
         -driver => 'mysql',
         );
 
-
 =head1 DESCRIPTION
+
   This object represents the handle for a Hive system enabled database
 
 =head1 CONTACT
 
-Post questions the the EnsEMBL developer list: <ensembl-dev@ebi.ac.uk>
+  Please contact ehive-users@ebi.ac.uk mailing list with questions/suggestions.
 
 =cut
-
-
-# Let the code begin...
 
 
 package Bio::EnsEMBL::Hive::DBSQL::DBAdaptor;
@@ -53,18 +50,20 @@ sub get_Queen {
   return $self->get_QueenAdaptor();
 }
 
-sub get_available_adaptors{
+sub get_available_adaptors {
  
-  my %pairs =  (
-    "MetaContainer"    => 'Bio::EnsEMBL::DBSQL::MetaContainer',
-    "Analysis"         => "Bio::EnsEMBL::DBSQL::AnalysisAdaptor",
-    "Queen"            => "Bio::EnsEMBL::Hive::Queen",
-    "AnalysisJob"      => "Bio::EnsEMBL::Hive::DBSQL::AnalysisJobAdaptor",
-    "AnalysisData"     => "Bio::EnsEMBL::Hive::DBSQL::AnalysisDataAdaptor",
-    "AnalysisStats"    => "Bio::EnsEMBL::Hive::DBSQL::AnalysisStatsAdaptor",
-    "AnalysisCtrlRule" => "Bio::EnsEMBL::Hive::DBSQL::AnalysisCtrlRuleAdaptor",
-    "DataflowRule"     => "Bio::EnsEMBL::Hive::DBSQL::DataflowRuleAdaptor");
-  return (\%pairs);
+    my %pairs =  (
+        'MetaContainer'       => 'Bio::EnsEMBL::DBSQL::MetaContainer',
+        'Analysis'            => 'Bio::EnsEMBL::DBSQL::AnalysisAdaptor',
+        'Queen'               => 'Bio::EnsEMBL::Hive::Queen',
+        'AnalysisJob'         => 'Bio::EnsEMBL::Hive::DBSQL::AnalysisJobAdaptor',
+        'AnalysisData'        => 'Bio::EnsEMBL::Hive::DBSQL::AnalysisDataAdaptor',
+        'AnalysisStats'       => 'Bio::EnsEMBL::Hive::DBSQL::AnalysisStatsAdaptor',
+        'AnalysisCtrlRule'    => 'Bio::EnsEMBL::Hive::DBSQL::AnalysisCtrlRuleAdaptor',
+        'DataflowRule'        => 'Bio::EnsEMBL::Hive::DBSQL::DataflowRuleAdaptor',
+        'ResourceDescription' => 'Bio::EnsEMBL::Hive::DBSQL::ResourceDescriptionAdaptor',
+    );
+    return (\%pairs);
 }
  
 1;

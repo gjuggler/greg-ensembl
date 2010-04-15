@@ -7,31 +7,34 @@
 #
 # You may distribute this module under the same terms as perl itself
 
-# POD documentation - main docs before the code
+=pod
 
 =head1 NAME
+
   Bio::EnsEMBL::Hive::DBSQL::AnalysisStatsAdaptor
 
 =head1 SYNOPSIS
+
   $analysisStatsAdaptor = $db_adaptor->get_AnalysisStatsAdaptor;
   $analysisStatsAdaptor = $analysisStats->adaptor;
 
 =head1 DESCRIPTION
+
   Module to encapsulate all db access for persistent class AnalysisStats.
   There should be just one per application and database connection.
 
 =head1 CONTACT
-  Contact Jessica Severin on implemetation/design detail: jessica@ebi.ac.uk
-  Contact Ewan Birney on EnsEMBL in general: birney@sanger.ac.uk
+
+  Please contact ehive-users@ebi.ac.uk mailing list with questions/suggestions.
 
 =head1 APPENDIX
+
   The rest of the documentation details each of the object methods.
   Internal methods are usually preceded with a _
 
 =cut
 
 
-# Let the code begin...
 
 package Bio::EnsEMBL::Hive::DBSQL::AnalysisStatsAdaptor;
 
@@ -45,6 +48,7 @@ our @ISA = qw(Bio::EnsEMBL::DBSQL::BaseAdaptor);
 
 
 =head2 fetch_by_analysis_id
+
   Arg [1]    : int $id
                the unique database identifier for the feature to be obtained
   Example    : $feat = $adaptor->fetch_by_analysis_id(1234);
@@ -53,6 +57,7 @@ our @ISA = qw(Bio::EnsEMBL::DBSQL::BaseAdaptor);
   Returntype : Bio::EnsEMBL::Hive::AnalysisStats
   Exceptions : thrown if $id is not defined
   Caller     : general
+
 =cut
 
 sub fetch_by_analysis_id {
@@ -86,36 +91,33 @@ sub fetch_all {
 
 
 sub fetch_by_needed_workers {
-  my $self = shift;
-  my $limit = shift;
-  my $constraint = "ast.num_required_workers>0 AND ast.status in ('READY','WORKING')";
-  if($limit) {
-    $self->_final_clause("ORDER BY num_required_workers DESC, hive_capacity DESC, analysis_id LIMIT $limit");
-  } else {
-    $self->_final_clause("ORDER BY num_required_workers DESC, hive_capacity DESC, analysis_id");
-  }
-  my $results = $self->_generic_fetch($constraint);
-  $self->_final_clause(""); #reset final clause for other fetches
-  return $results;
+    my ($self, $limit, $maximise_concurrency, $rc_id) = @_;
+
+    my $constraint = "ast.num_required_workers>0 AND ast.status in ('READY','WORKING')"
+                    .(defined($rc_id) ? " AND ast.rc_id = $rc_id" : '');
+
+    my $final_clause = 'ORDER BY num_running_workers'
+                        .($maximise_concurrency ? '' : ' DESC')
+                        .', hive_capacity DESC, analysis_id'
+                        .($limit ? " LIMIT $limit" : '');
+
+    $self->_final_clause($final_clause);
+    my $results = $self->_generic_fetch($constraint);
+    $self->_final_clause(''); # reset final clause for other fetches
+
+    return $results;
 }
 
 
-sub fetch_by_status {
-  my $self = shift;
+sub fetch_by_statuses {
+  my ($self, $statuses, $rc_id) = @_;
 
-  my $constraint = "ast.status in (";
-  my $addComma;
-  while(@_) {
-    my $status = shift;
-    $constraint .= ',' if($addComma);
-    $constraint .= "'$status' ";
-    $addComma = 1;
-  }
-  $constraint .= ")";
+  my $constraint = 'ast.status in ('.join(', ', map { "'$_'" } @$statuses).')'
+                   .(defined($rc_id) ? " AND ast.rc_id = $rc_id" : '');
 
-  $self->_final_clause("ORDER BY last_update");
+  $self->_final_clause('ORDER BY last_update');
   my $results = $self->_generic_fetch($constraint);
-  $self->_final_clause(""); #reset final clause for other fetches
+  $self->_final_clause(''); #reset final clause for other fetches
 
   return $results;
 }
@@ -159,7 +161,7 @@ sub get_running_worker_count {
   Returntype : Bio::EnsEMBL::Hive::Worker
   Exceptions :
   Caller     :
-  
+
 =cut
 
 sub update {
@@ -207,7 +209,8 @@ sub update {
   $sql .= ",num_running_workers=" . $stats->num_running_workers();
   $sql .= ",num_required_workers=" . $stats->num_required_workers();
   $sql .= ",last_update=NOW()";
-  $sql .= ",sync_lock=''";
+  $sql .= ",sync_lock='0'";
+  $sql .= ",rc_id=". $stats->rc_id();
   $sql .= " WHERE analysis_id='".$stats->analysis_id."' ";
 
   my $sth = $self->prepare($sql);
@@ -249,17 +252,19 @@ sub update_status
 
 sub interval_update_work_done
 {
-  my ($self, $analysis_id, $job_count, $interval, $worker) = @_;
+  my ($self, $analysis_id, $job_count, $interval, $worker, $weight_factor) = @_;
+
+  $weight_factor ||= 3; # makes it more sensitive to the dynamics of the farm
 
   my $sql = "UPDATE analysis_stats SET ".
             "unclaimed_job_count = unclaimed_job_count - $job_count, ".
-            "avg_msec_per_job = (((done_job_count*avg_msec_per_job)/3 + $interval) / (done_job_count/3 + $job_count)), ".
-            "avg_input_msec_per_job = (((done_job_count*avg_input_msec_per_job)/3 + ".
-                ($worker->{fetch_time}).") / (done_job_count/3 + $job_count)), ".
-            "avg_run_msec_per_job = (((done_job_count*avg_run_msec_per_job)/3 + ".
-                ($worker->{run_time}).") / (done_job_count/3 + $job_count)), ".
-            "avg_output_msec_per_job = (((done_job_count*avg_output_msec_per_job)/3 + ".
-                ($worker->{write_time}).") / (done_job_count/3 + $job_count)), ".
+            "avg_msec_per_job = (((done_job_count*avg_msec_per_job)/$weight_factor + $interval) / (done_job_count/$weight_factor + $job_count)), ".
+            "avg_input_msec_per_job = (((done_job_count*avg_input_msec_per_job)/$weight_factor + ".
+                ($worker->{fetch_time}).") / (done_job_count/$weight_factor + $job_count)), ".
+            "avg_run_msec_per_job = (((done_job_count*avg_run_msec_per_job)/$weight_factor + ".
+                ($worker->{run_time}).") / (done_job_count/$weight_factor + $job_count)), ".
+            "avg_output_msec_per_job = (((done_job_count*avg_output_msec_per_job)/$weight_factor + ".
+                ($worker->{write_time}).") / (done_job_count/$weight_factor + $job_count)), ".
             "done_job_count = done_job_count + $job_count ".
             " WHERE analysis_id= $analysis_id";
 
@@ -447,6 +452,7 @@ sub _columns {
                     ast.num_required_workers
                     ast.last_update
                     ast.sync_lock
+                    ast.rc_id
                    );
   push @columns , "UNIX_TIMESTAMP()-UNIX_TIMESTAMP(ast.last_update) seconds_since_last_update ";
   return @columns;            
@@ -466,6 +472,7 @@ sub _objs_from_sth {
     $analStats->analysis_id($column{'analysis_id'});
     $analStats->status($column{'status'});
     $analStats->sync_lock($column{'sync_lock'});
+    $analStats->rc_id($column{'rc_id'});
     $analStats->batch_size($column{'batch_size'});
     $analStats->avg_msec_per_job($column{'avg_msec_per_job'});
     $analStats->avg_input_msec_per_job($column{'avg_input_msec_per_job'});
@@ -519,5 +526,4 @@ sub _create_new_for_analysis_id {
 }
 
 1;
-
 

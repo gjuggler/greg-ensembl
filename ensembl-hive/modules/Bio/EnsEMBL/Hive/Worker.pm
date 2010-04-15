@@ -9,8 +9,6 @@
 
   Bio::EnsEMBL::Hive::Worker
 
-=cut
-
 =head1 DESCRIPTION
 
   Object which encapsulates the details of how to find jobs, how to run those
@@ -51,14 +49,9 @@
   It is also responsible for interfacing with the Queen to identify workers which died
   unexpectantly so that she can free the dead workers unfinished jobs.
 
-=cut
-
 =head1 CONTACT
- 
-  Contact Jessica Severin on EnsEMBL::Hive implemetation/design detail: jessica@ebi.ac.uk
-  Contact Ewan Birney on EnsEMBL in general: birney@sanger.ac.uk
 
-=cut
+  Please contact ehive-users@ebi.ac.uk mailing list with questions/suggestions.
 
 =head1 APPENDIX
 
@@ -74,7 +67,7 @@ use strict;
 use Bio::EnsEMBL::Utils::Argument;
 use Bio::EnsEMBL::Utils::Exception;
 use Sys::Hostname;
-#use Time::HiRes qw(time);
+use Time::HiRes qw(time);
 use POSIX;
 
 use Bio::EnsEMBL::Analysis;
@@ -88,7 +81,7 @@ use Bio::EnsEMBL::Hive::Process;
 ## Minimum amount of time in msec that a worker should run before reporting
 ## back to the hive. This is used when setting the batch_size automatically.
 ## 120000 msec = 2 minutes
-my $MIN_BATCH_TIME = 120000;
+my $MIN_BATCH_TIME = 2*60*1000;
 
 sub new {
   my ($class,@args) = @_;
@@ -98,7 +91,7 @@ sub new {
 
 sub init {
   my $self = shift;
-  $self->{'start_time'} = time();
+  $self->start_time(time());
   $self->debug(0);
   return $self;
 }
@@ -171,13 +164,35 @@ sub analysis {
 
 =cut
 
-sub life_span {
-  #default life_span = 60minutes
+sub life_span { # default life_span = 60minutes
   my( $self, $value ) = @_;
   $self->{'_life_span'} = 60*60 unless(defined($self->{'_life_span'}));
   $self->{'_life_span'} = $value if(defined($value));
   return $self->{'_life_span'};
 }
+
+sub start_time {
+    my $self = shift @_;
+
+    if(@_) {
+        $self->{'start_time'} = shift @_;
+    }
+    return $self->{'start_time'};
+}
+
+sub life_span_limit_reached {
+    my $self = shift @_;
+
+    if( $self->life_span() ) {
+        my $alive_for_secs = time()-$self->start_time();
+        if($alive_for_secs > $self->life_span() ) {
+            return $alive_for_secs;
+        }
+    }
+    return 0;
+}
+
+
 
 =head2 job_limit
 
@@ -199,10 +214,36 @@ sub job_limit {
   return $self->{'_job_limit'};
 }
 
-sub hive_id {
+sub work_done {
+  my $self = shift @_;
+
+  if(@_) {
+    $self->{'work_done'} = shift @_;
+  }
+  return $self->{'work_done'} || 0;
+}
+
+sub more_work_done {
+  my $self = shift @_;
+
+  $self->{'work_done'}++;
+}
+
+sub job_limit_reached {
+    my $self = shift @_;
+
+    if($self->job_limit and $self->work_done >= $self->job_limit) { 
+        return $self->work_done;
+    }
+    return 0;
+}
+
+
+
+sub worker_id {
   my( $self, $value ) = @_;
-  $self->{'_hive_id'} = $value if($value);
-  return $self->{'_hive_id'};
+  $self->{'_worker_id'} = $value if($value);
+  return $self->{'_worker_id'};
 }
 
 sub host {
@@ -215,13 +256,6 @@ sub process_id {
   my( $self, $value ) = @_;
   $self->{'_ppid'} = $value if($value);
   return $self->{'_ppid'};
-}
-
-sub work_done {
-  my( $self, $value ) = @_;
-  $self->{'_work_done'} = 0 unless($self->{'_work_done'});
-  $self->{'_work_done'} = $value if($value);
-  return $self->{'_work_done'};
 }
 
 sub cause_of_death {
@@ -272,11 +306,11 @@ use Digest::MD5 qw(md5_hex);
 sub output_dir {
   my ($self, $outdir) = @_;
   if ($outdir and (-d $outdir)) {
-    my $hive_id = $self->hive_id;
-    my (@hex) = md5_hex($hive_id) =~ m/\G(..)/g;
+    my $worker_id = $self->worker_id;
+    my (@hex) = md5_hex($worker_id) =~ m/\G(..)/g;
     # If you want more than one level of directories, change $hex[0]
     # below into an array slice.  e.g @hex[0..1] for two levels.
-    $outdir = join('/', $outdir, $hex[0], 'hive_id_' . $hive_id);
+    $outdir = join('/', $outdir, $hex[0], 'worker_id' . $worker_id);
     system("mkdir -p $outdir") && die "Could not create $outdir\n";
     $self->{'_output_dir'} = $outdir;
   }
@@ -293,7 +327,7 @@ sub perform_global_cleanup {
 
 sub print_worker {
   my $self = shift;
-  print("WORKER: hive_id=",$self->hive_id,
+  print("WORKER: worker_id=",$self->worker_id,
      " analysis_id=(",$self->analysis->dbID,")",$self->analysis->logic_name,
      " host=",$self->host,
      " pid=",$self->process_id,
@@ -420,24 +454,20 @@ sub run
 
   $self->db->dbc->disconnect_when_inactive(0);
 
-  my $alive = 1;
-  while ($alive) {
-    my $batch_start = time() * 1000;    
-    my $batch_end = $batch_start;
-    my $job_counter = 0;
-    my $jobs = [];
+  do { # Worker's lifespan loop (ends only when the worker dies)
+    my $batches_start = time() * 1000;
+    my $batches_end = $batches_start;
+    my $jobs_done_by_batches_loop = 0; # by all iterations of internal loop
     $self->{fetch_time} = 0;
     $self->{run_time} = 0;
     $self->{write_time} = 0;
 
-    do {
-      if($specific_job) {
-        $self->queen->worker_reclaim_job($self,$specific_job);
-        push @$jobs, $specific_job;
-        $alive=undef;
-      } else {
-        $jobs = $self->queen->worker_grab_jobs($self);
-      }
+    do {    # Worker's "batches loop" exists to prevent logging the status too frequently.
+            # If a batch took less than $MIN_BATCH_TIME to run, the Worker keeps taking&running more batches.
+
+      my $jobs = $specific_job
+        ? [ $self->queen->worker_reclaim_job($self,$specific_job) ]
+        : $self->queen->worker_grab_jobs($self);
 
       $self->queen->worker_check_in($self); #will sync analysis_stats if needed
 
@@ -457,27 +487,35 @@ sub run
 
         $self->queen->worker_register_job_done($self, $job);
 
-        $self->{'_work_done'}++;
+        if(my $semaphored_job_id = $job->semaphored_job_id) {
+            $job->adaptor->decrease_semaphore_count_for_jobid( $semaphored_job_id );    # step-unblock the semaphore after job is (successfully) done
+        }
+
+        $self->more_work_done;
       }
-      $batch_end = time() * 1000;
-      $job_counter += scalar(@$jobs);
-    } while (!$specific_job and scalar(@$jobs) and $batch_end-$batch_start < $MIN_BATCH_TIME); ## Run for $MIN_BATCH_TIME at least
+      $batches_end = time() * 1000;
+      $jobs_done_by_batches_loop += scalar(@$jobs);
 
-    #printf("batch start:%f end:%f\n", $batch_start, $batch_end);
+      if( $specific_job ) {
+            $self->cause_of_death('JOB_LIMIT'); 
+      } elsif( my $jobs_completed = $self->job_limit_reached()) {
+            print "job_limit reached (completed $jobs_completed jobs)\n";
+            $self->cause_of_death('JOB_LIMIT'); 
+      } elsif ( my $alive_for_secs = $self->life_span_limit_reached()) {
+            print "life_span limit reached (alive for $alive_for_secs secs)\n";
+            $self->cause_of_death('LIFESPAN'); 
+      }
+    } while (!$self->cause_of_death and $batches_end-$batches_start < $MIN_BATCH_TIME);
+
+        # The following two database-updating operations are resource-expensive (all workers hammering the same database+tables),
+        # so they are not allowed to happen too frequently (not before $MIN_BATCH_TIME of work has been done)
+        #
     $self->db->get_AnalysisStatsAdaptor->interval_update_work_done($self->analysis->dbID,
-        $job_counter, $batch_end-$batch_start, $self);
+        $jobs_done_by_batches_loop, $batches_end-$batches_start, $self);
 
-    $self->cause_of_death('JOB_LIMIT') if($specific_job);
-
-    if($self->job_limit and ($self->{'_work_done'} >= $self->job_limit)) { 
-      $self->cause_of_death('JOB_LIMIT'); 
-    }
-    if(($self->life_span()>0) and ((time() - $self->{'start_time'}) > $self->life_span())) {
-      printf("life_span exhausted (alive for %d secs)\n", (time() - $self->{'start_time'}));
-      $self->cause_of_death('LIFESPAN'); 
-    }
-
-    if (!$self->cause_of_death and $self->analysis->stats->num_running_workers > $self->analysis->stats->hive_capacity) {
+    if (!$self->cause_of_death
+    and $self->analysis->stats->hive_capacity >= 0
+    and $self->analysis->stats->num_running_workers > $self->analysis->stats->hive_capacity) {
       my $sql = "UPDATE analysis_stats SET num_running_workers = num_running_workers - 1 ".
                 "WHERE num_running_workers > hive_capacity AND analysis_id = " . $self->analysis->stats->analysis_id;
       my $row_count = $self->queen->dbc->do($sql);
@@ -485,9 +523,9 @@ sub run
         $self->cause_of_death('HIVE_OVERLOAD');
       }
     }
-    if($self->cause_of_death) { $alive=undef; }
-  }
-  $self->queen->dbc->do("UPDATE hive SET status = 'DEAD' WHERE hive_id = ".$self->hive_id);
+  } while (!$self->cause_of_death); # /Worker's lifespan loop
+
+  $self->queen->dbc->do("UPDATE hive SET status = 'DEAD' WHERE worker_id = ".$self->worker_id);
   
   if($self->perform_global_cleanup) {
     #have runnable cleanup any global/process files/data it may have created
@@ -499,7 +537,7 @@ sub run
   $self->analysis->stats->print_stats if($self->debug);
 
   printf("dbc %d disconnect cycles\n", $self->db->dbc->disconnect_count);
-  print("total jobs completes : ", $self->work_done, "\n");
+  print("total jobs completed : ", $self->work_done, "\n");
   
   if($self->output_dir()) {
     close STDOUT;
@@ -512,16 +550,14 @@ sub run
 }
 
 
-sub run_module_with_job
-{
-  my $self = shift;
-  my $job  = shift;
+sub run_module_with_job {
+  my ($self, $job) = @_;
 
   my ($start_time, $end_time);
 
   my $runObj = $self->analysis->process;
   return 0 unless($runObj);
-  return 0 unless($job and ($job->hive_id eq $self->hive_id));
+  return 0 unless($job and ($job->worker_id eq $self->worker_id));
   
   my $init_time = time() * 1000;
   $self->queen->dbc->query_count(0);
@@ -576,8 +612,8 @@ sub run_module_with_job
 
   if ($runObj->isa("Bio::EnsEMBL::Hive::Process") and $runObj->autoflow_inputjob
       and $self->execute_writes) {
-    printf("AUTOFLOW input->output\n") if($self->debug);
-    $self->queen->flow_output_job($job);
+            printf("AUTOFLOW input->output\n") if($self->debug);
+            $runObj->dataflow_output_id();
   }
 
   return 1;
@@ -641,6 +677,8 @@ sub close_and_update_job_output
 }
 
 
+# Does not seem to be used anywhere?
+#
 sub check_system_load {
   my $self = shift;
 

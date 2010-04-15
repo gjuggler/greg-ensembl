@@ -1,194 +1,235 @@
 #!/usr/bin/env perl
 
-use warnings;
 use strict;
+use warnings;
 use DBI;
 use Getopt::Long;
+
 use Bio::EnsEMBL::Hive::DBSQL::DBAdaptor;
 use Bio::EnsEMBL::Hive::Worker;
 use Bio::EnsEMBL::Hive::Queen;
 use Bio::EnsEMBL::Hive::URLFactory;
-use Sys::Hostname;
 use Bio::EnsEMBL::Hive::DBSQL::AnalysisCtrlRuleAdaptor;
 
-Bio::EnsEMBL::Registry->no_version_check(1);
+use Bio::EnsEMBL::Hive::Meadow::LSF;
+use Bio::EnsEMBL::Hive::Meadow::LOCAL;
 
-# ok this is a hack, but I'm going to pretend I've got an object here
-# by creating a blessed hash ref and passing it around like an object
-# this is to avoid using global variables in functions, and to consolidate
-# the globals into a nice '$self' package
-my $self = bless {};
+main();
 
-$self->{'db_conf'} = {};
-$self->{'db_conf'}->{'-user'} = 'ensro';
-$self->{'db_conf'}->{'-port'} = 3306;
-$self->{'max_loops'} = 0; #unlimited
-$self->{'beekeeper_type'} = 'LSF';
-$self->{'local_cpus'} = 2;
+sub main {
 
-$| = 1;
+    $| = 1;
+    Bio::EnsEMBL::Registry->no_version_check(1);
 
-my $conf_file;
-my ($help, $host, $user, $pass, $dbname, $port, $adaptor, $url);
-my ($job_limit, $batch_size);
-my $loopit=0;
-my $worker_limit = 50;
-my $sleep_time = 2;
-my $sync=0;
-my $local=undef;
-$self->{'overdue_limit'} = 60; #minutes
-$self->{'no_analysis_stats'} = undef;
-$self->{'show_worker_stats'} = undef;
-$self->{'verbose_stats'} = 1;
-$self->{'lsf_options'} = "";
-$self->{'monitor'} = undef;
-my $regfile  = undef;
-my $reg_alias = 'hive';
+        # ok this is a hack, but I'm going to pretend I've got an object here
+        # by creating a hash ref and passing it around like an object
+        # this is to avoid using global variables in functions, and to consolidate
+        # the globals into a nice '$self' package
+    my $self = {};
 
-GetOptions('help'           => \$help,
-           'url=s'          => \$url,
-           'conf=s'         => \$conf_file,
-           'dbhost=s'       => \$host,
-           'dbport=i'       => \$port,
-           'dbuser=s'       => \$user,
-           'dbpass=s'       => \$pass,
-           'dbname=s'       => \$dbname,
-           'local'          => \$local,
-           'lsf'            => \$self->{'lsf_mode'},
-           'dead'           => \$self->{'check_for_dead'},
-           'killworker=i'   => \$self->{'kill_worker_id'},
-           'overdue'        => \$self->{'overdue_limit'},
-           'alldead'        => \$self->{'all_dead'},
-           'run'            => \$self->{'run'},
-           'run_job_id=i'   => \$self->{'run_job_id'},
-           'jlimit=i'       => \$job_limit,
-           'wlimit=i'       => \$worker_limit,
-           'batch_size=i'   => \$batch_size,
-           'loop'           => \$loopit,
-           'no_pend'        => \$self->{'no_pend_adjust'},
-           'sync'           => \$sync,
-           'no_analysis_stats' => \$self->{'no_analysis_stats'},
-           'verbose_stats=i'   => \$self->{'verbose_stats'},
-           'worker_stats'   => \$self->{'show_worker_stats'},
-           'sleep=f'        => \$sleep_time,
-           'logic_name=s'   => \$self->{'logic_name'},
-           'failed_jobs'    => \$self->{'show_failed_jobs'},
-           'reset_job_id=i' => \$self->{'reset_job_id'},
-           'reset_all|reset_all_jobs_for_analysis=s' => \$self->{'reset_all_jobs_for_analysis'},
-           'delete|remove=s' => \$self->{'remove_analysis_id'}, # careful
-           'lsf_options=s'  => \$self->{'lsf_options'},
-           'job_output=i'   => \$self->{'show_job_output'},
-           'regfile=s'      => \$regfile,
-           'regname=s'      => \$reg_alias,
-           'monitor!'       => \$self->{'monitor'},
-          );
+    $self->{'db_conf'} = {
+        -host   => '',
+        -port   => 3306,
+        -user   => 'ensro',
+        -pass   => '',
+        -dbname => '',
+    };
 
-if ($help) { usage(); }
+    my ($help, $conf_file);
+    my $loopit                      = 0;
+    my $sync                        = 0;
+    my $local                       = 0;
+    my $show_failed_jobs            = 0;
+    my $no_pend_adjust              = 0;
+    my $worker_limit                = 50;
+    my $local_cpus                  = 2;
+    my $meadow_options              = '';
+    my $max_loops                   = 0; # not running by default
+    my $run                         = 0;
+    my $check_for_dead              = 0;
+    my $all_dead                    = 0;
+    my $remove_analysis_id          = 0;
+    my $job_id_for_output           = 0;
+    my $show_worker_stats           = 0;
+    my $kill_worker_id              = 0;
+    my $reset_job_id                = 0;
+    my $reset_all_jobs_for_analysis = 0;
 
-if($local) {
-  $self->{'beekeeper_type'} ='LOCAL'; 
+    $self->{'sleep_minutes'}        = 1;
+#    $self->{'overdue_minutes'}      = 60;   # which means one hour
+    $self->{'verbose_stats'}        = 1;
+    $self->{'reg_name'}             = 'hive';
+    $self->{'maximise_concurrency'} = 0;
+
+    GetOptions(
+                    # connection parameters
+               'conf=s'            => \$conf_file,
+               'regfile=s'         => \$self->{'reg_file'},
+               'regname=s'         => \$self->{'reg_name'},
+               'url=s'             => \$self->{'url'},
+               'host|dbhost=s'     => \$self->{'db_conf'}->{'-host'},
+               'port|dbport=i'     => \$self->{'db_conf'}->{'-port'},
+               'user|dbuser=s'     => \$self->{'db_conf'}->{'-user'},
+               'password|dbpass=s' => \$self->{'db_conf'}->{'-pass'},
+               'database|dbname=s' => \$self->{'db_conf'}->{'-dbname'},
+
+                    # loop control
+               'loop'              => \$loopit,
+               'max_loops=i'       => \$max_loops,
+               'run'               => \$run,
+               'run_job_id=i'      => \$self->{'run_job_id'},
+               'sleep=f'           => \$self->{'sleep_minutes'},
+
+                    # meadow control
+               'local!'            => \$local,
+               'local_cpus=i'      => \$local_cpus,
+               'wlimit=i'          => \$worker_limit,
+               'no_pend'           => \$no_pend_adjust,
+               'meadow_options|lsf_options=s'  => \$meadow_options, # 'lsf_options' is deprecated (please investigate the resource requirements, they may suit your needs way better)
+
+                    # worker control
+               'jlimit=i'          => \$self->{'job_limit'},
+               'batch_size=i'      => \$self->{'batch_size'},
+               'lifespan=i'        => \$self->{'lifespan'},
+               'logic_name=s'      => \$self->{'logic_name'},
+               'maximise_concurrency' => \$self->{'maximise_concurrency'},
+
+                    # other commands/options
+               'h|help'            => \$help,
+               'sync'              => \$sync,
+               'dead'              => \$check_for_dead,
+               'killworker=i'      => \$kill_worker_id,
+#               'overdue'           => \$self->{'overdue_minutes'},
+               'alldead'           => \$all_dead,
+               'no_analysis_stats' => \$self->{'no_analysis_stats'},
+               'verbose_stats=i'   => \$self->{'verbose_stats'},
+               'worker_stats'      => \$show_worker_stats,
+               'failed_jobs'       => \$show_failed_jobs,
+               'reset_job_id=i'    => \$reset_job_id,
+               'reset_all|reset_all_jobs_for_analysis=s' => \$reset_all_jobs_for_analysis,
+               'delete|remove=s'   => \$remove_analysis_id, # careful
+               'job_output=i'      => \$job_id_for_output,
+               'monitor!'          => \$self->{'monitor'},
+    );
+
+    if ($help) { usage(0); }
+
+    parse_conf($self, $conf_file);
+
+    if($run or $self->{'run_job_id'}) {
+        $max_loops = 1;
+    } elsif ($loopit) {
+        unless($max_loops) {
+            $max_loops = -1; # unlimited
+        }
+        unless(defined($self->{'monitor'})) {
+            $self->{'monitor'} = 1;
+        }
+    }
+
+    if($self->{'reg_file'}) {
+        Bio::EnsEMBL::Registry->load_all($self->{'reg_file'});
+        $self->{'dba'} = Bio::EnsEMBL::Registry->get_DBAdaptor($self->{'reg_name'}, 'hive');
+    } elsif($self->{'url'}) {
+        $self->{'dba'} = Bio::EnsEMBL::Hive::URLFactory->fetch($self->{'url'}) || die("Unable to connect to $self->{'url'}\n");
+    } elsif (    $self->{'db_conf'}->{'-host'}
+             and $self->{'db_conf'}->{'-user'}
+             and $self->{'db_conf'}->{'-dbname'}) { # connect to database specified
+                    $self->{'dba'} = new Bio::EnsEMBL::Hive::DBSQL::DBAdaptor(%{$self->{'db_conf'}});
+                    $self->{'url'} = $self->{'dba'}->dbc->url;
+    } else {
+        print "\nERROR : Connection parameters (regfile+regname, url or dbhost+dbuser+dbname) need to be specified\n\n";
+        usage(1);
+    }
+
+    my $queen = $self->{'dba'}->get_Queen;
+    $queen->{'maximise_concurrency'} = 1 if ($self->{'maximise_concurrency'});
+    $queen->{'verbose_stats'} = $self->{'verbose_stats'};
+
+    my $pipeline_name = $self->{'dba'}->get_MetaContainer->list_value_by_key("name")->[0];
+
+    if($local) {
+        $self->{'meadow'} = Bio::EnsEMBL::Hive::Meadow::LOCAL->new();
+        $self->{'meadow'} -> total_running_workers_limit($local_cpus);
+    } else {
+        $self->{'meadow'} = Bio::EnsEMBL::Hive::Meadow::LSF->new();
+        $self->{'meadow'} -> meadow_options($meadow_options);
+    }
+    $self->{'meadow'} -> pending_adjust(not $no_pend_adjust);
+
+    if($self->{'run_job_id'}) {
+        $worker_limit = 1;
+    }
+    $self->{'meadow'} -> submitted_workers_limit($worker_limit);
+    $self->{'meadow'} -> pipeline_name($pipeline_name);
+
+    if($reset_job_id) { $queen->reset_and_fetch_job_by_dbID($reset_job_id); }
+
+    if($job_id_for_output) {
+        printf("===== job output\n");
+        my $job = $self->{'dba'}->get_AnalysisJobAdaptor->fetch_by_dbID($job_id_for_output);
+        $job->print_job();
+    }
+
+    if($reset_all_jobs_for_analysis) {
+        reset_all_jobs_for_analysis($self, $reset_all_jobs_for_analysis)
+    }
+
+    if($remove_analysis_id) { remove_analysis_id($self, $remove_analysis_id); }
+    if($all_dead)           { $queen->register_all_workers_dead(); }
+    if($check_for_dead)     { $queen->check_for_dead_workers($self->{'meadow'}, 1); }
+
+    if ($kill_worker_id) {
+        my $worker = $queen->fetch_by_worker_id($kill_worker_id);
+        if( $self->{'meadow'}->responsible_for_worker($worker)
+        and not defined($worker->cause_of_death())) {
+
+            printf("KILL: %10d %35s %15s  %20s(%d) : ", 
+                $worker->worker_id, $worker->host, $worker->process_id, 
+                $worker->analysis->logic_name, $worker->analysis->dbID);
+
+            $self->{'meadow'}->kill_worker($worker);
+            $queen->register_worker_death($worker);
+        }
+    }
+
+    my $analysis = $self->{'dba'}->get_AnalysisAdaptor->fetch_by_logic_name($self->{'logic_name'});
+
+    if ($max_loops) { # positive $max_loop means limited, negative means unlimited
+
+        run_autonomously($self, $max_loops, $queen, $analysis);
+
+    } else {
+            # the output of several methods will look differently depending on $analysis being [un]defined
+
+        if($sync) {
+            $queen->synchronize_hive($analysis);
+        }
+        $queen->print_analysis_status($analysis) unless($self->{'no_analysis_stats'});
+        $queen->print_running_worker_status;
+
+        show_running_workers($self, $queen) if($show_worker_stats);
+        #show_failed_workers($self, $queen);
+
+        $queen->get_num_needed_workers($analysis); # apparently run not for the return value, but for the side-effects
+        $queen->get_remaining_jobs_show_hive_progress();
+
+        if($show_failed_jobs) {
+            print("===== failed jobs\n");
+            my $failed_job_list = $self->{'dba'}->get_AnalysisJobAdaptor->fetch_all_failed_jobs();
+
+            foreach my $job (@{$failed_job_list}) {
+                $job->print_job();
+            }
+        }
+    }
+
+    if ($self->{'monitor'}) {
+        $queen->monitor();
+    }
+
+    exit(0);
 }
-
-parse_conf($self, $conf_file);
-
-if($self->{'run'} or $self->{'run_job_id'}) {
-  $loopit = 1;
-  $self->{'max_loops'} = 1;
-} elsif ($loopit) {
-  $self->{'monitor'} = 1 if (!defined($self->{'monitor'}));
-}
-
-my $DBA;
-if($regfile) {
-  Bio::EnsEMBL::Registry->load_all($regfile);
-  $DBA = Bio::EnsEMBL::Registry->get_DBAdaptor($reg_alias, 'hive');
-} 
-elsif($url) {
-  $DBA = Bio::EnsEMBL::Hive::URLFactory->fetch($url);
-  die("Unable to connect to $url\n") unless($DBA);
-} else {
-  if($host)   { $self->{'db_conf'}->{'-host'}   = $host; }
-  if($port)   { $self->{'db_conf'}->{'-port'}   = $port; }
-  if($dbname) { $self->{'db_conf'}->{'-dbname'} = $dbname; }
-  if($user)   { $self->{'db_conf'}->{'-user'}   = $user; }
-  if($pass)   { $self->{'db_conf'}->{'-pass'}   = $pass; }
-
-
-  unless(defined($self->{'db_conf'}->{'-host'})
-         and defined($self->{'db_conf'}->{'-user'})
-         and defined($self->{'db_conf'}->{'-dbname'}))
-  {
-    print "\nERROR : must specify host, user, and database to connect\n\n";
-    usage();
-  }
-
-  # connect to database specified
-  $DBA = new Bio::EnsEMBL::Hive::DBSQL::DBAdaptor(%{$self->{'db_conf'}});
-  $url = $DBA->dbc->url;
-}
-$self->{'dba'} = $DBA;
-my $queen = $DBA->get_Queen;
-$self->{name} = $DBA->get_MetaContainer->list_value_by_key("name")->[0];
-
-if($self->{'reset_job_id'}) { $queen->reset_and_fetch_job_by_dbID($self->{'reset_job_id'}); };
-if($self->{'show_job_output'}) { print_job_output($self); }
-
-if($self->{'reset_all_jobs_for_analysis'}) {
-  reset_all_jobs_for_analysis($self, $self->{'reset_all_jobs_for_analysis'})
-}
-
-if($self->{'remove_analysis_id'}) { remove_analysis_id($self); }
-
-if($self->{'all_dead'}) { register_all_workers_dead($self, $queen); }
-if($self->{'check_for_dead'}) { check_for_dead_workers($self, $queen); }
-
-my $analysis = $DBA->get_AnalysisAdaptor->fetch_by_logic_name($self->{'logic_name'});
-
-if ($loopit) {
-
-  run_autonomously($self, $queen, $analysis);
-
-} elsif ($analysis) {
-
-  my $stats = $analysis->stats;
-  if($sync) {
-    $queen->synchronize_AnalysisStats($stats);
-    $queen->check_blocking_control_rules_for_AnalysisStats($stats);
-  }
-  $stats->print_stats($self->{'verbose_stats'});
-  $queen->print_running_worker_status;
-  $queen->get_num_needed_workers($analysis);
-  $queen->get_hive_progress();
-
-} elsif ($self->{'kill_worker_id'}) {
-
-  kill_worker($self, $queen);
-
-} else { 
-
-  $queen->synchronize_hive() if($sync);
-  $queen->print_analysis_status unless($self->{'no_analysis_stats'});
-
-  $queen->print_running_worker_status;
-
-  show_running_workers($self) if($self->{'show_worker_stats'});
-
-  #show_failed_workers($self);
-
-  $queen->get_num_needed_workers();
-
-  $queen->get_hive_progress();
-  
-  show_failed_jobs($self) if($self->{'show_failed_jobs'});
-
-}
-
-if ($self->{'monitor'}) {
-  $queen->monitor();
-}
-
-exit(0);
-
 
 #######################
 #
@@ -197,47 +238,23 @@ exit(0);
 #######################
 
 sub usage {
-  print "beekeeper.pl [options]\n";
-  print "  -help                  : print this help\n";
-  print "  -regfile <path>        : path to a Registry configuration file\n";
-  print "  -regname <string>      : species/alias name for the Hive DBAdaptor\n";
-  print "  -url <url string>      : url defining where hive database is located\n";
-  print "  -conf <path>           : config file describing db connection\n";
-  print "  -dbhost <machine>      : mysql database host <machine>\n";
-  print "  -dbport <port#>        : mysql port number\n";
-  print "  -dbname <name>         : mysql database <name>\n";
-  print "  -dbuser <name>         : mysql connection user <name>\n";
-  print "  -dbpass <pass>         : mysql connection password\n";
-  print "  -batch_size <num>      : #jobs a worker can claim at once\n";
-  print "  -jlimit <num>          : #jobs to run before worker can die naturally\n";
-  print "  -dead                  : clean overdue jobs for resubmission\n";
-  print "  -overdue <min>         : worker overdue minutes checking if dead\n";
-  print "  -alldead               : all outstanding workers\n";
-  print "  -run                   : run 1 iteration of automation loop\n";
-  print "  -run_job_id <job_id>   : run 1 iteration for this job_id\n";
-  print "  -loop                  : run autonomously, loops and sleeps\n";
-  print "  -local                 : run jobs on local CPU (fork)\n";
-  print "  -lsf                   : run jobs on LSF compute resource (bsub)\n";
-  print "  -lsf_options <string>  : passes <string> to LSF bsub command as <options>\n";
-  print "  -no_pend               : don't adjust needed workers by pending workers\n";
-  print "  -sleep <num>           : when looping, sleep <num> minutes (default 3min)\n";
-  print "  -logic_name <string>   : restrict the pipeline stat/runs to this analysis logic_name\n";
-  print "  -wlimit <num>          : max # workers to create per loop\n";
-  print "  -no_analysis_stats     : don't show status of each analysis\n";
-  print "  -worker_stats          : show status of each running worker\n";
-  print "  -failed_jobs           : show all failed jobs\n";
-  print "  -reset_job_id <num>    : reset a job back to READY so it can be rerun\n";
-  print "  -reset_all_jobs_for_analysis <logic_name>\n";
-  print "                         : reset jobs back to READY so it can be rerun\n";  
-  print "beekeeper.pl v1.9\n";
-  
-  exit(1);  
+    my $retvalue = shift @_;
+
+    if(`which perldoc`) {
+        system('perldoc', $0);
+    } else {
+        foreach my $line (<DATA>) {
+            if($line!~s/\=\w+\s?//) {
+                $line = "\t$line";
+            }
+            print $line;
+        }
+    }
+    exit($retvalue);
 }
 
-
 sub parse_conf {
-  my $self      = shift;
-  my $conf_file = shift;
+    my ($self, $conf_file) = @_;
 
   if($conf_file and (-e $conf_file)) {
     #read configuration file from disk
@@ -253,352 +270,247 @@ sub parse_conf {
 }
 
 
-sub kill_worker {
-  my $self = shift;
-  my $queen = shift;
+# --------------[worker reports]--------------------
 
-  my $worker = $queen->_fetch_by_hive_id($self->{'kill_worker_id'});
-  return unless($worker->beekeeper eq $self->{'beekeeper_type'});
-  return if(defined($worker->cause_of_death));
+sub show_given_workers {
+    my ($self, $worker_list, $verbose_stats) = @_;
 
-  printf("KILL: %10d %35s %15s  %20s(%d) : ", 
-	   $worker->hive_id, $worker->host, $worker->process_id, 
-	   $worker->analysis->logic_name, $worker->analysis->dbID);
-
-  if(($self->{'beekeeper_type'} eq 'LSF') and ($self->lsf_check_worker($worker))) {
-    my $cmd = 'bkill ' . $worker->process_id;
-    system($cmd);
-  }
-
-  if(($self->{'beekeeper_type'} eq 'LOCAL') and 
-     ($worker->host eq hostname) and
-     ($self->local_check_worker($worker))) 
-  {
-    my $cmd = 'kill -9 ' . $worker->process_id;
-    system($cmd);
-  }
-
-  $queen->register_worker_death($worker);
-}
-
-
-sub check_for_dead_workers {
-  my $self = shift;
-  my $queen = shift;
-
-  print("===== check for dead workers\n");
-  my $overdueWorkers = $queen->fetch_overdue_workers($self->{'overdue_limit'}*60);
-  print(scalar(@{$overdueWorkers}), " overdue workers\n");
-  foreach my $worker (@{$overdueWorkers}) {
-    next unless($worker->beekeeper eq $self->{'beekeeper_type'});
-    next if(($self->{'beekeeper_type'} eq 'LOCAL') and
-	    ($worker->host ne hostname));
-
-    printf("%10d %35s %15s  %20s(%d) : ", 
-	   $worker->hive_id, $worker->host, $worker->process_id, 
-	   $worker->analysis->logic_name, $worker->analysis->dbID);
-
-    my $is_alive;
-    $is_alive = $self->lsf_check_worker($worker) if($self->{'beekeeper_type'} eq 'LSF');
-    $is_alive = $self->local_check_worker($worker) if($self->{'beekeeper_type'} eq 'LOCAL');
-
-    if($is_alive) {
-      print("ALIVE and running\n");
-    } else {
-      print("worker is missing => it DIED!!\n");
-      $queen->register_worker_death($worker);
+    foreach my $worker (@{$worker_list}) {
+        printf("%10d %35s(%5d) %5s:%15s %15s (%s)\n", 
+            $worker->worker_id,
+            $worker->analysis->logic_name,
+            $worker->analysis->dbID,
+            $worker->beekeeper,
+            $worker->process_id, 
+            $worker->host,
+            $worker->last_check_in);
+        printf("%s\n", $worker->output_dir) if ($verbose_stats);
     }
-
-  }
-}
-
-
-sub lsf_check_worker {
-  my $self = shift;
-  my $worker = shift;
-
-  my $cmd = "bjobs ". $worker->process_id . " 2>&1 | grep -v 'not found' | grep -v JOBID | grep -v EXIT";
-  #print("  check worker with : $cmd\n");
-  my $is_alive = qx/$cmd/;
-
-  return $is_alive;
-}
-
-
-sub local_check_worker {
-  my $self = shift;
-  my $worker = shift;
-
-  my $cmd = "ps ". $worker->process_id . " 2>&1 | grep " . $worker->process_id;
-  my $is_alive = qx/$cmd/;
-  return $is_alive;
-}
-
-
-sub register_all_workers_dead {
-  my $self = shift;
-  my $queen = shift;
-
-  my $overdueWorkers = $queen->fetch_overdue_workers(0);
-  foreach my $worker (@{$overdueWorkers}) {
-    $queen->register_worker_death($worker);
-  }
-}
-
-
-sub show_overdue_workers {
-  my $self = shift;
-  my $queen = shift;
-
-  print("===== overdue workers\n");
-  my $overdueWorkers = $queen->fetch_overdue_workers($self->{'overdue_limit'}*60);
-  foreach my $worker (@{$overdueWorkers}) {
-    printf("%10d %35s %15s  %20s(%d)\n", $worker->hive_id,$worker->host,$worker->process_id, $worker->analysis->logic_name, $worker->analysis->dbID);
-  }
 }
 
 sub show_running_workers {
-  my $self = shift;
-  my $queen = $self->{'dba'}->get_Queen;
+    my ($self, $queen) = @_;
 
-  print("===== running workers\n");
-  my $worker_list = $queen->fetch_overdue_workers(0);
-  foreach my $worker (@{$worker_list}) {
-    printf("%10d %35s(%5d) %5s:%15s %15s (%s)\n", 
-       $worker->hive_id,
-       $worker->analysis->logic_name,
-       $worker->analysis->dbID,
-       $worker->beekeeper,
-       $worker->process_id, 
-       $worker->host,
-       $worker->last_check_in);
-    printf("%s\n", $worker->output_dir) if ($self->{'verbose_stats'});
-  }
+    print("===== running workers\n");
+    show_given_workers($self, $queen->fetch_overdue_workers(0), $queen->{'verbose_stats'});
 }
 
+sub show_failed_workers {  # does not seem to be used
+    my ($self, $queen) = @_;
 
-sub show_failed_jobs {
-  my $self = shift;
-
-  print("===== failed jobs\n");
-  my $failed_job_list = $self->{'dba'}->get_AnalysisJobAdaptor->fetch_all_failed_jobs;
-
-  foreach my $job (@{$failed_job_list}) {
-    my $analysis = $self->{'dba'}->get_AnalysisAdaptor->fetch_by_dbID($job->analysis_id);
-    printf("job_id=%d %35s(%5d) input_id='%s'\n", 
-       $job->dbID,
-       $analysis->logic_name,
-       $analysis->dbID,
-       $job->input_id);
-  }
+    print("===== CRASHED workers\n");
+    show_given_workers($self, $queen->fetch_failed_workers(), $queen->{'verbose_stats'});
 }
 
+sub generate_worker_cmd {
+    my ($self) = @_;
 
-sub print_job_output {
-  my $self = shift;
+    my $worker_cmd = 'runWorker.pl';   # -bk '. $self->{'meadow'}->type();
+    if ($self->{'run_job_id'}) {
+        $worker_cmd .= " -job_id ".$self->{'run_job_id'};
+    } else {
+        $worker_cmd .= ((defined $self->{'job_limit'})  ? (' -limit '     .$self->{'job_limit'})  : '')
+                    .  ((defined $self->{'batch_size'}) ? (' -batch_size '.$self->{'batch_size'}) : '')
+                    .  ((defined $self->{'lifespan'})   ? (' -lifespan '.$self->{'lifespan'}) : '')
+                    .  ((defined $self->{'logic_name'}) ? (' -logic_name '.$self->{'logic_name'}) : '')
+                    .  ((defined $self->{'maximise_concurrency'}) ? ' -maximise_concurrency 1' : '');
+    }
 
-  printf("===== job output\n");
-  my $job = $self->{'dba'}->get_AnalysisJobAdaptor->fetch_by_dbID($self->{'show_job_output'});
+    if ($self->{'reg_file'}) {
+        $worker_cmd .= ' -regfile '. $self->{'reg_file'} .' -regname '. $self->{'reg_name'};
+    } else {
+        $worker_cmd .= ' -url '. $self->{'url'};
+    }
 
-  my $analysis = $self->{'dba'}->get_AnalysisAdaptor->fetch_by_dbID($job->analysis_id);
-  printf("job_id=%d %35s(%5d) input_id='%s'\n", 
-     $job->dbID,
-     $analysis->logic_name,
-     $analysis->dbID,
-     $job->input_id);
-}
-
-
-sub show_failed_workers {
-  my $self = shift;
-  my $queen = $self->{'dba'}->get_Queen;
-
-  print("===== CRASHED workers\n");
-  my $worker_list = $queen->fetch_failed_workers;
-  foreach my $worker (@{$worker_list}) {
-    printf("%10d %35s(%5d) %5s:%15s %15s (%s)\n", 
-       $worker->hive_id,
-       $worker->analysis->logic_name,
-       $worker->analysis->dbID,
-       $worker->beekeeper,
-       $worker->process_id, 
-       $worker->host,
-       $worker->last_check_in);
-  }
+    return $worker_cmd;
 }
 
 sub run_autonomously {
-  my $self = shift;
-  my $queen = shift;
-  my $analysis = shift;
+    my ($self, $max_loops, $queen, $this_analysis) = @_;
 
-  unless(`runWorker.pl`) {
-    print("can't find runWorker.pl script.  Please make sure it's in your path\n");
-    exit(1);
-  }
-
-  my ($cmd, $worker_cmd);
-  my $loopCount=1;
-  while($loopit) {
-    print("\n=======lsf_beekeeper loop ** $loopCount **==========\n");
-
-    check_for_dead_workers($self, $queen);
-
-    $queen->{'verbose_stats'} = $self->{'verbose_stats'};
-    $queen->print_analysis_status unless($self->{'no_analysis_stats'});
-
-    $queen->print_running_worker_status;
-    #show_failed_workers($self);
-    
-    my $runCount = $queen->get_num_running_workers();
-    my $load     = $queen->get_hive_current_load();
-    my $count    = $queen->get_num_needed_workers($analysis);
-    my $lsf_pending_count = 0;
-
-    if($self->{'beekeeper_type'} eq 'LSF') {
-      $lsf_pending_count = $self->get_lsf_pending_count($self->{name});
-      $count = $count - $lsf_pending_count;
+    unless(`runWorker.pl`) {
+        print("can't find runWorker.pl script.  Please make sure it's in your path\n");
+        exit(1);
     }
 
-    if($load==0 and $count==0 and $runCount==0 and $lsf_pending_count==0) {
-      #nothing running and nothing todo => do hard resync
-      print("*** nothing is happening => do a hard resync\n");
-      if($analysis) {
-        my $stats = $analysis->stats;
-        $queen->synchronize_AnalysisStats($stats);
-        $queen->check_blocking_control_rules_for_AnalysisStats($stats);
-      } else {
-        $queen->synchronize_hive();
-      }
-      $count = $queen->get_num_needed_workers($analysis);
-      my $num_failed_analyses = $queen->get_num_failed_analyses($analysis);
-      if ($count==0 && $analysis) {
-        if (!$num_failed_analyses) {
-          printf("Nothing left to do for analysis ".$analysis->logic_name.". DONE!!\n\n");
-        }
-        $loopit=0;
-      } elsif ($count == 0) {
-        if (!$num_failed_analyses) {
-          print "Nothing left to do. DONE!!\n\n";
-        }
-        $loopit=0;
-      }
-    }
+    my $worker_cmd = generate_worker_cmd($self);
 
-    $count = $worker_limit if($count>$worker_limit);    
-    my $logic_name = $self->{'logic_name'};
-    
-    if ($count>0 or $self->{'run_job_id'}) {
-      print("need $count workers\n");
-      $worker_cmd = "runWorker.pl -bk ". $self->{'beekeeper_type'};
-      if ($self->{'run_job_id'}) {
-        $worker_cmd .= " -job_id ".$self->{'run_job_id'};
-        $count = 1; # Avoid to run more than 1 worker! 
-      } else {
-        $worker_cmd .= " -limit $job_limit" if(defined $job_limit);
-        $worker_cmd .= " -batch_size $batch_size" if(defined $batch_size);
-        $worker_cmd .= " -logic_name $logic_name" if(defined $logic_name);
-      }
+        # pre-hash the resource_class xparams for future use:
+    my %rc_xparams = map { ($_->rc_id => $_->parameters) }
+        @{ $self->{'dba'}->get_ResourceDescriptionAdaptor->fetch_all_by_meadowtype($self->{'meadow'}->type()) };
 
-      if ($regfile) {
-        $worker_cmd .= " -regfile $regfile -regname $reg_alias";
-      } else {
-        $worker_cmd .= " -url $url";
-      }
-      
-      $cmd = undef;
-      if ($self->{'beekeeper_type'} eq 'LSF') {
-        my $lsf_job_name = "";
-        if ($self->{name}) {
-          $lsf_job_name = $self->{name}. "-";
+    my $iteration=0;
+    my $num_of_remaining_jobs=0;
+    my $failed_analyses=0;
+    my $order = $self->{'maximise_concurrency'}*2-1;
+    do {
+        if($iteration++) {
+            $queen->monitor();
+            $self->{'dba'}->dbc->disconnect_if_idle;
+            printf("sleep %.2f minutes. Next loop at %s\n", $self->{'sleep_minutes'}, scalar localtime(time+$self->{'sleep_minutes'}*60));
+            sleep($self->{'sleep_minutes'}*60);  
         }
-        if ($count>1) {
-          $lsf_job_name .= "HL$loopCount\[1-$count\]";
+
+        print("\n======= beekeeper loop ** $iteration **==========\n");
+
+        $queen->check_for_dead_workers($self->{'meadow'}, 0);
+
+        $queen->print_analysis_status unless($self->{'no_analysis_stats'});
+        $queen->print_running_worker_status;
+        #show_failed_workers($self, $queen);
+
+        my ($worker_count, $rc_hash) = $queen->get_needed_workers_resync_if_necessary($self->{'meadow'}, $this_analysis);
+
+            # apply various technical and self-imposed limits:
+        my $worker_quota = $self->{'meadow'}->limit_workers($worker_count);
+
+        if($worker_quota) {
+            foreach my $rc_id (sort {$order*($rc_hash->{$a}<=>$rc_hash->{$b})} keys %$rc_hash) {
+                my $this_rc_worker_count = ($worker_quota < $rc_hash->{$rc_id})
+                    ? $worker_quota
+                    : $rc_hash->{$rc_id};
+
+                print "Submitting $this_rc_worker_count workers (rc_id=$rc_id) to ".$self->{'meadow'}->type()."\n";
+
+                $self->{'meadow'}->submit_workers($iteration, $worker_cmd, $this_rc_worker_count, $rc_id, $rc_xparams{$rc_id} || '');
+
+                $worker_quota -= $this_rc_worker_count;
+            }
         } else {
-          $lsf_job_name .= "HL$loopCount";
+            print "Not submitting any workers this iteration\n";
         }
-        $cmd = "bsub -o /dev/null -J\"$lsf_job_name\"";
-        $cmd .= " " . $self->{'lsf_options'} if ($self->{'lsf_options'});
-        $cmd .= " ".$worker_cmd;
 
-      } elsif (($self->{'beekeeper_type'} eq 'LOCAL')
-          and ($self->get_local_running_count() < $self->{'local_cpus'})) {
-        $cmd = "$worker_cmd &";
-      }
+        $failed_analyses       = $queen->get_num_failed_analyses($this_analysis);
+        $num_of_remaining_jobs = $queen->get_remaining_jobs_show_hive_progress();
 
-      if($cmd) {
-        print("$cmd\n");
-        system($cmd);
-      }
-    }
+    } while(!$failed_analyses and $num_of_remaining_jobs and $iteration!=$max_loops);
 
-    $queen->get_hive_progress();
+    print "The Beekeeper has stopped because ".(
+          $failed_analyses ? "there were $failed_analyses failed analyses"
+        : !$num_of_remaining_jobs ? "there is nothing left to do"
+        : "the number of loops was limited by $max_loops and this limit expired"
+    )."\n";
 
-    last if($self->{'max_loops'}>0 and ($loopCount >= $self->{'max_loops'}));
-  
-    $DBA->dbc->disconnect_if_idle;
-    
-    if($loopit) {
-      $queen->monitor();
-      printf("sleep %1.2f minutes. Next loop at %s\n", $sleep_time, scalar localtime(time+$sleep_time*60));
-      sleep($sleep_time*60);  
-      $loopCount++;
-    }
-  }
-  printf("dbc %d disconnect cycles\n", $DBA->dbc->disconnect_count);
+    printf("dbc %d disconnect cycles\n", $self->{'dba'}->dbc->disconnect_count);
 }
-
-
-sub get_lsf_pending_count {
-  my ($self, $name) = @_;
-
-  return 0 if($self->{'no_pend_adjust'});
-
-  my $cmd;
-  if ($name) {
-    $cmd = "bjobs -w | grep '$name-HL' | grep -c PEND";
-  } else {
-    $cmd = "bjobs -w | grep -c PEND";
-  }
-  my $pend_count = qx/$cmd/;
-  chomp($pend_count);
-
-  print("$pend_count workers queued on LSF but not running\n");
-
-  return $pend_count;
-}
-
-
-sub get_local_running_count {
-  my $self = shift;
-
-  my $cmd = "ps -a | grep runWorker | grep -v grep | wc -l";
-  my $run_count = qx/$cmd/;
-  chomp($run_count);
-  print("$run_count workers running locally\n");
-  return $run_count;
-}
-
 
 sub reset_all_jobs_for_analysis {
-  my ($self, $logic_name) = @_;
+    my ($self, $logic_name) = @_;
   
-  my $analysis = $self->{'dba'}->get_AnalysisAdaptor->
-                   fetch_by_logic_name($logic_name); 
+  my $analysis = $self->{'dba'}->get_AnalysisAdaptor->fetch_by_logic_name($logic_name)
+      || die( "Cannot AnalysisAdaptor->fetch_by_logic_name($logic_name)"); 
   
   $self->{'dba'}->get_AnalysisJobAdaptor->reset_all_jobs_for_analysis_id($analysis->dbID); 
-
   $self->{'dba'}->get_Queen->synchronize_AnalysisStats($analysis->stats);
 }
 
 sub remove_analysis_id {
-  my $self = shift;
-  
-  require Bio::EnsEMBL::DBSQL::AnalysisAdaptor or die "$!";
+    my ($self, $analysis_id) = @_;
 
-  my $analysis = $self->{'dba'}->get_AnalysisAdaptor->
-                   fetch_by_dbID($self->{'remove_analysis_id'}); 
-  
-  $self->{'dba'}->get_AnalysisJobAdaptor->remove_analysis_id($analysis->dbID); 
-  $self->{'dba'}->get_AnalysisAdaptor->remove($analysis); 
+    require Bio::EnsEMBL::DBSQL::AnalysisAdaptor or die "$!";
+
+    my $analysis = $self->{'dba'}->get_AnalysisAdaptor->fetch_by_dbID($analysis_id); 
+
+    $self->{'dba'}->get_AnalysisJobAdaptor->remove_analysis_id($analysis->dbID); 
+    $self->{'dba'}->get_AnalysisAdaptor->remove($analysis); 
 }
+
+__DATA__
+
+=pod
+
+=head1 NAME
+
+    beekeeper.pl
+
+=head1 DESCRIPTION
+
+The Beekeeper is in charge of interfacing between the Queen and a compute resource or 'compute farm'.
+Its job is to initialize/sync the eHive database (via the Queen), query the Queen if it needs any workers
+and to send the requested number of workers to open machines via the runWorker.pl script.
+
+It is also responsible for interfacing with the Queen to identify workers which died
+unexpectantly so that she can free the dead workers and reclaim unfinished jobs.
+
+=head1 USAGE EXAMPLES
+
+    # Usually run after the pipeline has been created to calculate the internal statistics necessary for eHive functioning
+beekeeper.pl --host=hostname --port=3306 --user=username --password=secret --database=ehive_dbname -sync
+
+    # An alternative way of doing the same thing
+beekeeper.pl -url mysql://username:secret@hostname:port/ehive_dbname -sync
+
+    # Do not run any additional Workers, just check for the current status of the pipeline:
+beekeeper.pl -url mysql://username:secret@hostname:port/ehive_dbname
+
+    # Run the pipeline in automatic mode (-loop), run all the workers locally (-local) and allow for 3 parallel workers (-local_cpus 3)
+beekeeper.pl -url mysql://username:secret@hostname:port/long_mult_test -local -local_cpus 3 -loop
+
+    # Run in automatic mode, but only restrict to running the 'fast_blast' analysis
+beekeeper.pl -url mysql://username:secret@hostname:port/long_mult_test -logic_name fast_blast -loop
+
+    # Restrict the normal execution to one iteration only - can be used for testing a newly set up pipeline
+beekeeper.pl -url mysql://username:secret@hostname:port/long_mult_test -run
+
+    # Reset all 'buggy_analysis' jobs to 'READY' state, so that they can be run again
+beekeeper.pl -url mysql://username:secret@hostname:port/long_mult_test -reset_all_jobs_for_analysis buggy_analysis
+
+    # Do a cleanup: find and bury dead workers, reclaim their jobs
+beekeeper.pl -url mysql://username:secret@hostname:port/long_mult_test -dead
+
+=head1 OPTIONS
+
+=head2 Connection parameters
+
+  -conf <path>           : config file describing db connection
+  -regfile <path>        : path to a Registry configuration file
+  -regname <string>      : species/alias name for the Hive DBAdaptor
+  -url <url string>      : url defining where hive database is located
+  -host <machine>        : mysql database host <machine>
+  -port <port#>          : mysql port number
+  -user <name>           : mysql connection user <name>
+  -password <pass>       : mysql connection password <pass>
+  -database <name>       : mysql database <name>
+
+=head2 Looping control
+
+  -loop                  : run autonomously, loops and sleeps
+  -max_loops <num>       : perform max this # of loops in autonomous mode
+  -run                   : run 1 iteration of automation loop
+  -run_job_id <job_id>   : run 1 iteration for this job_id
+  -sleep <num>           : when looping, sleep <num> minutes (default 2min)
+
+=head2 Meadow control
+
+  -local                    : run jobs on local CPU (fork)
+  -local_cpus <num>         : max # workers to be running locally
+  -wlimit <num>             : max # workers to create per loop
+  -no_pend                  : don't adjust needed workers by pending workers
+  -meadow_options <string>  : passes <string> to the Meadow submission command as <options> (formerly lsf_options)
+
+=head2 Worker control
+
+  -jlimit <num>           : #jobs to run before worker can die naturally
+  -batch_size <num>       : #jobs a worker can claim at once
+  -lifespan <num>         : lifespan limit for each worker
+  -logic_name <string>    : restrict the pipeline stat/runs to this analysis logic_name
+  -maximise_concurrency 1 : try to run more different analyses at the same time
+
+=head2 Other commands/options
+
+  -help                  : print this help
+  -dead                  : clean dead jobs for resubmission
+  -alldead               : all outstanding workers
+  -no_analysis_stats     : don't show status of each analysis
+  -worker_stats          : show status of each running worker
+  -failed_jobs           : show all failed jobs
+  -reset_job_id <num>    : reset a job back to READY so it can be rerun
+  -reset_all_jobs_for_analysis <logic_name>
+                         : reset jobs back to READY so it can be rerun
+
+=head1 CONTACT
+
+  Please contact ehive-users@ebi.ac.uk mailing list with questions/suggestions.
+
+=cut
+

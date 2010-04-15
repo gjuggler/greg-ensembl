@@ -9,87 +9,76 @@
 
 Bio::EnsEMBL::Hive::RunnableDB::SystemCmd
 
-=cut
-
-=head1 SYNOPSIS
-
-my $db      = Bio::EnsEMBL::DBAdaptor->new($locator);
-my $runDB   = Bio::EnsEMBL::Hive::RunnableDB::SystemCmd->new ( 
-                                                    -db      => $db,
-                                                    -input_id   => $input_id
-                                                    -analysis   => $analysis );
-$runDB->fetch_input(); #reads from DB
-$runDB->run();
-$runDB->output();
-$runDB->write_output(); #writes to DB
-
-=cut
-
 =head1 DESCRIPTION
 
-This object is a very simple module.  It takes the input_id
-and runs it as a system command.
+This RunnableDB module acts as a wrapper for shell-level command lines.
 
-=cut
+It supports three different modes:
+
+1) Command line is stored in the 'input_id' field of the analysis_job table.
+    (only works with command lines shorter than 255 bytes).
+    Most people tend to use it not realizing there are other possiblities.
+
+2) Command line is stored in the input_id() or parameters() as the value corresponding to the 'cmd' key.
+    A better way as it also allows other parameters to be passed in.
+
+3) A numeric key to the analysis_data table (where the actual command line is stored)
+    is kept in the input_id() or parameters() as the value corresponding to the 'did' key. This allows to overcome the 255 byte limit.
+    Well, if you REALLY couldn't fit your command line into 250~ish bytes, are you sure you can manage big pipelines?
+    Just joking :)
 
 =head1 CONTACT
 
-jessica@ebi.ac.uk
+  Please contact ehive-users@ebi.ac.uk mailing list with questions/suggestions.
 
 =cut
 
-=head1 APPENDIX
-
-The rest of the documentation details each of the object methods. 
-Internal methods are usually preceded with a _
-
-=cut
 
 package Bio::EnsEMBL::Hive::RunnableDB::SystemCmd;
 
 use strict;
 use Bio::EnsEMBL::Hive::DBSQL::AnalysisDataAdaptor;
 
-use Bio::EnsEMBL::Hive::Process;
-our @ISA = qw(Bio::EnsEMBL::Hive::Process);
+use base ('Bio::EnsEMBL::Hive::ProcessWithParams');
 
-
-##############################################################
-#
-# override inherited fetch_input, run, write_output methods
-# so that nothing is done
-#
-##############################################################
-
-sub fetch_input {
-  my $self = shift;
-
-  print("input_id\n  ", $self->input_id,"\n");
-  $self->{'cmd'} = $self->input_id;
-
-  if($self->input_id =~ /^{/) {
-    my $input_hash = eval($self->input_id);
-    if($input_hash) {
-      $self->{'cmd'} = $input_hash->{'cmd'} if($input_hash->{'cmd'});
-      if($input_hash->{'did'}) {
-        $self->{'cmd'} = $self->db->get_AnalysisDataAdaptor->fetch_by_dbID($input_hash->{'did'});
-      }
-    }
-  }
-  print("cmd\n  ", $self->{'cmd'},"\n");
-  return 1;
+sub strict_hash_format {    # we must allow non-strict hash format
+    return 0;
 }
 
-sub run
-{
-  my $self = shift;
-  system($self->{'cmd'}) == 0 or die "system ".$self->{'cmd'}." failed: $?";
-  return 1;
+sub fetch_input {
+    my $self = shift;
+
+        # First, FIND the command line
+        #
+    my $cmd = ($self->input_id()!~/^\{.*\}$/)
+            ? $self->input_id()                 # assume the command line is given in input_id
+            : $self->param('cmd')               # or defined as a hash value (in input_id or parameters)
+    or $self->param('did')                      # or referred to the analysis_data table where longer strings can be stored
+            ? $self->db->get_AnalysisDataAdaptor->fetch_by_dbID( $self->param('did') )
+            : die "Could not find the command defined in input_id(), param('cmd') or param('did')";
+
+        # Store the value with parameter substitutions for the actual execution:
+        #
+    $self->param('cmd', $self->param_substitute($cmd));
+}
+
+sub run {
+    my $self = shift;
+
+    my $cmd = $self->param('cmd');
+
+    if(my $return_value = system($cmd)) {
+        $return_value >>= 8;
+        die "system( $cmd ) failed: $return_value";
+    }
+
+    return 1;
 }
 
 sub write_output {
-  my $self = shift;
-  return 1;
+    my $self = shift;
+
+    return 1;
 }
 
 1;

@@ -9,24 +9,15 @@
 
   Bio::EnsEMBL::Hive::Extensions
 
-=cut
-
 =head1 SYNOPSIS
 
   Object categories to extend the functionality of existing classes
 
-=cut
-
 =head1 DESCRIPTION
-
-=cut
 
 =head1 CONTACT
 
-  Contact Jessica Severin on EnsEMBL::Hive implemetation/design detail: jessica@ebi.ac.uk
-  Contact Ewan Birney on EnsEMBL in general: birney@sanger.ac.uk
-
-=cut
+  Please contact ehive-users@ebi.ac.uk mailing list with questions/suggestions.
 
 =head1 APPENDIX
 
@@ -34,6 +25,7 @@
   Internal methods are usually preceded with a _
 
 =cut
+
 
 use strict;
 
@@ -193,6 +185,35 @@ sub Bio::EnsEMBL::Analysis::stats
   return $stats;
 }
 
+=head2 Bio::EnsEMBL::Analysis::data
+
+  Arg [1]    : none
+  Example    : $stats = $analysis->data;
+  Description: returns the analysis data associated with this Analysis
+               object. The data is stored in the analysis_data table. 
+               Does not cache, but pull from database by using the
+               Analysis objects adaptor->db.
+  Returntype : String 
+  Exceptions : none
+  Caller     : general
+
+=cut
+
+sub Bio::EnsEMBL::Analysis::data
+{
+  my $self = shift;
+  my $data = "";
+
+  my $analysis_data_id = eval($self->parameters)->{'analysis_data_id'};  
+  unless ( $analysis_data_id) {  
+    warning( " analysis_data_id undefined for analysis " .$self->logic_name. " in analysis_data table.") ; 
+  }else {  
+    $data  = $self->adaptor->db->get_AnalysisDataAdaptor->fetch_by_dbID($analysis_data_id) ; 
+  }
+  return $data;
+}
+
+
 #######################################
 # extensions to
 # Bio::EnsEMBL::Pipeline::RunnableDB
@@ -216,6 +237,36 @@ sub Bio::EnsEMBL::Analysis::RunnableDB::debug {
   $self->{'_debug'}=0 unless(defined($self->{'_debug'}));  
   return $self->{'_debug'};
 }
+
+sub Bio::EnsEMBL::Analysis::RunnableDB::analyze_tables {
+  my $self = shift;  
+
+  my $starttime = time();
+
+  my $gdb = $self->{'comparaDBA'}->get_GenomeDBAdaptor;   
+
+  foreach my $genome_db ( @{$gdb->fetch_all} ) { 
+    my $gdb_id = $genome_db->dbID;
+    my $species_name = lc($genome_db->name);
+    $species_name =~ s/\ /\_/g;
+    my $tbl_name = "peptide_align_feature"."_"."$species_name"."_"."$gdb_id";
+    # Re-enable the keys before starting the queries
+    my $sql = "ALTER TABLE $tbl_name ENABLE KEYS";
+  
+    print("$sql\n") if ($self->debug);
+    my $sth = $self->dbc->prepare($sql);
+    $sth->execute();
+    $sql = "ANALYZE TABLE $tbl_name";
+    $sth = $self->dbc->prepare($sql);
+    $sth->execute();
+    printf("  %1.3f secs to ANALYZE TABLE\n", (time()-$starttime));
+  }
+}
+ 
+
+
+
+
 
 #######################################
 # top level functions

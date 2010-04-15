@@ -3,8 +3,8 @@
 # Copyright Team Ensembl
 # You may distribute this package under the same terms as perl itself
 
-Contact Jessica Severin on implemetation/design detail: jessica@ebi.ac.uk
-Contact Ewan Birney on EnsEMBL in general: birney@sanger.ac.uk
+Contact:
+  Please contact ehive-users@ebi.ac.uk mailing list with questions/suggestions.
 
 Summary:
   This is a distributed processing system based on 'autonomous agents' and
@@ -12,9 +12,160 @@ Summary:
   data-flow graphs and block-branch diagrams which should allow it to codify
   any program, algorithm, or parallel processing job control system.  It is
   not bound to any processing 'farm' system and can be adapted to any GRID.
-  It builds on the design of the Ensembl Pipeline and presently uses 
-  Bio::EnsEMBL::Pipeline::RunnableDB perl wrapper objects as nodes/blocks in 
+  It builds on the design of the Ensembl Pipeline/Analysis and presently uses 
+  Bio::EnsEMBL::Analysis::RunnableDB perl wrapper objects as nodes/blocks in 
   the graphs but could be adapted more generally.
+
+
+26 March, 2010 : Leo Gordon
+
+* branch_code column in analysis_job table is unnecessary and was removed
+
+    Branching using branch_codes is a very important and powerful mechanism,
+    but it is completely defined in dataflow_rule table.
+
+    branch_code() WAS at some point a getter/setter method in AnalysisJob,
+    but it was only used to pass parameters around in the code (now obsolete),
+    and this information was never reflected in the database,
+    so analysis_job.branch_code was always 1 no matter what.
+
+* stringification using Data::Dumper with parameters was moved out of init_pipelines and JobFactory.pm
+    and is now in a separate Hive::Utils.pm module (Hive::Utils::stringify can be imported, inherited or just called).
+    It is transparently called by AnalysisJobAdaptor when creating jobs which allows
+    to pass input_ids as hashrefs and not strings. Magic happens on the adaptor level.
+
+* Queen->flow_output_job() method has been made obsolete and removed from the Queen.pm
+    Dataflow is now completely handled by Process->dataflow_output_id() method,
+    which now handles arrays/fans of jobs and semaphores (later on this).
+    Please always use dataflow_output_id() if you need to create a new job or fan of jobs,
+    as this is the top level method for doing exactly this.
+    Only call the naked adaptor's method if you know what you're doing.
+
+* JobFactory module has been upgraded (simplified) to work through dataflow mechanism.
+    It no longer can create analyses, but that's not necessary as it should be init_pipeline's job.
+    Family pipeline has been patched to work with the new JobFactory module.
+
+* branched dataflow was going to meet semaphores at some point, the time is near.
+    dataflow_output_id() is now semaphore aware, and can propagate semaphores through the control graph.
+    A new fan is hooked on its own semaphore; when the semaphored_job is not specified we do semaphore propagation.
+    Inability to create a job in the fan is tracked and the corresponding semaphore_count decreased
+    (so users do not have to worry about it).
+
+* LongMult examples have been patched to work with the new dataflow_output_id() method.
+
+* init_pipeline.pl is now more flexible and can understand simplified syntax for dataflow/control rules
+
+
+22 March, 2010 : Leo Gordon
+
+* Bio::EnsEMBL::Hive::ProcessWithParams is the preferred way of parsing/passing around the parameters.
+    Module-wide, pipeline-wide, analysis-wide and job-wide parameters and their precedence.
+
+* A new init_pipeline.pl script to create and populate pipelines from a perl hash structure.
+    Tested with ensembl-hive/docs/long_mult_pipeline.conf and ensembl-compara/scripts/family/family_pipeline.conf . It works.
+
+* Bio::EnsEMBL::Hive::RunnableDB::SystemCmd now supports parameter substitution via #param_name# patterns.
+    See usage examples in the ensembl-compara/scripts/family/family_pipeline.conf
+
+* There is a new Bio::EnsEMBL::Hive::RunnableDB::SqlCmd that does that it says,
+    and also supports parameter substitution via #param_name# patterns.
+    See usage examples in the ensembl-compara/scripts/family/family_pipeline.conf
+
+* Bio::EnsEMBL::Hive::RunnableDB::JobFactory has 3 modes of operation: inputlist, inputfile, inputquery.
+    See usage examples in the ensembl-compara/scripts/family/family_pipeline.conf
+
+* some rewrite of the Queen/Adaptors code to give us more developmental flexibility
+
+* support for semaphores (job-level control rules) in SQL schema and API
+    - partially tested, has some quirks, waiting for a more serious test by Albert
+
+* support for resource requirements in SQL schema, API and on init_pipeline config file level
+    Tested in the ensembl-compara/scripts/family/family_pipeline.conf . It works.
+
+
+3 December, 2009 : Leo Gordon
+
+beekeeper.pl, runWorker.pl and cmd_hive.pl
+got new built-in documentation accessible via perldoc or directly.
+
+
+2 December, 2009 : Leo Gordon
+
+Bio::EnsEMBL::Hive::RunnableDB::LongMult example toy pipeline has been created
+to show how to do various things "adult pipelines" perform
+(job creation, data flow, control blocking rules, usage of intermediate tables, etc).
+
+Read Bio::EnsEMBL::Hive::RunnableDB::LongMult for a step-by-step instruction
+on how to create and run this pipeline.
+
+
+30 November, 2009 : Leo Gordon
+
+Bio::EnsEMBL::Hive::RunnableDB::JobFactory module has been added.
+It is a generic way of creating batches of jobs with the parameters
+given by a file or a range of ids.
+Entries in the file can also be randomly shuffled.
+
+
+13 July, 2009 : Leo Gordon
+
+Merging the "Meadow" code from this March' development branch.
+Because it separates LSF-specific code from higher level, it will be easier to update.
+
+-------------------------------------------------------------------------------------------------------
+Albert, sorry - in the process of merging into the development branch I had to remove your HIGHMEM code.
+I hope it is a temporary measure and we will be having hive-wide queue control soon.
+If not - you can restore the pre-merger state by updating with the following command:
+
+    cvs update -r lg4_pre_merger_20090713
+
+('maximise_concurrency' option was carried over)
+-------------------------------------------------------------------------------------------------------
+
+
+3 April, 2009 : Albert Vilella
+
+  Added a new maximise_concurrency 1/0 option. When set to 1, it will
+  fetch jobs that need to be run in the adequate order as to maximise
+  the different number of analyses being run. This is useful for cases
+  where different analyses hit different tables and the overall sql
+  load can be kept higher without breaking the server, instead of
+  having lots of jobs for the same analysis trying to hit the same
+  tables.
+
+  Added quick HIGHMEM option. This option is useful when a small
+  percent of jobs are too big and fail in normal conditions. The
+  runnable can check if it's the second time it's trying to run the
+  job, if it's because it contains big data (e.g. gene_count > 200)
+  and if it isn't already in HIGHMEM mode. Then, it will call
+  reset_highmem_job_by_dbID and quit:
+
+  if ($self->input_job->retry_count == 1) {
+    if ($self->{'protein_tree'}->get_tagvalue('gene_count') > 200 && !defined($self->worker->{HIGHMEM})) {
+      $self->input_job->adaptor->reset_highmem_job_by_dbID($self->input_job->dbID);
+      $self->DESTROY;
+      throw("Alignment job too big: send to highmem and quit");
+    }
+  }
+
+  Assuming there is a
+
+   beekeeper.pl -url <blah> -highmem -meadow_options "<lots of mem>"
+
+   running, or a 
+   
+   runWorker.pl <blah> -highmem 1
+
+   with lots of mem running, it will fetch the HIGHMEM jobs as if they
+   were "READY but needs HIGHMEM".
+
+   Also added a modification to Queen that will not synchronize as
+   often when more than 450 jobs are running and the load is above
+   0.9, so that the queries to analysis tables are not hitting the sql
+   server too much.
+
+23 July, 2008 : Will Spooner
+  Removed remaining ensembl-pipeline dependencies.
 
 11 March, 2005 : Jessica Severin
   Project is reaching a very stable state.  New 'node' object Bio::EnsEMBL::Hive::Process

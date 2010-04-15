@@ -1,7 +1,5 @@
 #
 # You may distribute this module under the same terms as perl itself
-#
-# POD documentation - main docs before the code
 
 =pod 
 
@@ -16,8 +14,7 @@
 
 =head1 CONTACT
 
-  Contact Jessica Severin on EnsEMBL::Hive implemetation/design detail: jessica@ebi.ac.uk
-  Contact Ewan Birney on EnsEMBL in general: birney@sanger.ac.uk
+  Please contact ehive-users@ebi.ac.uk mailing list with questions/suggestions.
 
 =head1 APPENDIX
 
@@ -25,6 +22,7 @@
   Internal methods are usually preceded with a _
 
 =cut
+
 
 package Bio::EnsEMBL::Hive::AnalysisJob;
 
@@ -58,10 +56,10 @@ sub input_id {
   return $self->{'_input_id'};
 }
 
-sub hive_id {
+sub worker_id {
   my $self = shift;
-  $self->{'_hive_id'} = shift if(@_);
-  return $self->{'_hive_id'};
+  $self->{'_worker_id'} = shift if(@_);
+  return $self->{'_worker_id'};
 }
 
 sub analysis_id {
@@ -116,11 +114,17 @@ sub query_count {
   return $self->{'_query_count'};
 }
 
-sub branch_code {
+sub semaphore_count {
   my $self = shift;
-  $self->{'_branch_code'} = shift if(@_);
-  $self->{'_branch_code'} = 1 unless(defined($self->{'_branch_code'}));
-  return $self->{'_branch_code'};
+  $self->{'_semaphore_count'} = shift if(@_);
+  $self->{'_semaphore_count'} = 0 unless(defined($self->{'_semaphore_count'}));
+  return $self->{'_semaphore_count'};
+}
+
+sub semaphored_job_id {
+  my $self = shift;
+  $self->{'_semaphored_job_id'} = shift if(@_);
+  return $self->{'_semaphored_job_id'};
 }
 
 sub stdout_file {
@@ -137,9 +141,11 @@ sub stderr_file {
 
 sub print_job {
   my $self = shift;
-  my $logic_name ='';
-  $logic_name = $self->adaptor->db->get_AnalysisAdaptor->fetch_by_dbID($self->analysis_id)->logic_name if($self->adaptor);
-  printf("job_id=%d %s(%d) retry=%d input_id='%s'\n", 
+  my $logic_name = $self->adaptor()
+      ? $self->adaptor->db->get_AnalysisAdaptor->fetch_by_dbID($self->analysis_id)->logic_name()
+      : '';
+
+  printf("job_id=%d %35s(%5d) retry=%d input_id='%s'\n", 
        $self->dbID,
        $logic_name,
        $self->analysis_id,

@@ -1,13 +1,16 @@
 #!/usr/bin/env perl
 
-use warnings;
 use strict;
+use warnings;
 use DBI;
 use Getopt::Long;
 use Bio::EnsEMBL::Hive::DBSQL::DBAdaptor;
 use Bio::EnsEMBL::Hive::Worker;
 use Bio::EnsEMBL::Hive::Queen;
 use Bio::EnsEMBL::Registry;
+
+use Bio::EnsEMBL::Hive::Meadow::LSF;
+use Bio::EnsEMBL::Hive::Meadow::LOCAL;
 
 Bio::EnsEMBL::Registry->no_version_check(1);
 
@@ -21,51 +24,62 @@ $self->{'db_conf'} = {};
 $self->{'db_conf'}->{'-user'} = 'ensro';
 $self->{'db_conf'}->{'-port'} = 3306;
 
-$self->{'analysis_id'} = undef;
-$self->{'logic_name'}  = undef;
+$self->{'job_id'}      = undef;     # most  specific specialization
+$self->{'analysis_id'} = undef;     # less  specific specialization
+$self->{'logic_name'}  = undef;     # (---------,,---------------)
+$self->{'rc_id'}       = undef;     # least specific specialization
+
 $self->{'outdir'}      = undef;
 $self->{'beekeeper'}   = undef;
 $self->{'process_id'}  = undef;
-$self->{'job_id'}      = undef;
 $self->{'debug'}       = undef;
-$self->{'analysis_job'} = undef;
 $self->{'no_write'}     = undef;
+$self->{'maximise_concurrency'} = undef;
 
 my $conf_file;
 my ($help, $host, $user, $pass, $dbname, $port, $adaptor, $url);
 my $reg_conf  = undef;
 my $reg_alias = 'hive';
 
-GetOptions('help'           => \$help,
-           'url=s'          => \$url,
+GetOptions(
+
+# Connection parameters:
            'conf=s'         => \$conf_file,
-           'dbhost=s'       => \$host,
-           'dbport=i'       => \$port,
-           'dbuser=s'       => \$user,
-           'dbpass=s'       => \$pass,
-           'dbname=s'       => \$dbname,
+           'regfile=s'      => \$reg_conf,
+           'regname=s'      => \$reg_alias,
+           'url=s'          => \$url,
+           'host|dbhost=s'  => \$host,
+           'port|dbport=i'  => \$port,
+           'user|dbuser=s'  => \$user,
+           'password|dbpass=s'  => \$pass,
+           'database|dbname=s'  => \$dbname,
+
+# Job/Analysis control parameters:
            'job_id=i'       => \$self->{'job_id'},
            'analysis_id=i'  => \$self->{'analysis_id'},
+           'rc_id=i'        => \$self->{'rc_id'},
            'logic_name=s'   => \$self->{'logic_name'},
-           'batchsize=i'    => \$self->{'batch_size'},
+           'batch_size=i'   => \$self->{'batch_size'},
            'limit=i'        => \$self->{'job_limit'},
            'lifespan=i'     => \$self->{'lifespan'},
            'outdir=s'       => \$self->{'outdir'},
-           'bk=s'           => \$self->{'beekeeper'},
+           'bk=s'           => \$self->{'beekeeper'}, # deprecated and ignored
            'pid=s'          => \$self->{'process_id'},
            'input_id=s'     => \$self->{'input_id'},
            'no_cleanup'     => \$self->{'no_global_cleanup'},
            'analysis_stats' => \$self->{'show_analysis_stats'},
-           'debug=i'        => \$self->{'debug'},
            'no_write'       => \$self->{'no_write'},
            'nowrite'        => \$self->{'no_write'},
-           'regfile=s'      => \$reg_conf,
-           'regname=s'      => \$reg_alias,
+           'maximise_concurrency' => \$self->{'maximise_concurrency'},
+
+# Other commands
+           'h|help'         => \$help,
+           'debug=i'        => \$self->{'debug'},
           );
 
 $self->{'analysis_id'} = shift if(@_);
 
-if ($help) { usage(); }
+if ($help) { usage(0); }
 
 parse_conf($self, $conf_file);
 
@@ -89,7 +103,7 @@ else {
          and defined($self->{'db_conf'}->{'-dbname'}))
   {
     print "\nERROR : must specify host, user, and database to connect\n\n";
-    usage();
+    usage(1);
   }
 
   # connect to database specified
@@ -98,57 +112,56 @@ else {
 
 unless($DBA and $DBA->isa("Bio::EnsEMBL::Hive::DBSQL::DBAdaptor")) {
   print("ERROR : no database connection\n\n");
-  usage();
+  usage(1);
 }
 
 my $queen = $DBA->get_Queen();
+$queen->{maximise_concurrency} = 1 if ($self->{maximise_concurrency});
 
-################################
-# LSF submit system dependency
-# no nice way to move this outside, so inside here.
-# environment variables LSB_JOBID and LSB_JOBINDEX are set for process started 
-# by LSF deamon.  Also know that the beekeeper is 'LSF'
-#
-my $lsb_jobid    = $ENV{'LSB_JOBID'};
-my $lsb_jobindex = $ENV{'LSB_JOBINDEX'};
-if(defined($lsb_jobid) and defined($lsb_jobindex)) {
-  $self->{'beekeeper'}='LSF' unless($self->{'beekeeper'});
-  if($lsb_jobindex>0) {
-    $self->{'process_id'} = "$lsb_jobid\[$lsb_jobindex\]";
-  } else {
-    $self->{'process_id'} = "$lsb_jobid";
-  }
+unless($self->{'process_id'}) {     # do we really need this confusing feature - to be able to set the process_id externally?
+    eval {
+        $self->{'process_id'} = Bio::EnsEMBL::Hive::Meadow::LSF->get_current_worker_process_id();
+    };
+    if($@) {
+        $self->{'process_id'} = Bio::EnsEMBL::Hive::Meadow::LOCAL->get_current_worker_process_id();
+        $self->{'beekeeper'}  = 'LOCAL';
+    } else {
+        $self->{'beekeeper'}  = 'LSF';
+    }
 }
-################################
+
 print("pid = ", $self->{'process_id'}, "\n") if($self->{'process_id'});
 
 if($self->{'logic_name'}) {
   my $analysis = $queen->db->get_AnalysisAdaptor->fetch_by_logic_name($self->{'logic_name'});
   unless($analysis) {
-    printf("logic_name:'%s' does not exist in database\n\n", $self->{'logic_name'});
-    usage();
+    printf("logic_name: '%s' does not exist in database\n\n", $self->{'logic_name'});
+    usage(1);
   }
   $self->{'analysis_id'} = $analysis->dbID;
 }
+
+$self->{'analysis_job'} = undef;
 
 if($self->{'analysis_id'} and $self->{'input_id'}) {
   $self->{'analysis_job'} = new Bio::EnsEMBL::Hive::AnalysisJob;
   $self->{'analysis_job'}->input_id($self->{'input_id'});
   $self->{'analysis_job'}->analysis_id($self->{'analysis_id'}); 
   $self->{'analysis_job'}->dbID(-1); 
-  printf("creating job outside database\n   ");
+  print("creating job outside database\n");
   $self->{'analysis_job'}->print_job;
   $self->{'debug'}=1 unless(defined($self->{'debug'}));
   $self->{'outdir'}='' unless(defined($self->{'outdir'}));
 }
 
 if($self->{'job_id'}) {
-  printf("fetching job for id ", $self->{'job_id'}, "\n");
+  printf("fetching job for id %i\n", $self->{'job_id'});
   $self->{'analysis_job'} = $queen->reset_and_fetch_job_by_dbID($self->{'job_id'});
   $self->{'analysis_id'} = $self->{'analysis_job'}->analysis_id if($self->{'analysis_job'}); 
 }
 
 my $worker = $queen->create_new_worker(
+     -rc_id          => $self->{'rc_id'},
      -analysis_id    => $self->{'analysis_id'},
      -beekeeper      => $self->{'beekeeper'},
      -process_id     => $self->{'process_id'},
@@ -158,7 +171,7 @@ my $worker = $queen->create_new_worker(
 unless($worker) {
   $queen->print_analysis_status if($self->{'show_analysis_stats'});
   print("\n=== COULDN'T CREATE WORKER ===\n");
-  exit(0);
+  exit(1);
 }
 
 $worker->debug($self->{'debug'}) if($self->{'debug'});
@@ -187,28 +200,31 @@ if($self->{'no_global_cleanup'}) {
 
 $worker->print_worker();
 
+my $return_value = 0;
 eval { $worker->run(); };
 
 if($@) {
-  #worker threw an exception so it had a problem
-  if($worker->perform_global_cleanup) {
-    #have runnable cleanup any global/process files/data it may have created
-    $worker->cleanup_worker_process_temp_directory;
-  }
-  print("\n$@");
-	$queen->register_worker_death($worker);
+        # try to capture it ASAP:
+    $return_value = ($! || $?>>8 || 1);
+
+        #worker threw an exception so it had a problem:
+    if($worker->perform_global_cleanup) {
+            #have runnable cleanup any global/process files/data it may have created
+        $worker->cleanup_worker_process_temp_directory;
+    }
+    print("\n$@");
+    $queen->register_worker_death($worker);
 }
 
 if($self->{'show_analysis_stats'}) {
-  $queen->print_analysis_status;
-  $queen->get_num_needed_workers();
+    $queen->print_analysis_status;
+    $queen->get_num_needed_workers(); # apparently run not for the return value, but for the side-effects
 }
-
 
 printf("dbc %d disconnect cycles\n", $DBA->dbc->disconnect_count);
 print("total jobs completes : ", $worker->work_done, "\n");
 
-exit(0);
+exit($return_value);
 
 
 #######################
@@ -218,36 +234,20 @@ exit(0);
 #######################
 
 sub usage {
-  print "runWorker.pl [options]\n";
-  print "  -help                  : print this help\n";
-  print "  -regfile <path>        : path to a Registry configuration file\n";
-  print "  -regname <string>      : species/alias name for the Hive DBAdaptor\n";
-  print "  -url <url string>      : url defining where database is located\n";
-  print "  -conf <path>           : config file describing db connection\n";
-  print "  -dbhost <machine>      : mysql database host <machine>\n";
-  print "  -dbport <port#>        : mysql port number\n";
-  print "  -dbname <name>         : mysql database <name>\n";
-  print "  -dbuser <name>         : mysql connection user <name>\n";
-  print "  -dbpass <pass>         : mysql connection password\n";
-  print "  -analysis_id <id>      : analysis_id in db\n";
-  print "  -logic_name <string>   : logic_name of analysis to make this worker\n";
-  print "  -batchsize <num>       : #jobs to claim at a time\n";
-  print "  -limit <num>           : #jobs to run before worker can die naturally\n";
-  print "  -lifespan <num>        : number of minutes this worker is allowed to run\n";
-  print "  -outdir <path>         : directory where stdout/stderr is redirected\n";
-  print "  -bk <string>           : beekeeper identifier\n";
-  print "  -pid <string>          : externally set process_id descriptor (e.g. lsf job_id, array_id)\n";
-  print "  -input_id <string>     : test input_id on specified analysis (analysis_id or logic_name)\n";
-  print "  -job_id <id>           : run specific job defined by analysis_job_id\n";
-  print "  -debug <level>         : turn on debug messages at <level> \n";
-  print "  -analysis_stats        : show status of each analysis in hive\n";
-  print "  -no_cleanup            : don't perform global_cleanup when worker exits\n";
-  print "  -no_write              : don't write_output or auto_dataflow input_job\n";
-  print "runWorker.pl v1.6\n";
-  
-  exit(1);  
-}
+    my $retvalue = shift @_;
 
+    if(`which perldoc`) {
+        system('perldoc', $0);
+    } else {
+        foreach my $line (<DATA>) {
+            if($line!~s/\=\w+\s?//) {
+                $line = "\t$line";
+            }
+            print $line;
+        }
+    }
+    exit($retvalue);
+}
 
 sub parse_conf {
   my $self      = shift;
@@ -265,4 +265,75 @@ sub parse_conf {
     }
   }
 }
+
+__DATA__
+
+=pod
+
+=head1 NAME
+
+runWorker.pl
+
+=head1 DESCRIPTION
+
+ runWorker.pl is an eHive component script that does the work of a single Worker -
+ specializes in one of the analyses and starts executing jobs of that analysis one-by-one or batch-by-batch.
+
+ Most of the functionality of the eHive is accessible via beekeeper.pl script,
+ but feel free to run the runWorker.pl if you think you know what you are doing :)
+
+=head1 USAGE EXAMPLES
+
+    # Run one local worker process in ehive_dbname and let the system pick up the analysis
+runWorker.pl --host=hostname --port=3306 --user=username --password=secret --database=ehive_dbname
+
+    # Run one local worker process in ehive_dbname and let the system pick up the analysis (another connection syntax)
+runWorker.pl -url mysql://username:secret@hostname:port/ehive_dbname
+
+    # Run one local worker process in ehive_dbname and specify the logic_name
+runWorker.pl -url mysql://username:secret@hostname:port/ehive_dbname -logic_name fast_blast
+
+    # Create a job outside the eHive to test the specified input_id
+runWorker.pl -url mysql://username:secret@hostname:port/ehive_dbname -logic_name fast_blast -input_id '{ "foo" => 1500 }'
+
+=head1 OPTIONS
+
+=head2 Connection parameters
+
+  -conf <path>           : config file describing db connection
+  -regfile <path>        : path to a Registry configuration file
+  -regname <string>      : species/alias name for the Hive DBAdaptor
+  -url <url string>      : url defining where database is located
+  -host <machine>        : mysql database host <machine>
+  -port <port#>          : mysql port number
+  -user <name>           : mysql connection user <name>
+  -password <pass>       : mysql connection password
+  -database <name>       : mysql database <name>
+
+=head2 Job/Analysis control parameters:
+
+  -analysis_id <id>      : analysis_id in db
+  -logic_name <string>   : logic_name of analysis to make this worker
+  -batch_size <num>      : #jobs to claim at a time
+  -limit <num>           : #jobs to run before worker can die naturally
+  -lifespan <num>        : number of minutes this worker is allowed to run
+  -outdir <path>         : directory where stdout/stderr is redirected
+  -bk <string>           : beekeeper identifier (deprecated and ignored)
+  -pid <string>          : externally set process_id descriptor (e.g. lsf job_id, array_id)
+  -input_id <string>     : test input_id on specified analysis (analysis_id or logic_name)
+  -job_id <id>           : run specific job defined by analysis_job_id
+  -analysis_stats        : show status of each analysis in hive
+  -no_cleanup            : don't perform global_cleanup when worker exits
+  -no_write              : don't write_output or auto_dataflow input_job
+
+=head2 Other options:
+
+  -help                  : print this help
+  -debug <level>         : turn on debug messages at <level>
+
+=head1 CONTACT
+
+  Please contact ehive-users@ebi.ac.uk mailing list with questions/suggestions.
+
+=cut
 
