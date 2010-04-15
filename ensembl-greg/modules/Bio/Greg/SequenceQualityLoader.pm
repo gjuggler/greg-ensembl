@@ -7,70 +7,31 @@ use IO::File;
 use File::Basename;
 use File::Path;
 
-use Bio::EnsEMBL::DBSQL::DBAdaptor;
-use Bio::EnsEMBL::Compara::DBSQL::DBAdaptor;
 use Bio::EnsEMBL::Compara::Member;
 use Bio::EnsEMBL::Compara::ComparaUtils;
 
-use Bio::EnsEMBL::Hive;
-use Bio::EnsEMBL::Hive::Process;
-
-use Bio::Greg::ProcessUtils;
-
-our @ISA = qw(Bio::EnsEMBL::Hive::Process Bio::Greg::ProcessUtils);
-
-my $dba;
-my $pta;
-
-my $params;
-my $tags;
-
-my $tree;
-my $seq_id_quals_hash;
+use base ('Bio::Greg::Hive::Process');
 
 sub fetch_input {
   my $self = shift;
 
-  # Load up the Compara DBAdaptor.
-  $dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new( -DBCONN => $self->db->dbc );
-  $pta = $dba->get_ProteinTreeAdaptor;
-
   ### DEFAULT PARAMETERS ###
-  $params = {
+  my $params = {
     alignment_table       => 'protein_tree_member',
     alignment_score_table => 'protein_tree_member_score'
   };
 
-  #########################
-
-  # Fetch parameters from the possible locations.
-  my $p_params = $self->get_params( $self->parameters );
-  my $i_params = $self->get_params( $self->input_id );
-  my $node_id  = $i_params->{'protein_tree_id'};
-  $node_id = $i_params->{'node_id'} if ( !defined $node_id );
-  my $t_params = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_tree_tags( $dba, $node_id );
-
-  $params = $self->replace_params( $params, $p_params, $i_params, $t_params );
-  Bio::EnsEMBL::Compara::ComparaUtils->hash_print($params);
-
-  #########################
-
-  # Load the tree.
-  $params->{'alignment_table'} = 'protein_tree_member';
-  if ( defined $params->{'node_id'} ) {
-    $tree = Bio::EnsEMBL::Compara::ComparaUtils->get_tree_for_comparative_analysis( $dba, $params );
-  } else {
-    throw("No protein tree input ID!\n");
-  }
-
-  throw("No protein tree!") unless ( defined $tree );
+  $self->load_all_params($params);
 }
 
 sub run {
   my $self = shift;
-  $self->check_if_exit_cleanly;
+
   $self->{'start_time'} = time() * 1000;
 
+  my $tree = $self->get_tree;
+  my $seq_id_quals_hash;
+  
   foreach my $leaf ( $tree->leaves ) {
     my $member = $leaf;
     print $member->stable_id . "\n";
@@ -105,10 +66,14 @@ sub run {
     }
   }
   $self->{'end_time'} = time() * 1000;
+
+  $self->param('seq_id_quals_hash',$seq_id_quals_hash);
 }
 
 sub write_output {
   my $self = shift;
+
+  my $seq_id_quals_hash = $self->param('seq_id_quals_hash');
 
   foreach my $key ( sort keys %{$seq_id_quals_hash} ) {
     my $quals = $seq_id_quals_hash->{$key};
@@ -116,7 +81,7 @@ sub write_output {
     # Now we can store it in the sequence_qual table!
     my $cmd = "REPLACE INTO sequence_quality (sequence_id,length,sequence) VALUES (?,?,?);";
     print $cmd. "  " . $key . "\n";
-    my $sth = $dba->dbc->prepare($cmd);
+    my $sth = $self->compara_dba->dbc->prepare($cmd);
     $sth->execute( $key, length($quals), $quals );
     sleep(0.4);
   }

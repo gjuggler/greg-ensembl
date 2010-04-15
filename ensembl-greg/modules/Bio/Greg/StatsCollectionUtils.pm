@@ -94,6 +94,41 @@ sub mean_copy_count {
   return $mean;
 }
 
+sub duplication_count {
+  my $class = shift;
+  my $tree = shift;
+
+  my $dup_sum = 0;
+  my $node_sum = 0;
+  foreach my $node ($tree->nodes) {
+    my $is_duplication = $node->get_tagvalue("Duplication") || 0;
+    my $is_dubious = $node->get_tagvalue("dubious_dup") || 0;
+    if ($is_duplication && !$is_dubious) {
+      $dup_sum++;
+    }
+    $node_sum++;
+  }
+  return $dup_sum;
+}
+
+sub duplication_fraction {
+  my $class = shift;
+  my $tree = shift;
+
+  my $dup_sum = 0;
+  my $node_sum = 0;
+  foreach my $node ($tree->nodes) {
+    my $is_duplication = $node->get_tagvalue("Duplication") || 0;
+    my $is_dubious = $node->get_tagvalue("dubious_dup") || 0;
+    if ($is_duplication && !$is_dubious) {
+      $dup_sum++;
+    }
+    $node_sum++;
+  }
+  return $dup_sum / $node_sum;
+}
+
+
 sub seq_length_mean {
   my $class = shift;
   my $tree  = shift;
@@ -143,7 +178,7 @@ sub get_tag_hash {
   my $node_id = $params->{'node_id'};
 
   my $cmd = qq^SELECT aln_position,tag,value
-    FROM $table WHERE parameter_set_id=$pset and node_id=$node_id
+    FROM $table WHERE ( parameter_set_id=$pset or parameter_set_id=0 ) and node_id=$node_id
     ^;
 
   my $tag_hash = {};
@@ -151,8 +186,9 @@ sub get_tag_hash {
   my $sth = $dbc->prepare($cmd);
   $sth->execute;
   while ( my $obj = $sth->fetchrow_hashref ) {
-    my $key = join( '.', $obj->{'tag'}, $obj->{'aln_position'} );
-    $tag_hash->{$key} = $obj->{'value'};
+    my $aln_position = $obj->{'aln_position'};
+    $tag_hash->{$aln_position} = {} if (!defined $tag_hash->{$aln_position});
+    $tag_hash->{$aln_position}->{$obj->{'tag'}} = $obj->{'value'};
   }
 
   return $tag_hash;
@@ -174,21 +210,55 @@ sub get_psc_hash {
   my $cmd     = qq^SELECT aln_position,omega,omega_lower,omega_upper,lrt_stat,ncod,type,note 
     FROM $table o WHERE parameter_set_id=$pset and node_id=$node_id $CLEAN_WHERE
     ^;
-  print $cmd."\n";
-  my $id_field = 'aln_position';
 
   if ( $params->{genome} ) {
     $cmd = qq^SELECT * from $table o, sitewise_genome g WHERE o.parameter_set_id=$pset AND 
       o.node_id=$node_id
       AND o.node_id=g.node_id
-      AND o.aln_position=g.aln_position^;
+      AND o.aln_position=g.aln_position $CLEAN_WHERE^;
   }
+
+  if ($params->{filtered} ) {
+    my $filter_value = $params->{mammals_alignment_filtering_value} || 1;
+    print "Filtering value: $filter_value\n";
+
+    # Filter on alignment columns that pass Pollard et al's filtering criteria.
+    $cmd = qq^SELECT * from $table o, sitewise_tag t  WHERE
+      o.parameter_set_id=$pset AND 
+      o.node_id=$node_id
+      AND o.node_id=t.node_id
+      AND o.aln_position=t.aln_position
+      AND t.tag="FILTER" AND t.value >= $filter_value $CLEAN_WHERE;
+      ^;
+    # TODO: Join with the sitewise_tag table where tag = "FILTER".
+  }
+
+  print $cmd."\n";
 
   my $sth = $dbc->prepare($cmd);
   $sth->execute;
+  my $id_field = 'aln_position';
   my $obj = $sth->fetchall_hashref($id_field);
   $sth->finish;
   return $obj;
+}
+
+sub max_lrt {
+  my $class             = shift;
+  my $psc_hash          = shift;
+
+  my @obj_array = map { $psc_hash->{$_} } keys %$psc_hash;
+  my @signed_lrt = map { if ($_->{omega} > 0) {$_->{lrt_stat}} else {-$_->{lrt_stat}}} @obj_array;
+  
+  my $max_lrt_stat = -10000;
+  foreach my $lrt (@signed_lrt) {
+    $max_lrt_stat = $lrt if ($lrt > $max_lrt_stat);
+  }
+
+  # Correct by the number of viable sites.
+  #$max_lrt_stat = $max_lrt_stat / scalar(@signed_lrt);
+
+  return $max_lrt_stat;
 }
 
 sub psc_count {
@@ -205,6 +275,14 @@ sub psc_count {
   }
 
   return scalar(@psc_objs);
+}
+
+sub sitewise_count {
+  my $class             = shift;
+  my $psc_hash          = shift;
+
+  my @obj_array = map { $psc_hash->{$_} } keys %$psc_hash;
+  return scalar(@obj_array);
 }
 
 sub omega_median {

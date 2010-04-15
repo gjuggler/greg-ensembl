@@ -1,47 +1,25 @@
 package Bio::Greg::Eslr::SitewiseMapper;
 
 use strict;
-use Getopt::Long;
-use IO::File;
-use File::Basename;
-use File::Path;
-use Cwd;
 
+use Cwd;
 use Time::HiRes qw(sleep);
 
-use Bio::EnsEMBL::DBSQL::DBAdaptor;
-use Bio::EnsEMBL::Compara::DBSQL::DBAdaptor;
 use Bio::EnsEMBL::Compara::Member;
 use Bio::EnsEMBL::Compara::ComparaUtils;
 
-use Bio::EnsEMBL::Hive;
-use Bio::EnsEMBL::Hive::Process;
+use Bio::Greg::EslrUtils;
 
-use Bio::Greg::ProcessUtils;
-
-our @ISA = qw(Bio::EnsEMBL::Hive::Process Bio::Greg::ProcessUtils);
-
-my $dba;
-my $pta;
-
-my $params;
-
-my $tree;
-my $pos_values;
-my $mapped_omegas;
-my $gene_tags;
-my $dup_tags;
+use base ('Bio::Greg::Hive::Process');
 
 sub fetch_input {
   my $self = shift;
 
-  # Load up the Compara DBAdaptor.
-  $dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new( -DBCONN => $self->db->dbc );
-  $pta = $dba->get_ProteinTreeAdaptor;
-
   ### DEFAULT PARAMETERS ###
+  my $params = {};
   $params->{'omega_table'}     = 'sitewise_omega';
   $params->{'do_mapping'}      = 1;
+  $params->{'do_filter'}      = 1;
   $params->{'collect_pfam'}    = 1;
   $params->{'collect_uniprot'} = 1;
   $params->{'collect_exons'}   = 1;
@@ -53,104 +31,108 @@ sub fetch_input {
   $params->{'collect_tags'}     = 0;
   $params->{'collect_dup_tags'} = 0;
   $params->{'create_plot'}      = 0;
-  $params->{'parameter_set_id'} = 1;    # The parameter set to use for UniProt extraction.
+  $params->{'only_run_once'}    = 1;
   #########################
 
   # Fetch parameters from the two possible locations. Input_id takes precedence!
-  my $p_params = $self->get_params( $self->parameters );
-  my $i_params = $self->get_params( $self->input_id );
-  my $node_id  = $i_params->{'protein_tree_id'} || $i_params->{'node_id'};
-  my $t_params = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_tree_tags( $dba, $node_id );
 
-  $params = $self->replace_params( $params, $p_params, $i_params, $t_params );
-  Bio::EnsEMBL::Compara::ComparaUtils->hash_print($params);
+  $self->load_all_params($params);
 
-  $tree = Bio::EnsEMBL::Compara::ComparaUtils->get_tree_for_comparative_analysis( $dba, $params );
 }
 
 sub run {
   my $self = shift;
 
-  $self->check_if_exit_cleanly;
+  if ($self->param('only_run_once') && $self->param('parameter_set_id') != 1) {
+    print "No need to run -- we're not the first parameter_set_id!\n";
+    return;
+  }
+  
   $self->{'start_time'} = time() * 1000;
-  $dba->dbc->disconnect_when_inactive(1);
+  $self->compara_dba->dbc->disconnect_when_inactive(1);
 
   # Select all codons.
-  my $table   = $params->{omega_table};
-  my $node_id = $params->{node_id};
+  my $table   = $self->param('omega_table');
 
-  if ( $params->{'do_mapping'} ) {
+  if ($self->param('do_filter')) {
+    print "Doing site-wise filter calculations...\n";
+    $self->do_filter();
+    print "  -> Finished doing site-wise filtering!\n";
+  }
+  
+  if ( $self->param('do_mapping') ) {
     print "Mapping sitewise to genome...\n";
     $self->do_mapping();
     print "  -> Finished mapping values!\n";
   }
 
-  if ( $params->{'collect_tags'} ) {
+  if ( $self->param('collect_tags') ) {
     print "Collecting gene tags...\n";
     $self->collect_gene_tags();
     print "  -> Finished collecting gene tags!\n";
   }
 
-  if ( $params->{'collect_dup_tags'} ) {
+  if ( $self->param('collect_dup_tags') ) {
     print "Collecting duplication tags...\n";
     $self->collect_dup_tags();
     print "  -> Finished collecting duplication tags!\n";
   }
 
-  if ( $params->{'collect_pfam'} ) {
+  if ( $self->param('collect_pfam') ) {
     print "Collecting Pfam annotations...\n";
     $self->collect_pfam();
     print "  -> Finished collecting Pfam!\n";
   }
 
-  if ( $params->{'collect_uniprot'} ) {
+  if ( $self->param('collect_uniprot') ) {
     print "Collecting UniProt annotations...\n";
     $self->collect_uniprot();
     print "  -> Finished collecting UniProt!\n";
   }
 
-  if ( $params->{'collect_exons'} ) {
+  if ( $self->param('collect_exons') ) {
     print "Collecting Exon annotations...\n";
     $self->collect_exons();
     print "  -> Finished collecting Exons!\n";
   }
 
-  if ( $params->{'collect_go'} ) {
+  if ( $self->param('collect_go') ) {
     print "Collecting GO annotations...\n";
     $self->collect_go();
     print "  -> Finished collecting GO terms!\n";
   }
 
-  if ( $params->{'create_plot'} ) {
+  if ( $self->param('create_plot') ) {
     $self->create_plot();
     print "  -> Finished plotting omegas!\n";
   }
 
-  $dba->dbc->disconnect_when_inactive(0);
+  $self->compara_dba->dbc->disconnect_when_inactive(0);
 }
 
 sub do_mapping {
   my $self = shift;
 
-  my $node_id = $params->{node_id};
-  my $table   = $params->{omega_table};
+  my $node_id = $self->param('node_id');
+  my $table   = $self->param('omega_table');
   print "Mapping sitewise $node_id to genome...\n";
 
-  my $parameter_set_id = $params->{parameter_set_id};
+  my $parameter_set_id = $self->param('parameter_set_id');
   my $omega_cmd = qq^
       SELECT distinct(aln_position) aln_position FROM $table WHERE
       node_id=$node_id
       ;
     ^;
-  my $sth = $dba->dbc->prepare($omega_cmd);
+  my $sth = $self->compara_dba->dbc->prepare($omega_cmd);
   $sth->execute();
   my @hashrefs = @{ $sth->fetchall_arrayref( {} ) };
+
+  my $pos_values;
   map { $pos_values->{ $_->{aln_position} } = 1 } @hashrefs;
 
   # Run the genomic mapping code.
-  use Bio::Greg::EslrUtils;
-  my $mapping_taxon = $params->{genome_taxon_id};
-  my $mapped_omegas = Bio::Greg::EslrUtils->mapSitewiseToGenome( $tree, $mapping_taxon, $pos_values );
+  my $mapping_taxon = $self->param('genome_taxon_id');
+  my $mapped_omegas = Bio::Greg::EslrUtils->mapSitewiseToGenome( $self->get_tree, $mapping_taxon, $pos_values );
 
   my @array_of_strings;
   foreach my $map ( @{$mapped_omegas} ) {
@@ -171,7 +153,7 @@ sub do_mapping {
     my $values_string = join( ",", @array_of_strings );
     my $cmd =
       "REPLACE INTO sitewise_genome (node_id,parameter_set_id,aln_position,member_id,chr_name,chr_start,chr_end) VALUES $values_string";
-    my $sth = $dba->dbc->prepare($cmd);
+    my $sth = $self->compara_dba->dbc->prepare($cmd);
     $sth->execute;
     $sth->finish;
   }
@@ -179,22 +161,23 @@ sub do_mapping {
 
 sub collect_gene_tags {
   my $self = shift;
-  $gene_tags = Bio::Greg::EslrUtils->collectGeneTags( $tree, $params );
+  my $gene_tags = Bio::Greg::EslrUtils->collectGeneTags( $self->get_tree, $self->params );
 }
 
 sub collect_dup_tags {
   my $self = shift;
-  $dup_tags = Bio::Greg::EslrUtils->collectDuplicationTags( $tree, $params );
+  my $dup_tags = Bio::Greg::EslrUtils->collectDuplicationTags( $self->get_tree, $self->params );
 }
 
 sub collect_go {
   my $self = shift;
 
+  my $tree = $self->get_tree;
   my @leaves = @{ $tree->get_all_leaves };
 
   my @taxon_ids;
-  if ( defined $params->{'go_taxon_ids'} ) {
-    @taxon_ids = split( ",", $params->{'go_taxon_ids'} );
+  if ( defined $self->param('go_taxon_ids') ) {
+    @taxon_ids = split( ",", $self->param('go_taxon_ids') );
   } else {
     @taxon_ids = (9606);
   }
@@ -216,11 +199,11 @@ sub collect_go {
         foreach ( @{ $db_e->get_all_linkage_info } ) {
           $iea = 1 if ( $_->[0] eq 'IEA' );
         }
-        if ( $params->{'go_ignore_iea'} && $iea ) {
+        if ( $self->param('go_ignore_iea') && $iea ) {
 
           # Don't insert!
         } else {
-          $self->insert_go_term( $params->{node_id}, $leaf, $db_e );
+          $self->insert_go_term( $self->param('node_id'), $leaf, $db_e );
           sleep(0.05);
         }
       }
@@ -245,7 +228,7 @@ sub insert_go_term {
   print "  "
     . join( " ", $leaf->dbID, $leaf->taxon_id, $leaf->stable_id, $db_e->display_id, $evidence )
     . "\n";
-  my $sth = $dba->dbc->prepare($cmd);
+  my $sth = $self->compara_dba->dbc->prepare($cmd);
   $sth->execute( $node_id, $leaf->dbID, $leaf->taxon_id, $leaf->stable_id, $db_e->display_id,
     $evidence );
 }
@@ -253,6 +236,7 @@ sub insert_go_term {
 sub collect_uniprot {
   my $self = shift;
 
+  my $tree = $self->get_tree;
   my $sa = $tree->get_SimpleAlign;
   my $pos_id_hash;
 
@@ -270,7 +254,7 @@ sub collect_uniprot {
   my $cmd = qq^
     REPLACE INTO sitewise_tag (node_id,parameter_set_id,aln_position,tag,value,source) values(?,?,?,?,?,?);
   ^;
-  my $sth = $dba->dbc->prepare($cmd);
+  my $sth = $self->compara_dba->dbc->prepare($cmd);
 
   foreach my $leaf ( $tree->leaves ) {
     next unless ( $leaf->taxon_id == 9606 || $leaf->taxon_id == 10090 );
@@ -307,8 +291,8 @@ sub collect_uniprot {
 
       next if ( !$seq_pos );
 
-      my $node_id          = $params->{node_id};
-      my $parameter_set_id = $params->{parameter_set_id};
+      my $node_id          = $self->param('node_id');
+      my $parameter_set_id = $self->param('parameter_set_id');
       my $aln_position     = $sa->column_from_residue_number( $stable_id, $seq_pos );
 
       my ($seq) = $sa->each_seq_with_id($stable_id);
@@ -334,6 +318,7 @@ sub collect_uniprot {
 sub collect_exons {
   my $self = shift;
 
+  my $tree = $self->get_tree;
   my $sa = $tree->get_SimpleAlign;
 
   print $sa->length . "\n";
@@ -373,9 +358,10 @@ sub collect_exons {
         my $aln_end   = $sa->column_from_residue_number( $leaf->stable_id, $pep_end );
 
         foreach my $pos ( $aln_start .. $aln_end ) {
-
+	  my $node_id = $self->param('node_id');
+	  my $parameter_set_id = $self->param('parameter_set_id');
           # Store whether we're in a first, middle, or last exon.
-          $sth->execute( $params->{node_id}, $pos, $params->{parameter_set_id},
+          $sth->execute( $node_id, $pos, $parameter_set_id,
             'EXON', $exon_position, "EnsEMBL" );
 
           # Store the smallest distance to an exon junction.
@@ -387,7 +373,7 @@ sub collect_exons {
             $dist = $dist_right;
           }
 
-          $sth->execute( $params->{node_id}, $pos, $params->{parameter_set_id},
+          $sth->execute( $node_id, $pos, $parameter_set_id,
             'SPLICE_DISTANCE', $dist, "EnsEMBL" );
         }
 
@@ -402,12 +388,14 @@ sub collect_pfam {
   my $self = shift;
 
   my @taxon_ids;
-  if ( defined $params->{'pfam_taxon_ids'} ) {
-    @taxon_ids = split( ",", $params->{'pfam_taxon_ids'} );
+  my $pfam_taxon_ids = $self->param('pfam_taxon_ids');
+  if ( defined $pfam_taxon_ids ) {
+    @taxon_ids = split( ",", $pfam_taxon_ids );
   } else {
     @taxon_ids = (9606);
   }
 
+  my $tree = $self->get_tree;
   my $sa = $tree->get_SimpleAlign;
   my $pos_id_hash;
   foreach my $leaf ( $tree->leaves ) {
@@ -450,7 +438,7 @@ sub collect_pfam {
     my $score  = $obj->{'score'};
     printf( "%s %s %s %s\n", $id, $pos, $pf_pos, $score );
     my @values =
-      ( $tree->node_id, $pos, $params->{parameter_set_id}, '"DOMAIN"', '"' . $id . '"', $score );
+      ( $tree->node_id, $pos, $self->param('parameter_set_id'), '"DOMAIN"', '"' . $id . '"', $score );
     my $string = '(' . join( ',', @values ) . ')';
     push @array_of_strings, $string;
   }
@@ -465,11 +453,110 @@ sub collect_pfam {
   }
 }
 
+
+sub do_filter {
+  my $self = shift;
+
+  # Create a local params object to temporarly remove the subtree settings.
+  my $params = $self->params;
+  $params->{parameter_set_id} = 0;
+  $params->{keep_species} = '';
+  $params->{remove_species} = '';
+
+  my $tree = $self->get_tree($params);
+  my $sa = $tree->get_SimpleAlign;
+
+  Bio::EnsEMBL::Compara::AlignUtils->pretty_print($sa,{length=>400});
+
+  my $dba = $self->compara_dba;
+
+  # Subroutines to return a list of taxon IDs with specific features.
+  sub clade_taxon_ids {
+    my $clade = shift || 1;
+    my @genomes = Bio::EnsEMBL::Compara::ComparaUtils->get_genomes_within_clade($dba,$clade);
+    my @taxon_ids = map {$_->taxon_id} @genomes;
+    return @taxon_ids;
+  }
+  sub subtract {
+    my $list_a = shift;
+    my @remove_us = @_;
+    my $hash;
+    map {$hash->{$_}=1} @$list_a;
+    foreach my $list_b (@remove_us) {
+      map {delete $hash->{$_}} @$list_b;
+    }
+    return keys %$hash;
+  }
+
+  my @mammals_arr = clade_taxon_ids("Eutheria");
+  my @primates_arr = clade_taxon_ids("Primates");
+  my @glires_arr = clade_taxon_ids("Glires");
+  my @laur_arr = clade_taxon_ids("Laurasiatheria");
+
+  my @outgroup_arr = subtract(\@mammals_arr,\@primates_arr,\@glires_arr,\@laur_arr);
+
+  print "primates: @primates_arr\n";
+
+  my @array_of_strings;
+  foreach my $aln_position (1 .. $sa->length) {
+    my $primate_count = 0;
+    my $glires_count = 0;
+    my $laur_count = 0;
+    my $outgroup_count = 0;
+    my $total_count = 0;
+
+    my $taxon_id_hash = {};
+    
+    my $slice = $sa->slice($aln_position,$aln_position);
+    
+    foreach my $leaf ($tree->leaves) {
+      my $seq = Bio::EnsEMBL::Compara::AlignUtils->get_seq_with_id($slice,$leaf->stable_id);
+      if (!defined $seq || $seq->seq =~ m/[-Xx]/) {
+	#print "-";
+	next;
+      }
+      #next if ($seq->seq =~ m/[-Xx]/);
+      #print $seq->seq;
+      $taxon_id_hash->{$leaf->taxon_id} = 1;
+    }
+
+    $primate_count = scalar(grep {$taxon_id_hash->{$_}==1} @primates_arr);
+    $glires_count = scalar(grep {$taxon_id_hash->{$_}==1} @glires_arr);
+    $laur_count = scalar(grep {$taxon_id_hash->{$_}==1} @laur_arr);
+    $outgroup_count = scalar(grep {$taxon_id_hash->{$_}==1} @outgroup_arr);
+    $total_count = scalar(keys %$taxon_id_hash);
+
+    my $filter_val = 0;
+    $filter_val = 1 if ($total_count >= 3);
+    $filter_val = 2 if ($total_count >= 6);
+    # This corresponds to the filtering criteria used by Pollard et al. Gen Res 2010:
+    $filter_val = 3 if ($primate_count >= 3 && $glires_count >= 2 && $outgroup_count >= 1);
+
+    print "$aln_position $filter_val\n";
+
+    my @values =
+      ( $self->param('node_id'), $aln_position, 0, '"FILTER"', $filter_val, 'NULL' );
+    my $string = '(' . join( ',', @values ) . ')';
+    push @array_of_strings, $string;
+  }
+
+  if ( scalar(@array_of_strings) > 0 ) {
+    my $values_string = join( ",", @array_of_strings );
+    my $cmd =
+      "REPLACE INTO sitewise_tag (node_id,aln_position,parameter_set_id,tag,value,source) VALUES $values_string";
+    #print $cmd."\n";
+    my $sth = $tree->adaptor->prepare($cmd);
+    $sth->execute;
+    $sth->finish;
+  }
+
+}
+
 sub create_plot {
   my $self = shift;
 
   my $base_dir = "/lustre/scratch103/ensembl/gj1/2xmammals_plots";
-  my $node_id  = $params->{node_id};
+  my $node_id  = $self->param('node_id');
 
   use Digest::MD5 qw(md5_hex);
   my $digest       = md5_hex($node_id);
@@ -483,6 +570,7 @@ sub create_plot {
   use File::Path qw(mkpath);
   mkpath( $output_dir, { mode => 0777 } );
 
+  my $tree = $self->get_tree;
   my @human_peps = grep { $_->taxon_id == 9606 } $tree->leaves;
   foreach my $hum_pep (@human_peps) {
     my $stable_id   = $hum_pep->stable_id;
@@ -500,7 +588,7 @@ sub create_plot {
     };
     use Bio::Greg::EslrPlots;
     my $fresh_tree = $tree->copy;
-    Bio::Greg::EslrPlots->plotTreeWithOmegas( $output_file, $params, $fresh_tree );
+    Bio::Greg::EslrPlots->plotTreeWithOmegas( $output_file, $self->params, $fresh_tree );
     $fresh_tree->release_tree;
   }
 
@@ -509,7 +597,6 @@ sub create_plot {
 sub write_output {
   my $self = shift;
 
-  $tree->release_tree;
 }
 
 1;

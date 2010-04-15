@@ -11,20 +11,13 @@ use Bio::EnsEMBL::Hive;
 use Bio::EnsEMBL::Hive::Process;
 use Time::HiRes qw(sleep);
 use Bio::EnsEMBL::Registry;
-use Bio::Greg::ProcessUtils;
 use Bio::Greg::StatsCollectionUtils;
 
-our @ISA = qw(Bio::EnsEMBL::Hive::Process Bio::Greg::ProcessUtils Bio::Greg::StatsCollectionUtils);
+use base ('Bio::Greg::Hive::Process','Bio::Greg::StatsCollectionUtils');
 
 #
 # Some global-ish variables.
 #
-my $dba;
-my $pta;
-
-# INPUT FILES / OBJECTS.
-my $tree;
-my $params;
 
 # OUTPUT FILES / OBJECTS / STATES.
 my %node_set_hash;
@@ -53,7 +46,9 @@ my $counts_genes_def = {
   tree_newick => 'string',
   tree_pattern => 'string',
   tree_length => 'float',
-  tree_max_path => 'float'
+  tree_max_path => 'float',
+
+  unique_keys => 'node_id,parameter_set_id'
   };
 
 my $counts_sites_def = {
@@ -70,6 +65,8 @@ my $counts_sites_def = {
   codon_b    => 'string',
   has_cpg    => 'string',
 
+  codon_genome => 'string',
+
   unique_keys => 'aln_position,node_id,parameter_set_id'
   };
 
@@ -77,12 +74,8 @@ my $counts_sites_def = {
 sub fetch_input {
   my ($self) = @_;
 
-  # Load up the Compara DBAdaptor.
-  $dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new( -DBCONN => $self->db->dbc );
-  $pta = $dba->get_ProteinTreeAdaptor;
-
   ### DEFAULT PARAMETERS ###
-  $params = {
+  my $params = {
     gorilla_count_species => '9593,9598,9606',
     gorilla_map_taxon => 9593,
     counts_sites_table => 'counts_sites',
@@ -91,34 +84,29 @@ sub fetch_input {
   ##########################
 
   # Fetch parameters from all possible locations.
-  my $p_params = $self->get_params( $self->parameters );
-  my $i_params = $self->get_params( $self->input_id );
-  my $node_id  = $i_params->{'node_id'};
-  my $t_params = $self->load_params_from_tree_tags( $dba, $node_id );
-  my $ps_params = $self->load_params_from_param_set($dba, 1);
-
-  $params = $self->replace_params( $params, $p_params, $i_params, $t_params, $ps_params );
-  $self->hash_print($params);
-
-  $tree = $pta->fetch_node_by_node_id($node_id);
+  $self->load_all_params($params);
 
   # Create table if necessary.
-  $self->create_table_from_params($dba,$params->{counts_sites_table},$counts_sites_def);
-  $self->create_table_from_params($dba,$params->{counts_genes_table},$counts_genes_def);
+  $self->create_table_from_params($self->compara_dba,$self->params->{counts_sites_table},$counts_sites_def);
+  $self->create_table_from_params($self->compara_dba,$self->params->{counts_genes_table},$counts_genes_def);
 
 }
 
 sub run {
   my $self = shift;
 
-  my $species_str = $params->{gorilla_count_species};
-  #my $species_str = "9593,9598,9606";
+  my $tree = $self->get_tree;
+
+  print $tree->newick_format."\n";
+
+  my $species_str = $self->param('gorilla_count_species');
   my @species_list = split(',',$species_str);
 
   my $taxon_to_letter = {
     9606 => 'H',
     9598 => 'C',
-    9593 => 'G'
+    9593 => 'G',
+    9600 => 'O'
   };
 
   my @keeper_leaves = $TREE->get_leaves_for_species($tree,\@species_list);
@@ -147,7 +135,6 @@ sub run {
   my $aln = $tree->get_SimpleAlign(-cdna => 1);
   $aln = $ALN->sort_by_tree($aln,$tree);
 
-  ($aln) = $ALN->remove_blank_columns($aln);
   $ALN->pretty_print($aln,{length=>200});
   
   my $gene_data = {
@@ -173,6 +160,9 @@ sub run {
 
   for (my $i=1; $i < $aln->length; $i+= 3) {
     my $slice = $aln->slice($i,$i+2);
+
+    # Skip all-gap alignment slices.
+    next if (scalar $slice->each_seq == 0);
     
     my $codon_hashref;
     my $aa_hashref;
@@ -224,7 +214,7 @@ sub run {
     my $codon_b = '';
     my $codon_b = $codon_value_hash->{$codon_arr[1]} if (scalar @codon_arr > 1);
 
-    my $coord_data = $self->get_genomic_coord($tree,$aln,$i,$params->{gorilla_map_taxon});
+    my $coord_data = $self->get_genomic_coord($tree,$aln,$i,$self->param('gorilla_map_taxon'));
     #die("No coords!") unless ($coord_data);
 
     $gene_data->{$codon_string}++ if ($type ne 'gap');
@@ -234,31 +224,38 @@ sub run {
     $gene_data->{constant}++ if ($type eq 'constant');
     $gene_data->{gap}++ if ($type eq 'gap');
 
-    print $codon_a . " -> " . $coord_data->{char}."\n";
+    my $codon_genome = $coord_data->{char};
+    if ($codon_genome ne '') {
+      if (! grep {$codon_genome eq $_} values %$codon_value_hash) {
+	print ("Genomic codon $codon_genome not found in codon hash!\n");
+      }
+    }
 
     my $site_data = {
-      node_id => $params->{node_id},
-      aln_position => $i,
-      parameter_set_id => $params->{parameter_set_id},
+      node_id => $self->param('node_id'),
+      aln_position => $i, # Give alignment coordinates with the gaps NOT removed.
+      parameter_set_id => 0,
 
       codon_a => $codon_a,
       codon_b => $codon_b,
       has_cpg => $has_cpg,
+
+      codon_genome => $codon_genome,
       
       type => $type,
       pattern => $codon_string
     };
     
-    $site_data = $self->replace_params($params,$site_data,$coord_data);
+    $site_data = $self->replace_params($self->params,$site_data,$coord_data);
 
     #$COMPARA->hash_print($site_data);    
-    $self->store_params_in_table($dba,$params->{counts_sites_table},$site_data);
+    $self->store_params_in_table($self->compara_dba,$self->param('counts_sites_table'),$site_data);
     #$ALN->pretty_print($slice,{length=>200});
   }
 
-  $gene_data = $self->replace_params($params,$gene_data);
+  $gene_data = $self->replace_params($self->params,$gene_data,{parameter_set_id => 0});
 
-  $self->store_params_in_table($dba,$params->{counts_genes_table},$gene_data);
+  $self->store_params_in_table($self->compara_dba,$self->param('counts_genes_table'),$gene_data);
 }
 
 sub get_tree_pattern {
@@ -322,8 +319,6 @@ sub get_genomic_coord {
 
     my $gc = $gc_arr[0];
     next unless ( $gc && $gc->isa("Bio::EnsEMBL::Mapper::Coordinate") );
-
-    
 
     my $strand = "+";
     $strand = "-" if ( $gc->strand == -1 );

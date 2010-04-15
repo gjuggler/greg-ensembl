@@ -11,9 +11,9 @@ use Bio::EnsEMBL::Hive;
 use Bio::EnsEMBL::Hive::Process;
 use Time::HiRes qw(sleep);
 use Bio::EnsEMBL::Registry;
-use Bio::Greg::ProcessUtils;
+use Bio::Greg::Hive::Process;
 
-our @ISA = qw(Bio::EnsEMBL::Hive::Process Bio::Greg::ProcessUtils);
+use base ('Bio::Greg::Hive::Process');
 
 #
 # Some global-ish variables.
@@ -43,22 +43,17 @@ sub fetch_input {
   };
   ##########################
 
-  # Fetch parameters from all possible locations.
-  my $p_params = $self->get_params( $self->parameters );
-  my $i_params = $self->get_params( $self->input_id );
-  my $node_id  = $i_params->{'node_id'};
-  my $t_params = $self->load_params_from_tree_tags( $dba, $node_id );
+  $self->load_all_params;
 
-  $params = $self->replace_params( $params, $p_params, $i_params, $t_params );
-  $self->hash_print($params);
-
-  $tree = $pta->fetch_node_by_node_id($node_id);
+  $self->param('tree',$self->get_tree);
 }
 
 sub run {
   my $self = shift;
 
-  print $tree->nhx_format('display_label') . "\n";
+  my $tree = $self->param('tree');
+
+  #print $tree->nhx_format('display_label') . "\n";
 
   $self->tag_root_nodes( $tree, "Primates" );
   $self->tag_root_nodes( $tree, "Glires" );
@@ -80,6 +75,8 @@ sub run {
 
 sub write_output {
   my $self = shift;
+
+  my $tree = $self->param('tree');
   
   if (defined $params->{flow_node_set}) {
     $self->autoflow_inputjob(0);
@@ -92,20 +89,19 @@ sub write_output {
       if ($node->has_tag("cc_root_".$flow_set)) {
 	print " -> Flowing node $id\n";
 
-        my $output_id = Bio::EnsEMBL::Compara::ComparaUtils->hash_to_string({ node_id => $id } );
+        my $output_id = { node_id => $id };
         $self->dataflow_output_id( $output_id, 1 );
         if ( $params->{flow_parent_and_children} ) {
           my $i = 0;
           foreach my $child ( @{ $node->children } ) {
-            my $output_id =
-              Bio::EnsEMBL::Compara::ComparaUtils->hash_to_string({ 
-		node_id => $child->node_id,
-		node_set_parent_id => $id, node_set_child_number => $i++ 
-		} );
-            $self->dataflow_output_id( $output_id, 1 );
-            print "  --> Flowing child $output_id\n";
-          }
-        }
+            my $output_id = { 
+	      node_id => $child->node_id,
+	      node_set_parent_id => $id, node_set_child_number => $i++ 
+	      };
+	    $self->dataflow_output_id( $output_id, 1 );
+	    print "  --> Flowing child $output_id\n";
+	  }
+	}
       }
     }
   }
