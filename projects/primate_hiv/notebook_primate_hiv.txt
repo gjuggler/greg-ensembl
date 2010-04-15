@@ -3,3 +3,6 @@
 Genes to look at:
  - Neil et al. 2008 Nature - Tetherin inhibits retrovirus release, antagonized by HIV-1 Vpu
    - CD317 (aka BST2 / HM1.24)
+
+### 2010-04-06 ###
+
