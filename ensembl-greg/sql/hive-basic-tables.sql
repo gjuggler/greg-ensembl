@@ -1,4 +1,5 @@
-------------------------------------------------------------------------------------
+
+-- ----------------------------------------------------------------------------------
 --
 -- Table structure for table 'hive'
 --
@@ -11,8 +12,8 @@
 -- semantics:
 --
 
-CREATE TABLE IF NOT EXISTS hive (
-  hive_id          int(10) NOT NULL auto_increment,
+CREATE TABLE hive (
+  worker_id        int(10) NOT NULL auto_increment,
   analysis_id      int(10) NOT NULL,
   beekeeper        varchar(80) DEFAULT '' NOT NULL,
   host	           varchar(40) DEFAULT '' NOT NULL,
@@ -23,12 +24,12 @@ CREATE TABLE IF NOT EXISTS hive (
   last_check_in    datetime NOT NULL,
   died             datetime DEFAULT NULL,
   cause_of_death   enum('', 'NO_WORK', 'JOB_LIMIT', 'HIVE_OVERLOAD', 'LIFESPAN', 'FATALITY') DEFAULT '' NOT NULL,
-  PRIMARY KEY (hive_id),
+  PRIMARY KEY (worker_id),
   INDEX analysis_status (analysis_id, status)
-) ENGINE=InnoDB ;
+) ENGINE=InnoDB;
 
 
-------------------------------------------------------------------------------------
+-- ---------------------------------------------------------------------------------
 --
 -- Table structure for table 'dataflow_rule'
 --
@@ -54,7 +55,7 @@ CREATE TABLE IF NOT EXISTS hive (
 --   to_analysis_url      - foreign key to net distributed analysis logic_name reference
 --   branch_code          - joined to analysis_job.branch_code to allow branching
 
-CREATE TABLE IF NOT EXISTS dataflow_rule (
+CREATE TABLE dataflow_rule (
   dataflow_rule_id    int(10) unsigned not null auto_increment,
   from_analysis_id    int(10) unsigned NOT NULL,
   to_analysis_url     varchar(255) default '' NOT NULL,
@@ -62,69 +63,10 @@ CREATE TABLE IF NOT EXISTS dataflow_rule (
 
   PRIMARY KEY (dataflow_rule_id),
   UNIQUE (from_analysis_id, to_analysis_url)
-)ENGINE=InnoDB ;
+);
 
 
-------------------------------------------------------------------------------------
---
--- Table structure for table 'analysis'
---
--- semantics:
--- analysis_id - internal id
--- created   - date to distinguish newer and older versions off the
---             same analysis. Not well maintained so far.
--- logic_name  string to identify the analysis. Used mainly inside pipeline.
--- db, db_version, db_file
---  - db should be a database name, db version the version of that db
---    db_file the file system location of that database,
---    probably wiser to generate from just db and configurations
--- program, program_version,program_file
---  - The binary used to create a feature. Similar semantic to above
--- module, module_version
---  - Perl module names (RunnableDBS usually) executing this analysis.
--- parameters a paramter string which is processed by the perl module
--- gff_source, gff_feature
---  - how to make a gff dump from features with this analysis
-
-CREATE TABLE IF NOT EXISTS analysis (
-
-  analysis_id                 int(10) unsigned NOT NULL auto_increment, # unique internal id
-  created                     datetime DEFAULT '0000-00-00 00:00:00' NOT NULL,
-  logic_name                  varchar(40) not null,
-  db                          varchar(120),
-  db_version                  varchar(40),
-  db_file                     varchar(120),
-  program                     varchar(80),
-  program_version             varchar(40),
-  program_file                varchar(80),
-  parameters                  MEDIUMTEXT,
-  module                      varchar(80),
-  module_version              varchar(40),
-  gff_source                  varchar(40),
-  gff_feature                 varchar(40),
-
-  PRIMARY KEY (analysis_id),
-  KEY logic_name_idx( logic_name ),
-  UNIQUE (logic_name)
-
-) ENGINE=InnoDB COLLATE=latin1_swedish_ci;
-
-
-CREATE TABLE IF NOT EXISTS analysis_description (
-  analysis_id                int(10) unsigned NOT NULL,
-  description                text,
-  display_label              varchar(255),
-  displayable                boolean not null default 1,
-  web_data                   text,
-
-#  FOREIGN KEY (analysis_id) REFERENCES analysis(analysis_id),
-
-  UNIQUE KEY analysis_idx( analysis_id )
-
-) ENGINE=InnoDB COLLATE=latin1_swedish_ci;
-
-
-------------------------------------------------------------------------------------
+-- ---------------------------------------------------------------------------------
 --
 -- Table structure for table 'analysis_ctrl_rule'
 --
@@ -143,15 +85,15 @@ CREATE TABLE IF NOT EXISTS analysis_description (
 --   condition_analysis_url  - foreign key to net distributed analysis reference
 --   ctrled_analysis_id      - foreign key to analysis table analysis_id
 
-CREATE TABLE IF NOT EXISTS analysis_ctrl_rule (
+CREATE TABLE analysis_ctrl_rule (
   condition_analysis_url     varchar(255) default '' NOT NULL,
   ctrled_analysis_id         int(10) unsigned NOT NULL,
 
   UNIQUE (condition_analysis_url, ctrled_analysis_id)
-) ENGINE=InnoDB;
+);
 
 
-------------------------------------------------------------------------------------
+-- ---------------------------------------------------------------------------------
 --
 -- Table structure for table 'analysis_job'
 --
@@ -168,35 +110,41 @@ CREATE TABLE IF NOT EXISTS analysis_ctrl_rule (
 --   analysis_id             - the analysis_id needed to accomplish this job.
 --   input_id                - input data passed into Analysis:RunnableDB to control the work
 --   job_claim               - UUID set by workers as the fight over jobs
---   hive_id                 - link to hive table to define which worker claimed this job
+--   worker_id               - link to hive table to define which worker claimed this job
 --   status                  - state the job is in
 --   retry_count             - number times job had to be reset when worker failed to run it
 --   completed               - timestamp when job was completed
---   branch_code             - switch-like branching control, default=1 (ie true)
+--
+--   semaphore_count         - if this count is >0, the job is conditionally blocked (until this count drops to 0 or below).
+--                              Default=0 means "nothing is blocking me by default".
+--   semaphored_job_id       - the analysis_job_id of job S that is waiting for this job to decrease S's semaphore_count.
+--                              Default=NULL means "I'm not blocking anything by default".
 
-CREATE TABLE IF NOT EXISTS analysis_job (
+CREATE TABLE analysis_job (
   analysis_job_id           int(10) NOT NULL auto_increment,
   prev_analysis_job_id      int(10) NOT NULL,  #analysis_job which created this from rules
   analysis_id               int(10) NOT NULL,
-  input_id                  MEDIUMTEXT not null,
-  job_claim                 char(40) NOT NULL default '', #UUID
-  hive_id                   int(10) NOT NULL,
+  input_id                  char(255) not null,
+  job_claim                 char(40) NOT NULL DEFAULT '', #UUID
+  worker_id                 int(10) NOT NULL,
   status                    enum('READY','BLOCKED','CLAIMED','GET_INPUT','RUN','WRITE_OUTPUT','DONE','FAILED') DEFAULT 'READY' NOT NULL,
   retry_count               int(10) default 0 not NULL,
   completed                 datetime NOT NULL,
-  branch_code               int(10) default 1 NOT NULL,
   runtime_msec              int(10) default 0 NOT NULL, 
   query_count               int(10) default 0 NOT NULL, 
 
+  semaphore_count           int(10) NOT NULL default 0,
+  semaphored_job_id         int(10) DEFAULT NULL,
+
   PRIMARY KEY                  (analysis_job_id),
-  UNIQUE KEY input_id_analysis (input_id(255), analysis_id),
+  UNIQUE KEY input_id_analysis (input_id, analysis_id),
   INDEX claim_analysis_status  (job_claim, analysis_id, status),
-  INDEX analysis_status        (analysis_id, status),
-  INDEX hive_id                (hive_id)
-) ENGINE=InnoDB MAX_ROWS = 100000000 AVG_ROW_LENGTH = 390 ; 
+  INDEX analysis_status        (analysis_id, status, semaphore_count),
+  INDEX worker_id              (worker_id)
+) ENGINE=InnoDB;
 
 
-------------------------------------------------------------------------------------
+-- ---------------------------------------------------------------------------------
 --
 -- Table structure for table 'analysis_job_file'
 --
@@ -208,24 +156,24 @@ CREATE TABLE IF NOT EXISTS analysis_job (
 --
 -- semantics:
 --   analysis_job_id    - foreign key
---   hive_id            - link to hive table to define which worker claimed this job
+--   worker_id          - link to hive table to define which worker claimed this job
 --   retry              - copy of retry_count of job as it was run
 --   type               - type of file e.g. STDOUT, STDERR, TMPDIR, ...
 --   path               - path to file or directory
 
-CREATE TABLE IF NOT EXISTS analysis_job_file (
+CREATE TABLE analysis_job_file (
   analysis_job_id         int(10) NOT NULL,
-  hive_id                 int(10) NOT NULL,
+  worker_id               int(10) NOT NULL,
   retry                   int(10) NOT NULL,
   type                    varchar(16) NOT NULL default '',
   path                    varchar(255) NOT NULL,
   
-  UNIQUE KEY job_hive_type  (analysis_job_id, hive_id, type),
-  INDEX hive_id             (hive_id)
+  UNIQUE KEY job_hive_type  (analysis_job_id, worker_id, type),
+  INDEX worker_id           (worker_id)
 ) ENGINE=InnoDB;
 
 
-------------------------------------------------------------------------------------
+-- ---------------------------------------------------------------------------------
 --
 -- Table structure for table 'analysis_data'
 --
@@ -238,16 +186,16 @@ CREATE TABLE IF NOT EXISTS analysis_job_file (
 --   analysis_data_id   - primary id
 --   data               - text blob which holds the data
 
-CREATE TABLE IF NOT EXISTS analysis_data (
+CREATE TABLE analysis_data (
   analysis_data_id  int(10) NOT NULL auto_increment,
   data              longtext,
 
   PRIMARY KEY (analysis_data_id),
   KEY data (data(100))
-) ENGINE=InnoDB;
+);
 
 
-------------------------------------------------------------------------------------
+-- ---------------------------------------------------------------------------------
 --
 -- Table structure for table 'analysis_stats'
 --
@@ -261,8 +209,9 @@ CREATE TABLE IF NOT EXISTS analysis_data (
 --   analysis_id          - foreign key to analysis table
 --   status               - overview status of the analysis_jobs (cached state)
 --   failed_job_tolerance - % of tolerated failed jobs
+--   rc_id                - resource class id (analyses are grouped into disjoint classes)
 
-CREATE TABLE IF NOT EXISTS analysis_stats (
+CREATE TABLE analysis_stats (
   analysis_id           int(10) NOT NULL,
   status                enum('BLOCKED', 'LOADING', 'SYNCHING', 'READY', 'WORKING', 'ALL_CLAIMED', 'DONE', 'FAILED')
                           DEFAULT 'READY' NOT NULL,
@@ -285,11 +234,20 @@ CREATE TABLE IF NOT EXISTS analysis_stats (
   num_required_workers  int(10) NOT NULL,
   last_update           datetime NOT NULL,
   sync_lock             int(10) default 0 NOT NULL,
+  rc_id                 int(10) unsigned default 0 NOT NULL,
   
   UNIQUE KEY   (analysis_id)
 ) ENGINE=InnoDB;
 
-CREATE TABLE IF NOT EXISTS analysis_stats_monitor (
+CREATE TABLE resource_description (
+    rc_id                 int(10) unsigned DEFAULT 0 NOT NULL,
+    meadow_type           enum('LSF', 'LOCAL') DEFAULT 'LSF' NOT NULL,
+    parameters            varchar(255) DEFAULT '' NOT NULL,
+    description           varchar(255),
+    PRIMARY KEY(rc_id, meadow_type)
+) ENGINE=InnoDB;
+
+CREATE TABLE analysis_stats_monitor (
   time                  datetime NOT NULL default '0000-00-00 00:00:00',
   analysis_id           int(10) NOT NULL,
   status                enum('BLOCKED', 'LOADING', 'SYNCHING', 'READY', 'WORKING', 'ALL_CLAIMED', 'DONE', 'FAILED')
@@ -312,10 +270,11 @@ CREATE TABLE IF NOT EXISTS analysis_stats_monitor (
   num_running_workers   int(10) default 0 NOT NULL,
   num_required_workers  int(10) NOT NULL,
   last_update           datetime NOT NULL,
-  sync_lock             int(10) default 0 NOT NULL
+  sync_lock             int(10) default 0 NOT NULL,
+  rc_id                 int(10) unsigned default 0 NOT NULL
 ) ENGINE=InnoDB;
 
-------------------------------------------------------------------------------------
+-- ---------------------------------------------------------------------------------
 --
 -- Table structure for table 'monitor'
 --
@@ -331,13 +290,105 @@ CREATE TABLE IF NOT EXISTS analysis_stats_monitor (
 --                    (this number is calculated using running workers only)
 --   analysis       - analysis(es) running at that time
 
-CREATE TABLE IF NOT EXISTS monitor (
+CREATE TABLE monitor (
   time                  datetime NOT NULL default '0000-00-00 00:00:00',
   workers               int(10) NOT NULL default '0',
   throughput            float default NULL,
   per_worker            float default NULL,
   analysis              varchar(255) default NULL
 ) ENGINE=InnoDB;
+
+
+-- The last 3 tables are from the ensembl core schema: meta, analysis and analysis_description.
+-- We create them with the 'IF NOT EXISTS' option in case they already exist in the DB.
+
+################################################################################
+#
+# Table structure for table 'meta' (FROM THE CORE SCHEMA)
+#
+
+CREATE TABLE IF NOT EXISTS meta (
+
+  meta_id                     INT NOT NULL AUTO_INCREMENT,
+  species_id                  INT UNSIGNED DEFAULT 1,
+  meta_key                    VARCHAR(40) NOT NULL,
+  meta_value                  VARCHAR(255) BINARY NOT NULL,
+
+  PRIMARY   KEY (meta_id),
+  UNIQUE    KEY species_key_value_idx (species_id, meta_key, meta_value),
+            KEY species_value_idx (species_id, meta_value)
+
+) COLLATE=latin1_swedish_ci ENGINE=MyISAM;
+
+
+################################################################################
+#
+# Table structure for table 'analysis' (FROM THE CORE SCHEMA)
+#
+# semantics:
+#
+# analysis_id - internal id
+# created
+#   - date to distinguish newer and older versions off the same analysis. Not
+#     well maintained so far.
+# logic_name - string to identify the analysis. Used mainly inside pipeline.
+# db, db_version, db_file
+#  - db should be a database name, db version the version of that db
+#    db_file the file system location of that database,
+#    probably wiser to generate from just db and configurations
+# program, program_version,program_file
+#  - The binary used to create a feature. Similar semantic to above
+# module, module_version
+#  - Perl module names (RunnableDBS usually) executing this analysis.
+# parameters - a paramter string which is processed by the perl module
+# gff_source, gff_feature
+#  - how to make a gff dump from features with this analysis
+
+
+CREATE TABLE IF NOT EXISTS analysis (
+
+  analysis_id                 SMALLINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  created                     datetime DEFAULT '0000-00-00 00:00:00' NOT NULL,
+  logic_name                  VARCHAR(40) NOT NULL,
+  db                          VARCHAR(120),
+  db_version                  VARCHAR(40),
+  db_file                     VARCHAR(120),
+  program                     VARCHAR(80),
+  program_version             VARCHAR(40),
+  program_file                VARCHAR(80),
+  parameters                  TEXT,
+  module                      VARCHAR(80),
+  module_version              VARCHAR(40),
+  gff_source                  VARCHAR(40),
+  gff_feature                 VARCHAR(40),
+
+  PRIMARY KEY (analysis_id),
+  KEY logic_name_idx (logic_name),
+  UNIQUE (logic_name)
+
+) COLLATE=latin1_swedish_ci ENGINE=MyISAM;
+
+
+################################################################################
+#
+# Table structure for table 'analysis_description' (FROM THE CORE SCHEMA)
+#
+
+CREATE TABLE IF NOT EXISTS analysis_description (
+
+  analysis_id                  SMALLINT UNSIGNED NOT NULL,
+  description                  TEXT,
+  display_label                VARCHAR(255),
+  displayable                  BOOLEAN NOT NULL DEFAULT 1,
+  web_data                     TEXT,
+
+  UNIQUE KEY analysis_idx (analysis_id)
+
+) COLLATE=latin1_swedish_ci ENGINE=MyISAM;
+
+
+# Auto add schema version to database (should be overridden by Compara's table.sql)
+INSERT IGNORE INTO meta (species_id, meta_key, meta_value) VALUES (NULL, "schema_version", "57");
 
 
 DROP PROCEDURE IF EXISTS hive_overview;
