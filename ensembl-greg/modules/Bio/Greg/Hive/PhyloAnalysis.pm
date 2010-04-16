@@ -35,7 +35,7 @@ sub fetch_input {
     sitewise_minimum_leaf_count     => 3,
     sitewise_strip_gaps             => 0,
     sitewise_parameter_sets         => 'all',
-    sitewise_action                 => 'slr',                # Which action(s) to perform. Space-delimited.
+    analysis_action                 => 'slr',                # Which action(s) to perform. Space-delimited.
                                                     # 'slr' - SLR sitewise omegas.
                                                     # 'paml_sitewise' - PAML sitewise omegas.
                                                     # 'wobble' - SLR_wobble test.
@@ -63,6 +63,7 @@ sub fetch_input {
   
   $self->load_all_params($params);
 
+  $self->fail_on_single_member();
 }
 
 sub run {
@@ -78,11 +79,11 @@ sub run {
   my @leaves = $tree->leaves;
   if (scalar(@leaves) < $self->param('sitewise_minimum_leaf_count')) {
     my $value = sprintf "Too small (%d < %d)",scalar(@leaves),$self->param('sitewise_minimum_leaf_count');
-    $self->store_tag("slr_skipped_".$self->param('parameter_set_id'),$value);
+    $self->store_tag("slr_skipped",$value);
     next;
   } elsif (scalar(@leaves) > 300) {
     my $value = sprintf "Too big (%d > %d)",scalar(@leaves),300;
-    $self->store_tag("slr_skipped_".$self->param('parameter_set_id'),$value);
+    $self->store_tag("slr_skipped",$value);
     next;
   }
   foreach my $leaf (@leaves) {
@@ -113,7 +114,7 @@ sub run {
       if ($@) {
 	my $param_set = $self->param('parameter_set_id');
 	print "ERROR - GIVING UP! Parameter set $param_set\n";
-	$self->store_tag('slr_error_'.$param_set,1);
+	$self->store_tag('slr_error',1);
 	sleep(2);
       }
     }
@@ -127,15 +128,13 @@ sub run_with_params {
   my $tree = shift;
 
   print "Getting alignments...\n";
-  my $aa_aln = $tree->get_SimpleAlign();
-  my $cdna_aln = $tree->get_SimpleAlign(-cdna => 1, -hide_positions => 1);
 
   foreach my $leaf ($tree->leaves) {
     #print $leaf->member_id."\n";
   }
 
-  my $input_aa = Bio::EnsEMBL::Compara::ComparaUtils->fetch_masked_alignment($aa_aln,$cdna_aln,$tree,$params,0);
-  my $input_cdna = Bio::EnsEMBL::Compara::ComparaUtils->fetch_masked_alignment($aa_aln,$cdna_aln,$tree,$params,1);
+  my $input_aa = $self->get_aln;
+  my $input_cdna = $self->get_cdna_aln;
 
   my ($slim_cdna,$cdna_new_to_old,$cdna_old_to_new) = Bio::EnsEMBL::Compara::AlignUtils->remove_blank_columns_in_threes($input_cdna);
   my ($slim_aa,$aa_new_to_old,$aa_old_to_new) = Bio::EnsEMBL::Compara::AlignUtils->remove_blank_columns($input_aa);
@@ -147,10 +146,10 @@ sub run_with_params {
   $self->param('aln_map_aa',$aa_new_to_old);
   $self->param('aln_map_cdna',$cdna_new_to_old);
 
-  Bio::EnsEMBL::Compara::AlignUtils->pretty_print($input_aa,{length => 100});
-  Bio::EnsEMBL::Compara::AlignUtils->pretty_print($input_cdna,{length => 100});
+  Bio::EnsEMBL::Compara::AlignUtils->pretty_print($input_aa,{length => 200});
+  Bio::EnsEMBL::Compara::AlignUtils->pretty_print($input_cdna,{length => 200});
 
-  my $action = $self->param('sitewise_action');
+  my $action = $self->param('analysis_action');
 
   if ($action =~ m/slr/i) {
     $self->run_sitewise_dNdS($tree,$input_cdna,$self->params);
@@ -231,9 +230,9 @@ sub run_hyphy {
   print "$omega_lo $omega $omega_hi\n";
 
   my $ps = $params->{parameter_set_id};
-  $self->store_tag("hyphy_omega_$ps",$omega);
-  $self->store_tag("hyphy_omega_lo_$ps",$omega_lo);
-  $self->store_tag("hyphy_omega_hi_$ps",$omega_hi);
+  $self->store_tag("hyphy_dnds",$omega);
+  $self->store_tag("hyphy_dnds_lo",$omega_lo);
+  $self->store_tag("hyphy_dnds_hi",$omega_hi);
 
   chdir($cwd);
 
@@ -250,8 +249,8 @@ sub run_indelign {
   print "ins: $ins_rate del: $del_rate\n";
 
   my $ps = $params->{parameter_set_id};
-  $self->store_tag("indelign_ins_$ps",$ins_rate);
-  $self->store_tag("indelign_del_$ps",$del_rate);
+  $self->store_tag("indelign_ins",$ins_rate);
+  $self->store_tag("indelign_del",$del_rate);
 }
 
 sub run_xrate_indels {
@@ -314,8 +313,8 @@ sub run_xrate_indels {
   print "lambda: $lambda mu: $mu\n";
 
   my $ps = $params->{parameter_set_id};
-  $self->store_tag("xrate_ins_$ps",$lambda);
-  $self->store_tag("xrate_del_$ps",$mu);
+  $self->store_tag("xrate_ins",$lambda);
+  $self->store_tag("xrate_del",$mu);
 
   #print "@results\n";
 }
@@ -494,7 +493,7 @@ sub run_sitewise_dNdS
   throw("can't find an slr executable to run\n") if (!-e $slrexe);
 
   # Reorder the alignment according to the tree
-  $cdna_aln = Bio::EnsEMBL::Compara::AlignUtils->sort_by_tree($cdna_aln,$treeI);
+  #$cdna_aln = Bio::EnsEMBL::Compara::AlignUtils->sort_by_tree($cdna_aln,$treeI);
   
   my $num_leaves = scalar(@{$tree->get_all_leaves});
   my $tmpdir = $self->worker_temp_directory;
@@ -598,7 +597,7 @@ sub run_sitewise_dNdS
   }
   
   # Reoptimise action.
-  if ($self->param('sitewise_action') =~ m/reoptimise/i) {
+  if ($self->param('analysis_action') =~ m/reoptimise/i) {
     # Store new branch lengths back in the original protein_tree_node table.
     foreach my $leaf ($tree->leaves) {
       my $new_leaf = $new_pt->find_leaf_by_name($leaf->name);
@@ -678,9 +677,9 @@ sub run_sitewise_dNdS
   chdir($cwd);
   
   # Store the results in the database.
-  my $kappa_key = "slr_kappa_".$params->{parameter_set_id};
-  my $omega_key = "slr_omega_".$params->{parameter_set_id};
-  my $lnl_key = "slr_lnL_".$params->{parameter_set_id};
+  my $kappa_key = "slr_kappa";
+  my $omega_key = "slr_omega";
+  my $lnl_key = "slr_lnL";
   
   print "$omega_key ".$results->{omega}."\n";
   
@@ -703,7 +702,7 @@ sub run_paml {
   my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
   $treeI->get_root_node->branch_length(0);
 
-  if ($self->param('sitewise_action') =~ m/reoptimize/i) {
+  if ($self->param('analysis_action') =~ m/reoptimize/i) {
     # Not sure if this works. GJ 2009-10-09
     ### Reoptimize branch lengths.
     print $tree->newick_format."\n";
@@ -720,7 +719,7 @@ sub run_paml {
     }
   }
 
-  if ($self->param('sitewise_action') =~ m/lrt/i) {
+  if ($self->param('analysis_action') =~ m/lrt/i) {
 
     ### Perform a likelihood ratio test between two models.
     my $model_b = $params->{'paml_model'} || $params->{'paml_model_b'};
@@ -734,7 +733,7 @@ sub run_paml {
     $self->store_tag($test_label,$twice_lnL);
   }
 
-  if ($self->param('sitewise_action') =~ m/sitewise/i) {
+  if ($self->param('analysis_action') =~ m/sitewise/i) {
     ### Perform a BEB sitewise analysis of omegas.
 
     # Should we be scaling the tree? Dunno... GJ 2009-10-09
@@ -836,7 +835,7 @@ sub store_sitewise {
   my $tree = shift;
   my $params = shift;
 
-  my $node_id = $params->{node_id};
+  my $node_id = $self->param('data_id');
 
   my $table = 'sitewise_aln';
   $table = $params->{'omega_table'} if ($params->{'omega_table'});

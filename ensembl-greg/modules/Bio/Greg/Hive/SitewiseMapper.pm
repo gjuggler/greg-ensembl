@@ -81,10 +81,16 @@ sub run {
   $self->compara_dba->dbc->disconnect_when_inactive(0);
 }
 
+sub get_id {
+  my $self = shift;
+
+  return $self->param('node_id');
+}
+
 sub do_mapping {
   my $self = shift;
 
-  my $node_id = $self->param('node_id');
+  my $node_id = $self->get_id;
   print "Mapping sitewise $node_id to genome...\n";
 
   my $mapping_taxon = $self->param('genome_taxon_id');
@@ -149,7 +155,7 @@ sub collect_go {
 
           # Don't insert!
         } else {
-          $self->insert_go_term( $self->param('node_id'), $leaf, $db_e );
+          $self->insert_go_term( $self->get_id, $leaf, $db_e );
           sleep(0.05);
         }
       }
@@ -237,7 +243,7 @@ sub collect_uniprot {
 
       next if ( !$seq_pos );
 
-      my $node_id          = $self->param('node_id');
+      my $node_id          = $self->get_id;
       my $parameter_set_id = $self->param('parameter_set_id');
       my $aln_position     = $sa->column_from_residue_number( $stable_id, $seq_pos );
 
@@ -304,7 +310,7 @@ sub collect_exons {
         my $aln_end   = $sa->column_from_residue_number( $leaf->stable_id, $pep_end );
 
         foreach my $pos ( $aln_start .. $aln_end ) {
-	  my $node_id = $self->param('node_id');
+	  my $node_id = $self->get_id;
 	  my $parameter_set_id = $self->param('parameter_set_id');
           # Store whether we're in a first, middle, or last exon.
           $sth->execute( $node_id, $pos, $parameter_set_id,
@@ -384,7 +390,7 @@ sub collect_pfam {
     my $score  = $obj->{'score'};
     printf( "%s %s %s %s\n", $id, $pos, $pf_pos, $score );
     my @values =
-      ( $self->param('node_id'), $pos, $self->param('parameter_set_id'), '"DOMAIN"', '"' . $id . '"', $score );
+      ( $self->get_id, $pos, $self->param('parameter_set_id'), '"DOMAIN"', '"' . $id . '"', $score );
     my $string = '(' . join( ',', @values ) . ')';
     push @array_of_strings, $string;
   }
@@ -481,7 +487,7 @@ sub do_filter {
     print "$aln_position $filter_val\n";
 
     my @values =
-      ( $self->param('node_id'), $aln_position, 0, '"FILTER"', $filter_val, 'NULL' );
+      ( $self->get_id, $aln_position, 0, '"FILTER"', $filter_val, 'NULL' );
     my $string = '(' . join( ',', @values ) . ')';
     push @array_of_strings, $string;
   }
@@ -502,7 +508,7 @@ sub create_plot {
   my $self = shift;
 
   my $base_dir = "/lustre/scratch103/ensembl/gj1/2xmammals_plots";
-  my $node_id  = $self->param('node_id');
+  my $node_id  = $self->get_id;
 
   use Digest::MD5 qw(md5_hex);
   my $digest       = md5_hex($node_id);

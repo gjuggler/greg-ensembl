@@ -43,6 +43,8 @@ sub get_gene_data {
   my $self = shift;
 
   my $gene_data = $self->data_for_gene;
+
+  $self->hash_print($gene_data);
   $self->store_params_in_table( $self->compara_dba, $self->param('genes_table'), $gene_data );  
 }
 
@@ -84,11 +86,11 @@ sub data_for_gene {
 
 
   my $ps = $cur_params->{'parameter_set_id'};
-  $cur_params->{'slr_dnds'} = $cur_params->{ 'slr_omega_' . $ps };
-  $cur_params->{'slr_kappa'} = $cur_params->{ 'slr_kappa_' . $ps };
-  $cur_params->{'hyphy_dnds'} = $cur_params->{ 'hyphy_omega_' . $ps };
-  $cur_params->{'hyphy_dnds_lo'} = $cur_params->{ 'hyphy_omega_lo_' . $ps };
-  $cur_params->{'hyphy_dnds_hi'} = $cur_params->{ 'hyphy_omega_hi_' . $ps };
+  $cur_params->{'slr_dnds'} = $self->param('slr_omega');
+  $cur_params->{'slr_kappa'} = $self->param('slr_kappa');
+  $cur_params->{'hyphy_dnds'} = $self->param('hyphy_dnds');
+  $cur_params->{'hyphy_dnds_lo'} = $self->param('hyphy_dnds_lo');
+  $cur_params->{'hyphy_dnds_hi'} = $self->param('hyphy_dnds_hi');
 
   return $cur_params;
 }
@@ -177,7 +179,7 @@ sub get_gene_table_structure {
   'hyphy_dnds_lo'       => 'float',
   'hyphy_dnds_hi'       => 'float',
 
-  unique_keys => 'node_id,parameter_set_id'
+  unique_keys => 'data_id'
   };
 
   return $structure;
@@ -198,7 +200,7 @@ sub get_sites_table_structure {
     aln_position          => 'int',
     aln_position_fraction => 'float',
     
-    unique_keys => 'aln_position,node_id,parameter_set_id'
+    unique_keys => 'aln_position,data_id'
     };
   
   return $structure;

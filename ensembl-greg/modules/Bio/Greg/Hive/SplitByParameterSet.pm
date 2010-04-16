@@ -34,10 +34,16 @@ sub run {
 
   # Fan out new jobs for each parameter set.
   foreach my $param_set (@param_sets) {
+    my $new_params = {
+      parameter_set_id => $param_set
+    };
+
     my $parameter_set_params = $self->get_params_from_param_set($param_set);
     my $input_params = $self->_parse_string('input_id');
-    my $output_params = { %$input_params, %$parameter_set_params };
-    $output_params->{parameter_set_id} = $param_set;
+
+    my $output_params = { %$input_params, %$parameter_set_params, %$new_params };
+
+    $self->new_data_id($output_params);
 
     print "Fanning out parameter sets: \n";
     my ($job_id) = @{$self->dataflow_output_id($output_params, 1)};

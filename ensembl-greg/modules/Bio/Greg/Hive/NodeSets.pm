@@ -1,4 +1,4 @@
-package Bio::Greg::NodeSetsB;
+package Bio::Greg::Hive::NodeSets;
 
 use strict;
 use Time::HiRes qw(time gettimeofday tv_interval);
@@ -87,10 +87,10 @@ sub write_output {
       
       my $id = $node->node_id;
       if ($node->has_tag("cc_root_".$flow_set)) {
-	print " -> Flowing node $id\n";
 
         my $output_id = { node_id => $id };
-        $self->dataflow_output_id( $output_id, 1 );
+	my ($output_job_id) = @{ $self->dataflow_output_id( $output_id, 1 ) };
+	print " -> Flowed node $id (job id: $output_job_id)\n";
         if ( $params->{flow_parent_and_children} ) {
           my $i = 0;
           foreach my $child ( @{ $node->children } ) {
@@ -98,8 +98,8 @@ sub write_output {
 	      node_id => $child->node_id,
 	      node_set_parent_id => $id, node_set_child_number => $i++ 
 	      };
-	    $self->dataflow_output_id( $output_id, 1 );
-	    print "  --> Flowing child $output_id\n";
+	    my ($output_job_id) = @{ $self->dataflow_output_id( $output_id, 1 ) };
+	    print "  --> Flowed child $output_job_id\n";
 	  }
 	}
       }

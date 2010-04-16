@@ -188,7 +188,7 @@ sub get_tag_hash {
   $sth->execute;
   while ( my $obj = $sth->fetchrow_hashref ) {
     my $aln_position = $obj->{'aln_position'};
-    print "$aln_position\n";
+
     $tag_hash->{$aln_position} = {} if (!defined $tag_hash->{$aln_position});
     $tag_hash->{$aln_position}->{$obj->{'tag'}} = $obj->{'value'};
   }
@@ -203,6 +203,7 @@ sub get_psc_hash {
 
   my $table   = $params->{'omega_table'};
   my $pset    = $params->{'parameter_set_id'};
+  my $data_id = $params->{'data_id'};
   my $node_id = $params->{'node_id'};
   
   my $CLEAN_WHERE = qq^
@@ -210,13 +211,13 @@ sub get_psc_hash {
     ^;
 
   my $cmd     = qq^SELECT aln_position,omega,omega_lower,omega_upper,lrt_stat,ncod,type,note 
-    FROM $table o WHERE parameter_set_id=$pset and node_id=$node_id $CLEAN_WHERE
+    FROM $table o WHERE parameter_set_id=$pset and node_id=$data_id $CLEAN_WHERE
     ^;
 
   if ( $params->{genome} ) {
-    $cmd = qq^SELECT * from $table o LEFT JOIN sitewise_genome g WHERE o.parameter_set_id=$pset AND 
-      o.node_id=$node_id
-      AND o.node_id=g.node_id
+    $cmd = qq^SELECT * from $table o, sitewise_genome g WHERE o.parameter_set_id=$pset AND 
+      o.node_id=$data_id
+      AND g.node_id=$node_id
       AND o.aln_position=g.aln_position $CLEAN_WHERE^;
   }
 
@@ -227,8 +228,8 @@ sub get_psc_hash {
     # Filter on alignment columns that pass Pollard et al's filtering criteria.
     $cmd = qq^SELECT * from $table o, sitewise_tag t  WHERE
       o.parameter_set_id=$pset AND 
-      o.node_id=$node_id
-      AND o.node_id=t.node_id
+      o.node_id=$data_id
+      AND t.node_id=$node_id
       AND o.aln_position=t.aln_position
       AND t.tag="FILTER" AND t.value >= $filter_value $CLEAN_WHERE;
       ^;

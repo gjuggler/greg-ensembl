@@ -8,7 +8,19 @@ use Bio::EnsEMBL::Compara::ComparaUtils;
 use Bio::EnsEMBL::Hive;
 use Bio::EnsEMBL::Compara::DBSQL::DBAdaptor;
 
+use Bio::EnsEMBL::Hive::Utils 'stringify';  # import 'stringify()'
+
 use base ('Bio::EnsEMBL::Hive::ProcessWithParams');
+
+sub fail_on_single_member {
+  my $self = shift;
+
+  my $tree = $self->get_tree;
+  if (scalar $tree->leaves <= 1) {
+    $self->input_job->update_status('FAILED');
+    throw("Failed on account of being too small!");
+  }
+}
 
 sub get_tree {
   my $self = shift;
@@ -24,7 +36,7 @@ sub get_aln {
   my $self = shift;
   my $params = shift;
 
-  return $self->_get_aln($self,$params,0);
+  return $self->_get_aln($params,0);
 }
 
 sub get_cdna_aln {
@@ -44,18 +56,56 @@ sub _get_aln {
 
   my $aa_aln = $tree->get_SimpleAlign();
   my $cdna_aln = $tree->get_SimpleAlign(-cdna => 1, -hide_positions => 1);
+  my $aln = Bio::EnsEMBL::Compara::ComparaUtils->fetch_masked_alignment($aa_aln,$cdna_aln,$tree,$params,$cdna);
 
   if ($params->{alignment_slice}) {
     my $slice_string = $params->{alignment_slice};
     my ($lo,$hi) = split("-",$slice_string);
-    
-    $aa_aln = $aa_aln->slice($lo,$hi);
-    $cdna_aln = $cdna_aln->slice($lo*3-2,$hi*3-2);
+    #$lo = 1;
+    #$hi = 10;
+    if ($cdna) {
+      $lo = ($lo) * 3-2;
+      $hi = ($hi) * 3;
+    }
+    print "$lo $hi\n";
+    print "Length: ".$aln->length."\n";
+    $aln = $aln->slice($lo,$hi);
+    print "Length: ".$aln->length."\n";
   }
 
-  my $aln = Bio::EnsEMBL::Compara::ComparaUtils->fetch_masked_alignment($aa_aln,$cdna_aln,$tree,$params,$cdna);
+  $self->check_tree_and_aln($self->get_tree,$aln);
 
   return $aln;
+}
+
+sub check_tree_and_aln {
+  my $self = shift;
+  my $tree = shift;
+  my $aln = shift;
+
+  # Look at the tree size.
+  if (scalar $tree->leaves <= 1) {
+    $self->input_job->update_status('FAILED');
+    throw("Failed on account of being too small!");
+  }
+
+  # Look at the alignment size.
+  if (scalar $aln->each_seq <= 1 || $aln->length == -1) {
+    $self->input_job->update_status('FAILED');
+    throw("Failed on account of insufficient alignment!");
+  }
+
+  # More complicated stuff -- look for alignments where only one sequence isn't entirely X'ed out.
+  my $good_seq_count = 0;
+  foreach my $seq ($aln->each_seq) {
+    my $seq_str = $seq->seq;
+    $good_seq_count++ if ($seq_str =~ m/[^NX-]/i);
+  }
+  if ($good_seq_count < 2) {
+    $self->input_job->update_status('FAILED');
+    throw("Failed on account of less than 2 good sequences!");
+  }
+
 }
 
 
@@ -74,6 +124,82 @@ sub db_handle {
 
   my $dba = $self->compara_dba();
   return $dba->dbc->db_handle();
+}
+
+sub breadcrumb_param {
+  my $self = shift;
+  my $param = shift;
+
+  my $breadcrumb = $self->param('breadcrumb') || '';
+  #print "bc: $breadcrumb\n";
+
+  if ($breadcrumb ne '') {
+    my @crumbs = split("\\.",$breadcrumb);
+    my $key_prefix = shift @crumbs;
+    foreach my $crumb (@crumbs) {
+      $key_prefix .= '.' . $crumb;
+      
+      #print "Searching for param $param with breadcrumb $key_prefix...\n";
+      my $key = $key_prefix.".".$param;
+      my $value = $self->{_param_hash}->{$key};
+      if (defined $value) {
+	#print "Got it! $value\n";
+	return $value;
+      }
+    }
+  }
+  return undef;
+}
+
+sub add_breadcrumb {
+  my $self = shift;
+  my $params = shift;
+  my $crumb = shift;
+
+  my $breadcrumb = $params->{breadcrumb} || 'bcrmb';
+
+  $breadcrumb .= '.' unless ($breadcrumb eq '');
+  $breadcrumb .= $crumb;
+  
+  $params->{breadcrumb} = $breadcrumb;
+}
+
+sub new_data_id {
+  my $self = shift;
+  my $params = shift;
+
+  my $sth = $self->db_handle->prepare("SELECT value from protein_tree_tag WHERE node_id=0 AND tag='data_id_counter';");
+  $sth->execute;
+  my @row = $sth->fetchrow_array;
+  $sth->finish;
+  my $data_id=1;
+  if (@row) {
+    $data_id = $row[0];
+  }
+
+  $data_id++;
+  $self->db_handle->do("REPLACE into protein_tree_tag (node_id,tag,value) VALUES (0,'data_id_counter',$data_id);");
+  $self->add_breadcrumb($params,$data_id);
+  $params->{data_id} = $data_id;
+
+  return $data_id;
+}
+
+sub param {
+  my $self = shift;
+  my $param = shift;
+
+  if (@_) {
+    $self->SUPER::param($param,shift @_);
+  }
+
+  my $param_value = $self->SUPER::param($param);
+
+  print "$param value: $param_value\n" if ($param =~ m/slr/);
+  if (!defined $param_value && $param ne 'breadcrumb') {
+    $param_value = $self->breadcrumb_param($param);
+  }
+  return $param_value;
 }
 
 sub params {
@@ -251,6 +377,7 @@ sub create_table_from_params {
     $dbh->do(
       qq^
 	     CREATE TABLE $table_name (
+				       data_id INT(10) NOT NULL,
 				       node_id INT(10) NOT NULL,
 				       parameter_set_id TINYINT(3) NOT NULL DEFAULT 0
 				       )
@@ -281,7 +408,7 @@ sub create_table_from_params {
       $dbh->do($create_cmd);
     }
 
-    my $unique_cmd = qq^ALTER TABLE $table_name ADD UNIQUE (node_id,parameter_set_id)^;
+    my $unique_cmd = qq^ALTER TABLE $table_name ADD UNIQUE (data_id)^;
     if ($unique_keys) {
       $unique_cmd = qq^ALTER TABLE $table_name ADD UNIQUE ($unique_keys)^;
     }
@@ -291,6 +418,10 @@ sub create_table_from_params {
       my $key_cmd = qq^ALTER TABLE $table_name ADD KEY ($extra_key)^;
       $dbh->do($unique_cmd);
     }
+
+    $dbh->do("ALTER TABLE $table_name ADD KEY (parameter_set_id)");
+    $dbh->do("ALTER TABLE $table_name ADD KEY (node_id)");
+
   };
 
 }
@@ -343,7 +474,11 @@ sub store_tag {
   my $node_id = $self->param('node_id');
   my $tree = $self->compara_dba->get_ProteinTreeAdaptor->fetch_node_by_node_id($node_id);
 
-  print "  -> Storing tag $tag -> $value\n";
+  if ($self->param('breadcrumb')) {
+    $tag = $self->param('breadcrumb') . "." . $tag;
+  }
+
+  print "  -> Storing tag [$tag] => [$value]\n";
   $tree->store_tag($tag,$value);
 }
 
