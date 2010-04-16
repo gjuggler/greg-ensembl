@@ -57,26 +57,33 @@ get.genes.merged = function(db="gj1_eslr_57") {
   genes = get.genes(1,db=db)
   
   for (pset in param.sets$id) {
+    print(pset)
     cur.genes = get.genes(pset,db=db)
 
     create.name = function(ext) {paste(param.sets[pset,]$shortname,ext,sep='')}
     
-    col.dnds = create.name('.dnds')
-    col.dnds.m0 = create.name('.dnds.m0')
+    col.slr.dnds = create.name('.slr.dnds')
+    col.hyphy.dnds = create.name('.hyphy.dnds')
+    col.hyphy.dnds.lo = create.name('.hyphy.dnds.lo')
+    col.hyphy.dnds.hi = create.name('.hyphy.dnds.hi')
     col.psc.count = create.name('.psc.count')
     col.weak.psc.count = create.name('.weak.psc.count')
 
     genes.subset = data.frame(
       a=cur.genes$node_id,
-      b=cur.genes$omega_mean,
-      c=cur.genes$omega_m0,
-      d=cur.genes$psc_count,
-      e=cur.genes$weak_psc_count
+      b=cur.genes$`omega_m0`,
+      c=cur.genes$hyphy_omega,
+      d=cur.genes$hyphy_omega_lo,
+      d=cur.genes$hyphy_omega_hi,
+      e=cur.genes$psc_count,
+      f=cur.genes$weak_psc_count
       )
     colnames(genes.subset) = c(
               'node_id',
-              col.dnds,
-              col.dnds.m0,
+              col.slr.dnds,
+              col.hyphy.dnds,
+              col.hyphy.dnds.lo,
+              col.hyphy.dnds.hi,
               col.psc.count,
               col.weak.psc.count
               )
