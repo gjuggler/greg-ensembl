@@ -29,59 +29,30 @@ parameter_sets();
 # Create analyses.
 node_sets();
 align();
-split_by_parameter_set();
+mapping();
 split_by_domains();
+#split_by_windows();
+split_by_parameter_set();
 gene_omegas();
 sitewise_omegas();
-mapping();
 collect_stats();
+output_data();
 
 # Connect the dots.
 connect_analysis("NodeSets","Align");
-connect_analysis("Align","SplitByParameterSet");
-connect_analysis("SplitByParameterSet","SplitByProteinDomain");
-connect_analysis("SplitByProteinDomain","GeneOmegas");
+connect_analysis("Align","SplitDomains");
+connect_analysis("SplitDomains","SplitParams");
+connect_analysis("SplitParams","GeneOmegas");
 connect_analysis("GeneOmegas","SitewiseOmegas");
 connect_analysis("SitewiseOmegas","CollectStats");
 
-connect_analysis("Align","Mapping");
+connect_analysis("NodeSets","Mapping");
 wait_for("CollectStats",["Mapping"]);
 wait_for("OutputTabularData",["CollectStats"]);
 
 sub parameter_sets {
   my $params;
   my $base_params={};
-
-  # Subroutines to return a list of taxon IDs with specific features.
-  sub clade_taxon_ids {
-    my $clade = shift || 1;
-    my @genomes = Bio::EnsEMBL::Compara::ComparaUtils->get_genomes_within_clade($dba,$clade);
-    my @taxon_ids = map {$_->taxon_id} @genomes;
-    return @taxon_ids;
-  }
-  sub coverage_taxon_ids {
-    my $coverage = shift;
-
-    my @output;
-    my @all_gdb = Bio::EnsEMBL::Compara::ComparaUtils->get_genomes_within_clade($dba,1);
-    foreach my $gdb (@all_gdb) {
-      # This is finicky: we need to call the "db_adaptor" method to get the Bio::EnsEMBL::DBSQL::DBAdaptor object, and then the meta container.
-      my $meta = $gdb->db_adaptor->get_MetaContainer;
-      my $str = @{$meta->list_value_by_key('assembly.coverage_depth')}[0];
-      push @output, $gdb->taxon_id if ($str eq $coverage);
-    }
-    return @output;
-  }
-  sub subtract {
-    my $list_a = shift;
-    my @remove_us = @_;
-    my $hash;
-    map {$hash->{$_}=1} @$list_a;
-    foreach my $list_b (@remove_us) {
-      map {delete $hash->{$_}} @$list_b;
-    }
-    return keys %$hash;
-  }
 
   my @all_arr = clade_taxon_ids();
   my @mammals_arr = clade_taxon_ids("Eutheria");
@@ -123,19 +94,12 @@ sub parameter_sets {
     };
   _add_parameter_set($params);
   
-  $params = {
-    parameter_set_name => "NonHominidPrimates",
-    parameter_set_shortname => 'nonhom',
-    keep_species => $non_hominidae
-    };
-  _add_parameter_set($params);
-  
-  $params = {
-    parameter_set_name => "Haplorrhini",
-    parameter_set_shortname => 'hpl',
-    keep_species => $haplorrhini
-    };
-  _add_parameter_set($params);
+#  $params = {
+#    parameter_set_name => "NonHominidPrimates",
+#    parameter_set_shortname => 'nonhom',
+#    keep_species => $non_hominidae
+#    };
+#  _add_parameter_set($params);
   
   $params = {
     parameter_set_name => "Primates",
@@ -143,20 +107,27 @@ sub parameter_sets {
     keep_species => $primates
     };
   _add_parameter_set($params);
+
+#  $params = {
+#    parameter_set_name => "Laurasiatheria",
+#    parameter_set_shortname => 'l',
+#    keep_species => $laurasiatheria
+#    };
+#  _add_parameter_set($params);
   
-  $params = {
-    parameter_set_name => "Mammals",
-    parameter_set_shortname => 'm',
-    keep_species => $mammals
-    };
-  _add_parameter_set($params);
+#  $params = {
+#    parameter_set_name => "Mammals",
+#    parameter_set_shortname => 'm',
+#    keep_species => $mammals
+#    };
+#  _add_parameter_set($params);
   
-  $params = {
-    parameter_set_name => "NonPrimateMammals",
-    parameter_set_shortname => 'nonprm',
-    keep_species => $non_primates
-    };
-  _add_parameter_set($params);
+#  $params = {
+#    parameter_set_name => "NonPrimateMammals",
+#    parameter_set_shortname => 'nonprm',
+#    keep_species => $non_primates
+#    };
+#  _add_parameter_set($params);
 }
 
 sub node_sets {
@@ -178,7 +149,7 @@ sub align {
   my $logic_name = "Align";
   my $module = "Bio::Greg::Hive::Align";
   my $params = {
-    alignment_method => 'prank_f',
+    alignment_method => 'none',
   };
 
   _create_analysis($logic_name,$module,$params,400,1);
@@ -192,19 +163,29 @@ sub sequence_quality {
   _create_analysis($logic_name,$module,$params,100,1);
 }
 
+sub split_by_domains {
+  my $logic_name = "SplitDomains";
+  my $module = "Bio::Greg::Hive::SplitByProteinDomain";
+  my $params = {
+  };
+  my $analysis_id = _create_analysis($logic_name,$module,$params,50,1);
+}
+
+sub split_by_windows {
+  my $logic_name = "SplitWindows";
+  my $module = "Bio::Greg::Hive::SplitBySlidingWindow";
+  my $params = {
+    window_width => 150,
+    window_step => 50
+  };
+  my $analysis_id = _create_analysis($logic_name,$module,$params,50,1);
+}
+
 sub split_by_parameter_set {
   my $logic_name = "SplitParams";
   my $module = "Bio::Greg::Hive::SplitByParameterSet";
   my $params = {
     flow_parameter_sets => 'all'
-  };
-  my $analysis_id = _create_analysis($logic_name,$module,$params,50,1);
-}
-
-sub split_by_domains {
-  my $logic_name = "SplitDomains";
-  my $module = "Bio::Greg::Hive::SplitByProteinDomain";
-  my $params = {
   };
   my $analysis_id = _create_analysis($logic_name,$module,$params,50,1);
 }
@@ -217,7 +198,7 @@ sub gene_omegas {
     sequence_quality_filtering => 0,
     alignment_score_filtering => 0,
 
-    analysis_action => 'hyphy_dnds'
+    analysis_action => 'hyphy_dnds',
     };
   _create_analysis($logic_name,$module,$base_params,500,1);
 }
@@ -230,7 +211,7 @@ sub sitewise_omegas {
     sequence_quality_filtering => 0,
     alignment_score_filtering => 0,
     
-    analysis_action => 'slr'
+    analysis_action => 'slr',
     };
   _create_analysis($logic_name,$module,$base_params,500,1);
 }
@@ -252,11 +233,19 @@ sub collect_stats {
   _create_analysis($logic_name,$module,$params,80,1);
 }
 
+sub output_data {
+  my $logic_name = "OutputTabularData";
+  my $module = "Bio::Greg::PrimateHIV::OutputPrimateHIVData";
+  my $params = {
+  };
+  _create_analysis($logic_name,$module,$params,50,1);
+}
+
 
 sub clean_tables {
   if ($clean) {    
     my @truncate_tables = qw^
-      analysis analysis_job analysis_stats dataflow_rule hive
+      analysis analysis_job analysis_stats dataflow_rule analysis_ctrl_rule hive
       parameter_set
       node_set_member node_set
       sitewise_omega sitewise_tag sitewise_genome
@@ -266,6 +255,10 @@ sub clean_tables {
     map {
       print "$_\n";
       eval {$dba->dbc->do("truncate table $_");}} @truncate_tables;
+    $dba->dbc->do(qq^delete from protein_tree_tag where tag like '%bcrmb%'^);
+
+    my @drop_tables = qw^stats_sites stats_genes^;
+    map {eval {$dba->dbc->do("drop table $_");}} @drop_tables;
   }
 }
 
@@ -357,7 +350,7 @@ sub connect_analysis {
     $dataflow_rule_adaptor->create_rule( $from_analysis, $to_analysis, $branch_code);
     warn "Created DataFlow rule: [$branch_code] $from_name -> $to_name\n";
   } else {
-    die "Could not fetch analyses $from_analysis -> $to_analysis to create a dataflow rule";
+    die "Could not fetch analyses $from_name -> $to_name to create a dataflow rule";
   }
 }
 
@@ -415,4 +408,35 @@ sub _select_node_ids {
   @node_ids = map {@{$_}[0]} @node_ids;  # Some weird mappings to unpack the numbers from the arrayrefs.
   $sth->finish;
   return @node_ids;
+}
+
+# Subroutines to return a list of taxon IDs with specific features.
+sub clade_taxon_ids {
+  my $clade = shift || 1;
+  my @genomes = Bio::EnsEMBL::Compara::ComparaUtils->get_genomes_within_clade($dba,$clade);
+  my @taxon_ids = map {$_->taxon_id} @genomes;
+  return @taxon_ids;
+}
+sub coverage_taxon_ids {
+  my $coverage = shift;
+  
+  my @output;
+  my @all_gdb = Bio::EnsEMBL::Compara::ComparaUtils->get_genomes_within_clade($dba,1);
+  foreach my $gdb (@all_gdb) {
+    # This is finicky: we need to call the "db_adaptor" method to get the Bio::EnsEMBL::DBSQL::DBAdaptor object, and then the meta container.
+    my $meta = $gdb->db_adaptor->get_MetaContainer;
+    my $str = @{$meta->list_value_by_key('assembly.coverage_depth')}[0];
+    push @output, $gdb->taxon_id if ($str eq $coverage);
+}
+  return @output;
+}
+sub subtract {
+  my $list_a = shift;
+  my @remove_us = @_;
+  my $hash;
+  map {$hash->{$_}=1} @$list_a;
+  foreach my $list_b (@remove_us) {
+    map {delete $hash->{$_}} @$list_b;
+}
+  return keys %$hash;
 }

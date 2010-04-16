@@ -176,3 +176,22 @@ mysql> select pattern,count(*) from outgroup_sites group by pattern;
 | O.CGH   |   585610 |
 +---------+----------+
 15 rows in set (1 min 57.26 sec)
+
+
+mysql> select parameter_set_id,count(*) from stats_sites where omega_upper < 99 AND type IN ("positive3","positive4") group by parameter_set_id;
++------------------+----------+
+| parameter_set_id | count(*) |
++------------------+----------+
+|                1 |       20 |
+|                2 |      116 |
+|                3 |       10 |
+|                4 |       40 |
+|                5 |      712 |
+|                6 |      985 |
+|                7 |       57 |
+|                8 |      762 |
+|                9 |       11 |
+|               10 |     7679 |
+|               11 |     3492 |
++------------------+----------+
+11 rows in set (1 min 51.32 sec)
