@@ -1,4 +1,4 @@
-package Bio::Greg::PhyloSim;
+package Bio::Greg::Hive::PhyloSim;
 
 use strict;
 use File::Basename;

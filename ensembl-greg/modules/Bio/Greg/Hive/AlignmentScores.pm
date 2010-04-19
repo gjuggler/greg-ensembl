@@ -1,4 +1,4 @@
-package Bio::Greg::AlignmentScores;
+package Bio::Greg::Hive::AlignmentScores;
 
 use strict;
 use Cwd;

@@ -1,4 +1,4 @@
-package Bio::Greg::Hive::SplitByParameterSet;
+package Bio::Greg::Hive::SystemCommand;
 
 use strict;
 use Cwd;
