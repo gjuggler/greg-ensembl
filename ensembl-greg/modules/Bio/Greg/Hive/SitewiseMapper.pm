@@ -66,11 +66,11 @@ sub run {
     print "  -> Finished collecting UniProt!\n";
   }
 
-  if ( $self->param('collect_exons') ) {
-    print "Collecting Exon annotations...\n";
-    $self->collect_exons();
-    print "  -> Finished collecting Exons!\n";
-  }
+#  if ( $self->param('collect_exons') ) {
+#    print "Collecting Exon annotations...\n";
+#    $self->collect_exons();
+#    print "  -> Finished collecting Exons!\n";
+#  }
 
   if ( $self->param('collect_go') ) {
     print "Collecting GO annotations...\n";

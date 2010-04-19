@@ -12,16 +12,6 @@ use Bio::EnsEMBL::Hive::Utils 'stringify';  # import 'stringify()'
 
 use base ('Bio::EnsEMBL::Hive::ProcessWithParams');
 
-sub fail_on_single_member {
-  my $self = shift;
-
-  my $tree = $self->get_tree;
-  if (scalar $tree->leaves <= 1) {
-    $self->input_job->update_status('FAILED');
-    throw("Failed on account of being too small!");
-  }
-}
-
 sub get_tree {
   my $self = shift;
   my $params = shift;
@@ -72,27 +62,46 @@ sub _get_aln {
     $aln = $aln->slice($lo,$hi);
     print "Length: ".$aln->length."\n";
   }
-
-  $self->check_tree_and_aln($self->get_tree,$aln);
-
+ 
   return $aln;
 }
 
-sub check_tree_and_aln {
+sub fail {
+  my $self = shift;
+  my $message = shift;
+
+  $self->input_job->update_status('FAILED');
+  warn($message);
+}
+
+sub fail_and_die {
+  my $self = shift;
+  my $message = shift;
+
+  $self->input_job->update_status('FAILED');
+  throw($message);
+}
+
+sub check_tree_aln {
   my $self = shift;
   my $tree = shift;
   my $aln = shift;
 
+  if (!defined $tree) {
+    $tree = $self->get_tree;
+  }
+  if (!defined $aln) {
+    $aln = $self->get_aln;
+  }
+
   # Look at the tree size.
   if (scalar $tree->leaves <= 1) {
-    $self->input_job->update_status('FAILED');
-    throw("Failed on account of being too small!");
+    return -1;
   }
 
   # Look at the alignment size.
   if (scalar $aln->each_seq <= 1 || $aln->length == -1) {
-    $self->input_job->update_status('FAILED');
-    throw("Failed on account of insufficient alignment!");
+    return -1;
   }
 
   # More complicated stuff -- look for alignments where only one sequence isn't entirely X'ed out.
@@ -102,10 +111,9 @@ sub check_tree_and_aln {
     $good_seq_count++ if ($seq_str =~ m/[^NX-]/i);
   }
   if ($good_seq_count < 2) {
-    $self->input_job->update_status('FAILED');
-    throw("Failed on account of less than 2 good sequences!");
+    return -1;
   }
-
+  return 1;
 }
 
 

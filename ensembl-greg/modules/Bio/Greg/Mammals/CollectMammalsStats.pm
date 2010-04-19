@@ -15,35 +15,42 @@ use base ('Bio::Greg::Hive::CollectSitewiseStats');
 sub get_sites_table_structure {
   my $self = shift;
 
-  my $mammals_structure = {
-  filter_value => 'int',
-  domain => 'string',
+  my $added_structure = {
+    domain_id => 'string',
 
-  chr_name  => 'string',
-  chr_start => 'int',
-  chr_end   => 'int',
+    filter_value => 'int',
+    domain => 'string',
+    
+    chr_name  => 'string',
+    chr_start => 'int',
+    chr_end   => 'int',
+
+    unique_keys => 'aln_position,node_id,parameter_set_id,domain_id'
   };
-
+  
   my $structure = $self->SUPER::get_sites_table_structure;
-  $structure = $self->replace_params($structure,$mammals_structure);
+  $structure = $self->replace_params($structure,$added_structure);
   return $structure;
 }
 
 sub get_gene_table_structure {
   my $self = shift;
   
-  my $mammals_structure = {
+  my $added_structure = {
+    'domain_id' => 'string',
     'human_protein' => 'string',
     'human_gene'    => 'string',
     
     'chr_name' => 'string',
     'chr_start' => 'int',
     'chr_end' => 'int',
-    'chr_strand' => 'int'
+    'chr_strand' => 'int',
+    
+    unique_keys => 'node_id,parameter_set_id,domain_id'
     };
   
   my $structure = $self->SUPER::get_gene_table_structure();
-  $structure = $self->replace_params($structure,$mammals_structure);
+  $structure = $self->replace_params($structure,$added_structure);
   return $structure;
 }
 
@@ -60,6 +67,8 @@ sub data_for_gene {
     my $member = $human_proteins[0];
     $data->{'human_protein'} = $member->stable_id;
     $data->{'human_gene'}    = $member->get_Gene->stable_id;
+    $data->{'human_protein_list'} = join( ",", map { $_->stable_id } @human_proteins );
+    $data->{'human_gene_list'} = join( ",", map { $_->stable_id } @human_genes );
   }
 
   # Collect protein coords.

@@ -63,7 +63,6 @@ sub fetch_input {
   
   $self->load_all_params($params);
 
-  $self->fail_on_single_member();
 }
 
 sub run {
@@ -80,22 +79,24 @@ sub run {
   if (scalar(@leaves) < $self->param('sitewise_minimum_leaf_count')) {
     my $value = sprintf "Too small (%d < %d)",scalar(@leaves),$self->param('sitewise_minimum_leaf_count');
     $self->store_tag("slr_skipped",$value);
-    next;
+    return;
   } elsif (scalar(@leaves) > 300) {
     my $value = sprintf "Too big (%d > %d)",scalar(@leaves),300;
     $self->store_tag("slr_skipped",$value);
-    next;
+    return;
+  } elsif (!$self->check_tree_aln) {
+    $self->store_tag("slr_skipped","Tree or align doesn't look good!");
+    return;
   }
   foreach my $leaf (@leaves) {
     if ($leaf->distance_to_parent > 100) {
       $leaf->distance_to_parent(4);
-      #$self->fail_job("Tree contains a massive branch length -- probably an error in b.l. optimization!");
     }
   }
   
-  #eval {
+  eval {
     $self->run_with_params($self->params,$tree);
-  #};
+  };
   if ($@) {
     print "ERROR - Trying with removed gaps...\n";
     $self->param('sitewise_strip_gaps',1);
@@ -115,6 +116,7 @@ sub run {
 	my $param_set = $self->param('parameter_set_id');
 	print "ERROR - GIVING UP! Parameter set $param_set\n";
 	$self->store_tag('slr_error',1);
+	$self->fail_and_die;
 	sleep(2);
       }
     }
@@ -796,36 +798,6 @@ sub run_paml {
     $results->{'sites'} = \@slr_style_sites;
 
     $self->store_sitewise($results,$tree,$params);
-  }
-}
-
-sub write_output {
-  my $self = shift;
-}
-
-
-sub check_job_fail_options
-{
-  my $self = shift;
-
-  #print "Checking retry count: ".$self->input_job->retry_count."\n";
-  if ($self->input_job->retry_count > 3) {
-    $self->fail_job("Job failed >3 times!");
-  }
-}
-
-sub fail_job {
-  my $self = shift;
-  my $reason = shift;
-
-  $reason = "None" unless (defined $reason);
-
-  my $input_job = $self->input_job;
-  if (defined $input_job) {
-    $input_job->update_status('FAILED');
-    #print "Failing job! Reason given: $reason\n";
-    $self->DESTROY;
-    throw("Failing job! Reason given: $reason");
   }
 }
 
