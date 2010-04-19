@@ -30,11 +30,11 @@ parameter_sets();
 # Create analyses.
 node_sets();
 align();
-mapping();
 sequence_quality();
 split_by_parameter_set();
 gene_omegas();
 sitewise_omegas();
+mapping();
 collect_stats();
 output_data();
 
@@ -60,7 +60,7 @@ sub node_sets {
 
   # Add all root nodes to this analysis.
   $params = {};
-  my $cmd = "SELECT node_id FROM protein_tree_node WHERE parent_id=1 LIMIT 30;";
+  my $cmd = "SELECT node_id FROM protein_tree_node WHERE parent_id=1;";
   my @nodes = _select_node_ids($cmd);
   _add_nodes_to_analysis($analysis_id,$params,\@nodes);  
 }
@@ -231,7 +231,7 @@ sub align {
   my $logic_name = "Align";
   my $module = "Bio::Greg::Hive::Align";
   my $params = {
-    alignment_method => 'none'
+    alignment_method => 'mcoffee'
   };
 
   _create_analysis($logic_name,$module,$params,400,1);
@@ -260,7 +260,7 @@ sub gene_omegas {
   my $module = "Bio::Greg::Hive::PhyloAnalysis";
   my $base_params = {
     sequence_quality_filtering => 1,
-    analysis_action => 'none'
+    analysis_action => 'hyphy_dnds'
     };
   _create_analysis($logic_name,$module,$base_params,500,1);
 }
@@ -270,7 +270,7 @@ sub sitewise_omegas {
   my $module = "Bio::Greg::Hive::PhyloAnalysis";
   my $base_params = {
     sequence_quality_filtering => 1,
-    analysis_action => 'none'
+    analysis_action => 'slr'
     };
   _create_analysis($logic_name,$module,$base_params,500,1);
 }
@@ -288,6 +288,7 @@ sub collect_stats {
   my $logic_name = "CollectStats";
   my $module = "Bio::Greg::Mammals::CollectMammalsStats";
   my $params = {
+    sequence_quality_filtering => 1,
     mammals_alignment_filtering_value => 1
   };
   _create_analysis($logic_name,$module,$params,50,1);
@@ -297,6 +298,7 @@ sub output_data {
   my $logic_name = "OutputTabularData";
   my $module = "Bio::Greg::Mammals::OutputMammalsData";
   my $params = {
+    sequence_quality_filtering => 1,
   };
   _create_analysis($logic_name,$module,$params,50,1);
 }
