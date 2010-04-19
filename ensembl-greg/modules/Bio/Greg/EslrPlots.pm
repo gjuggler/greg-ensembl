@@ -359,7 +359,7 @@ sub plotTreeWithOmegas {
     my $old_to_new;
     if ( $params->{'remove_blank_columns'} ) {
       my ( $flat_aln, $new_to_old, $o_t_n ) =
-        @{ Bio::EnsEMBL::Compara::AlignUtils->remove_blank_columns($sa) };
+        Bio::EnsEMBL::Compara::AlignUtils->remove_blank_columns($sa);
       $sa         = $flat_aln;
       $old_to_new = $o_t_n;
     }
@@ -532,8 +532,21 @@ aln = read.aln(files[1])
 tree = read.tree(trees[1])
 slr = read.slr(slrs[1])
 
+sort.aln.by.tree = function(aln,tree) {
+  # Make sure the alignment is sorted by the tree display order.
+  newPositions = match(aln\$names,tree\$tip.label)
+
+  aln\$seqs[newPositions] = aln\$seqs
+  aln\$names[newPositions] = aln\$names
+
+  aln\$seqs = rev(aln\$seqs)
+  aln\$names = rev(aln\$names)
+  return(aln)
+}
+aln = sort.aln.by.tree(aln,tree)
+
 # Plot aln.
-a = plot.aln(aln,overlay=F,axes=F,draw.chars=F)
+a = plot.aln(aln,overlay=F,axes=F,draw.chars=T)
 
 # Plot tree.
 xl = tree_length(tree)
