@@ -6,6 +6,8 @@ use DBI;
 use Getopt::Long;
 use Bio::EnsEMBL::Registry;
 use Bio::EnsEMBL::Compara::DBSQL::DBAdaptor;
+use Bio::EnsEMBL::Hive::DBSQL::DBAdaptor;
+use Bio::EnsEMBL::Hive::DBSQL::AnalysisJobAdaptor;
 use Bio::EnsEMBL::Compara::ComparaUtils;
 use Bio::Greg::EslrUtils;
 use File::Path;
@@ -20,27 +22,29 @@ Bio::EnsEMBL::Registry->no_version_check(1);
 
 $url = 'mysql://slrsim:slrsim@mysql-greg.ebi.ac.uk:4134/slrsim_anisimova' if ( !$url );
 my $dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new( -url => $url );
+my $hive_dba = Bio::EnsEMBL::Hive::DBSQL::DBAdaptor->new( -url => $url );
 my $dbc = $dba->dbc;
-
-my $LIMIT            = '';
-my $SKIP_ADDING_JOBS = 0;
 
 clean_tables();
 
-simulate_alignments();
-align_sequences();
-alignment_scores();
-calculate_omegas();
+load();
+simulate();
+align();
+scores();
+omegas();
 collect_stats();
 
-connect_analysis( "PhyloSim",    "Align",        1 );
-connect_analysis( "Align",       "AlignScores",  1 );
-connect_analysis( "AlignScores", "Omegas",       1 );
-connect_analysis( "Omegas",      "CollectStats", 1 );
+connect_analysis( "LoadTrees",   "PhyloSim" );
+connect_analysis( "PhyloSim",    "Align" );
+connect_analysis( "Align",       "AlignScores" );
+connect_analysis( "AlignScores", "Omegas" );
+connect_analysis( "Omegas",      "CollectStats" );
 
 sub clean_tables {
   if ($clean) {
+
     my @truncate_tables = qw^
+      protein_tree_member protein_tree_node protein_tree_tag member sequence
       sequence sequence_cds
       analysis analysis_job dataflow_rule hive
       sitewise_omega
@@ -55,73 +59,62 @@ sub clean_tables {
   }
 }
 
-sub simulate_alignments {
-  my $analysis_id = 1;
+sub load {
+  my $logic_name  = "LoadTrees";
+  my $module      = "Bio::Greg::Slrsim::LoadTrees";
+  my $params      = { simulation_set => "filter_sweeps" };
+  my $analysis_id = _create_analysis( $logic_name, $module, $params );
 
+  _add_job_to_analysis( "LoadTrees", {} );    # Add a dummy job to run and load the trees.
+}
+
+sub simulate {
   my $logic_name = "PhyloSim";
   my $module     = "Bio::Greg::PhyloSim";
-  my $params     = {
-
-  };
-  _create_analysis( $analysis_id, $logic_name, $module, $params, 30, 1 );
-
-  my $cmd   = "SELECT node_id FROM protein_tree_node WHERE parent_id=0 AND root_id=0 $LIMIT;";
-  my @nodes = _select_node_ids($cmd);
-  _add_nodes_to_analysis( $analysis_id, $params, \@nodes );
+  my $params     = {};
+  _create_analysis( $logic_name, $module, $params, 30, 1 );
 }
 
-sub align_sequences {
-  my $analysis_id = 2;
-
+sub align {
   my $logic_name = "Align";
-  my $module     = "Bio::EnsEMBL::Compara::RunnableDB::MCoffee";
+  my $module     = "Bio::Greg::Hive::Align";
   my $params     = {
-    alignment_table => 'aln_mcoffee',
-    executable => '/homes/greg/src/T-COFFEE_distribution_Version_8.06/bin/binaries/linux/t_coffee'
+
+    # These params will be filled in by the LoadTree simulation definitions.
   };
-  _create_analysis( $analysis_id, $logic_name, $module, $params, 100, 1 );
+  _create_analysis( $logic_name, $module, $params, 100, 1 );
 }
 
-sub alignment_scores {
-  my $analysis_id = 3;
-
+sub scores {
   my $logic_name = "AlignScores";
   my $module     = "Bio::Greg::AlignmentScores";
   my $params     = {
-    alignment_table         => 'aln_mcoffee',
-    alignment_scores_action => 'gblocks prank trimal'
+
+    # These params will be filled in by the LoadTree simulation definitions.
   };
-  _create_analysis( $analysis_id, $logic_name, $module, $params, 100, 1 );
+  _create_analysis( $logic_name, $module, $params, 100, 1 );
 }
 
-sub calculate_omegas {
-  my $analysis_id = 4;
-  my $logic_name  = "Omegas";
-  my $module      = "Bio::EnsEMBL::Compara::RunnableDB::Sitewise_dNdS";
-  my $params      = { sitewise_parameter_sets => 'all' };
-  _create_analysis( $analysis_id, $logic_name, $module, $params, 500, 1 );
+sub omegas {
+  my $logic_name = "Omegas";
+  my $module     = "Bio::Greg::Hive::PhyloAnalysis";
+  my $params     = {
 
-  $params = {
-    parameter_set_id => 1,
-    name             => "Everything",
+    # These params will be filled in by the LoadTree simulation definitions.
   };
-  _add_parameter_set($params);
+  _create_analysis( $logic_name, $module, $params, 500, 1 );
 }
 
 sub collect_stats {
-  my $analysis_id = 5;
-
   my $logic_name = "CollectStats";
   my $module     = "Bio::Greg::Slrsim::CollectStats";
-  my $params     = {
-    alignment_table              => 'aln_mcoffee',
-    collect_stats_parameter_sets => 'all'
-  };
-  _create_analysis( $analysis_id, $logic_name, $module, $params, 50, 1 );
-
-#my @nodes = _select_node_ids("SELECT distinct(node_id) FROM protein_tree_tag where tag='sim_name'");
-#_add_nodes_to_analysis($analysis_id,{},\@nodes);
+  my $params     = {};
+  _create_analysis( $logic_name, $module, $params, 50, 1 );
 }
+
+########*********########
+#-------~~~~~~~~~-------#
+########*********########
 
 sub _combine_hashes {
   my @hashes = @_;
@@ -135,15 +128,27 @@ sub _combine_hashes {
   return $new_hash;
 }
 
+our $param_set_counter;
+
 sub _add_parameter_set {
-  my $params           = shift;
-  my $parameter_set_id = $params->{'parameter_set_id'};
-  if ( exists $params->{'name'} ) {
-    my $parameter_set_name = $params->{'name'};
-    delete $params->{'name'};
+  my $params = shift;
+
+  $param_set_counter = 1 if ( !$param_set_counter );
+  my $parameter_set_id = $params->{'parameter_set_id'} || $param_set_counter++;
+  $params->{'parameter_set_id'} = $parameter_set_id;
+
+  if ( exists $params->{'parameter_set_name'} ) {
+    my $parameter_set_name = $params->{'parameter_set_name'};
     my $name_cmd =
       "REPLACE INTO parameter_set VALUES ('$parameter_set_id','name',\"$parameter_set_name\");";
     $dbc->do($name_cmd);
+  }
+
+  if ( exists $params->{'parameter_set_shortname'} ) {
+    my $parameter_set_shortname = $params->{'parameter_set_shortname'} || '';
+    my $shortname_cmd =
+      "REPLACE INTO parameter_set VALUES ('$parameter_set_id','parameter_set_shortname',\"$parameter_set_shortname\");";
+    $dbc->do($shortname_cmd);
   }
 
   my $param_string = Bio::EnsEMBL::Compara::ComparaUtils->hash_to_string($params);
@@ -151,21 +156,19 @@ sub _add_parameter_set {
   $dbc->do($cmd);
 }
 
-my $analysis_hash;
+our $analysis_counter = 0;
 
 sub _create_analysis {
-  my $analysis_id   = shift;
   my $logic_name    = shift;
   my $module        = shift;
   my $params        = shift;
   my $hive_capacity = shift || 500;
   my $batch_size    = shift || 1;
 
-  $analysis_hash->{$logic_name} = $analysis_id;
+  my $analysis_id = ++$analysis_counter;
 
   my $param_string = Bio::EnsEMBL::Compara::ComparaUtils->hash_to_string($params);
-
-  my $cmd = qq{REPLACE INTO analysis SET
+  my $cmd          = qq{REPLACE INTO analysis SET
 		 created=now(),
 		 analysis_id=$analysis_id,
 		 logic_name="$logic_name",
@@ -173,35 +176,73 @@ sub _create_analysis {
 		 parameters="$param_string"
 		 ;};
   $dbc->do($cmd);
-
   $cmd = qq{REPLACE INTO analysis_stats SET
+	      analysis_id=$analysis_id,
 	      hive_capacity=$hive_capacity,
 	      batch_size=$batch_size,
-	      analysis_id=$analysis_id
+	      failed_job_tolerance=20000
 	      ;};
   $dbc->do($cmd);
+  return $analysis_id;
 }
 
 sub connect_analysis {
   my $from_name   = shift;
   my $to_name     = shift;
   my $branch_code = shift;
-
-  my $from_id = $analysis_hash->{$from_name};
-
   $branch_code = 1 unless ( defined $branch_code );
 
-  my $cmd = qq{REPLACE INTO dataflow_rule SET
-		 from_analysis_id=$from_id,
-		 to_analysis_url="$to_name",
-		 branch_code=$branch_code
-		 ;};
-  $dbc->do($cmd);
+  my $dataflow_rule_adaptor = $hive_dba->get_DataflowRuleAdaptor;
+  my $analysis_adaptor      = $hive_dba->get_AnalysisAdaptor;
+
+  my $from_analysis = $analysis_adaptor->fetch_by_logic_name($from_name);
+  my $to_analysis   = $analysis_adaptor->fetch_by_logic_name($to_name);
+
+  if ( $from_analysis and $to_analysis ) {
+    $dataflow_rule_adaptor->create_rule( $from_analysis, $to_analysis, $branch_code );
+    warn "Created DataFlow rule: [$branch_code] $from_name -> $to_name\n";
+  } else {
+    die "Could not fetch analyses $from_analysis -> $to_analysis to create a dataflow rule";
+  }
+}
+
+sub wait_for {
+  my $waiting_name  = shift;
+  my $wait_for_list = shift;
+
+  my $ctrl_rule_adaptor = $hive_dba->get_AnalysisCtrlRuleAdaptor;
+  my $analysis_adaptor  = $hive_dba->get_AnalysisAdaptor;
+
+  my $waiting_analysis = $analysis_adaptor->fetch_by_logic_name($waiting_name);
+
+  foreach my $wait_for_name (@$wait_for_list) {
+    my $wait_for_analysis = $analysis_adaptor->fetch_by_logic_name($wait_for_name);
+
+    if ( $waiting_analysis and $wait_for_analysis ) {
+      $ctrl_rule_adaptor->create_rule( $wait_for_analysis, $waiting_analysis );
+      warn "Created Control rule: $waiting_name will wait for $wait_for_name\n";
+    } else {
+      die "Could not fetch $waiting_name -> $wait_for_name to create a control rule";
+    }
+  }
+}
+
+sub _add_job_to_analysis {
+  my $analysis_name = shift;
+  my $input_id_hash = shift;
+
+  my $analysis_adaptor = $hive_dba->get_AnalysisAdaptor;
+  my $analysis         = $analysis_adaptor->fetch_by_logic_name($analysis_name);
+
+  my $job_id = Bio::EnsEMBL::Hive::DBSQL::AnalysisJobAdaptor->CreateNewJob(
+    -input_id     => $input_id_hash,
+    -analysis     => $analysis,
+    -input_job_id => 0,
+  );
+  return $job_id;
 }
 
 sub _add_nodes_to_analysis {
-  return if ($SKIP_ADDING_JOBS);
-
   my $analysis_id   = shift;
   my $params        = shift || {};
   my $node_arrayref = shift;
@@ -224,11 +265,9 @@ sub _add_nodes_to_analysis {
 
 sub _select_node_ids {
   my $cmd = shift;
-
   if ( !defined $cmd ) {
     $cmd = "SELECT node_id FROM protein_tree_node WHERE parent_id=1 AND root_id=1";
   }
-
   my $sth = $dbc->prepare($cmd);
   $sth->execute();
 

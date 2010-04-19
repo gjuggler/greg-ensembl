@@ -304,6 +304,11 @@ sub hash_print {
   print "  }\n";
 }
 
+sub replace {
+  my $self = shift;
+  return $self->replace_params(@_);
+}
+
 sub replace_params {
   my $self   = shift;
   my @params = @_;
