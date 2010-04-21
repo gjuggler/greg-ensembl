@@ -68,15 +68,17 @@ get.genes.merged = function(db="gj1_eslr_57") {
     col.hyphy.dnds.hi = create.name('.hyphy.dnds.hi')
     col.psc.count = create.name('.psc.count')
     col.weak.psc.count = create.name('.weak.psc.count')
+    col.max.lrt = create.name('.max.lrt')
 
     genes.subset = data.frame(
       a=cur.genes$node_id,
-      b=cur.genes$`omega_m0`,
-      c=cur.genes$hyphy_omega,
-      d=cur.genes$hyphy_omega_lo,
-      d=cur.genes$hyphy_omega_hi,
+      b=cur.genes$slr_dnds,
+      c=cur.genes$hyphy_dnds,
+      d=cur.genes$hyphy_dnds_lo,
+      d=cur.genes$hyphy_dnds_hi,
       e=cur.genes$psc_count,
       f=cur.genes$weak_psc_count
+      g=cur.genes$max_lrt
       )
     colnames(genes.subset) = c(
               'node_id',
@@ -85,12 +87,19 @@ get.genes.merged = function(db="gj1_eslr_57") {
               col.hyphy.dnds.lo,
               col.hyphy.dnds.hi,
               col.psc.count,
-              col.weak.psc.count
+              col.weak.psc.count,
+	      col.max.lrt
               )
     
     genes = merge(genes,genes.subset,all.x=T)
   }
   return(genes);
+}
+
+get.positive.sites = function(parameter.set.id=1,db="gj1_eslr_57",limit="") {
+  query = sprintf("SELECT * from %s.stats_sites WHERE parameter_set_id=%s AND type IN ('positive1','positive2','positive3','positive4') %s",db,parameter.set.id,limit)
+  sites = get.vector(con,query,columns='all')
+  return(sites)  
 }
 
 get.sites = function(parameter.set.id=1,db="gj1_eslr_57",limit="") {

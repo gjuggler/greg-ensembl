@@ -90,15 +90,14 @@ sub check_tree_aln {
   if (!defined $tree) {
     $tree = $self->get_tree;
   }
-  if (!defined $aln) {
-    $aln = $self->get_aln;
-  }
-
   # Look at the tree size.
   if (scalar $tree->leaves <= 1) {
     return -1;
   }
 
+  if (!defined $aln) {
+    $aln = $self->get_aln;
+  }
   # Look at the alignment size.
   if (scalar $aln->each_seq <= 1 || $aln->length == -1) {
     return -1;

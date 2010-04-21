@@ -12,6 +12,18 @@ use Bio::EnsEMBL::Hive::Process;
 
 use base ('Bio::Greg::Hive::CollectSitewiseStats');
 
+sub run {
+  my $self = shift;
+
+  my $check = $self->check_tree_aln;
+  if ($check == -1) {
+    $self->store_tag("no_stats","Tree or align doesn't look good!");
+    return;
+  }
+
+  $self->SUPER::run;
+}
+
 sub get_sites_table_structure {
   my $self = shift;
 

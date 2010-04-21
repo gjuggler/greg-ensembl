@@ -135,7 +135,9 @@ sub run_with_params {
     #print $leaf->member_id."\n";
   }
 
+
   my $input_aa = $self->get_aln;
+  $self->param('sequence_quality_mask_character','N');
   my $input_cdna = $self->get_cdna_aln;
 
   my ($slim_cdna,$cdna_new_to_old,$cdna_old_to_new) = Bio::EnsEMBL::Compara::AlignUtils->remove_blank_columns_in_threes($input_cdna);
