@@ -146,8 +146,8 @@ sub gc_content_mean {
   my @seqs;
   if ( $tr =~ /ProteinTree/i ) {
     foreach my $leaf ( $tr->leaves ) {
-      my $tx  = $leaf->transcript;
-      my $seq = $tx->seq->seq;
+      my $seq  = $leaf->sequence_cds;
+      #my $seq = $tx->seq->seq;
       push @seqs, $seq;
     }
   } elsif ( $tr =~ /Align/i ) {
@@ -202,13 +202,17 @@ sub get_psc_hash {
   my $params = shift;
 
   my $table   = $params->{'omega_table'};
-  my $pset    = $params->{'parameter_set_id'};
+  my $pset    = $params->{'parameter_set_id'} || '1';
   my $data_id = $params->{'data_id'};
   my $node_id = $params->{'node_id'};
+  my $include_crappy_sites = $params->{'get_all_sites'};
   
   my $CLEAN_WHERE = qq^
     AND o.note != 'random' AND o.omega_upper < 99
     ^;
+  if ($include_crappy_sites) {
+    $CLEAN_WHERE = '';
+  }
 
   my $cmd     = qq^SELECT aln_position,omega,omega_lower,omega_upper,lrt_stat,ncod,type,note 
     FROM $table o WHERE parameter_set_id=$pset and node_id=$data_id $CLEAN_WHERE

@@ -3,14 +3,21 @@
 Examples of experimental validation in mammals:
  - Sawyer et al. 2005 PNAS - Trim5alpha
    - http://www.pnas.org/content/102/8/2832.full
+   -> TRIM5 (ENSG00000132256)
  - Ivarsson et al. 2002 J Biol Chem - Glutathione transferase
    - http://www.jbc.org/content/278/10/8733.full
+   -> GSTM1 (ENSG00000134184)
  - Elde et al. 2009 Nature - Protein kinase R (pos-sel), eIF2 (no pos-sel)
    - Noted that other members of the same kinase family do not experience similar levels of
      pos-sel.
+   -> EIF2AK2 (ENSG00000055332)
+   -> EIF2S1 (ENSG00000134001)
  - Gupta et al. 2009 PLoS Pathogens - Human Tetherin/BST-2/CD317
+   - http://dx.doi.org/10.1371/journal.ppat.1000443
+   - http://www.citeulike.org/user/gjuggler/article/7026702
    - The gene has a single residue shift (at a pos-sel site)  that substantially impacts on
      sensitivity to HIV-1 Vpu.
+   -> BST2 (ENSG00000130303)
 
 Experimental validation elsewhere:
  - Bielawski et al. 2004 PNAS - proteorhodopsin - bacterial
@@ -288,5 +295,15 @@ Using m.weak.psc.count:
 
 
  -> TODO: For each gene, store the MAXIMUM signed LRT value for any codon (post-filtering) and use that for a score.
+
+
+
+### 2010-04-16 ###
+
+Plot some mammals sitewise data from EBI machine:
+
+ssh -Nf -R 2222:localhost:22 ssh.sanger.ac.uk
+
+ssh -Nf -L 3307:ens-research:3306 gj1@ssh.sanger.ac.uk
 
 

@@ -1,4 +1,4 @@
-package Bio::Greg::PhyloSim;
+package Bio::Greg::Hive::PhyloSim;
 
 use strict;
 use File::Basename;
@@ -15,38 +15,17 @@ use Bio::EnsEMBL::Compara::DBSQL::DBAdaptor;
 use Bio::EnsEMBL::Hive;
 use Bio::EnsEMBL::Hive::Process;
 use Bio::Greg::EslrUtils;
-use Bio::Greg::ProcessUtils;
 
 use Bio::AlignIO;
 
 use String::CRC32;
 
-our @ISA = qw(Bio::EnsEMBL::Hive::Process Bio::Greg::ProcessUtils);
-
-my $p_pre = "phylosim_";
-
-my $dba;
-my $pta;
-
-my $params;
-
-my $tree;
-my @sitewise_omegas;
-my $class_to_omega;
-my $aln;
+use base ('Bio::Greg::Hive::Process');
 
 sub fetch_input {
   my $self = shift;
 
-  # Load up the Compara DBAdaptor.
-  if ( $self->{dba} ) {
-    $dba = $self->dba;
-  } else {
-    $dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new( -DBCONN => $self->db->dbc );
-  }
-  $pta = $dba->get_ProteinTreeAdaptor;
-
-  $params = {
+  my $params = {
     ### Omega Distribution Parameters ###
     # For lognormal model.
     #phylosim_meanlog => -4.079,
@@ -99,86 +78,48 @@ sub fetch_input {
     phylosim_deletemodel        => 'NB 0.2 2',
   };
 
-  my $node_id;
+  $self->load_all_params($params);
 
-  my $p_params = $self->get_params( $self->parameters );
-  my $i_params = $self->get_params( $self->input_id );
-  $node_id = $i_params->{'protein_tree_id'};
-  $node_id = $i_params->{'node_id'} if ( !defined $node_id );
-  my $t_params = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_tree_tags( $dba, $node_id );
-
-  $params = $self->replace_params( $params, $p_params, $i_params, $t_params );
-  Bio::EnsEMBL::Compara::ComparaUtils->hash_print($params);
-
-  # Load the tree.
-  $pta->table_base( $params->{'input_table_base'} );
-  $tree = $pta->fetch_node_by_node_id($node_id);
-
-  print "Simulation tree: " . $tree->newick_format . "\n";
 }
 
 sub run {
   my $self = shift;
 
-  if ( get('simulation_program') eq 'indelible' ) {
-    $aln = $self->simulate_alignment_indelible( $tree, $params );
+  $self->param('alignment_table','');
+  print "Simulation tree: " . $self->get_tree->newick_format . "\n";
 
-    #print "ALN : $aln\n";
-  } elsif ( get('simulation_program') eq 'phylosim' ) {
-    $aln = $self->simulate_alignment_phylosim( $tree, $params );
+  my $aln;
+  if ( $self->get('simulation_program') eq 'indelible' ) {
+    $aln = $self->simulate_alignment_indelible( $self->get_tree, $self->params );
+  } elsif ( $self->get('simulation_program') eq 'phylosim' ) {
+    $aln = $self->simulate_alignment_phylosim( $self->get_tree, $self->params );
   }
 
+  $self->param('aln',$aln);
 }
 
 sub write_output {
   my $self = shift;
 
-  my $final_cdna = $aln;
-
-  #$final_cdna = Bio::EnsEMBL::Compara::AlignUtils->remove_blank_columns_in_threes($final_cdna);
+  my $final_cdna = $self->param('aln');
 
   Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $final_cdna, { length => 200 } );
   my $final_aa = Bio::EnsEMBL::Compara::AlignUtils->translate($final_cdna);
 
   my $out_table = "protein_tree_member";
   print "STORING ALIGNMENT\n";
-  Bio::EnsEMBL::Compara::ComparaUtils->store_SimpleAlign_into_table( $out_table, $tree, $final_aa,
+  Bio::EnsEMBL::Compara::ComparaUtils->store_SimpleAlign_into_table( $out_table, $self->get_tree, $final_aa,
     $final_cdna );
   print "STORING OMEGAS\n";
-  $self->_store_sitewise_omegas( "sitewise_omega", \@sitewise_omegas, $final_aa, $params );
-
-  #  my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
-  #  my $aa_aln = $tree->get_SimpleAlign();
-  #  my $cdna_aln = $tree->get_SimpleAlign(-cdna => 1);
-  #  $cdna_aln = Bio::EnsEMBL::Compara::AlignUtils->sort_by_tree($cdna_aln,$treeI);
-  #  my $alnout = Bio::AlignIO->new
-  #    ('-format'      => 'phylip',
-  #     '-file'          => $self->worker_temp_directory,
-  #     '-interleaved' => 0,
-  #     '-idlinebreak' => 1,
-  #     '-idlength'    => $cdna_aln->maxdisplayname_length + 1);
-  #  $alnout->write_aln($cdna_aln);
-  #  $alnout->close();
+  $self->_store_sitewise_omegas( "sitewise_omega", $self->param('sitewise_omegas'), $final_aa, $self->params );
 
   Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $final_aa, { length => 200 } );
-}
-
-sub throw_error {
-  my $self = shift;
-  my $msg  = shift;
-
-  print "ERROR!!!\n";
-  open( OUT, ">/tmp/" . $tree->node_id . ".txt" );
-  print OUT $msg . "\n";
-  close(OUT);
 }
 
 sub simulate_alignment_indelible {
   my $self   = shift;
   my $tree   = shift;
   my $params = shift;
-
-  #$tree = Bio::EnsEMBL::Compara::TreeUtils->scale( $tree, 1.95 );
 
   my $models_trees_partitions = '';
 
@@ -252,6 +193,9 @@ $models_trees_partitions
 
   print "$output\n";
 
+my @sitewise_omegas;
+my $class_to_omega = $self->param('class_to_omega');
+
   # Collect the omega values.
   my $rate_f = $output_f . "_RATES.txt";
   open( IN, "$rate_f" );
@@ -275,6 +219,8 @@ $models_trees_partitions
   unlink $output_f;
   chdir($cwd);
 
+$self->param('sitewise_omegas',\@sitewise_omegas);
+
   return $aln;
 }
 
@@ -297,9 +243,11 @@ sub get_submodel_string {
   print "bins: @bins\n";
   pop @probs;  # Remove the last probability; Indelible only wants (n-1) probabilities in its input!
 
+  my $class_to_omega;
   for ( my $i = 0 ; $i < scalar(@bins) ; $i++ ) {
     $class_to_omega->{$i} = $bins[$i];
   }
+  $self->param('class_to_omega',$class_to_omega);
 
   my $kappa = $params->{phylosim_kappa};
   my $submodel_str = $kappa . "\n\t" . join( " ", @probs ) . "\n\t" . join( " ", @bins );
@@ -400,8 +348,10 @@ sub _store_sitewise_omegas {
   my $sa           = shift;
   my $params       = shift;
 
+  my $tree = $self->get_tree;
+
   my @blocks           = ();
-  my $node_id          = $tree->node_id;
+  my $node_id          = $self->param('node_id');
   my $parameter_set_id = 1;
   $parameter_set_id = $params->{'parameter_set_id'} if ( defined $params->{'parameter_set_id'} );
 
@@ -458,8 +408,8 @@ sub get_m3_bins {
 
   my $i = 0;
   my @bins;
-  while ( get( 'w' . $i ) ) {
-    push @bins, get( 'w' . $i );
+  while ( $self->get( 'w' . $i ) ) {
+    push @bins, $self->get( 'w' . $i );
     $i++;
   }
   return @bins;
@@ -471,8 +421,8 @@ sub get_m3_probs {
 
   my $i = 0;
   my @probs;
-  while ( get( 'p' . $i ) ) {
-    push @probs, get( 'p' . $i );
+  while ( $self->get( 'p' . $i ) ) {
+    push @probs, $self->get( 'p' . $i );
     $i++;
   }
   return @probs;
@@ -482,11 +432,11 @@ sub get_equally_spaced_bins {
   my $self   = shift;
   my $params = shift;
 
-  if ( get('omega_distribution') =~ m/M3/i ) {
+  if ( $self->get('omega_distribution') =~ m/M3/i ) {
     return $self->get_m3_bins($params);
   }
 
-  my $k  = get('num_bins');
+  my $k  = $self->get('num_bins');
   my $lo = 0;
   my $hi = 3;
 
@@ -499,16 +449,23 @@ sub get_equally_spaced_bins {
 }
 
 sub get {
+  my $self = shift;
   my $key = shift;
-  return $params->{ $p_pre . $key };
+
+  my $value = $self->param('phylosim_'.$key);
+  if (!defined $value) {
+    warn("No value for key phylosim_$key found! Looking for $key...");
+    $value = $self->param($key);
+  }
+  return $value;
 }
 
 sub get_equally_spaced_probs {
   my $self   = shift;
   my $params = shift;
 
-  my $function = get('omega_distribution');
-  my $k        = get('num_bins');
+  my $function = $self->get('omega_distribution');
+  my $k        = $self->get('num_bins');
   my $lo       = 0;
   my $hi       = 3;
 
@@ -530,29 +487,29 @@ pconst = function(x,w) {
   if ( $function =~ m/M3/i ) {
     return $self->get_m3_probs($params);
   } elsif ( $function =~ m/M8/i ) {
-    my $p0 = get('p0');
-    my $p  = get('p');
-    my $q  = get('q');
-    my $w  = get('w');
+    my $p0 = $self->get('p0');
+    my $p  = $self->get('p');
+    my $q  = $self->get('q');
+    my $w  = $self->get('w');
     $f = qq^paml_m8(x,p0=${p0},p=$p,q=$q,w=$w)^;
   } elsif ( $function eq "constant" ) {
-    my $w = get('w');
+    my $w = $self->get('w');
     $f = qq^const(x,w=$w)^;
   } elsif ( $function eq "uniform" ) {
-    my $min = get('min');
-    my $max = get('max');
+    my $min = $self->get('min');
+    my $max = $self->get('max');
     $f = qq^unif(x,min=$min,max=$max)^;
   } elsif ( $function eq "gamma" ) {
-    my $shape = get('shape');
-    my $rate  = get('rate');
+    my $shape = $self->get('shape');
+    my $rate  = $self->get('rate');
     $f = qq^gamma(x,shape=$shape,rate=$rate)^;
   } elsif ( $function eq "beta" ) {
-    my $shape1 = get('shape1');
-    my $shape2 = get('shape2');
+    my $shape1 = $self->get('shape1');
+    my $shape2 = $self->get('shape2');
     $f = qq^beta(x,shape1=$shape1,shape2=$shape2)^;
   } elsif ( $function eq "lognormal" ) {
-    my $meanlog = get('meanlog');
-    my $sdlog   = get('sdlog');
+    my $meanlog = $self->get('meanlog');
+    my $sdlog   = $self->get('sdlog');
     $f = qq^lnorm(x,meanlog=$meanlog,sdlog=$sdlog)^;
   }
 
@@ -590,8 +547,8 @@ sub get_equiprobable_bins {
   my $self   = shift;
   my $params = shift;
 
-  my $function = get('omega_distribution');
-  my $k        = get('num_bins');
+  my $function = $self->get('omega_distribution');
+  my $k        = $self->get('num_bins');
 
   my $r_cmd = qq^
     dd = discretize_distribution(n=$k)
@@ -601,8 +558,8 @@ sub get_equiprobable_bins {
 
   my $r_pre = "";
   if ( $function eq "uniform" ) {
-    my $a = get('min');
-    my $b = get('max');
+    my $a = $self->get('min');
+    my $b = $self->get('max');
 
     $r_pre = qq^
       lo = $a;
@@ -618,8 +575,8 @@ sub get_equiprobable_bins {
     }
     ^;
   } elsif ( $function eq "gamma" ) {
-    my $a = get('shape');
-    my $b = get('rate');
+    my $a = $self->get('shape');
+    my $b = $self->get('rate');
 
     $r_pre = qq^
       shape = $a;
@@ -635,8 +592,8 @@ sub get_equiprobable_bins {
       }
     ^;
   } elsif ( $function eq "beta" ) {
-    my $p = get('shape1');
-    my $q = get('shape2');
+    my $p = $self->get('shape1');
+    my $q = $self->get('shape2');
 
     $r_pre = qq^
       shape1 = $p;
@@ -652,8 +609,8 @@ sub get_equiprobable_bins {
       }
     ^;
   } elsif ( $function eq "lognormal" ) {
-    my $meanlog = get('meanlog');
-    my $sdlog   = get('sdlog');
+    my $meanlog = $self->get('meanlog');
+    my $sdlog   = $self->get('sdlog');
     $r_pre = qq^
       meanlog = $meanlog;
       sdlog = $sdlog;

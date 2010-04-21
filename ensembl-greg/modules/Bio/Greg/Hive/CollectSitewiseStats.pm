@@ -153,6 +153,8 @@ sub get_gene_table_structure {
   my $self = shift;
 
   my $structure = {
+   'node_id' => 'int',
+   'parameter_set_id' => 'int',
   'parameter_set_name' => 'string',  
 
   'tree_length'      => 'float',
@@ -179,7 +181,7 @@ sub get_gene_table_structure {
   'hyphy_dnds_lo'       => 'float',
   'hyphy_dnds_hi'       => 'float',
 
-  unique_keys => 'data_id'
+  unique_keys => 'node_id,parameter_set_id'
   };
 
   return $structure;
@@ -189,6 +191,9 @@ sub get_sites_table_structure {
   my $self = shift;
 
   my $structure = {
+    node_id => 'int',
+    parameter_set_id => 'int',
+
     omega       => 'float',
     omega_lower => 'float',
     omega_upper => 'float',
@@ -200,7 +205,7 @@ sub get_sites_table_structure {
     aln_position          => 'int',
     aln_position_fraction => 'float',
     
-    unique_keys => 'aln_position,data_id'
+    unique_keys => 'node_id,parameter_set_id,aln_position'
     };
   
   return $structure;

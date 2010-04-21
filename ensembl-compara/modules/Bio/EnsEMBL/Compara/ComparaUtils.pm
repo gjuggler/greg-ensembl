@@ -358,7 +358,7 @@ sub fetch_masked_alignment
 	@arr = map { ($_ . '') x 3 } @arr;
       }
       $aln_score_string = join("",@arr);
-      printf "%20s %10s  aln:%d  score:%d\n", $leaf->stable_id, $leaf->member_id,length($leaf->alignment_string),length($aln_score_string);
+      #printf "%20s %10s  aln:%d  score:%d\n", $leaf->stable_id, $leaf->member_id,length($leaf->alignment_string),length($aln_score_string);
       #print $leaf->alignment_string."\n";
       #print $aln_score_string . "\n";
       

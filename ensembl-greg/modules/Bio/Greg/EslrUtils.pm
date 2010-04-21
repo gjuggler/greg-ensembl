@@ -57,6 +57,31 @@ sub loadConfiguration {
   return $obj;
 }
 
+sub find_member_by_external_id {
+  my $class = shift;
+  my $compara_dba = shift;
+  my $id = shift;
+
+  Bio::EnsEMBL::Registry->load_registry_from_multiple_dbs(
+    {
+      -host => 'ensembldb.ensembl.org',
+      -user => 'anonymous'
+    });
+  my $gene_adaptor = Bio::EnsEMBL::Registry->get_adaptor("human","core","gene");
+  my $member_adaptor = $compara_dba->get_MemberAdaptor;
+  
+  my @genes = @{ $gene_adaptor->fetch_all_by_external_name($id)};
+  push @genes, $gene_adaptor->fetch_by_stable_id($id) if (scalar @genes == 0);
+  
+  foreach my $gene (@genes) {
+    my $stable_id = $gene->stable_id;
+    
+    my $member = $member_adaptor->fetch_by_source_stable_id(undef,$stable_id);
+    return $member if (defined $member);
+  }
+  return undef;
+}
+
 sub mapSitewiseToGenome {
   my $class     = shift;
   my $tree      = shift;

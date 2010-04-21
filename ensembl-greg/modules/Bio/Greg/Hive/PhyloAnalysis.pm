@@ -60,7 +60,7 @@ sub fetch_input {
     sequence_quality_mask_character_character => 'N'
 
     };
-  
+
   $self->load_all_params($params);
 
 }
@@ -614,7 +614,7 @@ sub run_sitewise_dNdS
   
   # if the setting is set, store the optimized tree as a protein_tree_tag.
   if ($params->{sitewise_store_opt_tree}) {
-    my $tree_key = "slr_tree_".$params->{parameter_set_id};
+    my $tree_key = "slr_tree";
     $self->store_tag($tree_key,$new_pt->newick_format);
   }  
   

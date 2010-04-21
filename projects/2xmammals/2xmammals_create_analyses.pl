@@ -19,7 +19,6 @@ my $clean = 1;
 my $dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new(-url => $url);
 my $hive_dba = Bio::EnsEMBL::Hive::DBSQL::DBAdaptor->new(-url => $url);
 my $dbc = $dba->dbc;
-my $analysis_hash; # Hash to store mapping between analysis names and ID numbers.
 
 # Clean up our mess.
 clean_tables();
@@ -374,7 +373,6 @@ sub _create_analysis {
 
   my $analysis_id = ++$analysis_counter;
   
-  $analysis_hash->{$logic_name} = $analysis_id;
   my $param_string = Bio::EnsEMBL::Compara::ComparaUtils->hash_to_string($params);
   my $cmd = qq{REPLACE INTO analysis SET
 		 created=now(),

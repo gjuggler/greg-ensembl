@@ -34,6 +34,7 @@ sub fetch_input {
       alignment_max_gene_count         => 10000,
       alignment_use_exon_boundaries    => 0,
       alignment_executable             => '',
+      t_coffee_executable => '',
       
       alignment_prank_codon_model => 0,
       alignment_prank_f           => 0
@@ -303,6 +304,7 @@ sub align_with_mcoffee
     
     my $mcoffee_executable;
     $mcoffee_executable = $params->{'executable'};
+    $mcoffee_executable = $params->{'t_coffee_executable'} if (!defined $mcoffee_executable);
     unless (-e $mcoffee_executable) {
 	print "Using default T-Coffee executable!\n";
 	$mcoffee_executable = "/nfs/users/nfs_g/gj1/bin/t_coffee";
