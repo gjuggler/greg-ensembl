@@ -58,6 +58,7 @@ sub data_for_gene {
   my $self = shift;
 
   my $data = $self->SUPER::data_for_gene();
+  return undef unless (defined $data);
   my $tree = $self->get_tree;
 
   # Collect human protein.

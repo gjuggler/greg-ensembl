@@ -11,70 +11,35 @@ use Bio::EnsEMBL::Compara::NestedSet;
 use Bio::EnsEMBL::Hive;
 use Bio::EnsEMBL::Hive::Process;
 
-use Bio::Greg::ProcessUtils;
-
-our @ISA = qw(Bio::EnsEMBL::Hive::Process Bio::Greg::ProcessUtils);
-
-#
-# Some global-ish variables.
-#
-my $dba;
-my $pta;
-
-# INPUT FILES / OBJECTS.
-my $tree;
-my $aln;
-my $params;
-
-# OUTPUT FILES / OBJECTS / STATES.
-my %score_hash;
-
-sub debug { 1; }
+use base ('Bio::Greg::Hive::Process');
 
 sub fetch_input {
   my ($self) = @_;
 
-  # Load up the Compara DBAdaptor.
-  $dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new( -DBCONN => $self->db->dbc );
-  $pta = $dba->get_ProteinTreeAdaptor;
-
-  ### DEFAULT PARAMETERS ###
-  $params = {
+  my $params = {
     alignment_table       => 'protein_tree_member',
     alignment_score_table => 'protein_tree_member_score',
     alignment_scores_action => 'prank'    # Options: 'gblocks', 'prank', 'trimal', 'indelign'
   };
 
-  # For aminof, codonf, and freqtype, see the SLR readme.txt for more info.
+  $self->load_all_params($params);
+  
+  $self->compara_dba->dbc->disconnect_when_inactive(1);
 
-  #########################
-
-  # Fetch parameters from the two possible locations. Input_id takes precedence!
-  my $p_params = $self->get_params( $self->parameters );
-  my $i_params = $self->get_params( $self->input_id );
-  my $node_id  = $i_params->{'protein_tree_id'};
-  $node_id = $i_params->{'node_id'} if ( !defined $node_id );
-  my $t_params = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_tree_tags( $dba, $node_id );
-
-  $params = $self->replace_params( $params, $p_params, $i_params, $t_params );
-
-  Bio::EnsEMBL::Compara::ComparaUtils->hash_print($params);
-
-  $dba->dbc->disconnect_when_inactive(1);
-
-  my $no_filter_param = $self->replace_params( $params, { alignment_score_filtering => 0 } );
-  ( $tree, $aln ) =
-    Bio::EnsEMBL::Compara::ComparaUtils->get_tree_and_alignment( $dba, $no_filter_param );
-
+  my $no_filter_param = $self->replace_params( $self->params, { alignment_score_filtering => 0 } );
+  my ( $tree, $aln ) =
+    Bio::EnsEMBL::Compara::ComparaUtils->get_tree_and_alignment( $self->compara_dba, $no_filter_param );
+  $self->param('tree',$tree);
+  $self->param('aln',$aln);
 }
 
 sub run {
   my $self = shift;
 
-  my $node_id = $params->{'node_id'};
+  my $tree = $self->param('tree');
+  my $aln = $self->param('aln');
 
-  #$tree = Bio::EnsEMBL::Compara::ComparaUtils->get_tree_for_comparative_analysis($dba,$params);
-  #$tree = $tree->minimize_tree;
+  my $params = $self->params;
 
   my $input_table = $params->{'alignment_table'};
   my $action      = $params->{'alignment_scores_action'};
@@ -124,7 +89,7 @@ sub store_scores {
   my $score_hash   = shift;
   my $output_table = shift;
 
-  $dba->dbc->do("CREATE TABLE IF NOT EXISTS $output_table LIKE protein_tree_member_score");
+  $self->compara_dba->dbc->do("CREATE TABLE IF NOT EXISTS $output_table LIKE protein_tree_member_score");
   my $sth = $tree->adaptor->prepare(
     "REPLACE INTO $output_table (node_id,member_id,cigar_line) VALUES (?,?,?)");
   foreach my $leaf ( $tree->leaves ) {
@@ -210,7 +175,7 @@ sub run_tcoffee {
 
   my $outfile = $filename . ".score_ascii";
 
-  my $cmd = qq^t_coffee -mode=evaluate -infile=$filename -outfile=$outfile -output=score_ascii^;
+  my $cmd = qq^t_coffee -mode=evaluate -infile=$filename -outfile=$outfile -output=score_ascii -multi_core no^;
   print $cmd. "\n";
   system( $prefix. $cmd );
 

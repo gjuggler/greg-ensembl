@@ -70,7 +70,7 @@ sub load {
 
 sub simulate {
   my $logic_name = "PhyloSim";
-  my $module     = "Bio::Greg::PhyloSim";
+  my $module     = "Bio::Greg::Hive::PhyloSim";
   my $params     = {};
   _create_analysis( $logic_name, $module, $params, 30, 1 );
 }
@@ -79,15 +79,15 @@ sub align {
   my $logic_name = "Align";
   my $module     = "Bio::Greg::Hive::Align";
   my $params     = {
-
     # These params will be filled in by the LoadTree simulation definitions.
+    t_coffee_executable => '/homes/greg/src/T-COFFEE_distribution_Version_8.06/bin/binaries/linux/t_coffee'
   };
   _create_analysis( $logic_name, $module, $params, 100, 1 );
 }
 
 sub scores {
   my $logic_name = "AlignScores";
-  my $module     = "Bio::Greg::AlignmentScores";
+  my $module     = "Bio::Greg::Hive::AlignmentScores";
   my $params     = {
 
     # These params will be filled in by the LoadTree simulation definitions.

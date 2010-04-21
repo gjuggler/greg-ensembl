@@ -203,7 +203,7 @@ sub param {
 
   my $param_value = $self->SUPER::param($param);
 
-  print "$param value: $param_value\n" if ($param =~ m/slr/);
+  #print "$param value: $param_value\n" if ($param =~ m/slr/);
   if (!defined $param_value && $param ne 'breadcrumb') {
     $param_value = $self->breadcrumb_param($param);
   }
@@ -234,12 +234,12 @@ sub load_all_params {
 
   my $tree_tag_params = {};
   if (defined $node_id) {
-    $tree_tag_params = $self->get_params_from_tree_tags( $self->compara_dba, $node_id );
+    $tree_tag_params = $self->get_params_from_tree_tags( $self->compara_dba, $node_id ) || {};
   }
 
   my $param_set_params = {};
   if (defined $parameter_set_id) {
-    $param_set_params = $self->get_params_from_param_set($parameter_set_id);
+    $param_set_params = $self->get_params_from_param_set($parameter_set_id) || {};
   }
   
   my $old_param_hash = $self->{'_param_hash'};

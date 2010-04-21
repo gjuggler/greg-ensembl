@@ -92,7 +92,7 @@ sub load_tree_into_database {
 
   # Go through each leaf and store the member objects.
   foreach my $leaf ( $node->leaves ) {
-    print "leaf: ".$leaf->name."\n";
+    #print "leaf: ".$leaf->name."\n";
     $leaf->stable_id( $leaf->name );
     $leaf->source_name($unique_string);
     $mba->store($leaf);
@@ -255,7 +255,7 @@ sub filter_sweeps {
   my @sets = ();
 
   my $final_params = {
-    slrsim_replicates => 2,
+    slrsim_replicates => 1,
     experiment_name   => "Filter Sweeps",
     slrsim_tree_file  => $self->param('trees')->{'44mammals'},
   };
@@ -273,13 +273,13 @@ sub filter_sweeps {
   );
   push @sets, $p;
 
-  my @aln_params = map { $self->aln_param($_) } ( 'mcoffee', 'prank_f' );
+  my @aln_params = map { $self->aln_param($_) } ( 'muscle' );
   my @filter_params =
     map { $self->filter_param($_) } ( 'tcoffee', 'indelign', 'prank_treewise', 'prank_mean' );
 
   foreach my $aln (@aln_params) {
     foreach my $fp (@filter_params) {
-      foreach my $threshold ( 0, 2, 4, 6, 8, 10 ) {
+      foreach my $threshold ( 5 ) {
         my $p = $self->replace( $base_params, $aln, $fp, { alignment_score_threshold => $threshold, },
           $final_params );
         push @sets, $p;
