@@ -20,13 +20,19 @@ get.vector = function(con,query,columns=1) {
 
 # Grabs from the database the true and inferred omegas for the given reference sequence.
 get.all.data = function() {
-  query = sprintf("SELECT * FROM stats_slrsim");
-  data = get.vector(con,query,columns='all')
-  return(data)
+  query = sprintf("SELECT * FROM stats_sites")
+  sites = get.vector(con,query,columns='all')
+  
+  query = sprintf("SELECT * FROM stats_genes")
+  genes = get.vector(con,query,columns='all')
+
+  all = merge(sites,genes,by=c('data_id','node_id','parameter_set_id'))
+  
+  return(all)
 }
 
 get.all.nodes = function() {
-  query = sprintf("SELECT * FROM stats_slrsim GROUP BY node_id")
+  query = sprintf("SELECT * FROM stats_sites GROUP BY node_id")
   data = get.vector(con,query,columns='all')
   return(data)
 }
@@ -83,7 +89,7 @@ get.test.data = function() {
 }
 
 is.paml = function(df) {
-  if (grepl("paml",df[1,]$sitewise_name,ignore.case=T)) {
+  if (grepl("paml",df[1,]$sitewise_action,ignore.case=T)) {
     return(TRUE)
   } else {
     return(FALSE)
@@ -205,7 +211,7 @@ df.alignment.accuracy = function(df) {
 summarize.results = function(data,thresh=3.8,paml_thresh=0.95) {
 
   # Paste together some metadata so that we have one ID per experiment.
-  attrs = c('slrsim_file','alignment_name','filtering_name','alignment_score_threshold','slrsim_ref','sitewise_name','phylosim_insertrate','slrsim_tree_length')
+  attrs = c('slrsim_file','alignment_name','filtering_name','alignment_score_threshold','slrsim_ref','sitewise_action','phylosim_insertrate','slrsim_tree_length')
 
   ids = rep("",nrow(data))
   for (attr in attrs) {
@@ -304,12 +310,12 @@ filtering.roc = function(data) {
 
 filter.sweep.roc = function(data) {
   comb = data.frame()
-  for (aln in c('mcoffee')) {
-    for (filt in c('prank_treewise')) {
-      for (thresh in c(0,2,4,6,8,10)) {
-        if (aln == 'True Alignment' && (filt != 'None' || thresh != 5)) {
-          next;
-        }
+  for (aln in sort(unique(data$alignment_name))) {
+    for (filt in sort(unique(data$filtering_name))) {
+      for (thresh in sort(unique(data$alignment_score_threshold))) {
+#        if (aln == 'True Alignment' && (filt != 'None' || thresh != 5)) {
+#          next;
+#        }
 
         sub = subset(data, alignment_name==aln & filtering_name==filt & alignment_score_threshold==thresh)
         print(paste(aln,filt,thresh,nrow(sub),sep="/"))
@@ -326,11 +332,16 @@ filter.sweep.roc = function(data) {
   return(comb)
 }
 
+test.plot.roc = function(data) {
+  png(file="~/public_html/roc.png",width=600,height=600)
+  plot.roc(data)
+  dev.off()
+}
+
 plot.roc = function(data) {
   require(ggplot2)
   require(grid)
   print(nrow(data))
-  png(file="~/public_html/roc.png",width=600,height=600)
 
   # See http://learnr.wordpress.com/2009/05/26/ggplot2-two-or-more-plots-sharing-the-same-legend/
   lay = grid.layout(nrow=2,ncol=2,
@@ -351,7 +362,6 @@ plot.roc = function(data) {
   print(p1,vp=subplot(1,1))
   print(p2,vp=subplot(2,1))
   print(leg,vp=subplot(1:2,2))
-  dev.off()  
 }
 
 slr.roc = function(df) {

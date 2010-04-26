@@ -33,12 +33,15 @@ align();
 scores();
 omegas();
 collect_stats();
+plots();
 
 connect_analysis( "LoadTrees",   "PhyloSim" );
 connect_analysis( "PhyloSim",    "Align" );
 connect_analysis( "Align",       "AlignScores" );
 connect_analysis( "AlignScores", "Omegas" );
 connect_analysis( "Omegas",      "CollectStats" );
+
+wait_for("Plots",["Omegas","CollectStats"]);
 
 sub clean_tables {
   if ($clean) {
@@ -48,7 +51,7 @@ sub clean_tables {
       sequence sequence_cds
       analysis analysis_job dataflow_rule hive
       sitewise_omega
-      stats_slrsim
+      stats_sites stats_genes
       parameter_set
       node_set_member node_set
       ^;
@@ -56,6 +59,8 @@ sub clean_tables {
       print "$_\n";
       eval { $dba->dbc->do("truncate table $_"); }
     } @truncate_tables;
+    eval { $dba->dbc->do("drop table stats_sites"); };
+    eval { $dba->dbc->do("drop table stats_genes"); };
   }
 }
 
@@ -107,9 +112,18 @@ sub omegas {
 
 sub collect_stats {
   my $logic_name = "CollectStats";
-  my $module     = "Bio::Greg::Slrsim::CollectStats";
+  my $module     = "Bio::Greg::Slrsim::CollectSlrsimStats";
   my $params     = {};
   _create_analysis( $logic_name, $module, $params, 50, 1 );
+}
+
+sub plots {
+  my $logic_name = "Plots";
+  my $module     = "Bio::Greg::Slrsim::Plots";
+  my $params     = {};
+  _create_analysis( $logic_name, $module, $params, 50, 1 );
+
+  _add_job_to_analysis( "Plots", {} );    # Add a dummy job to plot at the end.
 }
 
 ########*********########
