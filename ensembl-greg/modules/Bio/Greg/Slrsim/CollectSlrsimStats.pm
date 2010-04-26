@@ -18,19 +18,18 @@ sub get_gene_table_structure {
   my $self = shift;
 
   my $added_structure = {
-    alignment_score_threshold => 'float',
     experiment_name       => 'string',
-    alignment_name            => 'string',
+
+    alignment_score_threshold => 'float',
     filtering_name            => 'string',
-    sitewise_name             => 'string',
-    species_name              => 'string',
+    alignment_name            => 'string',
+    sitewise_action => 'string',
 
     slrsim_rep         => 'int',
     slrsim_tree_file   => 'string',
     slrsim_tree_length => 'float',
     slrsim_ref         => 'string',
 
-    phylosim_simulation_program => 'string',
     phylosim_seq_length         => 'int',
     phylosim_omega_distribution => 'string',
     phylosim_insertrate         => 'float',
@@ -51,8 +50,6 @@ sub get_gene_table_structure {
     site_count               => 'float',
     unfiltered_site_count    => 'float',
     unfiltered_site_fraction => 'float',
-
-    unique_keys => 'node_id'
   };
 
   # Add our structure on top of the base structure defined in CollectSitewiseStats.
@@ -65,6 +62,10 @@ sub get_sites_table_structure {
   my $self = shift;
 
   my $added_structure = {
+    data_id => 'int',
+    parameter_set_id => 'int',
+    node_id => 'int',
+
     # Site-wise stuff.
     aln_position => 'int',
     seq_position => 'int',
@@ -73,15 +74,15 @@ sub get_sites_table_structure {
     true_type                   => 'string',
     true_entropy                => 'float',
     true_ncod                   => 'int',
-    true_ungapped_branch_length => 'float',
+#    true_ungapped_branch_length => 'float',
     aln_dnds                    => 'float',
     aln_type                    => 'string',
     aln_entropy                 => 'float',
     aln_ncod                    => 'int',
-    aln_ungapped_branch_length  => 'float',
+#    aln_ungapped_branch_length  => 'float',
     aln_lrt                     => 'float',
 
-    unique_keys => 'node_id,aln_position'
+    unique_keys => 'data_id,parameter_set_id,aln_position'
   };
 
   # We're not using any of the base structure defined in CollectSitewiseStats, so just return this hash.
@@ -129,12 +130,12 @@ sub data_for_gene {
 
   print "Calculating stuff...\n";
   
-  #$data->{sum_of_pairs_score} = Bio::EnsEMBL::Compara::AlignUtils->sum_of_pairs_score( $sa_true, $sa_aln );
-#  $data->{total_column_score} = Bio::EnsEMBL::Compara::AlignUtils->total_column_score( $sa_true, $sa_aln );
-#  $data->{column_entropy_mean_true} =
-#    Bio::EnsEMBL::Compara::AlignUtils->average_column_entropy($sa_true);
-#  $data->{column_entropy_mean_aln} =
-#    Bio::EnsEMBL::Compara::AlignUtils->average_column_entropy($sa_aln);
+  $data->{sum_of_pairs_score} = Bio::EnsEMBL::Compara::AlignUtils->sum_of_pairs_score( $sa_true, $sa_aln );
+  $data->{total_column_score} = Bio::EnsEMBL::Compara::AlignUtils->total_column_score( $sa_true, $sa_aln );
+  $data->{column_entropy_mean_true} =
+    Bio::EnsEMBL::Compara::AlignUtils->average_column_entropy($sa_true);
+  $data->{column_entropy_mean_aln} =
+    Bio::EnsEMBL::Compara::AlignUtils->average_column_entropy($sa_aln);
   
 
   $data->{site_count}            = $self->site_count($sa_aln);
@@ -148,6 +149,7 @@ sub data_for_gene {
   $data->{'tree_newick_slr'} = $newick;
   $data->{'tree_length_slr'} = $self->tree_length($slr_tree);
 
+  $data->{'parameter_set_id'} = 0;
   return $data;
 }
 
@@ -184,13 +186,13 @@ sub data_for_site {
   if (!defined $true_omegas) {
     # Get all the site-wise data from the omega table.
     my $aln_table_name = $data->{'omega_table'};
-    my $sth1           = $self->compara_dba->prepare(
+    my $sth1           = $self->compara_dba->dbc->prepare(
       "SELECT aln_position,omega,type,note,ncod,lrt_stat FROM sitewise_omega WHERE node_id=?;");
-    my $sth2 = $self->compara_dba->prepare(
-      "SELECT aln_position,omega,type,note,ncod,lrt_stat FROM $aln_table_name WHERE node_id=?;"
-      );
-    $sth1->execute($self->param('node_id'));
-    $sth2->execute( $self->param('node_id'));
+    my $cmd = "SELECT aln_position,omega,type,note,ncod,lrt_stat FROM $aln_table_name WHERE node_id=?;";
+    
+    my $sth2 = $self->compara_dba->dbc->prepare($cmd);
+    $sth1->execute($self->data_id);
+    $sth2->execute( $self->data_id);
     $true_omegas = $sth1->fetchall_hashref('aln_position');
     $aln_omegas  = $sth2->fetchall_hashref('aln_position');
     
@@ -201,26 +203,15 @@ sub data_for_site {
   my @true_entropies = Bio::EnsEMBL::Compara::AlignUtils->column_entropies($cdna_true);
   my @aln_entropies  = Bio::EnsEMBL::Compara::AlignUtils->column_entropies($cdna_aln);
 
-    Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $cdna_true, { length => 180 } );
-    Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $cdna_aln,  { length => 180 } );
-
-  # Get the sequence to act as a reference in site-wise value comparisons.
-  my $reference_id = $ref_name;
-  my @seqs = $sa_true->each_seq;
-  my ($ref_seq) = grep { $_->id eq $reference_id } @seqs;
-  die ("Reference seq not found!") if (!defined $ref_seq);
-  my $str      = $ref_seq->seq;
-  my $nogaps   = $str;
-  $nogaps =~ s/-//g;
-
   my $obj;
   my $true_col = $sa_true->column_from_residue_number( $ref_name, $seq_position );
   my $aln_col = $sa_aln->column_from_residue_number( $ref_name, $seq_position );
-  
+
   $obj->{seq_position} = $seq_position;
   $obj->{aln_position} = $aln_col;
   $obj->{true_dnds}    = $true_omegas->{$true_col}->{'omega'};
   $obj->{aln_dnds}     = $aln_omegas->{$aln_col}->{'omega'};
+  print "t:".$obj->{true_dnds}." a:".$obj->{aln_dnds}."\n";
   if ( !( $obj->{aln_dnds} && $obj->{true_dnds} ) ) {
     if ( $data->{'sitewise_action'} eq '' ) {      
       # Do nothing.
@@ -231,8 +222,8 @@ sub data_for_site {
         printf " =>No true dnds! aln:%s  %s  true:%s  %s\n", $aln_col, $obj->{aln}, $true_col,
         $obj->{true};
         next;
-      } elsif ( !$obj->{aln_dnds} ) {
-        
+      } elsif ( !defined $obj->{aln_dnds} ) {
+        print "No aln dnds!\n";
         # Continue; this should be counted as a false-negative in our results.
       }
     }
@@ -246,10 +237,20 @@ sub data_for_site {
   $obj->{aln_lrt}   = $aln_omegas->{$aln_col}->{'lrt_stat'} || '';
   $obj->{true_entropy} = sprintf( "%.3f", $true_entropies[$true_col] || 0 );
   $obj->{aln_entropy}  = sprintf( "%.3f", $aln_entropies[$aln_col]   || 0 );
+
+  my $true_slice = $sa_true->slice($true_col,$true_col);
+  Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $true_slice);
+  printf " -> %.3f %.3f %.3f\n",$obj->{true_dnds},$obj->{true_ncod},$obj->{true_entropy};
+  my $aln_slice = $sa_aln->slice($aln_col,$aln_col);
+  Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $aln_slice);
+  printf " -> %.3f %.3f %.3f\n",$obj->{aln_dnds},$obj->{aln_ncod},$obj->{aln_entropy};
+
+  $obj->{id} = $self->param('node_id');
+  $obj->{parameter_set_id} = 0;
   
   #$obj->{aln_ungapped_branch_length} =
     #  Bio::EnsEMBL::Compara::AlignUtils->get_ungapped_branchlength( $sa_aln, $tree, $aln_col );
-  
+
   # Store values in our output table.
   $data = $self->replace_params( $data,$obj);
 
@@ -269,7 +270,11 @@ sub get_sites_data {
   my ($ref_seq) = grep { $_->id eq $reference_id } @seqs;
   $ref_seq = $seqs[0] unless (defined $ref_seq);
 
-  foreach my $sequence_position (1 .. $ref_seq->length) {
+  my $seq_str = $ref_seq->seq;
+  $seq_str =~ s/-//g;
+  foreach my $sequence_position (1 .. length($seq_str)) {
+    my $ref_aa = substr($seq_str,$sequence_position-1,1);
+    print "Position $sequence_position $ref_aa\n";
     my $site_data = $self->data_for_site($ref_seq->id,$sequence_position);
     if (defined $site_data) {
       $self->store_params_in_table( $self->compara_dba, $self->param('sites_table'), $site_data );

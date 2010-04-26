@@ -80,13 +80,13 @@ sub load_tree_into_database {
   $md5->add($sim_rep);
   my $unique_string = substr( $md5->hexdigest, 20 );
 
+  my $tree_mult = $params->{'slrsim_tree_mult'};
+  if ($tree_mult) {
+    Bio::EnsEMBL::Compara::TreeUtils->scale( $node, $tree_mult );
+  }
   my $tree_length = $params->{'slrsim_tree_length'};
   if ($tree_length) {
     $node = Bio::EnsEMBL::Compara::TreeUtils->scale_to( $node, $tree_length );
-  }
-  my $tree_mult = $params->{'slrsim_tree_mult'};
-  if ($tree_mult) {
-    $node = Bio::EnsEMBL::Compara::TreeUtils->scale( $node, $tree_mult );
   }
   my $final_length = Bio::EnsEMBL::Compara::TreeUtils->total_distance($node);
 
@@ -119,7 +119,7 @@ sub load_tree_into_database {
   # Store the whole parameter set as a string.
   $self->store_tag( "params_slrsim", $sim_param_str );
 
-  my $output_params = {node_id => $node_id};
+  my $output_params = {node_id => $node_id, parameter_set_id => 0};
   my $data_id = $self->new_data_id($output_params);
 
   my ($job_id) = @{$self->dataflow_output_id($output_params, 1)};
@@ -255,9 +255,12 @@ sub filter_sweeps {
   my @sets = ();
 
   my $final_params = {
-    slrsim_replicates => 1,
+    slrsim_replicates => 50,
     experiment_name   => "Filter Sweeps",
     slrsim_tree_file  => $self->param('trees')->{'44mammals'},
+    slrsim_tree_mult => 1,
+    phylosim_seq_length => 500,
+    slrsim_ref => 'Human'
   };
 
   my $indel       = $self->param('indel_models')->{'power_law'};
@@ -273,13 +276,13 @@ sub filter_sweeps {
   );
   push @sets, $p;
 
-  my @aln_params = map { $self->aln_param($_) } ( 'muscle' );
+  my @aln_params = map { $self->aln_param($_) } ( 'fmcoffee' );
   my @filter_params =
-    map { $self->filter_param($_) } ( 'tcoffee', 'indelign', 'prank_treewise', 'prank_mean' );
+    map { $self->filter_param($_) } ( 'tcoffee' ); #, 'tcoffee', 'indelign', 'prank_treewise', 'prank_mean' );
 
   foreach my $aln (@aln_params) {
     foreach my $fp (@filter_params) {
-      foreach my $threshold ( 5 ) {
+      foreach my $threshold (1, 3, 4, 5, 6, 7, 8, 9, 10) {
         my $p = $self->replace( $base_params, $aln, $fp, { alignment_score_threshold => $threshold, },
           $final_params );
         push @sets, $p;
@@ -295,15 +298,12 @@ sub aln_param {
   my $aln_params = {
     alignment_name   => $aln,
     alignment_method => $aln,
-    alignment_table  => 'aln',
-    omega_table      => 'omega'
+    alignment_table  => 'aln'
   };
   if ( $aln eq 'none' || $aln eq 'true' ) {
     $aln_params = {
       alignment_name   => "True Alignment",
-      alignment_method => 'none',
-      alignment_table  => 'protein_tree_member',
-      omega_table      => 'omega_true'
+      alignment_method => 'none'
     };
   }
   return $aln_params;
@@ -334,7 +334,6 @@ sub species_param {
   my $self    = shift;
   my $species = shift;
   my $p       = {
-    species_name => $species,
     slrsim_ref   => $species
   };
   return $p;
@@ -346,7 +345,7 @@ sub verify_params {
 
   $p->{alignment_table}         = 'aln'            unless defined( $p->{alignment_table} );
   $p->{alignment_scores_action} = 'none'           unless defined( $p->{alignment_scores_action} );
-  $p->{omega_table}             = 'sitewise_omega' unless defined( $p->{omega_table} );
+  $p->{omega_table}             = 'omega' unless defined( $p->{omega_table} );
 
   # Check that we have proper filter and alignment tables.
   $p->{alignment_score_table} = $p->{alignment_table} . '_scores';
