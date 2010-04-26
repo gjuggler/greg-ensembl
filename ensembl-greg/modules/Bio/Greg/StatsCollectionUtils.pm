@@ -176,10 +176,10 @@ sub get_tag_hash {
   # Index tags by the aln_position and tag.
   my $table   = "sitewise_tag";
   my $pset    = $params->{'parameter_set_id'} || 0;
-  my $node_id = $params->{'node_id'};
+  my $data_id = $class->data_id;
 
   my $cmd = qq^SELECT aln_position,tag,value
-    FROM $table WHERE ( parameter_set_id=$pset or parameter_set_id=0 ) and node_id=$node_id
+    FROM $table WHERE ( parameter_set_id=$pset or parameter_set_id=0 ) and node_id=$data_id
     ^;
   print $cmd."\n";
   my $tag_hash = {};
@@ -202,9 +202,8 @@ sub get_psc_hash {
   my $params = shift;
 
   my $table   = $params->{'omega_table'};
-  my $pset    = $params->{'parameter_set_id'} || '1';
-  my $data_id = $params->{'data_id'};
-  my $node_id = $params->{'node_id'};
+  my $pset    = $params->{'parameter_set_id'} || '0';
+  my $data_id = $class->data_id;
   my $include_crappy_sites = $params->{'get_all_sites'};
   
   my $CLEAN_WHERE = qq^
@@ -221,7 +220,7 @@ sub get_psc_hash {
   if ( $params->{genome} ) {
     $cmd = qq^SELECT * from $table o, sitewise_genome g WHERE o.parameter_set_id=$pset AND 
       o.node_id=$data_id
-      AND g.node_id=$node_id
+      AND g.node_id=$data_id
       AND o.aln_position=g.aln_position $CLEAN_WHERE^;
   }
 
@@ -233,7 +232,7 @@ sub get_psc_hash {
     $cmd = qq^SELECT * from $table o, sitewise_tag t  WHERE
       o.parameter_set_id=$pset AND 
       o.node_id=$data_id
-      AND t.node_id=$node_id
+      AND t.node_id=$data_id
       AND o.aln_position=t.aln_position
       AND t.tag="FILTER" AND t.value >= $filter_value $CLEAN_WHERE;
       ^;

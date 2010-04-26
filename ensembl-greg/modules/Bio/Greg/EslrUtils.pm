@@ -520,7 +520,7 @@ sub run_r {
   my $vanilla = "--vanilla";
   $vanilla = "--slave" if ( $params->{'silent'} );
 
-  my $r_cmd = "R";
+  my $r_cmd = "R-2.10.0";
   if ( $params->{'farm'} ) {
     $r_cmd = "/software/bin/R-2.9.0";
   } elsif ( $params->{'bigmen'} ) {
@@ -530,6 +530,8 @@ sub run_r {
   } else {
 
   }
+
+  print "Using executable: '$r_cmd'\n";
 
   my $rc = system("$r_cmd $vanilla < $temp_in");
   die "R returned an error!" if ($rc);

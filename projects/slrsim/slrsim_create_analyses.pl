@@ -13,12 +13,15 @@ use Bio::Greg::EslrUtils;
 use File::Path;
 use File::Basename;
 
-my ( $clean, $url ) = undef;
+my ( $clean, $url, $experiment_name ) = undef;
 GetOptions(
   'clean' => \$clean,
-  'url=s' => \$url
+  'url=s' => \$url,
+  'experiment=s' => \$experiment_name
 );
 Bio::EnsEMBL::Registry->no_version_check(1);
+
+die("No experiment name given!") unless (defined $experiment_name);
 
 $url = 'mysql://slrsim:slrsim@mysql-greg.ebi.ac.uk:4134/slrsim_anisimova' if ( !$url );
 my $dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new( -url => $url );
@@ -33,12 +36,15 @@ align();
 scores();
 omegas();
 collect_stats();
+plots();
 
 connect_analysis( "LoadTrees",   "PhyloSim" );
 connect_analysis( "PhyloSim",    "Align" );
 connect_analysis( "Align",       "AlignScores" );
 connect_analysis( "AlignScores", "Omegas" );
 connect_analysis( "Omegas",      "CollectStats" );
+
+wait_for("Plots",["Omegas","CollectStats"]);
 
 sub clean_tables {
   if ($clean) {
@@ -48,7 +54,7 @@ sub clean_tables {
       sequence sequence_cds
       analysis analysis_job dataflow_rule hive
       sitewise_omega
-      stats_slrsim
+      stats_sites stats_genes
       parameter_set
       node_set_member node_set
       ^;
@@ -56,13 +62,15 @@ sub clean_tables {
       print "$_\n";
       eval { $dba->dbc->do("truncate table $_"); }
     } @truncate_tables;
+    eval { $dba->dbc->do("drop table stats_sites"); };
+    eval { $dba->dbc->do("drop table stats_genes"); };
   }
 }
 
 sub load {
   my $logic_name  = "LoadTrees";
   my $module      = "Bio::Greg::Slrsim::LoadTrees";
-  my $params      = { simulation_set => "filter_sweeps" };
+  my $params      = { experiment_name => $experiment_name };
   my $analysis_id = _create_analysis( $logic_name, $module, $params );
 
   _add_job_to_analysis( "LoadTrees", {} );    # Add a dummy job to run and load the trees.
@@ -80,7 +88,6 @@ sub align {
   my $module     = "Bio::Greg::Hive::Align";
   my $params     = {
     # These params will be filled in by the LoadTree simulation definitions.
-    t_coffee_executable => '/homes/greg/src/T-COFFEE_distribution_Version_8.06/bin/binaries/linux/t_coffee'
   };
   _create_analysis( $logic_name, $module, $params, 100, 1 );
 }
@@ -107,9 +114,21 @@ sub omegas {
 
 sub collect_stats {
   my $logic_name = "CollectStats";
-  my $module     = "Bio::Greg::Slrsim::CollectStats";
+  my $module     = "Bio::Greg::Slrsim::CollectSlrsimStats";
   my $params     = {};
   _create_analysis( $logic_name, $module, $params, 50, 1 );
+}
+
+sub plots {
+  my $logic_name = "Plots";
+  my $module     = "Bio::Greg::Slrsim::Plots";
+  my $params     = {};
+  _create_analysis( $logic_name, $module, $params, 50, 1 );
+
+  my $params = {
+    experiment_name => $experiment_name
+  };
+  _add_job_to_analysis( "Plots", $params );    # Add a dummy job to plot at the end.
 }
 
 ########*********########

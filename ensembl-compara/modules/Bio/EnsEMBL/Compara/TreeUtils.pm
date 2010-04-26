@@ -278,7 +278,6 @@ sub _add_nodeI_to_node {
 
 
 # Scales all the branches in a tree by a given factor.
-# NOTE: Returns a COPY of the tree!
 # @created GJ 2008-12-12
 sub scale {
   my $class = shift;
