@@ -187,6 +187,17 @@ sub add_breadcrumb {
   $params->{breadcrumb} = $breadcrumb;
 }
 
+sub store_meta {
+  my $self = shift;
+  my $params = shift;
+
+  foreach my $key (keys %$params) {
+    my $value = $params->{$key};
+    $self->db_handle->do("DELETE from meta where meta_key='$key';");
+    $self->db_handle->do("REPLACE into meta (meta_key,meta_value) VALUES ('$key','$value');");
+  }
+}
+
 sub new_data_id {
   my $self = shift;
   my $params = shift;
@@ -311,12 +322,17 @@ sub string_to_hash {
 sub hash_print {
   my $class   = shift;
   my $hashref = shift;
+  my $HANDLE = shift;
 
-  print "  {\n";
+  select($HANDLE) if (defined $HANDLE);
+
+  print  "  {\n";
   foreach my $key ( sort keys %{$hashref} ) {
-    printf( "    %-40.40s => %-40s\n", $key, $hashref->{$key} );
+    printf "    %-40.40s => %-40s\n", $key, $hashref->{$key};
   }
   print "  }\n";
+
+  select(STDOUT);
 }
 
 sub replace {

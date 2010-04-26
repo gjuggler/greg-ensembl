@@ -13,12 +13,15 @@ use Bio::Greg::EslrUtils;
 use File::Path;
 use File::Basename;
 
-my ( $clean, $url ) = undef;
+my ( $clean, $url, $experiment_name ) = undef;
 GetOptions(
   'clean' => \$clean,
-  'url=s' => \$url
+  'url=s' => \$url,
+  'experiment=s' => \$experiment_name
 );
 Bio::EnsEMBL::Registry->no_version_check(1);
+
+die("No experiment name given!") unless (defined $experiment_name);
 
 $url = 'mysql://slrsim:slrsim@mysql-greg.ebi.ac.uk:4134/slrsim_anisimova' if ( !$url );
 my $dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new( -url => $url );
@@ -67,7 +70,7 @@ sub clean_tables {
 sub load {
   my $logic_name  = "LoadTrees";
   my $module      = "Bio::Greg::Slrsim::LoadTrees";
-  my $params      = { simulation_set => "filter_sweeps" };
+  my $params      = { experiment_name => $experiment_name };
   my $analysis_id = _create_analysis( $logic_name, $module, $params );
 
   _add_job_to_analysis( "LoadTrees", {} );    # Add a dummy job to run and load the trees.
@@ -85,7 +88,6 @@ sub align {
   my $module     = "Bio::Greg::Hive::Align";
   my $params     = {
     # These params will be filled in by the LoadTree simulation definitions.
-    t_coffee_executable => '/homes/greg/src/T-COFFEE_distribution_Version_8.06/bin/binaries/linux/t_coffee'
   };
   _create_analysis( $logic_name, $module, $params, 100, 1 );
 }
@@ -123,7 +125,10 @@ sub plots {
   my $params     = {};
   _create_analysis( $logic_name, $module, $params, 50, 1 );
 
-  _add_job_to_analysis( "Plots", {} );    # Add a dummy job to plot at the end.
+  my $params = {
+    experiment_name => $experiment_name
+  };
+  _add_job_to_analysis( "Plots", $params );    # Add a dummy job to plot at the end.
 }
 
 ########*********########

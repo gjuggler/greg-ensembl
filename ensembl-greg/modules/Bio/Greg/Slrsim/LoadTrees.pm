@@ -11,8 +11,7 @@ sub fetch_input {
 
   ### DEFAULT PARAMETERS ###
   my $defaults = {
-    experiment_name => 'Slrsim Experiment',
-    simulation_set  => 'slrsim_test',
+    experiment_name => 'filter_sweeps',
     tree_root_dir   => '/homes/greg/lib/greg-ensembl/projects/slrsim/trees'
   };
   ##########################
@@ -28,10 +27,13 @@ sub run {
 
   my @simsets;
 
-  my $sim_set_name = $self->param('simulation_set');
-  if ( defined $sim_set_name ) {
-    @simsets = @{ $self->param($sim_set_name) };
-    throw("Simulation set $sim_set_name not found!") unless ( defined @simsets );
+  my $experiment_name = $self->param('experiment_name');
+  if ( defined $experiment_name ) {
+    if ($experiment_name =~ m/filter_sweeps/i) {
+      @simsets = @{ $self->filter_sweeps() };
+    }
+
+    throw("Experiment $experiment_name not found!") unless ( defined @simsets );
   }
 
   my $tree_dir = $self->param('tree_root_dir') || '.';
@@ -119,7 +121,7 @@ sub load_tree_into_database {
   # Store the whole parameter set as a string.
   $self->store_tag( "params_slrsim", $sim_param_str );
 
-  my $output_params = {node_id => $node_id, parameter_set_id => 0};
+  my $output_params = {node_id => $node_id, parameter_set_id => $self->parameter_set_id, experiment_name => $self->param('experiment_name')};
   my $data_id = $self->new_data_id($output_params);
 
   my ($job_id) = @{$self->dataflow_output_id($output_params, 1)};
@@ -246,7 +248,6 @@ sub load_simulation_params {
 sub load_simulation_sets {
   my $self = shift;
 
-  $self->param( 'filter_sweeps', $self->filter_sweeps() );
 }
 
 sub filter_sweeps {
@@ -255,11 +256,11 @@ sub filter_sweeps {
   my @sets = ();
 
   my $final_params = {
-    slrsim_replicates => 50,
+    slrsim_replicates => 1,
     experiment_name   => "Filter Sweeps",
-    slrsim_tree_file  => $self->param('trees')->{'44mammals'},
+    slrsim_tree_file  => $self->param('trees')->{'2x_primates'},
     slrsim_tree_mult => 1,
-    phylosim_seq_length => 500,
+    phylosim_seq_length => 200,
     slrsim_ref => 'Human'
   };
 
@@ -282,13 +283,17 @@ sub filter_sweeps {
 
   foreach my $aln (@aln_params) {
     foreach my $fp (@filter_params) {
-      foreach my $threshold (1, 3, 4, 5, 6, 7, 8, 9, 10) {
+      foreach my $threshold (1) {
         my $p = $self->replace( $base_params, $aln, $fp, { alignment_score_threshold => $threshold, },
           $final_params );
         push @sets, $p;
       }
     }
   }
+
+  # Store the overall simulation parameters in the meta table. This will be later dumped by the Plots.pm script.
+  $self->store_meta($self->replace($base_params,$final_params));
+
   return \@sets;
 }
 
