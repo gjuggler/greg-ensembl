@@ -38,6 +38,9 @@ my $counts_genes_def = {
   'syn_C.GH' => 'int',
   'syn_G.CH' => 'int',
 
+  most_frequent_pattern => 'string',
+  most_frequent_pattern_excess => 'int',
+
   synon => 'int',
   nonsynon => 'int',
   constant => 'int',
@@ -152,6 +155,9 @@ sub run {
     nonsynon => 0,
     constant => 0,
     gap => 0,
+    ils_count => 0,
+    non_ils_count => 0,
+    most_frequent_pattern => '',
     tree_newick => $tree->newick_format(),
     tree_length => $self->tree_length($tree),
     tree_max_path => $self->max_path($tree),
@@ -252,6 +258,19 @@ sub run {
     $self->store_params_in_table($self->compara_dba,$self->param('counts_sites_table'),$site_data);
     #$ALN->pretty_print($slice,{length=>200});
   }
+
+  # Get the most frequent pattern and excess.
+  my $most_frequent_pattern = '';
+  my $most_frequent_count = 0;
+  foreach my $key ('H.CG','C.GH','G.CH') {
+    if ($gene_data->{$key} > $most_frequent_count) {
+      $most_frequent_count = $gene_data->{$key};
+      $most_frequent_pattern = $key;
+    }
+  }
+  $gene_data->{most_frequent_pattern} = $most_frequent_pattern;
+  $gene_data->{non_ils_count} = $gene_data->{'G.CH'};
+  $gene_data->{ils_count} = $gene_data->{'H.CG'} + $gene_data->{'C.GH'};
 
   $gene_data = $self->replace_params($self->params,$gene_data,{parameter_set_id => 0});
 
