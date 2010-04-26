@@ -58,12 +58,6 @@ sub fetch_input {
       }
     }
 
-    if ($method eq 'none') {
-      print "NO ALIGNMENT NECESSARY!! Skipping...\n";
-      $self->param('dont_write_output',1);
-      return;
-    }
-
     if ($method eq 'cmcoffee') {
       my $num_leaves = scalar(@{$tree->get_all_leaves});
       # Switch to fmcoffee if we have > 300 genes.
@@ -117,7 +111,6 @@ sub run
 {
     my $self = shift;
 
-    return if ($self->param('dont_write_output'));
     $self->check_if_exit_cleanly;
 
     my $sa = $self->param('aln');
@@ -143,6 +136,8 @@ sub run
       }
     } elsif ($method =~ m/papaya/) {
       $sa_aligned = $self->align_with_papaya($sa,$tree,$params);
+    } elsif ($method =~ m/none/) {
+      $sa_aligned = $sa;
     }
 
     $self->param('sa_aligned',$sa_aligned);
