@@ -146,7 +146,7 @@ sub simulate_alignment_indelible {
     $models_trees_partitions = $self->domains_to_indelible_setup( $domain, $tree, $params );
   }
 
-  my $tmp_dir = $self->worker_temp_directory . $tree->node_id . '/';
+  my $tmp_dir = $self->worker_temp_directory . $self->data_id . '/';
   print "Temp dir: $tmp_dir\n";
   mkpath( [$tmp_dir] );
 
@@ -204,7 +204,7 @@ my $class_to_omega = $self->param('class_to_omega');
       my $omg = $class_to_omega->{$2};
       push @sitewise_omegas, {
         aln_position => int($1),
-        node_id      => $tree->node_id,
+        node_id      => $self->data_id,
         omega_lower  => $omg,
         omega_upper  => $omg,
         omega        => $omg
@@ -351,9 +351,8 @@ sub _store_sitewise_omegas {
   my $tree = $self->get_tree;
 
   my @blocks           = ();
-  my $node_id          = $self->param('node_id');
-  my $parameter_set_id = 1;
-  $parameter_set_id = $params->{'parameter_set_id'} if ( defined $params->{'parameter_set_id'} );
+  my $data_id          = $self->data_id;
+  my $parameter_set_id = $self->parameter_set_id;
 
   eval {
 
@@ -382,7 +381,7 @@ sub _store_sitewise_omegas {
       push @insert_strings,
         sprintf(
         '(%d,%.5f,%d,%d,%.5f,%.5f,%.5f,"%s",%d)',
-        $hr->{aln_position}, $aln_position_fraction, $hr->{node_id},
+        $hr->{aln_position}, $aln_position_fraction, $data_id,
         $parameter_set_id,   $hr->{omega},           $hr->{omega},
         $hr->{omega},        $type,                  $ncod
         );
@@ -393,13 +392,6 @@ sub _store_sitewise_omegas {
       "INSERT IGNORE INTO $output_table (aln_position,aln_position_fraction,node_id,parameter_set_id,omega,omega_lower,omega_upper,type,ncod) values $insert ;"
     );
   };
-
-  #  if ($@) {
-  #    open(OUT,">/homes/greg/tmp/".$tree->node_id.".txt");
-  #    print OUT $@."\n";
-  #    close(OUT);
-  #    die($@);
-  #  }
 }
 
 sub get_m3_bins {

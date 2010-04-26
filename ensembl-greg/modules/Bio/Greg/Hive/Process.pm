@@ -133,6 +133,22 @@ sub db_handle {
   return $dba->dbc->db_handle();
 }
 
+sub data_id {
+  my $self = shift;
+
+  my $id = $self->param('node_id');
+  $id = $self->param('data_id') if (defined $self->param('data_id'));
+  return $id;
+}
+
+sub parameter_set_id {
+  my $self = shift;
+
+  my $id = 0;
+  $id = $self->param('parameter_set_id') if (defined $self->param('parameter_set_id'));
+  return $id;
+}
+
 sub breadcrumb_param {
   my $self = shift;
   my $param = shift;
@@ -390,7 +406,6 @@ sub create_table_from_params {
       qq^
 	     CREATE TABLE $table_name (
 				       data_id INT(10) NOT NULL,
-				       node_id INT(10) NOT NULL,
 				       parameter_set_id TINYINT(3) NOT NULL DEFAULT 0
 				       )
 	     ^
@@ -407,9 +422,12 @@ sub create_table_from_params {
   eval {
 
     foreach my $key ( sort keys %$params ) {
+      next if ($key eq 'data_id' || $key eq 'parameter_set_id');
+      print "Creating key $key\n";
       my $type = $params->{$key};
 
       my $type_map = {
+        'tinyint' => 'TINYINT(3)',
         'int'    => 'INT',
         'string' => 'TEXT',
         'float'  => 'FLOAT'
@@ -420,7 +438,7 @@ sub create_table_from_params {
       $dbh->do($create_cmd);
     }
 
-    my $unique_cmd = qq^ALTER TABLE $table_name ADD UNIQUE (data_id)^;
+    my $unique_cmd = ""; #qq^ALTER TABLE $table_name ADD UNIQUE (data_id)^;
     if ($unique_keys) {
       $unique_cmd = qq^ALTER TABLE $table_name ADD UNIQUE ($unique_keys)^;
     }
@@ -432,7 +450,7 @@ sub create_table_from_params {
     }
 
     $dbh->do("ALTER TABLE $table_name ADD KEY (parameter_set_id)");
-    $dbh->do("ALTER TABLE $table_name ADD KEY (node_id)");
+    $dbh->do("ALTER TABLE $table_name ADD KEY (data_id)");
 
   };
 

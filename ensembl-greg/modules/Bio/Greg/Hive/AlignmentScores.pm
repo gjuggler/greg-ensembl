@@ -154,8 +154,8 @@ sub run_tcoffee {
 
   Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $aln, { length => 200 } );
 
-  my $node_id = $tree->node_id;
-  my $tmpdir  = $self->worker_temp_directory . "${node_id}/";
+  my $node_id = $self->data_id;
+  my $tmpdir  = $self->worker_temp_directory . $node_id."/";
   mkdir($tmpdir);
   my $filename = "$tmpdir" . "tcoffee_aln_${node_id}.fasta";
   my $tmpfile  = Bio::AlignIO->new(
@@ -327,7 +327,7 @@ sub run_trimal {
 
   # Write temporary alignment.
   my $dir   = $self->worker_temp_directory;
-  my $aln_f = $dir . "/aln_" . $tree->node_id . ".fa";
+  my $aln_f = $dir . "/aln_" . $self->data_id . ".fa";
   Bio::EnsEMBL::Compara::AlignUtils->to_file( $aln, $aln_f );
 
   # Build a command for TrimAl.

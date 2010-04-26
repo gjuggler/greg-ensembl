@@ -28,7 +28,7 @@ sub fetch_input {
   my $params = {
     alignment_table            => 'protein_tree_member',
     omega_table           => 'sitewise_omega',
-    parameter_set_id       => 1,
+    parameter_set_id       => 0,
 
     sitewise_store_opt_tree         => 1,
     sitewise_store_gaps             => 0,
@@ -94,9 +94,9 @@ sub run {
     }
   }
   
-  eval {
+#  eval {
     $self->run_with_params($self->params,$tree);
-  };
+#  };
   if ($@) {
     print "ERROR - Trying with removed gaps...\n";
     $self->param('sitewise_strip_gaps',1);
@@ -113,8 +113,7 @@ sub run {
 	$self->run_with_params($self->params,$tree);
       };
       if ($@) {
-	my $param_set = $self->param('parameter_set_id');
-	print "ERROR - GIVING UP! Parameter set $param_set\n";
+	print "ERROR - GIVING up! \n";
 	$self->store_tag('slr_error',1);
 	$self->fail_and_die;
 	sleep(2);
@@ -233,7 +232,6 @@ sub run_hyphy {
   
   print "$omega_lo $omega $omega_hi\n";
 
-  my $ps = $params->{parameter_set_id};
   $self->store_tag("hyphy_dnds",$omega);
   $self->store_tag("hyphy_dnds_lo",$omega_lo);
   $self->store_tag("hyphy_dnds_hi",$omega_hi);
@@ -252,7 +250,6 @@ sub run_indelign {
 
   print "ins: $ins_rate del: $del_rate\n";
 
-  my $ps = $params->{parameter_set_id};
   $self->store_tag("indelign_ins",$ins_rate);
   $self->store_tag("indelign_del",$del_rate);
 }
@@ -316,7 +313,6 @@ sub run_xrate_indels {
 
   print "lambda: $lambda mu: $mu\n";
 
-  my $ps = $params->{parameter_set_id};
   $self->store_tag("xrate_ins",$lambda);
   $self->store_tag("xrate_del",$mu);
 
@@ -493,8 +489,8 @@ sub run_sitewise_dNdS
 
   $slrexe = "/nfs/users/nfs_g/gj1/bin/Slr_gj1" if (! -e $slrexe);
   $slrexe = "/homes/greg/bin/Slr" if (! -e $slrexe);
+  $slrexe = "Slr" if (! -e $slrexe);
 
-  throw("can't find an slr executable to run\n") if (!-e $slrexe);
 
   # Reorder the alignment according to the tree
   #$cdna_aln = Bio::EnsEMBL::Compara::AlignUtils->sort_by_tree($cdna_aln,$treeI);
@@ -561,6 +557,7 @@ sub run_sitewise_dNdS
   }
   
   print "Running!\n";
+  print "$prefix $slrexe\n";
   open($run, "$prefix $slrexe |") or $self->throw("Cannot open exe $slrexe");
   my @output = <$run>;
   
@@ -809,13 +806,12 @@ sub store_sitewise {
   my $tree = shift;
   my $params = shift;
 
-  my $node_id = $self->param('data_id');
+  my $node_id = $self->data_id;
 
   my $table = 'sitewise_aln';
   $table = $params->{'omega_table'} if ($params->{'omega_table'});
   
-  my $parameter_set_id = 0;
-  $parameter_set_id = $params->{'parameter_set_id'} if (defined($params->{'parameter_set_id'}));
+  my $parameter_set_id = $self->parameter_set_id;
 
   my $aln_map_aa = $self->param('aln_map_aa');
   my $input_aa = $self->param('input_aa');
