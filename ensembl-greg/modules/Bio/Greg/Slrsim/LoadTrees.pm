@@ -141,7 +141,7 @@ sub load_simulation_params {
     '2x_primates'          => '2x_p.nh',
     '2x_glires'            => '2x_g.nh',
     '44mammals'            => '44mammals.nh',
-    '2xmammals_autosomal'  => '2xmammals.nh',
+    '2xmammals'  => '2xmammals.nh',
     'ensembl_a'            => 'ensembl.nh',
     'ensembl_b'            => 'ensembl_2.nh'
   };
@@ -256,12 +256,12 @@ sub filter_sweeps {
   my @sets = ();
 
   my $final_params = {
-    slrsim_replicates => 1,
+    slrsim_replicates => 50,
     experiment_name   => "Filter Sweeps",
-    slrsim_tree_file  => $self->param('trees')->{'2x_primates'},
+    slrsim_tree_file  => $self->param('trees')->{'anisimova_bglobin'},
     slrsim_tree_mult => 1,
-    phylosim_seq_length => 200,
-    slrsim_ref => 'Human'
+    phylosim_seq_length => 500,
+    slrsim_ref => 'human'
   };
 
   my $indel       = $self->param('indel_models')->{'power_law'};
@@ -277,13 +277,13 @@ sub filter_sweeps {
   );
   push @sets, $p;
 
-  my @aln_params = map { $self->aln_param($_) } ( 'fmcoffee' );
+  my @aln_params = map { $self->aln_param($_) } ( 'clustalw' );
   my @filter_params =
     map { $self->filter_param($_) } ( 'tcoffee' ); #, 'tcoffee', 'indelign', 'prank_treewise', 'prank_mean' );
 
   foreach my $aln (@aln_params) {
     foreach my $fp (@filter_params) {
-      foreach my $threshold (1) {
+      foreach my $threshold (0, 1, 3, 5, 7, 8, 9) {
         my $p = $self->replace( $base_params, $aln, $fp, { alignment_score_threshold => $threshold, },
           $final_params );
         push @sets, $p;

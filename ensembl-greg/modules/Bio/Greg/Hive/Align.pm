@@ -6,6 +6,7 @@ use IO::File;
 use File::Basename;
 use File::Path;
 
+use Bio::EnsEMBL::Utils::Exception;
 use Bio::EnsEMBL::DBSQL::DBAdaptor;
 use Bio::EnsEMBL::BaseAlignFeature;
 use Bio::EnsEMBL::Compara::DBSQL::DBAdaptor;
@@ -137,7 +138,7 @@ sub run
     } elsif ($method =~ m/papaya/) {
       $sa_aligned = $self->align_with_papaya($sa,$tree,$params);
     } elsif ($method =~ m/none/) {
-      $sa_aligned = $sa;
+      $sa_aligned = $self->no_align($sa,$tree,$params);
     }
 
     $self->param('sa_aligned',$sa_aligned);
@@ -148,17 +149,12 @@ sub write_output {
     my $self = shift;
     $self->check_if_exit_cleanly;
 
-    return if ($self->param('dont_write_output'));
-    
     my $tree = $self->param('tree');
     my $sa_aligned = $self->param('sa_aligned');
 
     if (defined $tree) {
       $self->parse_and_store_alignment_into_proteintree($tree, $sa_aligned);
-    }
-    
-    # Store our custom tags.
-    #Bio::EnsEMBL::Compara::ComparaUtils->store_tags($tree,$tags);
+    }    
 }
 
 
@@ -174,6 +170,25 @@ sub DESTROY {
 # internal methods
 #
 ##########################################
+
+sub no_align {
+  my $self = shift;
+  my $aln = shift;
+  my $tree = shift;
+  my $params = shift;
+
+  my $tmp = $self->worker_temp_directory;
+  
+  # Output alignment.
+  my $aln_file = $tmp . "aln.fasta";
+  Bio::EnsEMBL::Compara::AlignUtils->to_file($aln,$aln_file); # Write the alignment out to file.
+
+  use Bio::AlignIO;
+  my $alignio = Bio::AlignIO->new(-file => $aln_file,
+                                  -format => "fasta");
+  my $aln = $alignio->next_aln();
+  return $aln;
+}
 
 sub align_with_prank {
   my $self = shift;
@@ -278,9 +293,7 @@ sub align_with_mcoffee
 
     $params = Bio::EnsEMBL::Compara::ComparaUtils->replace_params($default_params,$params);
 
-    my $tmp = $self->worker_temp_directory;
-    #my $tmp = "/tmp/mcoffee/";
-    $tmp = $params->{'temp_dir'} if (defined $params->{'temp_dir'});
+    my $tmp = $self->worker_temp_directory . $self->data_id."/";
     mkdir($tmp);
 
     # Output alignment.
@@ -302,7 +315,7 @@ sub align_with_mcoffee
     $mcoffee_executable = $params->{'t_coffee_executable'} if (!defined $mcoffee_executable);
     unless (-e $mcoffee_executable) {
 	print "Using default T-Coffee executable!\n";
-	$mcoffee_executable = "/nfs/users/nfs_g/gj1/bin/t_coffee";
+	$mcoffee_executable = "t_coffee";
     }
     #throw("can't find a M-Coffee executable to run\n") unless(-e $mcoffee_executable);
     
@@ -359,7 +372,8 @@ sub align_with_mcoffee
     $cmd .= " -parameters=$paramsfile";
     
     # Output some environment variables for tcoffee
-#    $tmp = substr($tmp,0,-1);
+    print "TEMP:$tmp\n";
+    $tmp = substr($tmp,0,-1);
     my $prefix = "export HOME_4_TCOFFEE=\"$tmp\";";
     $prefix .= "export DIR_4_TCOFFEE=\"$tmp\";";
     $prefix .= "export TMP_4_TCOFFEE=\"$tmp\";";
@@ -375,8 +389,7 @@ sub align_with_mcoffee
     unless($rc == 0) {
 #	$self->DESTROY;
 	print "MCoffee error!\n";
-        die;
-	#throw("MCoffee job, error running executable: $\n");
+	throw("MCoffee job, error running executable: $\n");
     }
 
     use Bio::AlignIO;
@@ -474,7 +487,7 @@ sub parse_and_store_alignment_into_proteintree
       }
 	  # Do a manual insert of the *scores* into the correct score output table.
       
-      sleep(0.05);
+      sleep(0.1);
   }
 
   $sth->finish;

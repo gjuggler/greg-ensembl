@@ -57,6 +57,7 @@ sub clean_tables {
       stats_sites stats_genes
       parameter_set
       node_set_member node_set
+      meta
       ^;
     map {
       print "$_\n";

@@ -157,7 +157,7 @@ sub run_tcoffee {
   my $node_id = $self->data_id;
   my $tmpdir  = $self->worker_temp_directory . $node_id."/";
   mkdir($tmpdir);
-  my $filename = "$tmpdir" . "tcoffee_aln_${node_id}.fasta";
+  my $filename = "$tmpdir" . "tcoffee_aln.fasta";
   my $tmpfile  = Bio::AlignIO->new(
     -file   => ">$filename",
     -format => 'fasta'
@@ -170,7 +170,8 @@ sub run_tcoffee {
   $prefix .= "export TMP_4_TCOFFEE=\"$tmpdir\";";
   $prefix .= "export CACHE_4_TCOFFEE=\"$tmpdir\";";
   $prefix .= "export NO_ERROR_REPORT_4_TCOFFEE=1;";
-  $prefix .= "export MAFFT_BINARIES=/nfs/users/nfs_g/gj1/bin/mafft-bins/binaries;"
+  $prefix .= "export MAFF_BINARIES=/ebi/research/software/Linux_x86_64/bin/mafft;";
+#  $prefix .= "export MAFFT_BINARIES=/nfs/users/nfs_g/gj1/bin/mafft-bins/binaries;"
     ;    # GJ 2008-11-04. What a hack!
 
   my $outfile = $filename . ".score_ascii";
@@ -217,8 +218,8 @@ sub run_tcoffee {
 
     throw("No score string found!") unless ( defined $string );
 
-    $string =~ s/[^\d-]/9/g
-      ; # Convert non-digits and non-dashes into 9s. This is necessary because t_coffee leaves some leftover letters.
+    $string =~ s/[^\d-]/9/g;
+        # Convert non-digits and non-dashes into 9s. This is necessary because t_coffee leaves some leftover letters.
         #print $string."\n";
         #print $leaf->alignment_string."\n";
         #exit(0);

@@ -355,8 +355,10 @@ plot.roc = function(data) {
   p <- ggplot(data,aes(x=tn,y=tp,group=label,colour=label)) + geom_line()
   no.leg = opts(legend.position="none")
 
+  max.x = max(data$tn)
+
   p1 <- p + no.leg
-  p2 <- p + xlim(0,1000) + no.leg
+  p2 <- p + xlim(0,max.x/20) + no.leg
   leg <- p + opts(keep="legend_box")
 
   print(p1,vp=subplot(1,1))
