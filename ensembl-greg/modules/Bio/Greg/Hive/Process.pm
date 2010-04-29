@@ -10,6 +10,8 @@ use Bio::EnsEMBL::Compara::DBSQL::DBAdaptor;
 
 use Bio::EnsEMBL::Hive::Utils 'stringify';  # import 'stringify()'
 
+use File::Path;
+
 use base ('Bio::EnsEMBL::Hive::ProcessWithParams');
 
 sub get_tree {
@@ -139,6 +141,18 @@ sub data_id {
   my $id = $self->param('node_id');
   $id = $self->param('data_id') if (defined $self->param('data_id'));
   return $id;
+}
+
+sub worker_temp_directory {
+  my $self = shift;
+
+  my $wtd = $self->SUPER::worker_temp_directory;
+
+  #print "ANALYSIS ID:". $self->worker->analysis->dbID."\n";
+  #$wtd = $wtd . $self->data_id."/".$self->worker->analysis->dbID."/";
+  #mkpath([$wtd]);
+  #print "TEMP: $wtd\n";
+  return $wtd;
 }
 
 sub parameter_set_id {
@@ -526,6 +540,23 @@ sub store_tag {
 
   print "  -> Storing tag [$tag] => [$value]\n";
   $tree->store_tag($tag,$value);
+}
+
+sub cleanup_temp {
+  my $self = shift;
+
+  $self->worker->cleanup_worker_process_temp_directory;
+  delete $self->worker->{'_tmp_dir'};
+  $self->worker_temp_directory;
+}
+
+sub DESTROY {
+    my $self = shift;
+
+    $self->cleanup_temp;
+
+    delete $self->{_param_hash};
+    $self->SUPER::DESTROY if $self->can("SUPER::DESTROY");
 }
 
 

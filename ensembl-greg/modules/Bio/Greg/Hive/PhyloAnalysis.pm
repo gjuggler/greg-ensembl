@@ -69,7 +69,7 @@ sub run {
   my $self = shift;  
 
   $self->compara_dba->dbc->disconnect_when_inactive(1);
-
+  
   my $tree = $self->get_tree;
 
   print $tree->newick_format."\n";
@@ -135,23 +135,28 @@ sub run_with_params {
   }
 
 
+  #$self->param('sequence_quality_mask_character','X');
+  #$self->param('alignment_score_mask_character','X');
   my $input_aa = $self->get_aln;
-  $self->param('sequence_quality_mask_character','N');
+  #$self->param('sequence_quality_mask_character','N');
+  #$self->param('alignment_score_mask_character','N');
   my $input_cdna = $self->get_cdna_aln;
+  
+#  my ($slim_cdna,$cdna_new_to_old,$cdna_old_to_new) = Bio::EnsEMBL::Compara::AlignUtils->remove_blank_columns_in_threes($input_cdna);
+#  my ($slim_aa,$aa_new_to_old,$aa_old_to_new) = Bio::EnsEMBL::Compara::AlignUtils->remove_blank_columns($input_aa);
 
-  my ($slim_cdna,$cdna_new_to_old,$cdna_old_to_new) = Bio::EnsEMBL::Compara::AlignUtils->remove_blank_columns_in_threes($input_cdna);
-  my ($slim_aa,$aa_new_to_old,$aa_old_to_new) = Bio::EnsEMBL::Compara::AlignUtils->remove_blank_columns($input_aa);
+#  my $input_aa = $slim_aa;
+#  my $input_cdna = $slim_cdna;
+#  $self->param('input_cdna',$slim_cdna);
+#  $self->param('input_aa',$slim_aa);
+#  $self->param('aln_map_aa',$aa_new_to_old);
+#  $self->param('aln_map_cdna',$cdna_new_to_old);
 
-  my $input_aa = $slim_aa;
-  my $input_cdna = $slim_cdna;
-  $self->param('input_cdna',$slim_cdna);
-  $self->param('input_aa',$slim_aa);
-  $self->param('aln_map_aa',$aa_new_to_old);
-  $self->param('aln_map_cdna',$cdna_new_to_old);
+  $self->param('input_aa',$input_aa);
+  $self->param('input_cdna',$input_aa);
 
   Bio::EnsEMBL::Compara::AlignUtils->pretty_print($input_aa,{length => 200});
   Bio::EnsEMBL::Compara::AlignUtils->pretty_print($input_cdna,{length => 200});
-
   my $action = $self->param('analysis_action');
 
   if ($action =~ m/slr/i) {
@@ -842,8 +847,8 @@ sub store_sitewise {
       next if ($note eq 'single_char');
     }
 
-    my $nongaps = Bio::EnsEMBL::Compara::AlignUtils->get_nongaps_at_column($input_aa,$original_site);
-    next if ($nongaps == 0);
+    my $nongaps = Bio::EnsEMBL::Compara::AlignUtils->get_nongaps_at_column($input_aa,$site);
+    #next if ($nongaps == 0);
 
     printf("Site: %s  nongaps: %d  omegas: %3f (%3f - %3f) type: %s note: %s \n",$site,$nongaps,$omega,$lower,$upper,$type,$note);
 
@@ -875,6 +880,7 @@ sub store_sitewise {
 
 sub DESTROY {
     my $self = shift;
+
     $self->SUPER::DESTROY if $self->can("SUPER::DESTROY");
 }
 

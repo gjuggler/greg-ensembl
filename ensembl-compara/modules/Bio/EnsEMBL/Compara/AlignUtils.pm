@@ -1069,7 +1069,7 @@ sub mask_below_score {
     #print $score_string."\n";
     my @score_array = split(//,$score_string);
     
-    my @mask_array = map {$_ >= $threshold ? 1 : 0 } @score_array;  # Map the score array to an array of 0s or 1s
+    my @mask_array = map {$_ >= int($threshold) ? 1 : 0 } @score_array;  # Map the score array to an array of 0s or 1s
     #print join "", @mask_array,"\n";
     my @seq_array = split(//,$seq->seq);
     foreach my $i (0..scalar(@seq_array)-1) {

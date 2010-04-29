@@ -687,7 +687,7 @@ sub reset_all_jobs_for_analysis_id {
   throw("must define analysis_id") unless($analysis_id);
 
   my ($sql, $sth);
-  $sql = "UPDATE analysis_job SET job_claim='', status='READY' WHERE status!='BLOCKED' and analysis_id=?";
+  $sql = "UPDATE analysis_job SET job_claim='', status='READY', retry_count=0 WHERE status!='BLOCKED' and analysis_id=?";
   $sth = $self->prepare($sql);
   $sth->execute($analysis_id);
   $sth->finish;

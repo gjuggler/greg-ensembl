@@ -130,13 +130,12 @@ sub data_for_gene {
 
   print "Calculating stuff...\n";
   
-  $data->{sum_of_pairs_score} = Bio::EnsEMBL::Compara::AlignUtils->sum_of_pairs_score( $sa_true, $sa_aln );
-  $data->{total_column_score} = Bio::EnsEMBL::Compara::AlignUtils->total_column_score( $sa_true, $sa_aln );
-  $data->{column_entropy_mean_true} =
-    Bio::EnsEMBL::Compara::AlignUtils->average_column_entropy($sa_true);
-  $data->{column_entropy_mean_aln} =
-    Bio::EnsEMBL::Compara::AlignUtils->average_column_entropy($sa_aln);
-  
+  #$data->{sum_of_pairs_score} = Bio::EnsEMBL::Compara::AlignUtils->sum_of_pairs_score( $sa_true, $sa_aln );
+  #$data->{total_column_score} = Bio::EnsEMBL::Compara::AlignUtils->total_column_score( $sa_true, $sa_aln );
+  #$data->{column_entropy_mean_true} =
+  #  Bio::EnsEMBL::Compara::AlignUtils->average_column_entropy($sa_true);
+  #$data->{column_entropy_mean_aln} =
+  #  Bio::EnsEMBL::Compara::AlignUtils->average_column_entropy($sa_aln);
 
   $data->{site_count}            = $self->site_count($sa_aln);
   $data->{unfiltered_site_count} = $self->unfiltered_site_count($sa_aln);
@@ -200,8 +199,10 @@ sub data_for_site {
     $self->param('aln_omegas',$aln_omegas);
   }
 
-  my @true_entropies = Bio::EnsEMBL::Compara::AlignUtils->column_entropies($cdna_true);
-  my @aln_entropies  = Bio::EnsEMBL::Compara::AlignUtils->column_entropies($cdna_aln);
+  my @true_entropies;
+  my @aln_entropies;
+  #my @true_entropies = Bio::EnsEMBL::Compara::AlignUtils->column_entropies($cdna_true);
+  #my @aln_entropies  = Bio::EnsEMBL::Compara::AlignUtils->column_entropies($cdna_aln);
 
   my $obj;
   my $true_col = $sa_true->column_from_residue_number( $ref_name, $seq_position );
@@ -211,20 +212,23 @@ sub data_for_site {
   $obj->{aln_position} = $aln_col;
   $obj->{true_dnds}    = $true_omegas->{$true_col}->{'omega'};
   $obj->{aln_dnds}     = $aln_omegas->{$aln_col}->{'omega'};
-  print "t:".$obj->{true_dnds}." a:".$obj->{aln_dnds}."\n";
+  printf("t:%.3f a:%.3f  %s\n",$obj->{true_dnds},$obj->{aln_dnds});
   if ( !( $obj->{aln_dnds} && $obj->{true_dnds} ) ) {
-    if ( $data->{'sitewise_action'} eq '' ) {      
+    if ( $data->{'analysis_action'} eq '' || $data->{'analysis_action'} eq 'none') {      
       # Do nothing.
       $obj->{aln_dnds}  = 0;
       $obj->{true_dnds} = 0;
     } else {
       if ( !$obj->{true_dnds} ) {
-        printf " =>No true dnds! aln:%s  %s  true:%s  %s\n", $aln_col, $obj->{aln}, $true_col,
+        printf "No true dnds! aln:%s  %s  true:%s  %s\n", $aln_col, $obj->{aln}, $true_col,
         $obj->{true};
         next;
-      } elsif ( !defined $obj->{aln_dnds} ) {
+      } elsif ( !$obj->{aln_dnds} ) {
         print "No aln dnds!\n";
-        # Continue; this should be counted as a false-negative in our results.
+        # Comment out this 'next' to  maintain the rows without 'aln' scores (i.e. to count the false-negative in our results)
+        # With the 'next' in place, rows that don't have a corresponding 'aln_dnds' value will be lost from the collected stats,
+        # and so the total number of captured rows will differ between sets of different alignment / filtering parameters.
+        next;
       }
     }
   }
@@ -240,10 +244,10 @@ sub data_for_site {
 
   my $true_slice = $sa_true->slice($true_col,$true_col);
   Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $true_slice);
-  printf " -> %.3f %.3f %.3f\n",$obj->{true_dnds},$obj->{true_ncod},$obj->{true_entropy};
+  printf "t -> %.3f %.3f %.3f\n",$obj->{true_dnds},$obj->{true_ncod},$obj->{true_entropy};
   my $aln_slice = $sa_aln->slice($aln_col,$aln_col);
   Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $aln_slice);
-  printf " -> %.3f %.3f %.3f\n",$obj->{aln_dnds},$obj->{aln_ncod},$obj->{aln_entropy};
+  printf "a -> %.3f %.3f %.3f\n",$obj->{aln_dnds},$obj->{aln_ncod},$obj->{aln_entropy};
 
   $obj->{id} = $self->param('node_id');
   $obj->{parameter_set_id} = 0;

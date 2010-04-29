@@ -29,6 +29,7 @@ my $hive_dba = Bio::EnsEMBL::Hive::DBSQL::DBAdaptor->new( -url => $url );
 my $dbc = $dba->dbc;
 
 clean_tables();
+#output_dir();
 
 load();
 simulate();
@@ -45,6 +46,8 @@ connect_analysis( "AlignScores", "Omegas" );
 connect_analysis( "Omegas",      "CollectStats" );
 
 wait_for("Plots",["Omegas","CollectStats"]);
+wait_for("Align",["PhyloSim"]);
+wait_for("AlignScores",["PhyloSim","Align"]);
 
 sub clean_tables {
   if ($clean) {
@@ -66,6 +69,10 @@ sub clean_tables {
     eval { $dba->dbc->do("drop table stats_sites"); };
     eval { $dba->dbc->do("drop table stats_genes"); };
   }
+}
+
+sub output_dir {
+  $dba->dbc->do("insert into meta(meta_key,meta_value) VALUES ('hive_output_dir','/homes/greg/hive_temp');");
 }
 
 sub load {

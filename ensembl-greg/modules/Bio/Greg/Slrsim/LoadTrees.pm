@@ -207,21 +207,21 @@ sub load_simulation_params {
   my $phylo_analyses = {
     none => {
       phylo_analysis_name => "None",
-      sitewise_action     => 'none',
+      analysis_action     => 'none',
     },
     slr => {
       phylo_analysis_name => "SLR",
-      sitewise_action     => "slr",
+      analysis_action     => "slr",
     },
     paml_m8 => {
       phylo_analysis_name => "PAML M8A/M8B",
-      sitewise_action     => "paml_sitewise paml_lrt",
+      analysis_action     => "paml_sitewise paml_lrt",
       paml_model_a        => 'M8a',
       paml_model_b        => 'M8',
     },
     paml_m2 => {
       phylo_analysis_name => 'PAML M2/M3',
-      sitewise_action     => 'paml_sitewise paml_lrt',
+      analysis_action     => 'paml_sitewise paml_lrt',
       paml_model_a        => 'M2',
       paml_model_b        => 'M3',
     },
@@ -256,11 +256,11 @@ sub filter_sweeps {
   my @sets = ();
 
   my $final_params = {
-    slrsim_replicates => 50,
+    slrsim_replicates => 1,
     experiment_name   => "Filter Sweeps",
-    slrsim_tree_file  => $self->param('trees')->{'anisimova_bglobin'},
-    slrsim_tree_mult => 1,
-    phylosim_seq_length => 500,
+    slrsim_tree_file  => $self->param('trees')->{'2x_primates'},
+    slrsim_tree_mult => 4,
+    phylosim_seq_length => 200,
     slrsim_ref => 'human'
   };
 
@@ -277,7 +277,7 @@ sub filter_sweeps {
   );
   push @sets, $p;
 
-  my @aln_params = map { $self->aln_param($_) } ( 'clustalw' );
+  my @aln_params = map { $self->aln_param($_) } ( 'fmcoffee' );
   my @filter_params =
     map { $self->filter_param($_) } ( 'tcoffee' ); #, 'tcoffee', 'indelign', 'prank_treewise', 'prank_mean' );
 

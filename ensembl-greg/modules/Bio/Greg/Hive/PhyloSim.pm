@@ -25,6 +25,8 @@ use base ('Bio::Greg::Hive::Process');
 sub fetch_input {
   my $self = shift;
 
+  delete $self->{_param_hash};
+
   my $params = {
     ### Omega Distribution Parameters ###
     # For lognormal model.
@@ -146,9 +148,7 @@ sub simulate_alignment_indelible {
     $models_trees_partitions = $self->domains_to_indelible_setup( $domain, $tree, $params );
   }
 
-  my $tmp_dir = $self->worker_temp_directory . $self->data_id . '/';
-  print "Temp dir: $tmp_dir\n";
-  mkpath( [$tmp_dir] );
+  my $tmp_dir = $self->worker_temp_directory;
 
   my $output_f = $tmp_dir . "sim.txt";
   my $ctrl_f   = $tmp_dir . "control.txt";
