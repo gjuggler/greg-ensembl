@@ -6,6 +6,7 @@ use IO::File;
 use File::Basename;
 use File::Path;
 
+use Bio::EnsEMBL::Utils::Exception;
 use Bio::EnsEMBL::DBSQL::DBAdaptor;
 use Bio::EnsEMBL::BaseAlignFeature;
 use Bio::EnsEMBL::Compara::DBSQL::DBAdaptor;
@@ -25,7 +26,7 @@ sub debug {1;}
 
 sub fetch_input {
     my($self) = @_;
-        
+
     ### DEFAULT PARAMETERS ###
     my $params = {
       alignment_table        => 'protein_tree_member',
@@ -120,7 +121,11 @@ sub run
     my $sa_aligned;
 
     my $method = $self->param('alignment_method');
-    if ($method =~ '(coffee|muscle|clustalw)') {
+    if ($method =~ m/clustalw/) {
+      $sa_aligned = $self->align_with_clustalw($sa,$tree,$params);
+    } elsif ($method =~ m/muscle/) {
+      $sa_aligned = $self->align_with_muscle($sa,$tree,$params);      
+    }elsif ($method =~ m/coffee/) {
       $sa_aligned = $self->align_with_mcoffee($sa,$tree,$params);
     } elsif ($method =~ m/prank/) {
       if ($method =~ m/_f/) {
@@ -134,10 +139,10 @@ sub run
       } else {
         $sa_aligned = $self->align_with_prank($sa,$tree,$params);
       }
-    } elsif ($method =~ m/papaya/) {
+    } elsif ($method =~ m/papaya/i) {
       $sa_aligned = $self->align_with_papaya($sa,$tree,$params);
-    } elsif ($method =~ m/none/) {
-      $sa_aligned = $sa;
+    } elsif ($method =~ m/none/i) {
+      $sa_aligned = $self->no_align($sa,$tree,$params);
     }
 
     $self->param('sa_aligned',$sa_aligned);
@@ -148,17 +153,12 @@ sub write_output {
     my $self = shift;
     $self->check_if_exit_cleanly;
 
-    return if ($self->param('dont_write_output'));
-    
     my $tree = $self->param('tree');
     my $sa_aligned = $self->param('sa_aligned');
 
     if (defined $tree) {
       $self->parse_and_store_alignment_into_proteintree($tree, $sa_aligned);
-    }
-    
-    # Store our custom tags.
-    #Bio::EnsEMBL::Compara::ComparaUtils->store_tags($tree,$tags);
+    }    
 }
 
 
@@ -175,6 +175,29 @@ sub DESTROY {
 #
 ##########################################
 
+sub no_align {
+  my $self = shift;
+  my $aln = shift;
+  my $tree = shift;
+  my $params = shift;
+
+  my $tmp = $self->worker_temp_directory;
+
+  # Output alignment.
+  my $aln_file = $tmp . "aln.fasta";
+
+  Bio::EnsEMBL::Compara::AlignUtils->to_file($aln,$aln_file); # Write the alignment out to file.
+
+  sleep(1);
+
+  use Bio::AlignIO;
+  my $alignio = Bio::AlignIO->new(-file => $aln_file,
+                                  -format => "fasta");
+  my $aln = $alignio->next_aln();
+  Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $aln, { length => 200 } );
+  return $aln;
+}
+
 sub align_with_prank {
   my $self = shift;
   my $aln = shift;
@@ -185,7 +208,7 @@ sub align_with_prank {
   
   # Output alignment.
   my $aln_file = $tmp . "aln.fasta";
-  Bio::EnsEMBL::Compara::AlignUtils->to_file($aln,$aln_file); # Write the alignment out to file.
+  Bio::EnsEMBL::Compara::AlignUtils->dump_ungapped_seqs($aln,$aln_file); # Write the alignment out to file.
   
   my $tree_file = $tmp . "tree.nh";
   my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
@@ -230,7 +253,7 @@ sub align_with_papaya {
   
   # Output alignment.
   my $aln_file = $tmp . "aln.fasta";
-  Bio::EnsEMBL::Compara::AlignUtils->to_file($aln,$aln_file); # Write the alignment out to file.
+  Bio::EnsEMBL::Compara::AlignUtils->dump_ungapped_seqs($aln,$aln_file); # Write the alignment out to file.
   
   my $tree_file = $tmp . "tree.nh";
   my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
@@ -262,6 +285,90 @@ sub align_with_papaya {
   return $aln;
 }
 
+sub align_with_muscle {
+  my $self = shift;
+  my $aln = shift;
+  my $tree = shift;
+  my $params = shift;
+
+  $aln->remove_gaps();
+
+  my $tmp = $self->worker_temp_directory;
+  $self->cleanup_temp;  
+
+  # Output alignment.
+  my $aln_file = $tmp . "aln.fasta";
+  Bio::EnsEMBL::Compara::AlignUtils->dump_ungapped_seqs($aln,$aln_file); # Write the alignment out to file.
+  
+  my $tree_file = $tmp . "tree.nh";
+  my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
+  Bio::EnsEMBL::Compara::TreeUtils->to_file($treeI,$tree_file);
+
+  my $output_file = $tmp . "output.fa";
+  
+  my $executable = $params->{'alignment_executable'} || 'muscle';
+  my $extra_params = '';
+  
+  my $cmd = qq^$executable $extra_params -in $aln_file -out $output_file^;
+
+  # Run the command.
+  $self->compara_dba->dbc->disconnect_when_inactive(1);
+  print "$cmd\n";
+  my $rc = system($cmd);
+  $self->compara_dba->dbc->disconnect_when_inactive(0);
+
+  unless($rc == 0) {
+    print "Muscle error!\n";
+    die;
+  }
+  
+  use Bio::AlignIO;
+  my $alignio = Bio::AlignIO->new(-file => $output_file,
+                                  -format => "fasta");
+  my $aln = $alignio->next_aln();
+  return $aln;
+}
+
+
+sub align_with_clustalw {
+  my $self = shift;
+  my $aln = shift;
+  my $tree = shift;
+  my $params = shift;
+
+  my $tmp = $self->worker_temp_directory;
+  $self->cleanup_temp;  
+
+  # Output alignment.
+  my $aln_file = $tmp . "aln.fasta";
+  Bio::EnsEMBL::Compara::AlignUtils->dump_ungapped_seqs( $aln,$aln_file); # Write raw sequences to file.
+  
+  my $tree_file = $tmp . "tree.nh";
+  my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
+  Bio::EnsEMBL::Compara::TreeUtils->to_file($treeI,$tree_file);
+
+  my $output_file = $tmp . "output.fa";
+  
+  my $executable = $params->{'alignment_executable'} || 'clustalw';
+  my $extra_params = '';
+  
+  my $cmd = qq^$executable $extra_params -INFILE=$aln_file -USETREE=$tree_file -OUTFILE=$output_file -OUTPUT=PHYLIP -align^;
+
+  # Run the command.
+  $self->compara_dba->dbc->disconnect_when_inactive(1);
+  my $rc = system($cmd);
+  $self->compara_dba->dbc->disconnect_when_inactive(0);
+
+  unless($rc == 0) {
+    print "Clustalw error!\n";
+    die;
+  }
+  
+  use Bio::AlignIO;
+  my $alignio = Bio::AlignIO->new(-file => $output_file,
+                                  -format => "phylip");
+  return $alignio->next_aln();
+}
 
 sub align_with_mcoffee
 {
@@ -275,17 +382,14 @@ sub align_with_mcoffee
       use_exons => 0,
       exon_aln => undef
     };
-
     $params = Bio::EnsEMBL::Compara::ComparaUtils->replace_params($default_params,$params);
 
     my $tmp = $self->worker_temp_directory;
-    #my $tmp = "/tmp/mcoffee/";
-    $tmp = $params->{'temp_dir'} if (defined $params->{'temp_dir'});
-    mkdir($tmp);
+    $self->cleanup_temp;
 
     # Output alignment.
     my $input_fasta = $tmp . "input_seqs.fasta";
-    Bio::EnsEMBL::Compara::AlignUtils->to_file($aln,$input_fasta); # Write the alignment out to file.
+    Bio::EnsEMBL::Compara::AlignUtils->dump_ungapped_seqs($aln,$input_fasta); # Write the alignment out to file.
 
     my $input_tree = $tmp . "input_tree.nh";
     my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
@@ -302,7 +406,8 @@ sub align_with_mcoffee
     $mcoffee_executable = $params->{'t_coffee_executable'} if (!defined $mcoffee_executable);
     unless (-e $mcoffee_executable) {
 	print "Using default T-Coffee executable!\n";
-	$mcoffee_executable = "/nfs/users/nfs_g/gj1/bin/t_coffee";
+	#$mcoffee_executable = "t_coffee";
+        $mcoffee_executable = "/homes/greg/src/T-COFFEE_distribution_Version_8.69/bin/binaries/linux/t_coffee";
     }
     #throw("can't find a M-Coffee executable to run\n") unless(-e $mcoffee_executable);
     
@@ -348,6 +453,8 @@ sub align_with_mcoffee
     
     print OUTPARAMS $method_string;
     print OUTPARAMS "-mode=mcoffee\n";
+    print OUTPARAMS "-n_core=1\n";
+    print OUTPARAMS "-multi_core=no\n";
     print OUTPARAMS "-output=fasta_aln,score_ascii\n";
     print OUTPARAMS "-outfile=$output_file\n";
     print OUTPARAMS "-newtree=$tree_temp\n";
@@ -359,24 +466,28 @@ sub align_with_mcoffee
     $cmd .= " -parameters=$paramsfile";
     
     # Output some environment variables for tcoffee
-#    $tmp = substr($tmp,0,-1);
+    print "TEMP:$tmp\n";
+    $tmp = substr($tmp,0,-1);
     my $prefix = "export HOME_4_TCOFFEE=\"$tmp\";";
     $prefix .= "export DIR_4_TCOFFEE=\"$tmp\";";
+    $prefix .= "export METHODS_4_TCOFFEE=\"$tmp\";";
+    $prefix .= "export MCOFFEE_4_TCOFFEE=\"$tmp\";";
     $prefix .= "export TMP_4_TCOFFEE=\"$tmp\";";
     $prefix .= "export CACHE_4_TCOFFEE=\"$tmp\";";
     $prefix .= "export NO_ERROR_REPORT_4_TCOFFEE=1;";
-    $prefix .= "export MAFFT_BINARIES=/nfs/users/nfs_g/gj1/bin/mafft-bins/binaries;";  # GJ 2008-11-04. What a hack!
+    $prefix .= "export NUMBER_OF_PROCESSORS_4_TCOFFEE=1;";
+    $prefix .= "export MAFFT_BINARIES=/ebi/research/software/Linux_x86_64/bin/mafft;";
+    #$prefix .= "export MAFFT_BINARIES=/nfs/users/nfs_g/gj1/bin/mafft-bins/binaries;";  # GJ 2008-11-04. What a hack!
     
     # Run the command.
-    $self->compara_dba->dbc->disconnect_when_inactive(1);
+    $self->compara_dba->dbc->disconnect_when_inactive(0);
     my $rc = system($prefix.$cmd);
     $self->compara_dba->dbc->disconnect_when_inactive(0);
     
     unless($rc == 0) {
 #	$self->DESTROY;
 	print "MCoffee error!\n";
-        die;
-	#throw("MCoffee job, error running executable: $\n");
+	die("MCoffee job, error running executable!\n");
     }
 
     use Bio::AlignIO;
@@ -416,6 +527,7 @@ sub parse_and_store_alignment_into_proteintree
   my $aln = shift;
   
   my $pta = $self->compara_dba->get_ProteinTreeAdaptor;
+  $pta->protein_tree_member($self->param('alignment_table'));
 
   my %align_hash;
   foreach my $seq ($aln->each_seq) {
@@ -432,7 +544,7 @@ sub parse_and_store_alignment_into_proteintree
       $alignment_length = length($alignment_string);
     } else {
       if ($alignment_length != length($alignment_string)) {
-        throw("While parsing the alignment, some id did not return the expected alignment length\n");
+        die("While parsing the alignment, some id did not return the expected alignment length\n");
       }
     }
     # Call the method to do the actual conversion
@@ -441,14 +553,15 @@ sub parse_and_store_alignment_into_proteintree
   }
   
   my $table_name = $self->param('alignment_table');
-  
-  my $sth = $pta->prepare("INSERT INTO $table_name 
-        (node_id,member_id,method_link_species_set_id,cigar_line)  VALUES (?,?,?,?)  ON DUPLICATE KEY UPDATE cigar_line=?");
+
+  $pta->dbc->do("LOCK TABLES $table_name WRITE");
+  #my $sth = $pta->prepare("INSERT INTO $table_name 
+  #      (node_id,member_id,method_link_species_set_id,cigar_line)  VALUES (?,?,?,?)");
 
   # Align cigar_lines to members and store
-  foreach my $member (@{$tree->get_all_leaves}) {
-      if ($align_hash{$member->stable_id} eq "") {
-	  throw("mcoffee produced an empty cigar_line for ".$member->stable_id."\n");
+  foreach my $member ($tree->leaves) {
+      if (!$align_hash{$member->stable_id}) {
+	  die("mcoffee produced an empty cigar_line for ".$member->stable_id."\n");
       }
       $member->cigar_line($align_hash{$member->stable_id});
       ## Check that the cigar length (Ms) matches the sequence length
@@ -459,7 +572,7 @@ sub parse_and_store_alignment_into_proteintree
       if ($seq_cigar_length != length($member_sequence)) {
 	print "MC  ".$member->cigar_line."\n";
 	print "MS  ".$member_sequence."\n";
-	  throw("While storing the cigar line, the returned cigar length did not match the sequence length\n");
+        die("While storing the cigar line, the returned cigar length did not match the sequence length\n");
       }
             
       if ($table_name eq 'protein_tree_member') {
@@ -467,17 +580,25 @@ sub parse_and_store_alignment_into_proteintree
 	  $pta->store($member);
       } else {
 	  # Do a manual insert into the correct output table.
-          my $cmd = "CREATE TABLE IF NOT EXISTS $table_name LIKE protein_tree_member;";
-	  $pta->dbc->do($cmd);
+      #my $cmd = "CREATE TABLE IF NOT EXISTS $table_name LIKE protein_tree_member;";
+      #$pta->dbc->do($cmd);
 	  printf("Updating $table_name %.10s : %.30s\n",$member->stable_id,$member->cigar_line) if ($self->debug);
-	  $sth->execute($member->node_id,$member->member_id,$member->method_link_species_set_id,$member->cigar_line,$member->cigar_line);
+          my $sth = $pta->prepare("INSERT INTO $table_name
+                               (node_id,
+                                member_id,
+                                method_link_species_set_id,
+                                cigar_line)  VALUES (?,?,?,?)");
+      $sth->execute($member->node_id,$member->member_id,$member->method_link_species_set_id,$member->cigar_line);
+      $sth->finish;
       }
 	  # Do a manual insert of the *scores* into the correct score output table.
       
-      sleep(0.05);
+      sleep(0.1);
   }
 
-  $sth->finish;
+  #$sth->finish;
+
+  $pta->dbc->do("UNLOCK TABLES;");
 }
 
 

@@ -141,7 +141,7 @@ sub load_simulation_params {
     '2x_primates'          => '2x_p.nh',
     '2x_glires'            => '2x_g.nh',
     '44mammals'            => '44mammals.nh',
-    '2xmammals_autosomal'  => '2xmammals.nh',
+    '2xmammals'  => '2xmammals.nh',
     'ensembl_a'            => 'ensembl.nh',
     'ensembl_b'            => 'ensembl_2.nh'
   };
@@ -207,21 +207,21 @@ sub load_simulation_params {
   my $phylo_analyses = {
     none => {
       phylo_analysis_name => "None",
-      sitewise_action     => 'none',
+      analysis_action     => 'none',
     },
     slr => {
       phylo_analysis_name => "SLR",
-      sitewise_action     => "slr",
+      analysis_action     => "slr",
     },
     paml_m8 => {
       phylo_analysis_name => "PAML M8A/M8B",
-      sitewise_action     => "paml_sitewise paml_lrt",
+      analysis_action     => "paml_sitewise paml_lrt",
       paml_model_a        => 'M8a',
       paml_model_b        => 'M8',
     },
     paml_m2 => {
       phylo_analysis_name => 'PAML M2/M3',
-      sitewise_action     => 'paml_sitewise paml_lrt',
+      analysis_action     => 'paml_sitewise paml_lrt',
       paml_model_a        => 'M2',
       paml_model_b        => 'M3',
     },
@@ -259,9 +259,9 @@ sub filter_sweeps {
     slrsim_replicates => 1,
     experiment_name   => "Filter Sweeps",
     slrsim_tree_file  => $self->param('trees')->{'2x_primates'},
-    slrsim_tree_mult => 1,
+    slrsim_tree_mult => 4,
     phylosim_seq_length => 200,
-    slrsim_ref => 'Human'
+    slrsim_ref => 'human'
   };
 
   my $indel       = $self->param('indel_models')->{'power_law'};
@@ -283,7 +283,7 @@ sub filter_sweeps {
 
   foreach my $aln (@aln_params) {
     foreach my $fp (@filter_params) {
-      foreach my $threshold (1) {
+      foreach my $threshold (0, 1, 3, 5, 7, 8, 9) {
         my $p = $self->replace( $base_params, $aln, $fp, { alignment_score_threshold => $threshold, },
           $final_params );
         push @sets, $p;

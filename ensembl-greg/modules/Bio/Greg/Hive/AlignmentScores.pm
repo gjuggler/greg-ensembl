@@ -3,6 +3,7 @@ package Bio::Greg::Hive::AlignmentScores;
 use strict;
 use Cwd;
 use POSIX qw(ceil floor);
+use Time::HiRes qw(sleep);
 use Bio::AlignIO;
 
 use Bio::EnsEMBL::Compara::ComparaUtils;
@@ -16,6 +17,7 @@ use base ('Bio::Greg::Hive::Process');
 sub fetch_input {
   my ($self) = @_;
 
+  delete $self->{_param_hash};
   my $params = {
     alignment_table       => 'protein_tree_member',
     alignment_score_table => 'protein_tree_member_score',
@@ -24,13 +26,17 @@ sub fetch_input {
 
   $self->load_all_params($params);
   
-  $self->compara_dba->dbc->disconnect_when_inactive(1);
+  #$self->compara_dba->dbc->disconnect_when_inactive(1);
 
   my $no_filter_param = $self->replace_params( $self->params, { alignment_score_filtering => 0 } );
   my ( $tree, $aln ) =
     Bio::EnsEMBL::Compara::ComparaUtils->get_tree_and_alignment( $self->compara_dba, $no_filter_param );
+  
   $self->param('tree',$tree);
   $self->param('aln',$aln);
+
+  Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $aln, { length => 200 } );
+
 }
 
 sub run {
@@ -88,15 +94,17 @@ sub store_scores {
   my $tree         = shift;
   my $score_hash   = shift;
   my $output_table = shift;
-
-  $self->compara_dba->dbc->do("CREATE TABLE IF NOT EXISTS $output_table LIKE protein_tree_member_score");
+  
+  #$self->compara_dba->dbc->do("CREATE TABLE IF NOT EXISTS $output_table LIKE protein_tree_member_score");
   my $sth = $tree->adaptor->prepare(
     "REPLACE INTO $output_table (node_id,member_id,cigar_line) VALUES (?,?,?)");
   foreach my $leaf ( $tree->leaves ) {
     my $score_string = $score_hash->{ $leaf->stable_id };
-    throw("No score string found when saving!") unless ( defined $score_string );
+
+    die("No score string found when saving!") unless ( defined $score_string && $score_string ne '');
     $sth->execute( $leaf->node_id, $leaf->member_id, $score_string );
     printf "%20s %10s %s\n", $leaf->stable_id, $leaf->member_id, $score_string;
+    sleep(0.1);
   }
   $sth->finish;
 }
@@ -154,10 +162,11 @@ sub run_tcoffee {
 
   Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $aln, { length => 200 } );
 
-  my $node_id = $self->data_id;
-  my $tmpdir  = $self->worker_temp_directory . $node_id."/";
-  mkdir($tmpdir);
-  my $filename = "$tmpdir" . "tcoffee_aln_${node_id}.fasta";
+  my $tmpdir  = $self->worker_temp_directory;
+
+#  system("rm -rf ${tmpdir}*.*");
+
+  my $filename = "$tmpdir" . "tcoffee_aln.fasta";
   my $tmpfile  = Bio::AlignIO->new(
     -file   => ">$filename",
     -format => 'fasta'
@@ -165,17 +174,25 @@ sub run_tcoffee {
   $tmpfile->write_aln($aln);
   $tmpfile->close;
 
-  my $prefix = "export HOME_4_TCOFFEE=\"$tmpdir\";";
-  $prefix .= "export DIR_4_TCOFFEE=\"$tmpdir\";";
-  $prefix .= "export TMP_4_TCOFFEE=\"$tmpdir\";";
-  $prefix .= "export CACHE_4_TCOFFEE=\"$tmpdir\";";
-  $prefix .= "export NO_ERROR_REPORT_4_TCOFFEE=1;";
-  $prefix .= "export MAFFT_BINARIES=/nfs/users/nfs_g/gj1/bin/mafft-bins/binaries;"
+  my $tmp = $tmpdir;
+  
+
+  my $prefix = "export HOME_4_TCOFFEE=\"$tmp\";";
+  $prefix = "export DIR_4_TCOFFEE=\"${tmp}\";";
+#  $prefix .= "export METHODS_4_TCOFFEE=\"${tmp}\";";
+#  $prefix .= "export MCOFFEE_4_TCOFFEE=\"${tmp}\";";
+#  $prefix .= "export TMP_4_TCOFFEE=\"$tmp\";";
+#  $prefix .= "export CACHE_4_TCOFFEE=\"$tmp\";";
+#  $prefix .= "export NO_ERROR_REPORT_4_TCOFFEE=1;";
+#  $prefix .= "export NUMBER_OF_PROCESSORS_4_TCOFFEE=1;";
+#  $prefix .= "export MAFFT_BINARIES=/ebi/research/software/Linux_x86_64/bin/mafft;";
+#  $prefix .= "export MAFFT_BINARIES=/nfs/users/nfs_g/gj1/bin/mafft-bins/binaries;"
     ;    # GJ 2008-11-04. What a hack!
 
   my $outfile = $filename . ".score_ascii";
 
-  my $cmd = qq^t_coffee -mode=evaluate -infile=$filename -outfile=$outfile -output=score_ascii -multi_core no^;
+  my $exec = $self->param('t_coffee_executable') || "/homes/greg/src/T-COFFEE_distribution_Version_8.69/bin/binaries/linux/t_coffee";
+  my $cmd = qq^$exec -mode=evaluate -evaluate_mode t_coffee_slow -infile=$filename -outfile=$outfile -output=score_ascii -n_core=1 -multi_core=no -plugins=no^;
   print $cmd. "\n";
   system( $prefix. $cmd );
 
@@ -209,6 +226,8 @@ sub run_tcoffee {
       #print $id." ". $align."\n";
     }
     $FH->close;
+  } else {
+    throw("No tcoffee scores file at $scores_file!!\n");
   }
 
   foreach my $leaf ( $tree->leaves ) {
@@ -217,8 +236,8 @@ sub run_tcoffee {
 
     throw("No score string found!") unless ( defined $string );
 
-    $string =~ s/[^\d-]/9/g
-      ; # Convert non-digits and non-dashes into 9s. This is necessary because t_coffee leaves some leftover letters.
+    $string =~ s/[^\d-]/9/g;
+        # Convert non-digits and non-dashes into 9s. This is necessary because t_coffee leaves some leftover letters.
         #print $string."\n";
         #print $leaf->alignment_string."\n";
         #exit(0);

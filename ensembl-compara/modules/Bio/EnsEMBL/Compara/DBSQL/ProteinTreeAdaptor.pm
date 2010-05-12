@@ -301,7 +301,7 @@ sub store_node {
   #printf("INSERT NODE parent_id = %d, root_id = %d\n", $parent_id, $root_id);
   
   my $ptn = $self->protein_tree_node;
-  my $sth = $self->prepare("INSERT IGNORE INTO $ptn
+  my $sth = $self->prepare("INSERT INTO $ptn
                              (parent_id,
                               root_id,
                               left_index,
@@ -316,7 +316,7 @@ sub store_node {
 
   if($node->isa('Bio::EnsEMBL::Compara::AlignedMember')) {
       my $ptm = $self->protein_tree_member;
-      $sth = $self->prepare("INSERT IGNORE INTO $ptm
+      $sth = $self->prepare("INSERT INTO $ptm
                                (node_id,
                                 member_id,
                                 method_link_species_set_id,
@@ -342,8 +342,8 @@ sub update_node {
   if($node->parent) {
     $parent_id = $node->parent->node_id ;
   }
-
-  my $sth = $self->prepare("UPDATE protein_tree_node SET
+  my $ptn = $self->protein_tree_node;
+  my $sth = $self->prepare("UPDATE $ptn SET
                               parent_id=?,
                               left_index=?,
                               right_index=?,
@@ -356,7 +356,8 @@ sub update_node {
   $sth->finish;
 
   if($node->isa('Bio::EnsEMBL::Compara::AlignedMember')) {
-    my $sql = "UPDATE protein_tree_member SET ". 
+    my $ptm = $self->protein_tree_member;
+    my $sql = "UPDATE $ptm SET ". 
               "cigar_line='". $node->cigar_line . "'";
     $sql .= ", cigar_start=" . $node->cigar_start if($node->cigar_start);              
     $sql .= ", cigar_end=" . $node->cigar_end if($node->cigar_end);              

@@ -30,6 +30,8 @@ sub fetch_input {
     omega_table           => 'sitewise_omega',
     parameter_set_id       => 0,
 
+    sitewise_filter_order           => 'before',
+
     sitewise_store_opt_tree         => 1,
     sitewise_store_gaps             => 0,
     sitewise_minimum_leaf_count     => 3,
@@ -58,10 +60,6 @@ sub fetch_input {
 
     # HYPHY Parameters
     hyphy_codon_model => 'mg94',
-
-    alignment_score_mask_character => 'N',
-    sequence_quality_mask_character_character => 'N'
-
     };
 
   $self->load_all_params($params);
@@ -72,7 +70,7 @@ sub run {
   my $self = shift;  
 
   $self->compara_dba->dbc->disconnect_when_inactive(1);
-
+  
   my $tree = $self->get_tree;
 
   print $tree->newick_format."\n";
@@ -137,24 +135,32 @@ sub run_with_params {
     #print $leaf->member_id."\n";
   }
 
-
   my $input_aa = $self->get_aln;
-  $self->param('sequence_quality_mask_character','N');
   my $input_cdna = $self->get_cdna_aln;
 
-  my ($slim_cdna,$cdna_new_to_old,$cdna_old_to_new) = Bio::EnsEMBL::Compara::AlignUtils->remove_blank_columns_in_threes($input_cdna);
-  my ($slim_aa,$aa_new_to_old,$aa_old_to_new) = Bio::EnsEMBL::Compara::AlignUtils->remove_blank_columns($input_aa);
+  if ($self->param('sitewise_filter_order') eq 'after') {
+    $self->param('aa_filtered',$input_aa);
+    $self->param('cdna_filtered',$input_cdna);
+    # Disable alignment score filtering and re-fetch the input alignment.
+    $self->param('alignment_score_filtering',0);
+    $input_aa = $self->get_aln;
+    $input_cdna = $self->get_cdna_aln;
+  }
+  
+#  my ($slim_cdna,$cdna_new_to_old,$cdna_old_to_new) = Bio::EnsEMBL::Compara::AlignUtils->remove_blank_columns_in_threes($input_cdna);
+#  my ($slim_aa,$aa_new_to_old,$aa_old_to_new) = Bio::EnsEMBL::Compara::AlignUtils->remove_blank_columns($input_aa);
+#  my $input_aa = $slim_aa;
+#  my $input_cdna = $slim_cdna;
+#  $self->param('input_cdna',$slim_cdna);
+#  $self->param('input_aa',$slim_aa);
+#  $self->param('aln_map_aa',$aa_new_to_old);
+#  $self->param('aln_map_cdna',$cdna_new_to_old);
 
-  my $input_aa = $slim_aa;
-  my $input_cdna = $slim_cdna;
-  $self->param('input_cdna',$slim_cdna);
-  $self->param('input_aa',$slim_aa);
-  $self->param('aln_map_aa',$aa_new_to_old);
-  $self->param('aln_map_cdna',$cdna_new_to_old);
+  $self->param('input_aa',$input_aa);
+  $self->param('input_cdna',$input_aa);
 
   Bio::EnsEMBL::Compara::AlignUtils->pretty_print($input_aa,{length => 200});
   Bio::EnsEMBL::Compara::AlignUtils->pretty_print($input_cdna,{length => 200});
-
   my $action = $self->param('analysis_action');
 
   if ($action =~ m/slr/i) {
@@ -527,7 +533,6 @@ sub run_sitewise_dNdS
   $slrexe = "/homes/greg/bin/Slr" if (! -e $slrexe);
   $slrexe = "Slr" if (! -e $slrexe);
 
-
   # Reorder the alignment according to the tree
   #$cdna_aln = Bio::EnsEMBL::Compara::AlignUtils->sort_by_tree($cdna_aln,$treeI);
   
@@ -726,8 +731,6 @@ sub run_sitewise_dNdS
   $self->store_sitewise($results,$tree,$params);
 }
 
-
-
 sub run_paml {
   my $self = shift;
   my $tree = shift;
@@ -849,9 +852,9 @@ sub store_sitewise {
   
   my $parameter_set_id = $self->parameter_set_id;
 
-  my $aln_map_aa = $self->param('aln_map_aa');
+#  my $aln_map_aa = $self->param('aln_map_aa');
   my $input_aa = $self->param('input_aa');
-  
+
   foreach my $site (@{$results->{'sites'}}) {
     #sleep(0.08);
 
@@ -860,17 +863,17 @@ sub store_sitewise {
     # 0     1        2      3        4        5        6      7          8          9           10     11
     my ($site, $neutral, $optimal, $omega, $lower, $upper, $lrt_stat, $pval, $adj_pval, $q_value, $type, $note) = @{$site};
 
-    my $mapped_site = $site;
-    my $original_site = $site;
-    if (defined $aln_map_aa) {
-      $mapped_site = $aln_map_aa->{$site};
-      if (defined $mapped_site) {
-	$original_site = $site;
-	$site = $mapped_site;
-      } else {
-	die "Something went wrong! NO mapped site for $site!\n";
-      }
-    }
+#    my $mapped_site = $site;
+#    my $original_site = $site;
+#    if (defined $aln_map_aa) {
+#      $mapped_site = $aln_map_aa->{$site};
+#      if (defined $mapped_site) {
+#	$original_site = $site;
+#	$site = $mapped_site;
+#      } else {
+#	die "Something went wrong! NO mapped site for $site!\n";
+#      }
+#    }
 
     # These two cases are pretty useless, so we'll skip 'em.
     if (!$self->param('sitewise_store_gaps')) {
@@ -878,8 +881,20 @@ sub store_sitewise {
       next if ($note eq 'single_char');
     }
 
-    my $nongaps = Bio::EnsEMBL::Compara::AlignUtils->get_nongaps_at_column($input_aa,$original_site);
-    next if ($nongaps == 0);
+    my $nongaps = Bio::EnsEMBL::Compara::AlignUtils->get_nongaps_at_column($input_aa,$site);
+    #next if ($nongaps == 0);
+
+    if ($self->param('sitewise_filter_order') eq 'after') {
+      # Look at the filtered alignment. If ANY residues are filtered out, we consider this column to be bad.
+      # Don't store the resulting sitewise value.
+      my $filtered_aa = $self->param('aa_filtered');
+      my $filtered_site_count = Bio::EnsEMBL::Compara::AlignUtils->count_residues_at_column($filtered_aa,$site,'X');
+#      if (($filtered_site_count+1) / ($nongaps+1) >= 0.5) {
+      if ($filtered_site_count > 0) {
+        print "FILTERED COLUMN! $site\n";
+        next;
+      }
+    }
 
 #    printf("Site: %s  nongaps: %d  omegas: %3f (%3f - %3f) type: %s note: %s \n",$site,$nongaps,$omega,$lower,$upper,$type,$note);
 
@@ -908,11 +923,5 @@ sub store_sitewise {
     $sth->finish();
   }
 }
-
-sub DESTROY {
-    my $self = shift;
-    $self->SUPER::DESTROY if $self->can("SUPER::DESTROY");
-}
-
 
 1;

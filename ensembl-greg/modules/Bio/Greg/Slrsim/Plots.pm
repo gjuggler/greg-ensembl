@@ -25,6 +25,7 @@ sub run {
 
   if ($experiment_name =~ m/filter_sweeps/i) {
     $self->output_params_file;
+    $self->dump_sql;
     eval {
       $self->filter_sweep_roc;
     };
@@ -34,6 +35,10 @@ sub run {
 
 sub get_output_folder {
   my $self = shift;
+
+  if (defined $self->param('output_folder')) {
+    return $self->param('output_folder');
+  }
 
   my $date_string = strftime("%Y-%m-%d",localtime);
   my $i=0;
@@ -46,7 +51,43 @@ sub get_output_folder {
 
   print "Output folder: $filename\n";
   $self->param('output_folder',$filename);
+
+  # We'll store this output folder in the meta table, so it will be re-used if this module is run again w/ the same database.
+  $self->store_meta({output_folder => $filename});
   mkpath([$filename]);
+}
+
+sub dump_sql {
+  my $self = shift;
+  my $filename = $self->param('output_folder') . '/slrsim.sqldata';
+
+  my $dbc = $self->compara_dba->dbc;
+  my $u = $dbc->username;
+  my $p = $dbc->password;
+  my $h = $dbc->host;
+  my $port = $dbc->port;
+  my $db = $dbc->dbname;
+
+  my $cmd = qq^
+mysqldump -P$port -h$h -u$u -p$p $db > $filename
+^;
+
+  system($cmd);
+}
+
+sub dump_data {
+  my $self = shift;
+
+  my $filename = $self->param('output_folder') . '/slrsim_sites.Rdata';
+  my $rcmd = qq^
+source("collect_slrsim.R")
+data = get.all.data()
+save(data,file="${filename}");
+^;
+  print "$rcmd\n";
+  my $params = {};
+  Bio::Greg::EslrUtils->run_r($rcmd,$params);
+  
 }
 
 sub filter_sweep_roc {
@@ -58,18 +99,20 @@ sub filter_sweep_roc {
 source("collect_slrsim.R")
 data = get.all.data()
 
+data[is.na(data[,'alignment_score_threshold']),'alignment_score_threshold'] = 0;
+
 comb.roc = data.frame()
-for (aln in sort(unique(data['alignment_name']))) {
-  for (filt in sort(unique(data['filtering_name']))) {
-    for (thresh in sort(unique(data['alignment_score_threshold']))) {
+for (aln in sort(unique(data[,'alignment_name']))) {
+  for (filt in sort(unique(data[,'filtering_name']))) {
+    for (thresh in sort(unique(data[,'alignment_score_threshold']))) {
         sub = subset(data, alignment_name==aln & filtering_name==filt & alignment_score_threshold==thresh)
         print(paste(aln,filt,thresh,nrow(sub),sep="/"))
         if (nrow(sub)==0) {next}
         sub.roc = slr.roc(sub)
-        sub.roc['filter'] = as.factor(filt)
-        sub.roc['aln'] = as.factor(aln)
-        sub.roc['thresh'] = as.factor(thresh)
-        sub.roc['label'] = paste(aln,filt,thresh,sep="/")
+        sub.roc[,'filter'] = as.factor(filt)
+        sub.roc[,'aln'] = as.factor(aln)
+        sub.roc[,'thresh'] = as.factor(thresh)
+        sub.roc[,'label'] = paste(aln,filt,thresh,sep="/")
         comb.roc = rbind(sub.roc,comb.roc)      
     }
   }
