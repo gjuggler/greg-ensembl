@@ -148,6 +148,8 @@ sub worker_temp_directory {
 
   my $wtd = $self->SUPER::worker_temp_directory;
 
+  chmod 0777, $wtd;
+
   #print "ANALYSIS ID:". $self->worker->analysis->dbID."\n";
   #$wtd = $wtd . $self->data_id."/".$self->worker->analysis->dbID."/";
   #mkpath([$wtd]);

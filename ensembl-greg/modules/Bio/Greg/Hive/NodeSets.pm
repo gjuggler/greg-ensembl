@@ -88,7 +88,7 @@ sub write_output {
       my $id = $node->node_id;
       if ($node->has_tag("cc_root_".$flow_set)) {
 
-        my $output_id = { node_id => $id };
+        my $output_id = { node_id => $id, orig_node_id => $self->param('node_id') };
 	my ($output_job_id) = @{ $self->dataflow_output_id( $output_id, 1 ) };
 	print " -> Flowed node $id (job id: $output_job_id)\n";
         if ( $params->{flow_parent_and_children} ) {
@@ -96,6 +96,7 @@ sub write_output {
           foreach my $child ( @{ $node->children } ) {
             my $output_id = { 
 	      node_id => $child->node_id,
+              orig_node_id => $self->param('node_id'),
 	      node_set_parent_id => $id, node_set_child_number => $i++ 
 	      };
 	    my ($output_job_id) = @{ $self->dataflow_output_id( $output_id, 1 ) };

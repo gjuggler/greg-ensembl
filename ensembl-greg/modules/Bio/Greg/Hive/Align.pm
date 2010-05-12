@@ -123,7 +123,9 @@ sub run
     my $method = $self->param('alignment_method');
     if ($method =~ m/clustalw/) {
       $sa_aligned = $self->align_with_clustalw($sa,$tree,$params);
-    } elsif ($method =~ '(coffee|muscle)') {
+    } elsif ($method =~ m/muscle/) {
+      $sa_aligned = $self->align_with_muscle($sa,$tree,$params);      
+    }elsif ($method =~ m/coffee/) {
       $sa_aligned = $self->align_with_mcoffee($sa,$tree,$params);
     } elsif ($method =~ m/prank/) {
       if ($method =~ m/_f/) {
@@ -206,7 +208,7 @@ sub align_with_prank {
   
   # Output alignment.
   my $aln_file = $tmp . "aln.fasta";
-  Bio::EnsEMBL::Compara::AlignUtils->to_file($aln,$aln_file); # Write the alignment out to file.
+  Bio::EnsEMBL::Compara::AlignUtils->dump_ungapped_seqs($aln,$aln_file); # Write the alignment out to file.
   
   my $tree_file = $tmp . "tree.nh";
   my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
@@ -251,7 +253,7 @@ sub align_with_papaya {
   
   # Output alignment.
   my $aln_file = $tmp . "aln.fasta";
-  Bio::EnsEMBL::Compara::AlignUtils->to_file($aln,$aln_file); # Write the alignment out to file.
+  Bio::EnsEMBL::Compara::AlignUtils->dump_ungapped_seqs($aln,$aln_file); # Write the alignment out to file.
   
   my $tree_file = $tmp . "tree.nh";
   my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
@@ -283,8 +285,7 @@ sub align_with_papaya {
   return $aln;
 }
 
-
-sub align_with_clustalw {
+sub align_with_muscle {
   my $self = shift;
   my $aln = shift;
   my $tree = shift;
@@ -297,7 +298,50 @@ sub align_with_clustalw {
 
   # Output alignment.
   my $aln_file = $tmp . "aln.fasta";
-  Bio::EnsEMBL::Compara::AlignUtils->to_file($aln,$aln_file); # Write the alignment out to file.
+  Bio::EnsEMBL::Compara::AlignUtils->dump_ungapped_seqs($aln,$aln_file); # Write the alignment out to file.
+  
+  my $tree_file = $tmp . "tree.nh";
+  my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
+  Bio::EnsEMBL::Compara::TreeUtils->to_file($treeI,$tree_file);
+
+  my $output_file = $tmp . "output.fa";
+  
+  my $executable = $params->{'alignment_executable'} || 'muscle';
+  my $extra_params = '';
+  
+  my $cmd = qq^$executable $extra_params -in $aln_file -out $output_file^;
+
+  # Run the command.
+  $self->compara_dba->dbc->disconnect_when_inactive(1);
+  print "$cmd\n";
+  my $rc = system($cmd);
+  $self->compara_dba->dbc->disconnect_when_inactive(0);
+
+  unless($rc == 0) {
+    print "Muscle error!\n";
+    die;
+  }
+  
+  use Bio::AlignIO;
+  my $alignio = Bio::AlignIO->new(-file => $output_file,
+                                  -format => "fasta");
+  my $aln = $alignio->next_aln();
+  return $aln;
+}
+
+
+sub align_with_clustalw {
+  my $self = shift;
+  my $aln = shift;
+  my $tree = shift;
+  my $params = shift;
+
+  my $tmp = $self->worker_temp_directory;
+  $self->cleanup_temp;  
+
+  # Output alignment.
+  my $aln_file = $tmp . "aln.fasta";
+  Bio::EnsEMBL::Compara::AlignUtils->dump_ungapped_seqs( $aln,$aln_file); # Write raw sequences to file.
   
   my $tree_file = $tmp . "tree.nh";
   my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
@@ -323,8 +367,7 @@ sub align_with_clustalw {
   use Bio::AlignIO;
   my $alignio = Bio::AlignIO->new(-file => $output_file,
                                   -format => "phylip");
-  my $aln = $alignio->next_aln();
-  return $aln;
+  return $alignio->next_aln();
 }
 
 sub align_with_mcoffee
@@ -346,7 +389,7 @@ sub align_with_mcoffee
 
     # Output alignment.
     my $input_fasta = $tmp . "input_seqs.fasta";
-    Bio::EnsEMBL::Compara::AlignUtils->to_file($aln,$input_fasta); # Write the alignment out to file.
+    Bio::EnsEMBL::Compara::AlignUtils->dump_ungapped_seqs($aln,$input_fasta); # Write the alignment out to file.
 
     my $input_tree = $tmp . "input_tree.nh";
     my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);

@@ -305,13 +305,15 @@ sub fetch_masked_alignment
   my $default_params = {
     sequence_quality_filtering => 0,
     sequence_quality_threshold => 2,
-    sequence_quality_mask_character => 'X',
+    sequence_quality_mask_character_aa => 'X',
+    sequence_quality_mask_character_cdna => 'N',
 
     alignment_score_filtering => 0,
     alignment_score_threshold => 0,
     alignment_score_table => 'protein_tree_member_score',
-    alignment_score_mask_character => 'X',
-    
+    alignment_score_mask_character_aa => 'X', 
+    alignment_score_mask_character_cdna => 'N',
+   
     cdna => $cdna_option
   };
   $params = $class->replace_params($default_params,$params);
@@ -401,7 +403,10 @@ sub fetch_masked_alignment
     }
     #printf " -> Filtering table: %s  threshold: %d)\n",$table,$threshold;
     printf " -> Masking sequences at alignment score threshold: >= %d\n",$params->{'alignment_score_threshold'};
-    $aln = $ALN->mask_below_score($aln,$threshold,$hash_ref,$params->{'alignment_score_mask_character'});
+    
+    my $mask_character = $params->{'alignment_score_mask_character_aa'};
+    $mask_character = $params->{'alignment_score_mask_character_cdna'} if ($cdna_option);
+    $aln = $ALN->mask_below_score($aln,$threshold,$hash_ref,$mask_character);
   }
 
   #
@@ -470,7 +475,8 @@ sub mask_aln_by_sequence_quality {
 
   my $threshold = $params->{'sequence_quality_threshold'};
   my $cdna_option = $params->{'cdna'};
-  my $mask_char = $params->{'sequence_quality_mask_character'};
+  my $mask_char = $params->{'sequence_quality_mask_character_aa'};
+  $mask_char = $params->{'sequence_quality_mask_character_cdna'} if ($cdna_option);
 
   my $pta = $tree->adaptor;
   my @twox_ids = (9978,9371,9739,9478,42254,30538,
@@ -510,7 +516,7 @@ sub mask_aln_by_sequence_quality {
     $qual_hash_ref->{$id} = $qual_cigar_line;
   }
 
-  $aln = $ALN->mask_below_score($aln,$threshold,$qual_hash_ref,$params->{'sequence_quality_mask_character'});
+  $aln = $ALN->mask_below_score($aln,$threshold,$qual_hash_ref,$mask_char);
   return $aln;
 }
 

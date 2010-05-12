@@ -382,6 +382,22 @@ sub from_string {
   return $sa;
 }
 
+sub dump_ungapped_seqs {
+  my $class = shift;
+  my $aln = shift;
+  my $alnF = shift;
+
+  open(OUT,">$alnF");
+  foreach my $seq ($aln->each_seq) {
+    my $seq_str = $seq->seq;
+    $seq_str =~ s/-//g;
+    print OUT ">".$seq->id."\n";
+    print OUT $seq_str."\n";
+  }
+  close(OUT);
+  return $alnF;
+}  
+
 sub to_file {
   my $class = shift;
   my $aln = shift;
@@ -412,6 +428,24 @@ sub get_nongaps_at_column {
     $nongap_count++ if ($residue !~ /[-x]/i);
   }
   return $nongap_count;
+}
+
+# Counts the number of sequences that are neither gapped nor masked at the given column.
+# @created GJ 2009-01-09
+# @bugfix GJ 2009-03-20
+sub count_residues_at_column {
+  my $class = shift;
+  my $aln = shift;
+  my $pos = shift;
+  my $char = shift;
+
+  my $char_count = 0;
+  foreach my $seq ($aln->each_seq) {
+    next if ($pos >= $seq->length);
+    my $residue = $seq->subseq($pos,$pos);
+    $char_count++ if ($residue =~ m/[$char]/i);
+  }
+  return $char_count;
 }
 
 sub get_ungapped_branchlength {
@@ -796,7 +830,7 @@ sub get_prank_filter_matrices {
 
   my $aln_len = $aln->length;
 
-  if ($params->{'prank_filtering_scheme'} eq 'prank_mean') {
+  if ($params->{'prank_filtering_scheme'} =~ m/prank_mean/i) {
     foreach my $leaf ($tree->leaves) {
       my $score_string = "";
       my $aln_string = $leaf->alignment_string;
@@ -833,7 +867,7 @@ sub get_prank_filter_matrices {
       $leaf_scores->{$leaf->name} = $score_string;
     }
 
-  } elsif ($params->{'prank_filtering_scheme'} eq 'prank_minimum') {
+  } elsif ($params->{'prank_filtering_scheme'} =~ m/prank_minimum/i) {
     foreach my $leaf ($tree->leaves) {
       my $score_string = "";
       my $aln_string = $leaf->alignment_string;
@@ -865,7 +899,7 @@ sub get_prank_filter_matrices {
       $leaf_scores->{$leaf->name} = $score_string;
     }
 
-  } elsif ($params->{'prank_filtering_scheme'} eq 'prank_treewise') {
+  } elsif ($params->{'prank_filtering_scheme'} =~ m/prank_treewise/i) {
     
     foreach my $leaf ($tree->leaves) {
       my $total_dist = $leaf->distance_to_root;
