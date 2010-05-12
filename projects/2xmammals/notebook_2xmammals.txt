@@ -306,4 +306,41 @@ ssh -Nf -R 2222:localhost:22 ssh.sanger.ac.uk
 
 ssh -Nf -L 3307:ens-research:3306 gj1@ssh.sanger.ac.uk
 
+### 2010-04-30 ###
 
+mysql> select tag,count(*),value from sitewise_tag group by tag;
++----------+----------+------------------+
+| tag      | count(*) | value            |
++----------+----------+------------------+
+| ACC      |   579480 | 3                |
+| ACT_SITE |     2707 |  Proton donor (B |
+| BINDING  |     2584 |  FMN (By similar |
+| CARBOHYD |    15066 |  O-linked (GlcNA |
+| DISULFID |    25025 |  By similarity.  |
+| DNA_BIND |    41961 |  Basic motif.    |
+| DOMAIN   |  4461602 | PF03735          |
+| DSSP     |   579480 | C                |
+| FILTER   | 14559928 | 0                |
+| METAL    |     3983 |  Zinc 1 (By simi |
+| MOD_RES  |    34767 |  Phosphothreonin |
+| SIGNAL   |    68106 |                  |
+| TRANSMEM |   390223 |  Potential.      |
++----------+----------+------------------+
+13 rows in set (4 min 0.60 sec)
+
+
+### 2010-05-10 ###
+
+> summary = sites.summary(db="gj1_2x_57",sites.dir="/nfs/users/nfs_g/gj1/scratch/mammals/output/2010-04-30/2010-04-30_01",filter.fn=filter.fn)
+[1] 1
+[1] "m"
+  parameter_set_id parameter_set_name   total constant synonymous omega_lt_p1
+1                1                  m 8585291  1007572    3419503   0.6060252
+  omega_lt_p2 omega_lt_p5 omega_lt_one omega_gt_one omega_gt_onep5    positive
+1   0.7075732   0.8587602      0.94892   0.05106909     0.02061887 0.007980393
+   negative strong.positive strong.negative n.positive n.negative
+1 0.8051399     0.003931608       0.7160646      68514    6912360
+  n.strong.positive n.strong.negative n.positive.domains
+1             33754           6147623               2731
+  n.positive.domain.types n.positive.genes
+1                    1131             7477

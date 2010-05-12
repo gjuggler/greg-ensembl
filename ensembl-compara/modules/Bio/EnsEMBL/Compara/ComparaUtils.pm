@@ -304,7 +304,7 @@ sub fetch_masked_alignment
 
   my $default_params = {
     sequence_quality_filtering => 0,
-    sequence_quality_threshold => 2,
+    sequence_quality_threshold => 3,
     sequence_quality_mask_character => 'X',
 
     alignment_score_filtering => 0,

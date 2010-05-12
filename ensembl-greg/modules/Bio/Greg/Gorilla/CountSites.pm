@@ -27,6 +27,14 @@ my $ALN = "Bio::EnsEMBL::Compara::AlignUtils";
 my $COMPARA = "Bio::EnsEMBL::Compara::ComparaUtils";
 
 my $counts_genes_def = {
+  'node_id' => 'int',
+
+  human_gene => 'string',
+  human_chr => 'string',
+  human_start => 'int',
+  human_end => 'int',
+  human_strand => 'int',
+
   'CGH' => 'int',
   'C.G.H' => 'int',
   'H.CG' => 'int',
@@ -39,7 +47,7 @@ my $counts_genes_def = {
   'syn_G.CH' => 'int',
 
   most_frequent_pattern => 'string',
-  most_frequent_pattern_excess => 'int',
+  most_frequent_pattern_excess => 'float',
 
   synon => 'int',
   nonsynon => 'int',
@@ -50,11 +58,12 @@ my $counts_genes_def = {
   tree_pattern => 'string',
   tree_length => 'float',
   tree_max_path => 'float',
-
-  unique_keys => 'node_id,parameter_set_id'
+  seq_length_mean => 'float',
+  orig_leaf_count => 'int',
   };
 
 my $counts_sites_def = {
+  node_id => 'int',
   aln_position => 'int',
   chr_name => 'string',
   chr_start => 'int',
@@ -62,6 +71,7 @@ my $counts_sites_def = {
   chr_strand => 'string',
 
   type => 'string',
+  gap_type => 'string',
 
   pattern    => 'string',
   codon_a    => 'string',
@@ -69,8 +79,6 @@ my $counts_sites_def = {
   has_cpg    => 'string',
 
   codon_genome => 'string',
-
-  unique_keys => 'aln_position,node_id,parameter_set_id'
   };
 
 
@@ -155,14 +163,40 @@ sub run {
     nonsynon => 0,
     constant => 0,
     gap => 0,
-    ils_count => 0,
-    non_ils_count => 0,
     most_frequent_pattern => '',
+    most_frequent_pattern_excess => 0,
     tree_newick => $tree->newick_format(),
     tree_length => $self->tree_length($tree),
     tree_max_path => $self->max_path($tree),
-    tree_pattern => $self->get_tree_pattern($tree,$taxon_to_letter)
+    tree_pattern => $self->get_tree_pattern($tree,$taxon_to_letter),
+    seq_length_mean => $self->seq_length_mean($tree)
   };
+
+  $gene_data->{orig_leaf_count} = $self->root_node_gene_count($tree);
+  # Collect human protein.
+  my @human_proteins = grep { $_->taxon_id == 9606 } $tree->leaves;
+  my @human_genes    = map  { $_->get_Gene } @human_proteins;
+  if ( scalar @human_proteins > 0 ) {
+    my $member = $human_proteins[0];
+    $gene_data->{'human_gene'}    = $member->get_Gene->stable_id;
+  }
+  # Collect protein coords.
+  if ( scalar @human_proteins > 0) {
+    my $member = $human_proteins[0];
+    my $tscr_orig = $member->get_Transcript;
+    my $tscr      = $tscr_orig->transform("chromosome");
+    if ( defined $tscr ) {
+      my $chr    = "chr" . $tscr->slice->seq_region_name;
+      my $strand = $tscr->strand;
+      my $start  = $tscr->coding_region_start;
+      my $end    = $tscr->coding_region_end;
+      $gene_data->{human_chr}    = $chr;
+      $gene_data->{human_start}  = $start;
+      $gene_data->{human_end}    = $end;
+      $gene_data->{human_strand} = $strand;
+    }
+  }
+
 
   for (my $i=1; $i < $aln->length; $i+= 3) {
     my $slice = $aln->slice($i,$i+2);
@@ -172,9 +206,11 @@ sub run {
     
     my $codon_hashref;
     my $aa_hashref;
+    my $taxon_id_hash;
     foreach my $member ($tree->leaves) {
       #foreach my $seq ($slice->each_seq) {
       #my $member = $tree->find_leaf_by_name($seq->id);
+      $taxon_id_hash->{$member->taxon_id} = 1;
       my ($seq) = $slice->each_seq_with_id($member->stable_id);
       my $seq_aa;
       my $seq_codon;
@@ -220,6 +256,9 @@ sub run {
     my $codon_b = '';
     my $codon_b = $codon_value_hash->{$codon_arr[1]} if (scalar @codon_arr > 1);
 
+    my @species_letters = map {$taxon_to_letter->{$_}} keys %$taxon_id_hash;
+    my $gap_type = join("", map {$_ if ($codon_value_hash->{$_} eq '---');} @species_letters);
+
     my $coord_data = $self->get_genomic_coord($tree,$aln,$i,$self->param('gorilla_map_taxon'));
     #die("No coords!") unless ($coord_data);
 
@@ -238,9 +277,8 @@ sub run {
     }
 
     my $site_data = {
-      node_id => $self->param('node_id'),
       aln_position => $i, # Give alignment coordinates with the gaps NOT removed.
-      parameter_set_id => 0,
+      parameter_set_id => $self->parameter_set_id,
 
       codon_a => $codon_a,
       codon_b => $codon_b,
@@ -249,6 +287,7 @@ sub run {
       codon_genome => $codon_genome,
       
       type => $type,
+      gap_type => $gap_type,
       pattern => $codon_string
     };
     
@@ -263,17 +302,20 @@ sub run {
   my $most_frequent_pattern = '';
   my $most_frequent_count = 0;
   foreach my $key ('H.CG','C.GH','G.CH') {
-    if ($gene_data->{$key} > $most_frequent_count) {
+    if ($gene_data->{$key} >= $most_frequent_count) {
       $most_frequent_count = $gene_data->{$key};
       $most_frequent_pattern = $key;
     }
   }
   $gene_data->{most_frequent_pattern} = $most_frequent_pattern;
-  $gene_data->{non_ils_count} = $gene_data->{'G.CH'};
-  $gene_data->{ils_count} = $gene_data->{'H.CG'} + $gene_data->{'C.GH'};
+  my $other_count = 0;
+  foreach my $key ('H.CG','C.GH','G.CH') {
+    $other_count = $gene_data->{$key} if ($key ne $most_frequent_pattern && $gene_data->{$key} > $other_count);
+  }
+  $gene_data->{most_frequent_pattern_excess} = ($most_frequent_count+1) / ($other_count+1);
 
-  $gene_data = $self->replace_params($self->params,$gene_data,{parameter_set_id => 0});
-
+  # Apply the gene-wide data and store a row in the gene-count table.
+  $gene_data = $self->replace_params($self->params,$gene_data);
   $self->store_params_in_table($self->compara_dba,$self->param('counts_genes_table'),$gene_data);
 }
 
@@ -353,7 +395,7 @@ sub get_genomic_coord {
       aln_position => $aln_position,
       char         => $char,
       stable_id    => $leaf->stable_id,
-      node_id      => $tree->node_id,
+      node_id      => $self->param('node_id'),
       member_id    => $leaf->dbID,
       chr_strand       => $strand
       };

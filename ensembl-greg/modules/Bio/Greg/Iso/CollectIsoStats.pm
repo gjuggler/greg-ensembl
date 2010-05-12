@@ -1,4 +1,4 @@
-package Bio::Greg::Mammals::CollectMammalsStats;
+package Bio::Greg::Iso::CollectIsoStats;
 
 use strict;
 use Time::HiRes qw(sleep);
@@ -28,13 +28,6 @@ sub get_sites_table_structure {
   my $self = shift;
 
   my $added_structure = {
-    filter_value => 'int',
-    domain => 'string',
-    
-    chr_name  => 'string',
-    chr_start => 'int',
-    chr_end   => 'int',
-
     unique_keys => 'aln_position,node_id,parameter_set_id'
   };
   
@@ -47,6 +40,7 @@ sub get_gene_table_structure {
   my $self = shift;
   
   my $added_structure = {
+    'orig_node_id' => 'int',
     'human_protein' => 'string',
     'human_gene'    => 'string',
     
@@ -54,8 +48,6 @@ sub get_gene_table_structure {
     'chr_start' => 'int',
     'chr_end' => 'int',
     'chr_strand' => 'int',
-    
-    unique_keys => 'node_id,parameter_set_id'
     };
   
   my $structure = $self->SUPER::get_gene_table_structure();
@@ -65,9 +57,6 @@ sub get_gene_table_structure {
 
 sub data_for_gene {
   my $self = shift;
-
-  $self->param('filtered',1);
-  $self->param('alignment_filtering_value',3);
 
   my $data = $self->SUPER::data_for_gene();
   return undef unless (defined $data);
@@ -110,23 +99,9 @@ sub data_for_site {
 
   $self->param('genome',1);
 
-  my $data;
-#  my $data = $self->SUPER::data_for_site($aln_position);
+  my $data = $self->SUPER::data_for_site($aln_position);
   return undef unless (defined $data);
 
-  my $tag_hash = $self->param('tag_hash');
-  if (!defined $tag_hash) {
-    $tag_hash = $self->get_tag_hash( $self->compara_dba->dbc, $self->params);
-    $self->param('tag_hash',$tag_hash);
-  }
-
-  my $site_tags = $tag_hash->{$aln_position};
-  $self->hash_print($site_tags);
-  if (defined $site_tags) {
-    $data->{'filter_value'} = $site_tags->{'FILTER'};
-    $data->{'domain'} = $site_tags->{'DOMAIN'};
-#    print "DOMAIN: ".$site_tags->{'DOMAIN'}."\n";
-  }
   return $data;
 }
 

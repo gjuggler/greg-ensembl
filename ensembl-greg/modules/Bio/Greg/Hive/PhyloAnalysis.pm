@@ -35,7 +35,7 @@ sub fetch_input {
     sitewise_minimum_leaf_count     => 3,
     sitewise_strip_gaps             => 0,
     sitewise_parameter_sets         => 'all',
-    analysis_action                 => 'slr',                # Which action(s) to perform. Space-delimited.
+    analysis_action                 => 'hyphy_dnds',                # Which action(s) to perform. Space-delimited.
                                                     # 'slr' - SLR sitewise omegas.
                                                     # 'paml_sitewise' - PAML sitewise omegas.
                                                     # 'wobble' - SLR_wobble test.
@@ -55,6 +55,9 @@ sub fetch_input {
     # PAML Parameters
     #paml_model                  => 'M3',                 # Used for Bayes Empirical Bayes sitewise analysis.
     #paml_model_b                => 'M7',                 # Used for the likelihood ratio tests.
+
+    # HYPHY Parameters
+    hyphy_codon_model => 'mg94',
 
     alignment_score_mask_character => 'N',
     sequence_quality_mask_character_character => 'N'
@@ -207,17 +210,50 @@ sub run_hyphy {
   close(OUT);
 
   my $control_f = $tmpdir . "control.txt";
-  my $model_filename = "gy94.bf";
   open(OUT,">$control_f");
   print OUT $aln_f."\n";
   print OUT $tree_f . "\n";
-  print OUT $model_filename . "\n";
   close(OUT);
 
-  my $batch_file = "~gj1/src/greg-ensembl/ensembl-greg/scripts/hyphy/fit_codon_model.bf";
-  
-  my $cmd = "HYPHY $batch_file < $control_f";
+  my $hyphy_base = "/nfs/users/nfs_g/gj1/src/greg-ensembl/ensembl-greg/scripts/hyphy";
+
+  my $batch_file = "${hyphy_base}/fit_codon_model.bf";
+  open(IN,$batch_file);
+  my @lines = <IN>;
+  close(IN);
+  my $batch_string = join("",@lines);
+
+  sub replace_string {
+    my $string = shift;
+    my $search = shift;
+    my $file = shift;
+    
+    open(IN,$file);
+    my @lines = <IN>;
+    close(IN);
+    my $file_str = join("",@lines);
+    
+    my $i = index($string, $search);
+    substr($string,$i,length($search),$file_str);
+    return $string;
+  }  
+
+  my $codon_model = $self->param('hyphy_codon_model');
+  my $model_bf = "${hyphy_base}/${codon_model}.bf";
+  $batch_string = replace_string($batch_string,'[MODEL_BF]',$model_bf);
+
+  # Write the new batch file.
+  my $batch_f = $tmpdir."batch.bf";
+  open(OUT,">$batch_f");
+  print OUT $batch_string."\n";
+  close(OUT);
+
+  # Copy all the other HYPHY crap to the temp directory.
+  system("cp ${hyphy_base}/*.* $tmpdir");
+
+  my $cmd = "HYPHY $batch_f < $control_f";
   print $cmd."\n";
+  my @output = ();
   my @output = `$cmd`;
   print "@output\n";
 
@@ -845,7 +881,7 @@ sub store_sitewise {
     my $nongaps = Bio::EnsEMBL::Compara::AlignUtils->get_nongaps_at_column($input_aa,$original_site);
     next if ($nongaps == 0);
 
-    printf("Site: %s  nongaps: %d  omegas: %3f (%3f - %3f) type: %s note: %s \n",$site,$nongaps,$omega,$lower,$upper,$type,$note);
+#    printf("Site: %s  nongaps: %d  omegas: %3f (%3f - %3f) type: %s note: %s \n",$site,$nongaps,$omega,$lower,$upper,$type,$note);
 
     my $sth = $tree->adaptor->prepare
       ("REPLACE INTO $table

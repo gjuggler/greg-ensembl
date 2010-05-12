@@ -299,7 +299,8 @@ sub output_data {
   my $params = {
     sequence_quality_filtering => 1,
   };
-  _create_analysis($logic_name,$module,$params,50,1);
+  my $analysis_id = _create_analysis($logic_name,$module,$params,50,1);
+  _add_nodes_to_analysis($analysis_id,{},[0]);  
 }
 
 

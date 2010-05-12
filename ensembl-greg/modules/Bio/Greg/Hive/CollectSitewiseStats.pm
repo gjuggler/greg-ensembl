@@ -50,7 +50,7 @@ sub get_gene_data {
 
   my $gene_data = $self->data_for_gene;
 
-  $self->hash_print($gene_data);
+#  $self->hash_print($gene_data);
   $self->store_params_in_table( $self->compara_dba, $self->param('genes_table'), $gene_data );
 }
 
@@ -165,7 +165,10 @@ sub get_gene_table_structure {
 
   my $structure = {
     'data_id'                 => 'int',
+
     'node_id' => 'int',
+    'orig_node_id' => 'int',
+
     'parameter_set_id'   => 'tinyint',
     'parameter_set_name' => 'string',
 
@@ -193,7 +196,8 @@ sub get_gene_table_structure {
     'hyphy_dnds_lo' => 'float',
     'hyphy_dnds_hi' => 'float',
 
-    unique_keys => 'data_id,parameter_set_id'
+    unique_keys => 'data_id,parameter_set_id',
+    extra_keys => 'data_id,parameter_set_id,orig_node_id'
   };
 
   return $structure;
@@ -205,6 +209,7 @@ sub get_sites_table_structure {
   my $structure = {
     data_id               => 'int',
     node_id => 'int',
+    orig_node_id => 'int',
     parameter_set_id => 'tinyint',
 
     omega       => 'float',
@@ -218,7 +223,8 @@ sub get_sites_table_structure {
     aln_position          => 'int',
     aln_position_fraction => 'float',
 
-    unique_keys => 'data_id,parameter_set_id,aln_position'
+    unique_keys => 'data_id,parameter_set_id,aln_position',
+    extra_keys => 'data_id,parameter_set_id,orig_node_id'
   };
 
   return $structure;

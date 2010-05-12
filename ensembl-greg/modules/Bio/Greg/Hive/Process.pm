@@ -48,6 +48,7 @@ sub _get_aln {
   my $cdna_aln = $tree->get_SimpleAlign(-cdna => 1, -hide_positions => 1);
   my $aln = Bio::EnsEMBL::Compara::ComparaUtils->fetch_masked_alignment($aa_aln,$cdna_aln,$tree,$params,$cdna);
 
+  # Here's where we'll split up alignments by slice.
   if ($params->{alignment_slice}) {
     my $slice_string = $params->{alignment_slice};
     my ($lo,$hi) = split("-",$slice_string);
@@ -133,6 +134,12 @@ sub db_handle {
   return $dba->dbc->db_handle();
 }
 
+sub dbc {
+  my $self = shift;
+
+  return $self->compara_dba->dbc;
+}
+
 sub data_id {
   my $self = shift;
 
@@ -214,7 +221,9 @@ sub new_data_id {
   $data_id++;
   $self->db_handle->do("REPLACE into protein_tree_tag (node_id,tag,value) VALUES (0,'data_id_counter',$data_id);");
   $self->add_breadcrumb($params,$data_id);
-  $params->{data_id} = $data_id;
+
+  $self->param('data_id',$data_id);
+  #$params->{data_id} = $data_id;
 
   return $data_id;
 }
@@ -271,8 +280,16 @@ sub load_all_params {
   my $old_param_hash = $self->{'_param_hash'};
   $self->{'_param_hash'} = { %$old_param_hash, %$param_set_params, %$tree_tag_params };
 
+  if (!defined $self->param('data_id')) {
+    $self->param('data_id',$node_id);
+  }
+  if (!defined $self->param('parameter_set_id')) {
+    $self->param('parameter_set_id',0);
+  }
+
   print "Bio::Greg::Hive::Process.pm - load all params\n";
-  $self->hash_print($self->{'_param_hash'});
+#  $self->hash_print($self->params);
+
 }
 
 sub get_params_from_tree_tags {
@@ -434,7 +451,7 @@ sub create_table_from_params {
   print "Creating new table $table_name ...\n";
 
   my $unique_keys = delete $params->{'unique_keys'};
-  my $extra_key   = delete $params->{'extra_key'};
+  my $extra_keys   = delete $params->{'extra_keys'};
   eval {
 
     foreach my $key ( sort keys %$params ) {
@@ -457,17 +474,16 @@ sub create_table_from_params {
     my $unique_cmd = ""; #qq^ALTER TABLE $table_name ADD UNIQUE (data_id)^;
     if ($unique_keys) {
       $unique_cmd = qq^ALTER TABLE $table_name ADD UNIQUE ($unique_keys)^;
-    }
-    $dbh->do($unique_cmd);
-
-    if ($extra_key) {
-      my $key_cmd = qq^ALTER TABLE $table_name ADD KEY ($extra_key)^;
       $dbh->do($unique_cmd);
     }
 
-    $dbh->do("ALTER TABLE $table_name ADD KEY (parameter_set_id)");
-    $dbh->do("ALTER TABLE $table_name ADD KEY (data_id)");
-
+    if ($extra_keys) {
+      my @keys = split(',',$extra_keys);
+      foreach my $key (@keys) {
+	my $key_cmd = qq^ALTER TABLE $table_name ADD KEY (`$key`)^;
+	$dbh->do($key_cmd);
+      }
+    }
   };
 
 }
@@ -526,6 +542,33 @@ sub store_tag {
 
   print "  -> Storing tag [$tag] => [$value]\n";
   $tree->store_tag($tag,$value);
+}
+
+sub get_output_folder {
+  my $self = shift;
+  my $output_base = shift;
+
+  die("No output base folder specified!") unless ($output_base);
+  
+  if (defined $self->param('output_folder')) {
+    return $self->param('output_folder');
+  }
+  
+  my $date_string = strftime("%Y-%m-%d",localtime);
+  my $i=0;
+
+  my $filename;
+  do {
+    $i++;
+    $filename = sprintf("%s/%s/%s_%.2d",$output_base,$date_string,$date_string,$i);
+  } while (-e $filename);
+  
+  print "Output folder: $filename\n";
+  $self->param('output_folder',$filename);
+  
+  # We'll store this output folder in the meta table, so it will be re-used if this module is run again w/ the same database.
+  $self->store_meta({output_folder => $filename});
+  mkpath([$filename]);
 }
 
 
