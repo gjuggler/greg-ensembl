@@ -25,14 +25,29 @@ sub run {
 
   my $tree = $self->get_tree;
   my $aln = $self->get_aln;
+  Bio::EnsEMBL::Compara::AlignUtils->pretty_print($aln,{length => 150});
 
+  my $width = $self->param('window_width');
+  my $step = $self->param('window_step');
+  print "Splitting by sliding window!\n";
+  print " -> width: $width\n";
+  print " -> step: $step\n";
+  print " -> aln length: ".$aln->length."\n";
   my $aln_lo = 1;
-  my $aln_hi = $self->param('window_width');
+  my $aln_hi = 1+$width;
+  $aln_hi = $aln->length if ($aln_hi > $aln->length); # Dummy check.
   while ($aln_hi <= $aln->length) {
     $self->flow_window($aln_lo,$aln_hi);
 
-    $aln_lo += $self->param('window_step');
-    $aln_hi = $aln_lo + $self->param('window_width');
+    $aln_lo += $step;
+
+    last if ($aln_hi == $aln->length);
+    $aln_hi = $aln_lo + $width;
+    if ($aln_hi > $aln->length) {
+      $aln_hi = $aln->length;
+      $aln_lo = $aln_hi - $width;
+      last if ($aln_lo < 0); # Dummy check.
+    }
   }
 }
 
