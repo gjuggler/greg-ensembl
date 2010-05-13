@@ -16,8 +16,13 @@ sub get_gene_table_structure {
   my $self = shift;
   
   my $added_structure = {
+
+    # Optional ways to split up the alignments.
+    exon_id => 'string',
     domain_id => 'string',
     alignment_slice => 'string',
+    alignment_slice_start => 'int',
+    alignment_slice_end => 'int',
     
     human_protein => 'string',
     human_gene    => 'string',
@@ -85,6 +90,11 @@ sub data_for_gene {
       $data->{chr_strand} = $strand;
     }
   }
+
+  my $alignment_slice = $self->param('alignment_slice');
+  my ($start,$end) = split(",",$alignment_slice);
+  $data->{alignment_slice_start} = $start;
+  $data->{alignment_slice_end} = $end;
 
   return $data;
 }
