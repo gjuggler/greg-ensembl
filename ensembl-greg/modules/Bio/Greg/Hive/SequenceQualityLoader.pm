@@ -17,8 +17,6 @@ sub fetch_input {
 
   ### DEFAULT PARAMETERS ###
   my $params = {
-    alignment_table       => 'protein_tree_member',
-    alignment_score_table => 'protein_tree_member_score'
   };
 
   $self->load_all_params($params);
@@ -36,18 +34,21 @@ sub run {
     my $member = $leaf;
     print $member->stable_id . "\n";
 
+    #next unless ($member->taxon_id == 9598);
     #    next unless ($member->stable_id =~ m/(pvap|stop)/ig);
 
-    my $gdb = $member->genome_db;
 
 # This is finicky: we need to call the "db_adaptor" method to get the Bio::EnsEMBL::DBSQL::DBAdaptor object, and then the meta container.
+    my $gdb = $member->genome_db;
     my $meta     = $gdb->db_adaptor->get_MetaContainer;
     my $coverage = @{ $meta->list_value_by_key('assembly.coverage_depth') }[0];
-    if ( $coverage ne 'low' ) {
+
+    print "$coverage\n";
+    if ( $coverage eq 'low' || $member->taxon_id == 9598 ) {
+      print $member->stable_id . " low-quality!\n";
+    } else {
       print $member->stable_id . "\n";
       next;
-    } else {
-      print $member->stable_id . " 2x!\n";
     }
 
     my $quals = Bio::EnsEMBL::Compara::ComparaUtils->get_quality_string_for_member($member);
