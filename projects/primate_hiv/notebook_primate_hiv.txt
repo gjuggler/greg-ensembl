@@ -6,3 +6,8 @@ Genes to look at:
 
 ### 2010-04-06 ###
 
+### 2010-05-12 ###
+
+Tips on github proxy commands:
+ http://sitaramc.github.com/tips/git-over-proxy.html#proxying_the_git_protocol
+

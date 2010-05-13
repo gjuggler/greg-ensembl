@@ -35,24 +35,24 @@ parameter_sets();
 node_sets();
 align();
 sequence_quality();
-mapping();
 split_by_windows();
 split_by_parameter_set();
 gene_omegas();
 sitewise_omegas();
+mapping();
 collect_stats();
 output_data();
 
 # Connect the dots.
 $h->connect_analysis("NodeSets","Align");
 $h->connect_analysis("Align","SequenceQuality");
-$h->connect_analysis("SequenceQuality","SplitAlignments");
-$h->connect_analysis("SplitAlignments","SplitParams");
-$h->connect_analysis("SplitParams","GeneOmegas");
+$h->connect_analysis("SequenceQuality","SplitParams");
+$h->connect_analysis("SplitParams","SplitAlignments");
+$h->connect_analysis("SplitAlignments","GeneOmegas");
 $h->connect_analysis("GeneOmegas","SitewiseOmegas");
 $h->connect_analysis("SitewiseOmegas","CollectStats");
 
-$h->connect_analysis("NodeSets","Mapping");
+$h->connect_analysis("Align","Mapping");
 $h->wait_for("CollectStats",["Mapping"]);
 $h->wait_for("OutputTabularData",["CollectStats"]);
 
@@ -60,7 +60,24 @@ my @genes = gene_list();
 $h->add_genes_to_analysis("NodeSets",\@genes);
 
 sub gene_list {
-  my @list =  qw(CYBB);
+  my @list =  qw(
+RPL29
+CYBB
+);
+
+#IFI27
+#IFI44
+#MAP4
+#MCART1
+#MPDU1
+#MT1DP
+#MT1F
+#PMAIP1
+#RPL37
+#SLPI
+#SPRR4
+#TRIM5
+#);
   return @list;
 }
 
@@ -148,7 +165,7 @@ sub node_sets {
   my $logic_name = "NodeSets";
   my $module = "Bio::Greg::Hive::NodeSets";
   my $params = {
-    flow_node_set => 'Primates'
+    flow_node_set => 'MammalPlusTwoOutgroups'
   };
   $h->create_analysis($logic_name,$module,$params,50,1);
 }
@@ -185,8 +202,8 @@ sub split_by_windows {
   my $logic_name = "SplitAlignments";
   my $module = "Bio::Greg::Hive::SplitBySlidingWindow";
   my $params = {
-    window_width => 200,
-    window_step => 50
+    window_width => 100,
+    window_step => 30
   };
   $h->create_analysis($logic_name,$module,$params,50,1);
 }
@@ -240,6 +257,7 @@ sub output_data {
   my $params = {
   };
   $h->create_analysis($logic_name,$module,$params,50,1);
+  $h->add_job_to_analysis($logic_name,{});
 }
 
 ########*********########
