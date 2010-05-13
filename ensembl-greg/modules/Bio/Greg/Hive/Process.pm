@@ -38,6 +38,22 @@ sub get_cdna_aln {
   return $self->_get_aln($params,1);
 }
 
+sub get_orig_aln {
+  my $self = shift;
+
+  $self->get_aln if (!defined $self->param('full_aln_aa'));
+  return $self->param('full_aln_aa');
+}
+
+sub get_orig_aln_position {
+  my $self = shift;
+  my $aln = shift;
+  my $aln_position = shift;
+
+  my $orig_aln = $self->get_orig_aln;
+  return Bio::EnsEMBL::Compara::AlignUtils->map_alignment_position($aln,$aln_position,$orig_aln);
+}
+
 sub _get_aln {
   my $self = shift;
   my $params = shift;
@@ -49,6 +65,15 @@ sub _get_aln {
   my $aa_aln = $tree->get_SimpleAlign();
   my $cdna_aln = $tree->get_SimpleAlign(-cdna => 1, -hide_positions => 1);
   my $aln = Bio::EnsEMBL::Compara::ComparaUtils->fetch_masked_alignment($aa_aln,$cdna_aln,$tree,$params,$cdna);
+
+  # Remove blank columns here. Don't forget to store the 'full' alignment as a parameter.
+  if ($cdna) {
+    $self->param('full_aln_cdna',$aln);
+    ($aln) = Bio::EnsEMBL::Compara::AlignUtils->remove_blank_columns_in_threes($aln);
+  } else {
+    $self->param('full_aln_aa',$aln);
+    ($aln) = Bio::EnsEMBL::Compara::AlignUtils->remove_blank_columns($aln);
+  }
 
   # Here's where we'll split up alignments by slice.
   if ($params->{alignment_slice}) {
@@ -62,7 +87,7 @@ sub _get_aln {
     }
     print "$lo $hi\n";
     print "Length: ".$aln->length."\n";
-    $aln = $aln->slice($lo,$hi);
+    $aln = $aln->slice($lo,$hi,1);
     print "Length: ".$aln->length."\n";
   }
  
@@ -112,6 +137,7 @@ sub check_tree_aln {
     my $seq_str = $seq->seq;
     $good_seq_count++ if ($seq_str =~ m/[^NX-]/i);
   }
+  print "Good seq count: $good_seq_count\n";
   if ($good_seq_count < 2) {
     return -1;
   }
@@ -142,11 +168,28 @@ sub dbc {
   return $self->compara_dba->dbc;
 }
 
+sub node_id {
+  my $self = shift;
+
+  my $node_id = 0;
+  $node_id = $self->param('node_id') if (defined $self->param('node_id'));
+
+  return $node_id;
+}
+
 sub data_id {
   my $self = shift;
 
-  my $id = $self->param('node_id');
-  $id = $self->param('data_id') if (defined $self->param('data_id'));
+  my $data_id = 0;
+  $data_id = $self->param('data_id') if (defined $self->param('data_id'));
+  return $data_id;
+}
+
+sub parameter_set_id {
+  my $self = shift;
+
+  my $id = 0;
+  $id = $self->param('parameter_set_id') if (defined $self->param('parameter_set_id'));
   return $id;
 }
 
@@ -164,13 +207,6 @@ sub worker_temp_directory {
   return $wtd;
 }
 
-sub parameter_set_id {
-  my $self = shift;
-
-  my $id = 0;
-  $id = $self->param('parameter_set_id') if (defined $self->param('parameter_set_id'));
-  return $id;
-}
 
 sub breadcrumb_param {
   my $self = shift;
@@ -239,7 +275,7 @@ sub new_data_id {
   $self->add_breadcrumb($params,$data_id);
 
   $self->param('data_id',$data_id);
-  #$params->{data_id} = $data_id;
+  $params->{data_id} = $data_id;
 
   return $data_id;
 }
@@ -304,7 +340,7 @@ sub load_all_params {
   }
 
   print "Bio::Greg::Hive::Process.pm - load all params\n";
-#  $self->hash_print($self->params);
+  $self->hash_print($self->params);
 
 }
 
@@ -585,6 +621,9 @@ sub get_output_folder {
   # We'll store this output folder in the meta table, so it will be re-used if this module is run again w/ the same database.
   $self->store_meta({output_folder => $filename});
   mkpath([$filename]);
+
+  return $filename;
+}
 
 sub cleanup_temp {
   my $self = shift;

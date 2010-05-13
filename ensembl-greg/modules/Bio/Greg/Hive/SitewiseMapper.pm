@@ -31,7 +31,6 @@ sub fetch_input {
   # Fetch parameters from the two possible locations. Input_id takes precedence!
 
   $self->load_all_params($params);
-
 }
 
 sub run {
@@ -39,8 +38,6 @@ sub run {
   
   $self->{'start_time'} = time() * 1000;
   $self->compara_dba->dbc->disconnect_when_inactive(1);
-
-  $self->param('parameter_set_id',0);
 
   if ($self->param('do_filter')) {
     print "Doing site-wise filter calculations...\n";
@@ -84,13 +81,14 @@ sub run {
 sub get_id {
   my $self = shift;
 
-  return $self->param('node_id');
+  return $self->node_id;
 }
 
 sub do_mapping {
   my $self = shift;
 
-  my $node_id = $self->get_id;
+  my $node_id = $self->node_id;
+  my $parameter_set_id = $self->parameter_set_id;
   print "Mapping sitewise $node_id to genome...\n";
 
   my $mapping_taxon = $self->param('genome_taxon_id');
@@ -99,8 +97,8 @@ sub do_mapping {
   my @array_of_strings;
   foreach my $map ( @{$mapped_sites} ) {
     my @values =
-      ( $node_id, 
-	$self->param('parameter_set_id'),
+      ( $node_id,
+	$parameter_set_id,
 	$map->{aln_position},
 	$map->{member_id},
 	'"'.$map->{chr}.'"',
@@ -155,7 +153,7 @@ sub collect_go {
 
           # Don't insert!
         } else {
-          $self->insert_go_term( $self->get_id, $leaf, $db_e );
+          $self->insert_go_term( $self->node_id, $leaf, $db_e );
           sleep(0.05);
         }
       }
@@ -243,8 +241,8 @@ sub collect_uniprot {
 
       next if ( !$seq_pos );
 
-      my $node_id          = $self->get_id;
-      my $parameter_set_id = $self->param('parameter_set_id');
+      my $node_id          = $self->node_id;
+      my $parameter_set_id = $self->parameter_set_id;
       my $aln_position     = $sa->column_from_residue_number( $stable_id, $seq_pos );
 
       my ($seq) = $sa->each_seq_with_id($stable_id);
@@ -311,7 +309,7 @@ sub collect_exons {
 
         foreach my $pos ( $aln_start .. $aln_end ) {
 	  my $node_id = $self->get_id;
-	  my $parameter_set_id = $self->param('parameter_set_id');
+	  my $parameter_set_id = $self->parameter_set_id;
           # Store whether we're in a first, middle, or last exon.
           $sth->execute( $node_id, $pos, $parameter_set_id,
             'EXON', $exon_position, "EnsEMBL" );
@@ -390,7 +388,7 @@ sub collect_pfam {
     my $score  = $obj->{'score'};
     printf( "%s %s %s %s\n", $id, $pos, $pf_pos, $score );
     my @values =
-      ( $self->get_id, $pos, $self->param('parameter_set_id'), '"DOMAIN"', '"' . $id . '"', $score );
+      ( $self->get_id, $pos, $self->parameter_set_id, '"DOMAIN"', '"' . $id . '"', $score );
     my $string = '(' . join( ',', @values ) . ')';
     push @array_of_strings, $string;
   }
@@ -411,7 +409,6 @@ sub do_filter {
 
   # Create a local params object to temporarly remove the subtree settings.
   my $params = $self->params;
-  $params->{parameter_set_id} = 0;
   $params->{keep_species} = '';
   $params->{remove_species} = '';
 
@@ -459,12 +456,12 @@ sub do_filter {
 
     my $taxon_id_hash = {};
     
-    my $slice = $sa->slice($aln_position,$aln_position);
+    my $slice = $sa->slice($aln_position,$aln_position,1);
     
     foreach my $leaf ($tree->leaves) {
       my $seq = Bio::EnsEMBL::Compara::AlignUtils->get_seq_with_id($slice,$leaf->stable_id);
       if (!defined $seq || $seq->seq =~ m/[-Xx]/) {
-	#print "-";
+	#print "It's crap!";
 	next;
       }
       #next if ($seq->seq =~ m/[-Xx]/);
@@ -487,7 +484,7 @@ sub do_filter {
     print "$aln_position $filter_val\n";
 
     my @values =
-      ( $self->get_id, $aln_position, 0, '"FILTER"', $filter_val, 'NULL' );
+      ( $self->get_id, $aln_position, $self->parameter_set_id, '"FILTER"', $filter_val, 'NULL' );
     my $string = '(' . join( ',', @values ) . ')';
     push @array_of_strings, $string;
   }

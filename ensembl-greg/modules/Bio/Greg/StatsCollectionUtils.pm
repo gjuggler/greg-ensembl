@@ -133,7 +133,8 @@ sub root_node_gene_count {
   my $class = shift;
   my $tree = shift;
 
-  my $root_node_id = $class->root_node_id($tree);
+  #my $root_node_id = $class->root_node_id($tree);
+  my $root_node_id = $class->param('orig_node_id') || $class->root_node_id($tree);
 
   my $pta = $tree->adaptor;
   my $root_tree = $pta->fetch_node_by_node_id($root_node_id);
@@ -197,7 +198,6 @@ sub get_tag_hash {
   # Index tags by the aln_position and tag.
   my $table   = "sitewise_tag";
   my $pset    = $params->{'parameter_set_id'} || 0;
-  my $data_id = $class->data_id;
   my $node_id = $params->{'node_id'};
 
   my $cmd = qq^SELECT aln_position,tag,value
@@ -209,7 +209,6 @@ sub get_tag_hash {
   my $sth = $dbc->prepare($cmd);
   $sth->execute;
   while ( my $obj = $sth->fetchrow_hashref ) {
-    print " -> DOMAIN!!!\n";
     my $aln_position = $obj->{'aln_position'};
 
     $tag_hash->{$aln_position} = {} if (!defined $tag_hash->{$aln_position});
@@ -227,7 +226,7 @@ sub get_psc_hash {
   my $table   = $params->{'omega_table'};
   my $pset    = $params->{'parameter_set_id'} || '0';
   my $data_id = $class->data_id;
-  my $node_id = $params->{'node_id'};
+  my $node_id = $class->node_id;
   my $include_crappy_sites = $params->{'get_all_sites'};
   
   my $CLEAN_WHERE = qq^
@@ -237,13 +236,15 @@ sub get_psc_hash {
     $CLEAN_WHERE = '';
   }
 
+  # Select from the PSC table using the data_id.
   my $cmd     = qq^SELECT aln_position,omega,omega_lower,omega_upper,lrt_stat,ncod,type,note 
-    FROM $table o WHERE parameter_set_id=$pset and node_id=$data_id $CLEAN_WHERE
+    FROM $table o WHERE parameter_set_id=$pset and (data_id=$data_id) $CLEAN_WHERE
     ^;
 
+  # Join to the sitewise_genome table using the node_id (because we map genomic coordinates *before* running the phylo analyses).
   if ( $params->{genome} ) {
     $cmd = qq^SELECT * from $table o, sitewise_genome g WHERE o.parameter_set_id=$pset AND 
-      o.node_id=$data_id
+      (o.data_id=$data_id)
       AND g.node_id=$node_id
       AND o.aln_position=g.aln_position $CLEAN_WHERE^;
   }
@@ -255,7 +256,7 @@ sub get_psc_hash {
     # Filter on alignment columns that pass Pollard et al's filtering criteria.
     $cmd = qq^SELECT * from $table o, sitewise_tag t  WHERE
       o.parameter_set_id=$pset AND 
-      o.node_id=$data_id
+      (o.data_id=$data_id)
       AND t.node_id=$node_id
       AND o.aln_position=t.aln_position
       AND t.tag="FILTER" AND t.value >= $filter_value $CLEAN_WHERE;
@@ -293,14 +294,29 @@ sub max_lrt {
 sub psc_count {
   my $class             = shift;
   my $psc_hash          = shift;
-  my $include_weak_pscs = shift;
+  my $include_psc_num   = shift;
+
+  $include_psc_num = 3 unless (defined $include_psc_num);
 
   my @obj_array = map { $psc_hash->{$_} } keys %$psc_hash;
   my @psc_objs;
-  if ($include_weak_pscs) {
+
+  if ($include_psc_num == 1) {
     @psc_objs = grep { $_->{type} =~ /positive[1234]/ } @obj_array;
-  } else {
+  } elsif ($include_psc_num == 2) {
+    @psc_objs = grep { $_->{type} =~ /positive[234]/ } @obj_array;
+  } elsif ($include_psc_num == 3) {
     @psc_objs = grep { $_->{type} =~ /positive[34]/ } @obj_array;
+  } elsif ($include_psc_num == 4) {
+    @psc_objs = grep { $_->{type} =~ /positive[4]/ } @obj_array;
+  } elsif ($include_psc_num == -1) {
+    @psc_objs = grep { $_->{type} =~ /negative[1234]/ } @obj_array;
+  } elsif ($include_psc_num == -2) {
+    @psc_objs = grep { $_->{type} =~ /negative[234]/ } @obj_array;
+  } elsif ($include_psc_num == -3) {
+    @psc_objs = grep { $_->{type} =~ /negative[34]/ } @obj_array;
+  } elsif ($include_psc_num == -4) {
+    @psc_objs = grep { $_->{type} =~ /negative[4]/ } @obj_array;
   }
 
   return scalar(@psc_objs);

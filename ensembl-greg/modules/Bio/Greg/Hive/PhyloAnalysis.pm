@@ -85,8 +85,9 @@ sub run {
     my $value = sprintf "Too big (%d > %d)",scalar(@leaves),300;
     $self->store_tag("slr_skipped",$value);
     return;
-  } elsif (!$self->check_tree_aln) {
+  } elsif ($self->check_tree_aln < 0) {
     $self->store_tag("slr_skipped","Tree or align doesn't look good!");
+    print "Skipping: tree or align doesn't look good!\n";
     return;
   }
   foreach my $leaf (@leaves) {
@@ -408,8 +409,6 @@ sub run_wobble {
   }
 
   Bio::EnsEMBL::Compara::AlignUtils->pretty_print($cdna_aln,{length => 50});
-
-  #$cdna_aln = $cdna_aln->slice(1,100);
 
   # OUTPUT THE ALIGNMENT.
   my $alnout = Bio::AlignIO->new
@@ -845,7 +844,8 @@ sub store_sitewise {
   my $tree = shift;
   my $params = shift;
 
-  my $node_id = $self->data_id;
+  my $node_id = $self->node_id;
+  my $data_id = $self->data_id;
 
   my $table = 'sitewise_aln';
   $table = $params->{'omega_table'} if ($params->{'omega_table'});
@@ -875,6 +875,9 @@ sub store_sitewise {
 #      }
 #    }
 
+    my $aln_position = $site;
+    my $orig_aln_position = $self->get_orig_aln_position($input_aa,$aln_position);
+
     # These two cases are pretty useless, so we'll skip 'em.
     if (!$self->param('sitewise_store_gaps')) {
       next if ($note eq 'all_gaps');
@@ -896,23 +899,23 @@ sub store_sitewise {
       }
     }
 
-#    printf("Site: %s  nongaps: %d  omegas: %3f (%3f - %3f) type: %s note: %s \n",$site,$nongaps,$omega,$lower,$upper,$type,$note);
-
     my $sth = $tree->adaptor->prepare
       ("REPLACE INTO $table
                            (parameter_set_id,
                             aln_position,
                             node_id,
+                            data_id,
                             omega,
                             omega_lower,
                             omega_upper,
                             lrt_stat,
                             ncod,
                             type,
-                            note) VALUES (?,?,?,?,?,?,?,?,?,?)");
+                            note) VALUES (?,?,?,?,?,?,?,?,?,?,?)");
     $sth->execute($parameter_set_id,
-		  $site,
+		  $orig_aln_position,
 		  $node_id,
+		  $data_id,
 		  $omega,
 		  $lower,
 		  $upper,
