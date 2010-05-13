@@ -67,6 +67,8 @@ sub data_for_gene {
     Bio::EnsEMBL::Compara::ComparaUtils->tree_aln_cdna( $self->compara_dba, $cur_params );
 
   $cur_params->{'data_id'} = $self->data_id;
+  $cur_params->{'node_id'} = $self->node_id;
+
   $cur_params->{'parameter_set_id'} = $self->parameter_set_id;
 
   # Collect gene tag values into the params hash.
@@ -88,10 +90,23 @@ sub data_for_gene {
   my $psc_hash = $self->get_psc_hash( $self->compara_dba->dbc, $self->params );
   $cur_params->{'sitewise_value_count'} = $self->sitewise_count($psc_hash);
   if ( scalar( keys(%$psc_hash) ) > 0 ) {
-    $cur_params->{'psc_count'}      = $self->psc_count( $psc_hash, 0 );
-    $cur_params->{'weak_psc_count'} = $self->psc_count( $psc_hash, 1 );
-    $cur_params->{'max_lrt'}        = $self->max_lrt($psc_hash);
+    foreach my $i (1 .. 4) {
+      $cur_params->{'positive'.$i} = $self->psc_count( $psc_hash, $i );
+      $cur_params->{'negative'.$i} = $self->psc_count( $psc_hash, -$i );
+    }
   }
+
+# TODO: Add some summary of combined p-values.
+# P-values from lrt_stats:
+#  lrt_stats = data[,4];
+#  abs_lrt = abs(lrt_stats);
+#  pvals = 1 - pchisq(abs_lrt,1);
+#  #pvals = pvals * sign(lrt_stats);
+#  pvals = format(pvals,digits=3)
+#  data\$pvals = pvals;
+#  names(data) = c("chr","start","end","lrt_stat","pval");
+#  write.table(data,file="${file_out}",sep="\t",col.names=TRUE,row.names=FALSE,quote=FALSE);
+
 
   my $ps = $cur_params->{'parameter_set_id'};
   $cur_params->{'slr_dnds'}      = $self->param('slr_omega');
@@ -157,6 +172,8 @@ sub data_for_site {
   $site_data->{'data_id'} = $self->data_id;
   $site_data->{'parameter_set_id'} = $self->parameter_set_id;
 
+  # TODO: Add p-value.
+
   return $site_data;
 }
 
@@ -165,7 +182,6 @@ sub get_gene_table_structure {
 
   my $structure = {
     'data_id'                 => 'int',
-
     'node_id' => 'int',
     'orig_node_id' => 'int',
 
@@ -186,9 +202,14 @@ sub get_gene_table_structure {
     'mean_copy_count'      => 'float',
 
     'sitewise_value_count' => 'int',
-    'psc_count'            => 'int',
-    'weak_psc_count'       => 'int',
-    'max_lrt'              => 'float',
+    'positive_1'           => 'int',
+    'positive_2'           => 'int',
+    'positive_3'           => 'int',
+    'positive_4'           => 'int',
+    'negative_1'           => 'int',
+    'negative_2'           => 'int',
+    'negative_3'           => 'int',
+    'negative_4'           => 'int',
 
     'slr_dnds'      => 'float',
     'slr_kappa'     => 'float',
@@ -197,7 +218,7 @@ sub get_gene_table_structure {
     'hyphy_dnds_hi' => 'float',
 
     unique_keys => 'data_id,parameter_set_id',
-    extra_keys => 'data_id,parameter_set_id,orig_node_id'
+    extra_keys => 'data_id,parameter_set_id,node_id,orig_node_id'
   };
 
   return $structure;
@@ -224,7 +245,7 @@ sub get_sites_table_structure {
     aln_position_fraction => 'float',
 
     unique_keys => 'data_id,parameter_set_id,aln_position',
-    extra_keys => 'data_id,parameter_set_id,orig_node_id'
+    extra_keys => 'data_id,parameter_set_id,node_id,orig_node_id'
   };
 
   return $structure;
