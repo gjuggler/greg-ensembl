@@ -630,6 +630,37 @@ sub remove_blank_columns_in_threes {
   return $aln;
 }
 
+
+sub map_alignment_position {
+  my $self = shift;
+  my $aln_a = shift;
+  my $column_in_a = shift;
+  my $aln_b = shift;
+
+  # Assumption: alignment A has at least one non-gap sequence at the given position.
+
+  foreach my $seq ($aln_a->each_seq) {
+    if ($seq->subseq($column_in_a,$column_in_a) =~ m/[-]/) {
+      next;
+    } else {
+      my $location = $seq->location_from_column($column_in_a);
+      if (defined $location && $location->location_type() eq 'EXACT') {
+	my $seq_position = $location->start;
+
+	# So we found the sequence position. Now, look for that residue in alignment B.
+	my $seq_in_b = $aln_b->get_seq_by_id($seq->id);
+	if (!defined $seq_in_b) {
+	  next;
+        } else {
+	  my $column_in_b = $seq_in_b->column_from_residue_number($seq_position);
+	  return $column_in_b;
+        }
+      }
+    }
+  }
+  return undef;
+}
+
 =head2 sort_by_tree
   
   Title     : sort_by_tree
