@@ -844,8 +844,12 @@ sub get_quality_string_for_member {
   my $gdb = $member->genome_db;
   my $name = $gdb->short_name;
   $name =~ s/ /_/g;
-  my $index_file = $qual_base . $name . ".assembly.quals";
 
+  #use Bio::DB::Qual;
+  #my $qual_db = Bio::DB::Qual->new($qual_base,(-glob => "*.{quals}"));
+  #return undef;
+
+  my $index_file = $qual_base . $name . ".assembly.quals";
   print "Quals index file: ".$index_file."\n";
   if (!-e $index_file) {
     return undef;
@@ -858,6 +862,8 @@ sub get_quality_string_for_member {
   my $adaptor = $tx->adaptor;
   my $db = $adaptor->db;
 
+  #my $if_qual;
+  #my $if_base;
   my $if_qual = $ens_to_index->{$index_file};
   if (!defined $if_qual) {
     use Bio::Greg::IndexedFasta;
@@ -902,11 +908,18 @@ sub get_quality_string_for_member {
 
     my $ens_seq = new Bio::PrimarySeq(-seq => $ens_dna);
     print $ens_seq->translate->seq."\n";
-    
-    $exon = $exon->transform("contig");
+
+    my $gdb = $member->genome_db;
+    my $meta     = $gdb->db_adaptor->get_MetaContainer;
+    my $coverage = @{ $meta->list_value_by_key('assembly.coverage_depth') }[0];
+    if ($coverage eq 'low') {
+      $exon = $exon->transform("contig");
+    } else {
+      $exon = $exon->transform("chromosome");
+    }
     if (defined $exon) {
       my $contig_name = $exon->slice->seq_region_name;
-      
+
       #printf "strand: %d start: %d end: %d\n", $exon->strand, $exon->phase,$exon->end_phase;
       #if ($exon->strand == -1) {
       #my $tmp_end = $end_inset;
@@ -921,20 +934,27 @@ sub get_quality_string_for_member {
 
       print "e: ".$dna_seq."\n";
 
-      print "$contig_name $start-$end\n";
-      my $qual_str = $if_qual->get_sequence($contig_name);
-      my @quals = split(" ",$qual_str);
-      @quals = @quals[$start .. $end-1];
-      @quals = reverse(@quals) if ($exon->strand == -1);
-      push @whole_qual_array,@quals;
-
-      #my $qual_str = $if_qual->get_sequence_region($contig_name,$start,$end);
-      #if (!defined $qual_str) {
-      #return undef;
-      #}
-      #my @quals = split(" ",$qual_str);
-      #@quals = reverse(@quals) if ($exon_strand == -1);
-      #push @whole_qual_array,@quals;
+      if ($coverage eq 'high') {
+	$contig_name = 'chr'.$contig_name;
+	print "$contig_name $start-$end  length:".($end-$start)."\n";
+	my $params = {residue_separator => ' '};
+	my $qual_str = $if_qual->get_sequence_region($contig_name,$start,$end,$params);
+	if (!defined $qual_str) {
+	  die("Error getting qual string!\n");
+        }
+	my @quals = split(" ",$qual_str);
+	@quals = reverse(@quals) if ($exon->strand == -1);
+	print "(".join(",",@quals).")\n";
+	print "length: ". scalar(@quals)."\n";
+	push @whole_qual_array,@quals;
+      } else {
+	print "$contig_name $start-$end\n";
+	my $qual_str = $if_qual->get_sequence($contig_name);
+	my @quals = split(" ",$qual_str);
+	@quals = @quals[$start .. $end-1];
+	@quals = reverse(@quals) if ($exon->strand == -1);
+	push @whole_qual_array,@quals;
+      }
 
       if (defined $if_base) {
 	my $base_str = $if_base->get_sequence($contig_name);
