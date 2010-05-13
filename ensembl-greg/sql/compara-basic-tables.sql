@@ -323,6 +323,7 @@ CREATE TABLE IF NOT EXISTS `parameter_set` (
 #  constant,all_gaps,single_character,synonymous,default)
 
 CREATE TABLE IF NOT EXISTS `sitewise_omega` (
+  `data_id` int unsigned NOT NULL,
   `node_id` int unsigned NOT NULL,
   `parameter_set_id` tinyint unsigned NOT NULL,
   `aln_position` mediumint unsigned NOT NULL,
@@ -340,8 +341,10 @@ CREATE TABLE IF NOT EXISTS `sitewise_omega` (
 #  FOREIGN KEY (node_id) REFERENCES protein_tree_node(node_id) ON DELETE CASCADE ON UPDATE CASCADE,
 #  FOREIGN KEY (parameter_set_id) REFERENCES parameter_set(parameter_set_id) ON DELETE CASCADE ON UPDATE CASCADE,
 
-  UNIQUE (node_id,parameter_set_id,aln_position),
-  KEY(ncod)
+  UNIQUE (node_id,data_id,parameter_set_id,aln_position),
+  KEY(ncod),
+  KEY(node_id),
+  KEY(data_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1 
   /*!50100 
 	PARTITION BY KEY (parameter_set_id) 
@@ -380,7 +383,9 @@ CREATE table if not exists sitewise_tag (
 #  FOREIGN KEY (parameter_set_id) REFERENCES parameter_set(parameter_set_id) ON DELETE CASCADE ON UPDATE CASCADE,
 
   UNIQUE (node_id,parameter_set_id,aln_position,tag),
-  KEY (source)
+  KEY (source),
+  key (node_id),
+  key (parameter_set_id)
 ) ENGINE=InnoDB
   /*!50100
      PARTITION BY KEY (tag)
@@ -402,7 +407,9 @@ CREATE TABLE IF NOT EXISTS sitewise_genome (
 #  FOREIGN KEY (parameter_set_id) REFERENCES parameter_set(parameter_set_id) ON DELETE CASCADE ON UPDATE CASCADE,
 
   UNIQUE (node_id,chr_name,aln_position,parameter_set_id,member_id),
-  key (chr_name)
+  key (chr_name),
+  key (node_id),
+  key (parameter_set_id)
 ) ENGINE=InnoDB
   /*!50100 
 	PARTITION BY KEY (chr_name)
