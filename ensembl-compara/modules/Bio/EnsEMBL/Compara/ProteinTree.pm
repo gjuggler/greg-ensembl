@@ -126,7 +126,7 @@ sub get_SimpleAlign {
     $seqstr =~ s/\*/X/g if ($stop2x);
     my $seq = Bio::LocatableSeq->new(-SEQ    => $seqstr,
                                      -START  => 1,
-                                     -END    => length($seqstr),
+#                                     -END    => length($seqstr),
                                      -ID     => $seqID,
                                      -STRAND => 0);
 
