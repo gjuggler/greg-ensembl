@@ -12,7 +12,7 @@
 -- semantics:
 --
 
-CREATE TABLE hive (
+CREATE TABLE IF NOT EXISTS hive (
   worker_id        int(10) NOT NULL auto_increment,
   analysis_id      int(10) NOT NULL,
   beekeeper        varchar(80) DEFAULT '' NOT NULL,
@@ -55,7 +55,7 @@ CREATE TABLE hive (
 --   to_analysis_url      - foreign key to net distributed analysis logic_name reference
 --   branch_code          - joined to analysis_job.branch_code to allow branching
 
-CREATE TABLE dataflow_rule (
+CREATE TABLE IF NOT EXISTS dataflow_rule (
   dataflow_rule_id    int(10) unsigned not null auto_increment,
   from_analysis_id    int(10) unsigned NOT NULL,
   to_analysis_url     varchar(255) default '' NOT NULL,
@@ -85,7 +85,7 @@ CREATE TABLE dataflow_rule (
 --   condition_analysis_url  - foreign key to net distributed analysis reference
 --   ctrled_analysis_id      - foreign key to analysis table analysis_id
 
-CREATE TABLE analysis_ctrl_rule (
+CREATE TABLE IF NOT EXISTS analysis_ctrl_rule (
   condition_analysis_url     varchar(255) default '' NOT NULL,
   ctrled_analysis_id         int(10) unsigned NOT NULL,
 
@@ -120,7 +120,7 @@ CREATE TABLE analysis_ctrl_rule (
 --   semaphored_job_id       - the analysis_job_id of job S that is waiting for this job to decrease S's semaphore_count.
 --                              Default=NULL means "I'm not blocking anything by default".
 
-CREATE TABLE analysis_job (
+CREATE TABLE IF NOT EXISTS analysis_job (
   analysis_job_id           int(10) NOT NULL auto_increment,
   prev_analysis_job_id      int(10) NOT NULL,  #analysis_job which created this from rules
   analysis_id               int(10) NOT NULL,
@@ -161,7 +161,7 @@ CREATE TABLE analysis_job (
 --   type               - type of file e.g. STDOUT, STDERR, TMPDIR, ...
 --   path               - path to file or directory
 
-CREATE TABLE analysis_job_file (
+CREATE TABLE IF NOT EXISTS analysis_job_file (
   analysis_job_id         int(10) NOT NULL,
   worker_id               int(10) NOT NULL,
   retry                   int(10) NOT NULL,
@@ -186,7 +186,7 @@ CREATE TABLE analysis_job_file (
 --   analysis_data_id   - primary id
 --   data               - text blob which holds the data
 
-CREATE TABLE analysis_data (
+CREATE TABLE IF NOT EXISTS analysis_data (
   analysis_data_id  int(10) NOT NULL auto_increment,
   data              longtext,
 
@@ -211,7 +211,7 @@ CREATE TABLE analysis_data (
 --   failed_job_tolerance - % of tolerated failed jobs
 --   rc_id                - resource class id (analyses are grouped into disjoint classes)
 
-CREATE TABLE analysis_stats (
+CREATE TABLE IF NOT EXISTS analysis_stats (
   analysis_id           int(10) NOT NULL,
   status                enum('BLOCKED', 'LOADING', 'SYNCHING', 'READY', 'WORKING', 'ALL_CLAIMED', 'DONE', 'FAILED')
                           DEFAULT 'READY' NOT NULL,
@@ -239,7 +239,7 @@ CREATE TABLE analysis_stats (
   UNIQUE KEY   (analysis_id)
 ) ENGINE=InnoDB;
 
-CREATE TABLE resource_description (
+CREATE TABLE IF NOT EXISTS resource_description (
     rc_id                 int(10) unsigned DEFAULT 0 NOT NULL,
     meadow_type           enum('LSF', 'LOCAL') DEFAULT 'LSF' NOT NULL,
     parameters            varchar(255) DEFAULT '' NOT NULL,
@@ -247,7 +247,7 @@ CREATE TABLE resource_description (
     PRIMARY KEY(rc_id, meadow_type)
 ) ENGINE=InnoDB;
 
-CREATE TABLE analysis_stats_monitor (
+CREATE TABLE IF NOT EXISTS analysis_stats_monitor (
   time                  datetime NOT NULL default '0000-00-00 00:00:00',
   analysis_id           int(10) NOT NULL,
   status                enum('BLOCKED', 'LOADING', 'SYNCHING', 'READY', 'WORKING', 'ALL_CLAIMED', 'DONE', 'FAILED')
@@ -290,7 +290,7 @@ CREATE TABLE analysis_stats_monitor (
 --                    (this number is calculated using running workers only)
 --   analysis       - analysis(es) running at that time
 
-CREATE TABLE monitor (
+CREATE TABLE IF NOT EXISTS monitor (
   time                  datetime NOT NULL default '0000-00-00 00:00:00',
   workers               int(10) NOT NULL default '0',
   throughput            float default NULL,

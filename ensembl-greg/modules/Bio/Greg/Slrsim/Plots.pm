@@ -23,14 +23,10 @@ sub run {
 
   my $experiment_name = $self->param('experiment_name');
 
-  if ($experiment_name =~ m/filter_sweeps/i) {
-    $self->output_params_file;
-    $self->dump_sql;
-    eval {
-      $self->filter_sweep_roc;
-    };
-  }
-
+  $self->output_params_file;
+  $self->dump_sql;
+  # Tricky Perl: Call the method corresponding to the current experiment.
+  $self->$experiment_name();
 }
 
 sub get_output_folder {
@@ -46,7 +42,7 @@ sub get_output_folder {
   my $filename;
   do {
     $i++;
-    $filename = "output/".$date_string."_".sprintf("%.2d",$i);
+    $filename = sprintf("NO.backup/output/%s/%s_%.2d",$date_string,$date_string,$i);
   } while (-e $filename);
 
   print "Output folder: $filename\n";
@@ -60,6 +56,7 @@ sub get_output_folder {
 sub dump_sql {
   my $self = shift;
   my $filename = $self->param('output_folder') . '/slrsim.sqldata';
+  my $gzip = $self->param('output_folder') . '/slrsim.sqldata.gz';
 
   my $dbc = $self->compara_dba->dbc;
   my $u = $dbc->username;
@@ -68,11 +65,16 @@ sub dump_sql {
   my $port = $dbc->port;
   my $db = $dbc->dbname;
 
-  my $cmd = qq^
-mysqldump -P$port -h$h -u$u -p$p $db > $filename
-^;
+  if (!-e $filename && !-e $gzip) {
+    my $cmd = qq^mysqldump -P$port -h$h -u$u -p$p $db > $filename;^;
+    system($cmd);
+  }
 
-  system($cmd);
+  if (!-e $gzip) {
+    my $cmd = qq^gzip $filename;^;
+    system($cmd);
+    unlink($filename);
+  }
 }
 
 sub dump_data {
@@ -90,41 +92,148 @@ save(data,file="${filename}");
   
 }
 
-sub filter_sweep_roc {
+sub reference_comparison {
+  my $self = shift;
+  
+  my $filename = $self->param('output_folder') . '/reference_comparison_roc.png';
+  my $rcmd = qq^
+source("collect_slrsim.R")
+data = get.all.data()
+png(file="${filename}",width=600,height=600)
+generic.roc.plot(data,col.names=c('slrsim_ref','alignment_name'))
+dev.off()
+q()
+^;
+  print "$rcmd\n";
+  my $params = {};
+  Bio::Greg::EslrUtils->run_r($rcmd,$params);
+  
+}
+
+sub alignment_comparison {
   my $self = shift;
 
-  my $filename = $self->param('output_folder') . '/filter_sweep_roc.png';
+  my $filename = $self->param('output_folder') . '/alignment_roc.png';
 
   my $rcmd = qq^
 source("collect_slrsim.R")
 data = get.all.data()
+png(file="${filename}",width=600,height=600,pointsize=24)
+generic.roc.plot(data,col.names=c('alignment_name'))
+dev.off()
+q()
+^;
+  print "$rcmd\n";
+  my $params = {};
+  Bio::Greg::EslrUtils->run_r($rcmd,$params);
 
-data[is.na(data[,'alignment_score_threshold']),'alignment_score_threshold'] = 0;
-
-comb.roc = data.frame()
-for (aln in sort(unique(data[,'alignment_name']))) {
-  for (filt in sort(unique(data[,'filtering_name']))) {
-    for (thresh in sort(unique(data[,'alignment_score_threshold']))) {
-        sub = subset(data, alignment_name==aln & filtering_name==filt & alignment_score_threshold==thresh)
-        print(paste(aln,filt,thresh,nrow(sub),sep="/"))
-        if (nrow(sub)==0) {next}
-        sub.roc = slr.roc(sub)
-        sub.roc[,'filter'] = as.factor(filt)
-        sub.roc[,'aln'] = as.factor(aln)
-        sub.roc[,'thresh'] = as.factor(thresh)
-        sub.roc[,'label'] = paste(aln,filt,thresh,sep="/")
-        comb.roc = rbind(sub.roc,comb.roc)      
-    }
-  }
 }
 
-png(file="${filename}",width=600,height=600)
-plot.roc(comb.roc)
+sub filter_order_test {
+  my $self = shift;
+  
+  $self->_plot_proteins;
+}
+
+sub filter_test {
+  my $self = shift;
+  $self->filter_order_test;
+  $self->filter_sweep;
+}
+
+sub filter_sweeps {
+  my $self = shift;
+  $self->filter_sweep;
+}
+
+sub filter_sweep {
+  my $self = shift;
+
+  my $folder = $self->param('output_folder');
+  my $filename = $self->param('output_folder') . '/filter_sweep_roc.png';
+
+  my $dbname = $self->compara_dba->dbc->dbname;
+
+  $self->_fdr_sweep;
+#  $self->_plot_proteins;
+
+  my $rcmd = qq^
+dbname = "$dbname"
+source("collect_slrsim.R")
+
+data = get.all.data()
+data[is.na(data[,'alignment_score_threshold']),'alignment_score_threshold'] = 0;
+
+label.names = c('alignment_name','filtering_name','alignment_score_threshold')
+
+png(file="${folder}/roc_facets.png",width=600,height=600)
+x = subset(data,alignment_name != "True Alignment")
+facet.roc.plot(x,zoom=F,na.rm=F,plot.x='fp',plot.y='tp',facet.x='alignment_name',facet.y='filtering_name',col.names=label.names)
+dev.off()
+
+png(file="${folder}/roc_facets_zoom.png",width=600,height=600)
+x = subset(data,alignment_name != "True Alignment")
+facet.roc.plot(x,zoom=T,na.rm=F,plot.x='fp',plot.y='tp',facet.x='alignment_name',facet.y='filtering_name',col.names=label.names)
+dev.off()
+
+png(file="${folder}/roc_abs.png",width=600,height=600)
+generic.roc.plot(data,na.rm=F,plot.x='fp',plot.y='tp',col.names=label.names)
+dev.off()
+
+png(file="${folder}/roc_fpr.png",width=600,height=600)
+generic.roc.plot(data,na.rm=F,plot.x='fpr',plot.y='tpr',col.names=label.names)
+dev.off()
+
+png(file="${folder}/roc_fpr_noNA.png",width=600,height=600)
+generic.roc.plot(data,na.rm=T,plot.x='fpr',plot.y='tpr',col.names=label.names)
+dev.off()
+
+q()
+^;
+  print "$rcmd\n";
+  my $params = {};
+  Bio::Greg::EslrUtils->run_r($rcmd,$params);
+}
+
+sub _plot_proteins {
+  my $self = shift;
+  my $folder = $self->param('output_folder');
+
+  my $rcmd = qq^
+source("collect_slrsim.R")
+data = get.all.data()
+col.names=c('alignment_name','filtering_name','alignment_score_threshold','sitewise_filter_order','alignment_score_mask_character_cdna')
+plot.by.columns(data,base.dir="${folder}",col.names=col.names)
+^;
+  print "$rcmd\n";
+  my $params = {};
+  Bio::Greg::EslrUtils->run_r($rcmd,$params);
+}
+
+sub _fdr_sweep {
+  my $self = shift;
+  my $folder = $self->get_output_folder;
+
+my $rcmd = qq^
+source("collect_slrsim.R")
+png(file="${folder}/fdr_sweep.png",width=1200,height=1200)
+data = get.all.data()
+label.names = c('alignment_name','filtering_name','alignment_score_threshold')
+group.names = c('alignment_name','filtering_name')
+roc = generic.roc(data,na.rm=F,col.names=label.names)
+roc = subset(roc,alignment_name != "True Alignment")
+#roc = subset(roc,filtering_name != "none")
+#roc = subset(roc,filtering_name == "tcoffee")
+
+roc.fdr = fdr.sweep(roc)
+plot.fdr(roc.fdr,facet.x='alignment_name',facet.y='filtering_name',color.by='alignment_score_threshold');
+#write.csv(roc.fdr,file="${folder}/fdr_sweep.csv",row.names=F)
 dev.off()
 ^;
   print "$rcmd\n";
   my $params = {};
   Bio::Greg::EslrUtils->run_r($rcmd,$params);
+
 }
 
 sub output_params_file {

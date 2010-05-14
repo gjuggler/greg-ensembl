@@ -16,7 +16,7 @@ my $url;
 my $id;
 my $tree_output;
 my $aln_output;
-my $sitewise_table = "stats_slrsim";
+my $sitewise_table = "stats_sites";
 my $sitewise_output;
 my $params_output;
 GetOptions('url=s' => \$url,

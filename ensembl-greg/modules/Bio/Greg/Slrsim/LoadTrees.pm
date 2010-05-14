@@ -3,6 +3,7 @@ package Bio::Greg::Slrsim::LoadTrees;
 use strict;
 use Cwd;
 use Bio::EnsEMBL::Hive::Process;
+use POSIX qw(strftime mktime);
 
 use base ('Bio::Greg::Hive::Process');
 
@@ -29,12 +30,11 @@ sub run {
 
   my $experiment_name = $self->param('experiment_name');
   if ( defined $experiment_name ) {
-    if ($experiment_name =~ m/filter_sweeps/i) {
-      @simsets = @{ $self->filter_sweeps() };
-    }
+    # Tricky Perl: Call the method corresponding to the current experiment.
+    @simsets = @{ $self->$experiment_name() };
+  }
 
     throw("Experiment $experiment_name not found!") unless ( defined @simsets );
-  }
 
   my $tree_dir = $self->param('tree_root_dir') || '.';
   foreach my $params (@simsets) {
@@ -250,17 +250,224 @@ sub load_simulation_sets {
 
 }
 
-sub filter_sweeps {
+sub mammals_simulations {
+  my $self = shift;
+
+  
+}
+
+sub alignment_comparison {
+  my $self = shift;
+
+  my @sets = ();
+
+  my $params = {
+    slrsim_replicates => 30,
+    experiment_name   => "alignment_comparison",
+    slrsim_tree_file  => $self->param('trees')->{'anisimova_bglobin'},
+    slrsim_tree_mult => 1.3,
+    phylosim_seq_length => 400,
+    slrsim_ref => 'human'
+  };
+  
+  my $indel       = $self->param('indel_models')->{'power_law'};
+  my $distr       = $self->param('omega_distributions')->{'massingham_05_A2'};
+  my $filter      = $self->filter_param('none');
+  my $analysis    = $self->param('phylo_analyses')->{'slr'};
+  my $base_params = $self->replace_params($params, $indel, $distr, $filter, $analysis );
+
+  # First, add the true alignment.
+  my $p = $self->replace(
+    $base_params,
+    $self->aln_param('true')
+  );
+  push @sets, $p;
+
+  # Now add the alignment sets.
+  my @alns = map { $self->aln_param($_) } ('clustalw', 'muscle', 'cmcoffee', 'prank', 'prank_f', 'prank_codon', 'papaya');
+  foreach my $aln (@alns) {
+    my $p = $self->replace($base_params, $aln);
+    push @sets, $p;
+  }
+
+  # Store the overall simulation parameters in the meta table. This will be later dumped by the Plots.pm script.
+  $self->store_meta($base_params);
+
+  return \@sets;
+}
+
+sub reference_comparison {
+  my $self = shift;
+
+  my @sets = ();
+
+  my $params = {
+    slrsim_replicates => 5,
+    experiment_name   => "reference_comparison",
+    slrsim_tree_file  => $self->param('trees')->{'2xmammals'},
+    slrsim_tree_mult => 1,
+    phylosim_seq_length => 400,
+    slrsim_ref => 'human'
+  };
+
+  my $indel       = $self->param('indel_models')->{'power_law'};
+  my $distr       = $self->param('omega_distributions')->{'massingham_05_A2'};
+  my $analysis    = $self->param('phylo_analyses')->{'slr'};
+  my $filter      = $self->filter_param('none');
+  my $base_params = $self->replace_params($params, $indel, $distr, $analysis, $filter );
+
+  # First, add the true alignment.
+  my $p = $self->replace(
+    $base_params,
+    $self->species_param('human'),
+    $self->aln_param('true')
+  );
+  push @sets, $p;
+
+  # Now add the aligned sets, with different reference species.
+  my @ref_params = map { $self->species_param($_) } ('human', 'mm9', 'loxAfr2', 'monDom4', 'xenTro2');
+  my @aln_params = map { $self->aln_param($_) } ('cmcoffee','prank_codon');
+  foreach my $ref (@ref_params) {
+    foreach my $aln (@aln_params) {
+      my $p = $self->replace($base_params, $ref, $aln);
+      push @sets, $p;
+    }
+  }
+
+  # Store the overall simulation parameters in the meta table. This will be later dumped by the Plots.pm script.
+  $self->store_meta($base_params);
+
+  return \@sets;
+}
+
+sub generic_sim_params {
+  my $self = shift;
+
+  my $base = {
+    slrsim_replicates => 10,
+    experiment_name => 'generic_sim',
+    slrsim_tree_file => $self->param('trees')->{'anisimova_bglobin'},
+    slrsim_tree_mult => 1,
+    phylosim_seq_length => 400,
+    slrsim_ref => 'human'
+  };
+
+  my $indel = $self->param('indel_models')->{'power_law'};
+  my $distr       = $self->param('omega_distributions')->{'massingham_05_A2'};
+  my $analysis    = $self->param('phylo_analyses')->{'slr'};
+
+  my $aln = $self->aln_param('fmcoffee');
+  my $filt = $self->filter_param('tcoffee');
+
+  my $params = $self->replace_params( $base, $indel, $distr, $analysis, $aln, $filt);
+  return $params;
+}
+
+sub filter_test {
+  my $self = shift;
+  my @sets = ();
+  my $p;
+
+  my $base = $self->generic_sim_params;
+
+  $p = $self->replace(
+    $base,
+    $self->aln_param('true'),
+    $self->filter_param('none'),
+    );
+  push @sets,$p;
+
+  $p = $self->replace(
+    $base,
+    $self->filter_thresh(0),
+    $self->filter_order('before'),
+    {
+      alignment_score_mask_character_cdna => 'N'
+    }
+    );
+  push @sets,$p;
+
+  $p = $self->replace(
+    $base,
+    $self->filter_thresh(5),
+    $self->filter_order('before'),
+    {
+      alignment_score_mask_character_cdna => 'N'
+    }
+    );
+  push @sets,$p;
+
+  $p = $self->replace(
+    $base,
+    $self->filter_thresh(9),
+    $self->filter_order('before'),
+    {
+      alignment_score_mask_character_cdna => 'N'
+    }
+    );
+  push @sets,$p;
+
+  return \@sets;
+}
+
+sub filter_order_test {
+  my $self = shift;  
+  my @sets = ();
+  my $params = {
+    slrsim_replicates => 20,
+    experiment_name   => 'filter_order_test',
+    slrsim_tree_file  => $self->param('trees')->{'2x_primates'},
+    slrsim_tree_mult => 4,
+    phylosim_seq_length => 400,
+    slrsim_ref => 'human'
+  };
+  my $indel       = $self->param('indel_models')->{'power_law'};
+  my $distr       = $self->param('omega_distributions')->{'massingham_05_A2'};
+  my $analysis    = $self->param('phylo_analyses')->{'slr'};
+  $params = $self->replace_params( $params, $indel, $distr, $analysis );
+
+  my $p = $self->replace(
+    $params,
+    $self->aln_param('true'),
+    $self->filter_param('none')
+  );
+  push @sets, $p;
+
+  my @aln_params = map { $self->aln_param($_) } ( 'cmcoffee' );
+  my @filter_params =
+    map { $self->filter_param($_) } ( 'tcoffee' ); #, 'tcoffee', 'indelign', 'prank_treewise', 'prank_mean' );
+  my @filter_orders = map {{'sitewise_filter_order' => $_}} ('before','after');
+  my @threshold_params = map{{'alignment_score_threshold' => $_}} (0, 3, 5, 8, 9);
+
+  foreach my $aln (@aln_params) {
+    foreach my $fp (@filter_params) {
+      foreach my $fo (@filter_orders) {
+        foreach my $tp (@threshold_params) {
+          my $p = $self->replace( $params, $aln, $fp, $fo, $tp);
+          push @sets, $p;
+        }
+      }
+    }
+  }
+
+  # Store the overall simulation parameters in the meta table. This will be later dumped by the Plots.pm script.
+  $self->store_meta($params);
+
+  return \@sets;
+}
+
+
+sub filter_sweep {
   my $self = shift;
   
   my @sets = ();
 
   my $final_params = {
-    slrsim_replicates => 1,
-    experiment_name   => "Filter Sweeps",
-    slrsim_tree_file  => $self->param('trees')->{'2x_primates'},
-    slrsim_tree_mult => 4,
-    phylosim_seq_length => 200,
+    slrsim_replicates => 30,
+    experiment_name   => "filter_sweep",
+    slrsim_tree_file  => $self->param('trees')->{'anisimova_bglobin'},
+    slrsim_tree_mult => 1.8,
+    phylosim_seq_length => 400,
     slrsim_ref => 'human'
   };
 
@@ -277,13 +484,13 @@ sub filter_sweeps {
   );
   push @sets, $p;
 
-  my @aln_params = map { $self->aln_param($_) } ( 'fmcoffee' );
+  my @aln_params = map { $self->aln_param($_) } ('fmcoffee'); #,'prank', 'papaya', 'prank_f', 'prank_codon' );
   my @filter_params =
-    map { $self->filter_param($_) } ( 'tcoffee' ); #, 'tcoffee', 'indelign', 'prank_treewise', 'prank_mean' );
+    map { $self->filter_param($_) } ( 'indelign','tcoffee','trimal','prank_treewise_after'); #, 'indelign', 'prank_mean' ); #, 'tcoffee', 'indelign', 'prank_treewise', 'prank_mean' );
 
   foreach my $aln (@aln_params) {
     foreach my $fp (@filter_params) {
-      foreach my $threshold (0, 1, 3, 5, 7, 8, 9) {
+      foreach my $threshold (0, 2, 4, 6, 8) {
         my $p = $self->replace( $base_params, $aln, $fp, { alignment_score_threshold => $threshold, },
           $final_params );
         push @sets, $p;
@@ -293,6 +500,11 @@ sub filter_sweeps {
 
   # Store the overall simulation parameters in the meta table. This will be later dumped by the Plots.pm script.
   $self->store_meta($self->replace($base_params,$final_params));
+
+  my $creation_tags = {
+    timestamp => strftime("%Y-%m-%d",localtime),
+  };
+  $self->store_meta($creation_tags);
 
   return \@sets;
 }
@@ -314,6 +526,20 @@ sub aln_param {
   return $aln_params;
 }
 
+sub filter_order {
+  my $self = shift;
+  my $order = shift;
+
+  return {sitewise_filter_order => $order};
+}
+
+sub filter_thresh {
+  my $self = shift;
+  my $thresh = shift;
+
+  return {alignment_score_threshold => $thresh};
+}
+
 sub filter_param {
   my $self   = shift;
   my $filter = shift;
@@ -321,8 +547,7 @@ sub filter_param {
   my $f = {
     filtering_name            => $filter,
     alignment_scores_action   => $filter,
-    alignment_score_filtering => 1,
-    alignment_score_threshold => 5
+    alignment_score_filtering => 1
   };
 
   if ( $filter eq 'none' ) {
@@ -331,6 +556,12 @@ sub filter_param {
       alignment_scores_action   => 'none',
       alignment_score_filtering => 0
     };
+  }
+
+  if ( $filter =~ m/after/i) {
+    $f->{sitewise_filter_order} = 'after';
+  } else {
+    $f->{sitewise_filter_order} = 'before';
   }
   return $f;
 }

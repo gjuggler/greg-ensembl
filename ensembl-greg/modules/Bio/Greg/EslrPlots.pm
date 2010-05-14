@@ -293,10 +293,10 @@ sub plotTreeWithOmegas {
   my $class    = shift;
   my $file_out = shift;
   my $params   = shift;
-  my $tree_in  = shift;
 
   my $skip_output = 0;
-  my $dba         = $tree_in->adaptor->db;
+
+  my $dba = $params->{dba};
 
   my $defaults = {
     alignment_quality_mask_character => 'O',                # Goes to dark gray.
@@ -330,7 +330,7 @@ sub plotTreeWithOmegas {
   #unlink($aln_f) if (-e $aln_f);
 
   # Prune the tree.
-  $params->{'node_id'} = $tree_in->node_id if ( defined $tree_in );
+#  $params->{'node_id'} = $tree_in->node_id if ( defined $tree_in );
 
   my @subtrees = ();
 
@@ -341,7 +341,7 @@ sub plotTreeWithOmegas {
   #  } else {
   push @subtrees, {
     name  => "",
-    table => "sitewise_aln",
+    table => "sitewise_omega",
     pset  => 1
     };
 
@@ -417,8 +417,11 @@ sub plotTreeWithOmegas {
       if ( exists $params->{'parameter_set_id'} ) {
         $param_set_str = "AND parameter_set_id=" . $params->{'parameter_set_id'};
       }
-      my $node_id        = $tree->node_id;
+      #my $node_id        = $tree->node_id;
+      my $node_id = $params->{data_id};
+      my $data_id = $params->{data_id};
       my $sitewise_table = $params->{'sitewise_table'};
+#      $sitewise_table = "stats_sites";
       my $cmd            = qq^
    SELECT aln_position,omega,omega_lower,
           omega_upper,lrt_stat,ncod,note,type 
@@ -452,11 +455,15 @@ sub plotTreeWithOmegas {
   }
 
   my $out_cmd = qq^
-    pdf(file="$file_out",width=width*10,height=height*10);
+    pdf(file="$file_out",width=width,height=height);
   ^;
-  $out_cmd = qq^
-    png(file="$file_out",width=width*10*72,height=height*10*72);
-  ^ if ( $file_out =~ /\.png/i );
+#  $out_cmd = qq^
+#    png(file="$file_out",width=width*10*72,height=height*10*72);
+#  ^ if ( $file_out =~ m/png/i );
+#  $out_cmd = qq^
+#    library(Cairo)
+#    Cairo(file='${file_out}',width=width*72,height=height*72,type="png",units="px")
+#^ if ($file_out =~ m/png/i);
 
   my $aln_file_list  = "c(" . join( ", ", ("\"$aln_f\"") ) . ")";
   my $tree_file_list = "c(" . join( ", ", ("\"$tree_f\"") ) . ")";
@@ -500,7 +507,8 @@ dpar = par(no.readonly=T)
 print(paste("Width:",width," Height:",height));
 #library(Cairo);
 #Cairo(file="${file_out}",width=width,height=height,type="svg",units="in");
-pdf(file="${file_out}",width=width,height=height);
+#pdf(file="${file_out}",width=width,height=height);
+${out_cmd}
 
 # Use layout to arrange the regions for SLR values, tracks, tree, and alignment.
 track_heights = c(1,.1,.1,.1)
@@ -561,9 +569,9 @@ axis(side=2,at=c(0.01,1,10))
 # Plot tracks.
 plot.slr.type(slr,xlim=a\$xlim,type='positive')
 plot.slr.type(slr,xlim=a\$xlim,type='negative')
+plot.slr.type(slr,xlim=a\$xlim,type='')
 plot.aln.bars(aln)
 dev.off()
-q();
 };
 
   my $temp = "$dir/rcmd.txt";

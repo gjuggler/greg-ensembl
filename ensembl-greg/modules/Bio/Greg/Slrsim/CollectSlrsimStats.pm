@@ -21,9 +21,11 @@ sub get_gene_table_structure {
     experiment_name       => 'string',
 
     alignment_score_threshold => 'float',
+    alignment_score_mask_character_cdna => 'string',
     filtering_name            => 'string',
     alignment_name            => 'string',
     sitewise_action => 'string',
+    sitewise_filter_order => 'string',
 
     slrsim_rep         => 'int',
     slrsim_tree_file   => 'string',
@@ -164,22 +166,28 @@ sub data_for_site {
   my $sa_true = $self->param('sa_true');
   my $cdna_aln = $self->param('cdna_aln');
   my $sa_aln = $self->param('sa_aln');
-  my $tree = $self->get_tree;
-    if (!defined $cdna_true) {
-      my $true_aln_params =
-        $self->replace_params( $self->params,
-                               { alignment_table => 'protein_tree_member', alignment_score_filtering => 0 } );
-      ( $tree, $sa_true, $cdna_true ) =
-        Bio::EnsEMBL::Compara::ComparaUtils->tree_aln_cdna( $self->compara_dba, $true_aln_params );
-      $self->param('cdna_true',$cdna_true);
-      $self->param('sa_true',$sa_true);
 
-      ( $tree, $sa_aln, $cdna_aln ) =
-        Bio::EnsEMBL::Compara::ComparaUtils->tree_aln_cdna( $self->compara_dba, $self->params );
-      $self->param('cdna_aln',$cdna_aln);
-      $self->param('sa_aln',$sa_aln);
-    }
-
+  my $tree = $self->param('temp_tree');
+  if (!defined $tree) {
+    my $tree = $self->get_tree;
+    $self->param('temp_tree',$tree);
+  }
+  
+  if (!defined $cdna_true) {
+    my $true_aln_params =
+      $self->replace_params( $self->params,
+                             { alignment_table => 'protein_tree_member', alignment_score_filtering => 0 } );
+    ( $tree, $sa_true, $cdna_true ) =
+      Bio::EnsEMBL::Compara::ComparaUtils->tree_aln_cdna( $self->compara_dba, $true_aln_params );
+    $self->param('cdna_true',$cdna_true);
+    $self->param('sa_true',$sa_true);
+    
+    ( $tree, $sa_aln, $cdna_aln ) =
+      Bio::EnsEMBL::Compara::ComparaUtils->tree_aln_cdna( $self->compara_dba, $self->params );
+    $self->param('cdna_aln',$cdna_aln);
+    $self->param('sa_aln',$sa_aln);
+  }
+  
   my $true_omegas = $self->param('true_omegas');
   my $aln_omegas = $self->param('aln_omegas');
   if (!defined $true_omegas) {
@@ -212,23 +220,23 @@ sub data_for_site {
   $obj->{aln_position} = $aln_col;
   $obj->{true_dnds}    = $true_omegas->{$true_col}->{'omega'};
   $obj->{aln_dnds}     = $aln_omegas->{$aln_col}->{'omega'};
-  printf("t:%.3f a:%.3f  %s\n",$obj->{true_dnds},$obj->{aln_dnds});
-  if ( !( $obj->{aln_dnds} && $obj->{true_dnds} ) ) {
+  #printf("t:%.3f a:%.3f\n",$obj->{true_dnds},$obj->{aln_dnds});
+  if ( !(defined $obj->{aln_dnds} && defined $obj->{true_dnds} ) ) {
     if ( $data->{'analysis_action'} eq '' || $data->{'analysis_action'} eq 'none') {      
       # Do nothing.
       $obj->{aln_dnds}  = 0;
       $obj->{true_dnds} = 0;
     } else {
-      if ( !$obj->{true_dnds} ) {
+      if ( !defined $obj->{true_dnds} ) {
         printf "No true dnds! aln:%s  %s  true:%s  %s\n", $aln_col, $obj->{aln}, $true_col,
-        $obj->{true};
+        $obj->{true_dnds} = undef;
         next;
-      } elsif ( !$obj->{aln_dnds} ) {
+      } elsif ( !defined $obj->{aln_dnds} ) {
         print "No aln dnds!\n";
         # Comment out this 'next' to  maintain the rows without 'aln' scores (i.e. to count the false-negative in our results)
         # With the 'next' in place, rows that don't have a corresponding 'aln_dnds' value will be lost from the collected stats,
         # and so the total number of captured rows will differ between sets of different alignment / filtering parameters.
-        next;
+        #next;
       }
     }
   }
@@ -239,22 +247,18 @@ sub data_for_site {
   $obj->{true_ncod} = $true_omegas->{$true_col}->{'ncod'}   || '';
   $obj->{aln_ncod}  = $aln_omegas->{$aln_col}->{'ncod'}     || '';
   $obj->{aln_lrt}   = $aln_omegas->{$aln_col}->{'lrt_stat'} || '';
-  $obj->{true_entropy} = sprintf( "%.3f", $true_entropies[$true_col] || 0 );
-  $obj->{aln_entropy}  = sprintf( "%.3f", $aln_entropies[$aln_col]   || 0 );
+#  $obj->{true_entropy} = sprintf( "%.3f", $true_entropies[$true_col] || 0 );
+#  $obj->{aln_entropy}  = sprintf( "%.3f", $aln_entropies[$aln_col]   || 0 );
 
   my $true_slice = $sa_true->slice($true_col,$true_col);
-  Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $true_slice);
+  #Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $true_slice);
   printf "t -> %.3f %.3f %.3f\n",$obj->{true_dnds},$obj->{true_ncod},$obj->{true_entropy};
   my $aln_slice = $sa_aln->slice($aln_col,$aln_col);
-  Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $aln_slice);
+  #Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $aln_slice);
   printf "a -> %.3f %.3f %.3f\n",$obj->{aln_dnds},$obj->{aln_ncod},$obj->{aln_entropy};
 
-  $obj->{id} = $self->param('node_id');
   $obj->{parameter_set_id} = 0;
   
-  #$obj->{aln_ungapped_branch_length} =
-    #  Bio::EnsEMBL::Compara::AlignUtils->get_ungapped_branchlength( $sa_aln, $tree, $aln_col );
-
   # Store values in our output table.
   $data = $self->replace_params( $data,$obj);
 
