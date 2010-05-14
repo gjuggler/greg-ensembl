@@ -55,8 +55,9 @@ sub clean_tables {
     my @truncate_tables = qw^
       protein_tree_member protein_tree_node protein_tree_tag member sequence
       sequence sequence_cds
-      analysis analysis_job dataflow_rule hive
+      analysis analysis_job dataflow_rule analysis_ctrl_rule hive analysis_stats_monitor monitor
       sitewise_omega
+      aln aln_scores omega
       stats_sites stats_genes
       parameter_set
       node_set_member node_set
@@ -79,7 +80,7 @@ sub load {
   my $logic_name  = "LoadTrees";
   my $module      = "Bio::Greg::Slrsim::LoadTrees";
   my $params      = { experiment_name => $experiment_name };
-  my $analysis_id = _create_analysis( $logic_name, $module, $params );
+  my $analysis_id = _create_analysis( $logic_name, $module, $params, 1, 1 );
 
   _add_job_to_analysis( "LoadTrees", {} );    # Add a dummy job to run and load the trees.
 }
@@ -124,14 +125,14 @@ sub collect_stats {
   my $logic_name = "CollectStats";
   my $module     = "Bio::Greg::Slrsim::CollectSlrsimStats";
   my $params     = {};
-  _create_analysis( $logic_name, $module, $params, 50, 1 );
+  _create_analysis( $logic_name, $module, $params, 100, 1 );
 }
 
 sub plots {
   my $logic_name = "Plots";
   my $module     = "Bio::Greg::Slrsim::Plots";
   my $params     = {};
-  _create_analysis( $logic_name, $module, $params, 50, 1 );
+  _create_analysis( $logic_name, $module, $params, 1, 1 );
 
   my $params = {
     experiment_name => $experiment_name
@@ -189,7 +190,7 @@ sub _create_analysis {
   my $logic_name    = shift;
   my $module        = shift;
   my $params        = shift;
-  my $hive_capacity = shift || 500;
+  my $hive_capacity = shift || 100;
   my $batch_size    = shift || 1;
 
   my $analysis_id = ++$analysis_counter;

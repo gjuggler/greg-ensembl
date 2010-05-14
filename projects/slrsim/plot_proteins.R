@@ -48,6 +48,12 @@ plot.protein = function(node_id,label='') {
   unlink(c(tree_file,aln_file))                                 
 }
 
+plot.by.column = function(data, column.name="label") {
+  source("collect_slrsim.R")
+
+  
+}
+
 ran.main = FALSE
 main = function() {
   source("collect_slrsim.R")
@@ -75,8 +81,4 @@ main = function() {
   dev.off()
 
   assign("ran.main",TRUE,pos=.GlobalEnv)
-}
-
-if (!ran.main) {
-#   main()
 }

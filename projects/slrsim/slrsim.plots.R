@@ -118,6 +118,7 @@ plot.all.details = function(dir='.') {
   }
 }
 
+# Example usage
 #base = "NO.backup/2010-03-17/indel_models/"
 #plot.all.tiled(base)
 #plot.all.details(base)

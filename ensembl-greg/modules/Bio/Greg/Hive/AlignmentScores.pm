@@ -26,7 +26,6 @@ sub fetch_input {
 
   $self->load_all_params($params);
   
-  #$self->compara_dba->dbc->disconnect_when_inactive(1);
 
   my $no_filter_param = $self->replace_params( $self->params, { alignment_score_filtering => 0 } );
   my ( $tree, $aln ) =
@@ -41,6 +40,8 @@ sub fetch_input {
 
 sub run {
   my $self = shift;
+
+  $self->compara_dba->dbc->disconnect_when_inactive(1);
 
   my $tree = $self->param('tree');
   my $aln = $self->param('aln');
@@ -175,24 +176,23 @@ sub run_tcoffee {
   $tmpfile->close;
 
   my $tmp = $tmpdir;
-  
-
+  $tmp = substr($tmp,0,-1);
   my $prefix = "export HOME_4_TCOFFEE=\"$tmp\";";
   $prefix = "export DIR_4_TCOFFEE=\"${tmp}\";";
-#  $prefix .= "export METHODS_4_TCOFFEE=\"${tmp}\";";
-#  $prefix .= "export MCOFFEE_4_TCOFFEE=\"${tmp}\";";
-#  $prefix .= "export TMP_4_TCOFFEE=\"$tmp\";";
-#  $prefix .= "export CACHE_4_TCOFFEE=\"$tmp\";";
-#  $prefix .= "export NO_ERROR_REPORT_4_TCOFFEE=1;";
-#  $prefix .= "export NUMBER_OF_PROCESSORS_4_TCOFFEE=1;";
-#  $prefix .= "export MAFFT_BINARIES=/ebi/research/software/Linux_x86_64/bin/mafft;";
-#  $prefix .= "export MAFFT_BINARIES=/nfs/users/nfs_g/gj1/bin/mafft-bins/binaries;"
+  $prefix .= "export METHODS_4_TCOFFEE=\"${tmp}\";";
+  $prefix .= "export MCOFFEE_4_TCOFFEE=\"${tmp}\";";
+  $prefix .= "export TMP_4_TCOFFEE=\"$tmp\";";
+  $prefix .= "export CACHE_4_TCOFFEE=\"$tmp\";";
+  $prefix .= "export NO_ERROR_REPORT_4_TCOFFEE=1;";
+  $prefix .= "export NUMBER_OF_PROCESSORS_4_TCOFFEE=1;";
+  $prefix .= "export MAFFT_BINARIES=/ebi/research/software/Linux_x86_64/bin/mafft;";
+  $prefix .= "export MAFFT_BINARIES=/nfs/users/nfs_g/gj1/bin/mafft-bins/binaries;"
     ;    # GJ 2008-11-04. What a hack!
 
   my $outfile = $filename . ".score_ascii";
 
   my $exec = $self->param('t_coffee_executable') || "/homes/greg/src/T-COFFEE_distribution_Version_8.69/bin/binaries/linux/t_coffee";
-  my $cmd = qq^$exec -mode=evaluate -evaluate_mode t_coffee_slow -infile=$filename -outfile=$outfile -output=score_ascii -n_core=1 -multi_core=no -plugins=no^;
+  my $cmd = qq^$exec -mode=evaluate -evaluate_mode t_coffee_slow -infile=$filename -outfile=$outfile -output=score_ascii -n_core=1 -multi_core=no^;
   print $cmd. "\n";
   system( $prefix. $cmd );
 

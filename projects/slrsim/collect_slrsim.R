@@ -5,7 +5,12 @@ if (exists('drv')) {
   drv <- dbDriver('MySQL')
 }
 
-con <- dbConnect(drv, host='mysql-greg.ebi.ac.uk', port=4134, user='slrsim', password='slrsim', dbname='slrsim_anisimova')
+if (!exists('dbname')) {
+  dbname = 'slrsim_anisimova'
+}
+print(paste("dbname is: ",dbname))
+con <- dbConnect(drv, host='mysql-greg.ebi.ac.uk', port=4134, user='slrsim', password='slrsim', dbname=dbname)
+url = paste("mysql://slrsim:slrsim@mysql-greg.ebi.ac.uk:4134/",dbname,sep="")
 
 get.vector = function(con,query,columns=1) {
   res = dbSendQuery(con,query)
@@ -43,7 +48,7 @@ get.all.first.reps = function() {
   return(first.reps)
 }
 
-dump.protein = function(node_id,base=node_id,tree_file=NA,aln_file=NA,sw_file=NA,params_file=NA) {
+dump.protein = function(node_id,base=node_id,tree_file=NA,aln_file=NA,sw_file=NA,params_file=NA,sw_table=NA) {
   if (is.na(tree_file)) {
     tree_file = paste(base,".nh",sep="")
   }
@@ -56,6 +61,9 @@ dump.protein = function(node_id,base=node_id,tree_file=NA,aln_file=NA,sw_file=NA
   if (is.na(params_file)) {
     params_file = paste(base,".txt",sep="")
   }
+  if (is.na(sw_table)) {
+    sw_table = "stats_sites"
+  }
 
   url = "mysql://slrsim:slrsim@mysql-greg.ebi.ac.uk:4134/slrsim_anisimova"
   system(paste("perl ~/lib/greg-ensembl/scripts/tree_dump.pl",
@@ -64,7 +72,7 @@ dump.protein = function(node_id,base=node_id,tree_file=NA,aln_file=NA,sw_file=NA
     " --tree=",tree_file,
     " --aln=",aln_file,
     " --sw=",sw_file,
-    " --sw_table=","stats_slrsim",
+    " --sw_table=",sw_table,
     " --params=",params_file,
     sep="")
   )  
@@ -282,131 +290,220 @@ empty.plot = function() {
   plot(c(),xlim=c(0,0.1),ylim=c(0,1),xlab='',ylab='')
 }
 
-filtering.roc = function(data) {
-  require(ggplot2)
-  png("~/public_html/blank.png")
+generic.roc.plot = function(data,col.names='label',na.rm=F,plot=T,...) {
+  comb.fdrs <- data.frame()
+  comb.roc <- data.frame()
 
-  comb = data.frame()
-#  for (aln in c('mcoffee','prank_f','True Alignment')) {
-#    for (filt in c('None','tcoffee')) {
-  for (aln in c('prank_f','True Alignment')) {
-    for (filt in c('None','prank_mean','prank_treewise','indelign','tcoffee')) {
-      if (aln == 'True Alignment' && filt != 'None') {
-        next;
-      }
-      sub = subset(data, alignment_name==aln & filtering_name==filt)
-      sub.roc = slr.roc(sub)
-      sub.roc$filter = as.factor(filt)
-      sub.roc$aln = as.factor(aln)
-      sub.roc$label = paste(aln,filt,sep="/")
-      comb = rbind(sub.roc,comb)
+  labels <- apply(as.data.frame(data[,col.names]),1,paste,collapse='/')
+  data[,'label'] <- labels
+  for (lbl in sort(unique(labels))) {
+    sub <- subset(data,label==lbl)
+    print(paste("subset: ",lbl,nrow(sub),sep="/"))
+    if (nrow(sub)==0) {next}
+    sub.roc <- slr.roc(sub,na.rm=na.rm)
+    comb.roc <- rbind(sub.roc,comb.roc)      
+    fdr.row <- max(which(sub.roc[,'fdr'] <= 0.1))
+    if (!is.na(fdr.row)) {
+      print(paste(sub.roc[fdr.row,'tn'],sub.roc[fdr.row,'tp']))
+      mark.fdr = sub.roc[fdr.row,]
+      mark.fdr$colour = 'black'
+      comb.fdrs <- rbind(comb.fdrs,mark.fdr)
     }
+    neutral.row <- max(which(sub.roc[,'score'] >= 0))
+    if (!is.na(neutral.row)) {
+      print(neutral.row)
+      mark.neutral = sub.roc[neutral.row,]
+      mark.neutral$colour = 'gray'
+      comb.fdrs <- rbind(comb.fdrs,mark.neutral)
+    }    
   }
-  print(nrow(comb))
-  p <- ggplot(comb,aes(x=fp,y=tp,group=label,colour=label)) + geom_line()
-  ggsave("~/public_html/slrsim_filt.png",width=8,height=6)
-  dev.off()
-}
 
-filter.sweep.roc = function(data) {
-  comb = data.frame()
-  for (aln in sort(unique(data$alignment_name))) {
-    for (filt in sort(unique(data$filtering_name))) {
-      for (thresh in sort(unique(data$alignment_score_threshold))) {
-#        if (aln == 'True Alignment' && (filt != 'None' || thresh != 5)) {
-#          next;
-#        }
-
-        sub = subset(data, alignment_name==aln & filtering_name==filt & alignment_score_threshold==thresh)
-        print(paste(aln,filt,thresh,nrow(sub),sep="/"))
-        if (nrow(sub)==0) {next}
-        sub.roc = slr.roc(sub)
-        sub.roc$filter = as.factor(filt)
-        sub.roc$aln = as.factor(aln)
-        sub.roc$thresh = as.factor(thresh)
-        sub.roc$label = paste(aln,filt,thresh,sep="/")
-        comb = rbind(sub.roc,comb)      
-      }
-    }
+  if (plot) {
+    plot.roc(comb.roc,plot.unity=T,plot.points=comb.fdrs,...)
+  } else {
+    return(comb.roc)
   }
-  return(comb)
 }
 
-test.plot.roc = function(data) {
-  png(file="~/public_html/roc.png",width=600,height=600)
-  plot.roc(data)
-  dev.off()
-}
+plot.roc = function(data,plot.x='tn',plot.y='tp',plot.unity=F,fill.below=F,plot.points=NA) {
+  data$roc.x = data[,plot.x]
+  data$roc.y = data[,plot.y]
 
-plot.roc = function(data) {
   require(ggplot2)
   require(grid)
-  print(nrow(data))
+  print(paste("Plot.roc row count: ",nrow(data)))
+
+  p <- ggplot(data,aes(x=roc.x,y=roc.y,colour=label)) + geom_line()
+  no.leg = opts(legend.position="none")
+
+  max.x = max(data$roc.x)
+
+  p1 <- p + no.leg
+  p2 <- p + coord_cartesian(xlim=c(0,max.x/20)) + xlim(0,max.x/20) + no.leg
+  leg <- p + opts(keep="legend_box")
+
+  if (plot.unity) {
+    p1 <- p1 + geom_abline(linetype=2,colour='gray')
+    p2 <- p2 + geom_abline(linetype=2,colour='gray')
+  }
+
+  if (fill.below) {
+    p1 <- p1 + geom_area(data=data,aes(x=roc.x,y=roc.y))
+    p2 <- p2 + geom_area(data=data,aes(x=roc.x,y=roc.y))
+  }
+
+  if (!is.na(plot.points)) {
+    plot.points$roc.x = plot.points[,plot.x]
+    plot.points$roc.y = plot.points[,plot.y]
+    p1 <- p1 + geom_point(data=subset(plot.points,colour=="black"),aes(x=roc.x,y=roc.y),colour="black")
+    p2 <- p2 + geom_point(data=subset(plot.points,colour=="black"),aes(x=roc.x,y=roc.y),colour="black")
+    p2 <- p2 + geom_point(data=subset(plot.points,colour=="gray"),aes(x=roc.x,y=roc.y),colour="gray")
+  }
 
   # See http://learnr.wordpress.com/2009/05/26/ggplot2-two-or-more-plots-sharing-the-same-legend/
   lay = grid.layout(nrow=2,ncol=2,
     widths=unit(c(2,0.5),c("null","null")),
     heights=unit(c(1,1),c("null","null")))
   vplayout = function(...) {grid.newpage();pushViewport(viewport(layout=lay))}
-  subplot = function(x,y){viewport(layout.pos.row=x,layout.pos.col=y)}
-    
+  subplot = function(x,y){viewport(layout.pos.row=x,layout.pos.col=y)}    
   vplayout()
-
-  p <- ggplot(data,aes(x=tn,y=tp,group=label,colour=label)) + geom_line()
-  no.leg = opts(legend.position="none")
-
-  max.x = max(data$tn)
-
-  p1 <- p + no.leg
-  p2 <- p + xlim(0,max.x/20) + no.leg
-  leg <- p + opts(keep="legend_box")
-
   print(p1,vp=subplot(1,1))
   print(p2,vp=subplot(2,1))
   print(leg,vp=subplot(1:2,2))
 }
 
-slr.roc = function(df) {
+generic.roc = function(data,col.names='label',na.rm=F) {
+  comb.roc <- data.frame()
+  labels <- apply(as.data.frame(data[,col.names]),1,paste,collapse='/')
+  data[,'label'] <- labels
+  for (lbl in sort(unique(labels))) {
+    print(lbl)
+    sub <- subset(data,label==lbl)
+    if (nrow(sub)==0) {next}
+    sub.roc <- slr.roc(sub,na.rm=na.rm)
+    comb.roc <- rbind(sub.roc,comb.roc)
+  }
+  return(comb.roc)
+}
+
+facet.roc.plot = function(data,col.names='label',na.rm=F,plot.x='fp',plot.y='tp',facet.x='alignment_name',facet.y='filtering_name',zoom=F) {
+  require(ggplot2)
+  require(grid)
+
+  data = generic.roc(data=data,col.names=col.names,na.rm=na.rm)
+
+  data$roc.x = data[,plot.x]
+  data$roc.y = data[,plot.y]
+  data$facet.x = data[,facet.x]
+  data$facet.y = data[,facet.y]
+
+  p <- ggplot(data,aes(x=roc.x,y=roc.y,group=label,colour=alignment_score_threshold)) + geom_line()
+  p <- p + scale_colour_gradient(low="blue",high="red",limits=c(0,10))
+  p <- p + facet_grid(facet.y ~ facet.x)
+  if (zoom) {
+    max.x = max(data$roc.x)
+    p <- p + coord_cartesian(xlim=c(0,max.x/20)) + xlim(0,max.x/20)
+  }
+  print(p)
+}
+
+slr.roc = function(df,na.rm=F) {
   library(doBy)
   library(plyr)
 
+  if (na.rm) {
+    n.na = nrow(subset(df,is.na(aln_lrt)))
+    df = subset(df,!is.na(aln_lrt))
+    print(sprintf("Removed %d NA rows",n.na))
+  }
+
   if (!is.paml(df)) {
     # Create a signed LRT if it's SLR-based data.
+    # We'll replace NAs with an extremely low score.
+    df[is.na(df$aln_lrt),'aln_lrt'] = 1000
+    df[is.na(df$aln_dnds),'aln_dnds'] = 0
     df$score = sign(df$aln_dnds-1)*df$aln_lrt
   } else {
     df$score = df$aln_lrt
   }
   df$truth = as.integer( df$true_dnds > 1 )
   df <- orderBy(~-score,data=df)
-  #print(df[1:10,])
+
   df$tp = cumsum(df$truth)
   df$tn = cumsum(1-df$truth)
-  
+  df$count = cumsum(rep(1,nrow(df)))
+  df$fp = df$tn
+
+  df$fpr = df$tn / max(df$tn)
+  df$tpr = df$tp / max(df$tp)
+
+  df$fdr = df$fp/(df$count)
+
   return(df)
 }
 
-my.own.roc = function(data, score.field='score', truth.fun=NULL) {
-  library(doBy)
-  library(plyr)
+plot.fdr = function(data,plot.y='tpr',plot.x='fdr',facet.x='alignment_name',facet.y='filtering_name',color.by='alignment_score_threshold') {
+  data$roc.x = data[,plot.x]
+  data$roc.y = data[,plot.y]
+  data$facet.x = data[,facet.x]
+  data$facet.y = data[,facet.y]
+  data$color.by = data[,color.by]
 
-  #png("~/public_html/test.png")
-  #n <- 2000
-  #truth <- rbinom(n,1,0.8)
-  #score <- rnorm(n)
-
-  truth <- adply(df, 1, truth.fun);
-  score <- data[[score.field]]
-
-  data$truth = truth
-  data$score = score
-  data <- orderBy(~+score,data=data)
-
-  data$tp = cumsum(data$truth)
-  data$fp = cumsum(1-data$truth)
-
-  return(data)
+  require(ggplot2)
+  require(grid)
+  p <- ggplot(data,aes(x=roc.x,y=roc.y)) + geom_line(colour="black",size=1)
+  # The 'group.counter' variable is created by the 'fdr.sweep' function to group together FDR chunks.
+  p <- p + geom_area(aes(fill=color.by,group=group.counter),position='identity')
+  p <- p + scale_fill_continuous(low="white",high="red",limits=c(0,10))
+  p <- p + xlab(plot.x) + ylab(plot.y)
+  p <- p + facet_grid(facet.y ~ facet.x)
+  print(p)
 }
 
+fdr.sweep = function(data,step=0.01,min=0,max=1,max.search='tp',facet.names=c('alignment_name','filtering_name'),group.names=c('alignment_score_threshold')) {
+  comb.df = data.frame()
+  data$max.search = data[,max.search]
+
+  labels <- apply(as.data.frame(data[,facet.names]),1,paste,collapse='/')
+  data$label <- labels
+
+  groups <- apply(as.data.frame(data[,group.names]),1,paste,collapse='/')
+  data$group <- groups
+
+  group.counter <- 0
+  for (lbl in sort(unique(data$label))) {
+    group.counter <- group.counter + 1
+    sub <- subset(data,label==lbl)
+    print(paste("label:",lbl," n:",nrow(sub)))
+#     sub = data
+
+    last.row <- NULL
+    fdrs <- seq(from=min,to=max,by=step)
+    for (i in fdrs) {
+      # Find the row which maximizes the max.search value within the given FDR.
+      within.fdr <- subset(sub,fdr <= i)
+      within.fdr <- orderBy(~-max.search,data=within.fdr)
+      row <- within.fdr[1,]
+      print(sprintf("fdr:%.3f n:%d best:%s",i,nrow(within.fdr),row$group))
+    
+      # Some logic to fix up the boundaries between label groups.
+      if (!is.null(last.row) && last.row$group != row$group) {
+        group.counter <- group.counter + 1
+        # Duplicate the row with the next-highest FDR.
+        last.row$group.counter <- group.counter
+        comb.df <- rbind(comb.df,last.row)
+      }
+      row$group.counter <- group.counter
+  
+      comb.df <- rbind(comb.df,row)
+      last.row <- row
+    }
+  }
+
+  data$max.search <- NULL
+  comb.df$max.search <- NULL
+  return(comb.df)
+}
 
 gg.df.cor = function(df) {
   return(cor(df$true_dnds,df$aln_dnds,method='spearman',use='complete.obs'))
@@ -437,65 +534,86 @@ correlation.boxplot = function(data,variable,n=5,title="") {
   dev.off()
 }
 
-do.some.plots = function(data) {
+my.own.roc = function(data, score.field='score', truth.fun=NULL) {
+  library(doBy)
+  library(plyr)
 
-  slr.lty = 'solid'
-  paml.lty = 'dashed'
-  leg.txt = c('SLR','PAML M3')
-  leg.lty = c(slr.lty,paml.lty)
-  # Massingham 2005 simulation A
-  empty.plot()
-  title(main="Massingham 2005 A",xlab="Type I Error",ylab="True Positives Rate")
-  legend('bottomright',legend=leg.txt,lty=leg.lty)
-  d = subset(data,sim_name=="mass_05_A" & parameter_set_name=="SLR")
-  plot.roc(d,lty=slr.lty)
-  d = subset(data,sim_name=="mass_05_A" & parameter_set_name=="PAML M3")
-  plot.roc(d,lty=paml.lty)
-  # Massingham 2005 simulation B
-  empty.plot()
-  title(main="Massingham 2005 B",xlab="Type I Error",ylab="True Positives Rate")
-  legend('bottomright',legend=leg.txt,lty=leg.lty)
-  d = subset(data,sim_name=="mass_05_B" & parameter_set_name=="SLR")
-  plot.roc(d,lty=slr.lty)
-  d = subset(data,sim_name=="mass_05_B" & parameter_set_name=="PAML M3")
-  plot.roc(d,lty=paml.lty)
+  #png("~/public_html/test.png")
+  #n <- 2000
+  #truth <- rbinom(n,1,0.8)
+  #score <- rnorm(n)
 
+  truth <- adply(df, 1, truth.fun);
+  score <- data[[score.field]]
 
-  # Xenopus vs Human bglobin simulations
-  empty.plot()
-  rate.cols = 'Set1'
-  hum.lty = 'solid'
-  xen.lty = 'dashed'
-  leg.txt = c('Human','Xenopus')
-  leg.lty = c(hum.lty,xen.lty)
+  data$truth = truth
+  data$score = score
+  data <- orderBy(~+score,data=data)
 
-  bglobin.data = subset(data,sim_name=='bglobin_ref_hum' | sim_name=='bglobin_ref_xen')
-  bglobin.data = subset(bglobin.data,parameter_set_name=="SLR")
-  rate.list = unique(bglobin.data$ins_rate)
-  cols = brewer.pal(length(rate.list),rate.cols)
-  for (i in 1:length(rate.list)) {
-    rate = rate.list[i]
-    data.sub = subset(bglobin.data,ins_rate == rate)
+  data$tp = cumsum(data$truth)
+  data$fp = cumsum(1-data$truth)
 
-    d = subset(data.sub,sim_name=='bglobin_ref_hum')
-    plot.roc(d,lty=hum.lty,col=cols[i])
+  return(data)
+}
 
-    d = subset(data.sub,sim_name=='bglobin_ref_xen')
-    plot.roc(d,lty=xen.lty,col=cols[i])
+plot.by.columns = function(data,base.dir='.',col.names=c('alignment_name')) {
+source("aln-tools/aln.tools.R")
+source("aln-tools/phylo.tools.R")
+source("aln-tools/plot.phylo.greg.R")
+library(ape)
+
+  labels <- apply(as.data.frame(data[,col.names]),1,paste,collapse='_')
+  labels <- sub(" ","",labels)
+  data[,'label'] <- labels
+
+  for (lbl in sort(unique(labels))) {
+    sub <- subset(data,label==lbl)
+    first.row = sub[1,]
+    
+    node_id = first.row$node_id    
+    tree_file = paste(base.dir,"/",first.row$label,'.nh',sep='')
+    aln_file = paste(base.dir,"/",first.row$label,'.fa',sep='')
+    sitewise_file = paste(base.dir,"/",first.row$label,'.csv',sep='')
+
+    system(paste("perl ~/lib/greg-ensembl/scripts/tree_dump.pl",
+    " --url=",url,
+    " --id=",node_id,
+    " --tree=",tree_file,
+    " --aln=",aln_file,
+    " --sw=",sitewise_file,
+    sep=""))
+
+    plot.file = paste(base.dir,"/",first.row$label,".png",sep="")
+    png(file=plot.file,width=2000,height=200)
+    plot.protein(aln.file=aln_file,tree.file=tree_file,sitewise.file=sitewise_file,remove.files=T)
+    dev.off()
+
+  }  
+}
+
+plot.protein = function(aln.file,tree.file,sitewise.file,remove.files=F) {
+  aln = read.aln(aln.file)
+  tree = read.tree(tree.file)
+  aln$tree = tree
+  
+  length = aln$length
+  tree.space = length/10
+  par(mar=c(0,0,0,0))
+  plot.new()
+  plot.window(xlim=c(0,length + tree.space),ylim=c(0,aln$num_seqs))
+  plot.aln(aln,overlay=T,plot.tree=F,plot.chars=F,
+    x.lim=c(tree.space,length+tree.space),
+    y.lim=c(0,aln$num_seqs))
+
+#  text(x=tree.space*.9,y=0,labels=label,cex=2,adj=c(0,0))
+
+  rect(xleft=tree.space,xright=length+tree.space,ybottom=0,ytop=aln$num_seqs)
+  par(new=T)
+  len = tree_length(tree)
+  print(len)
+  plot.phylo.greg2(tree,x.lim=c(0,(4)/(tree.space/length)),y.lim=c(.5,aln$num_seqs+.5),edge.width=0.5)
+
+  if(remove.files) {
+    unlink(c(tree.file,aln.file,sitewise.file))
   }
-
-  title(main='Anisimova-M3 with B-globain tree (n=17)',xlab='Type I Error',ylab='Sensitivity')
-  legend('bottomright',title='Reference species',bg='white',
-    legend=leg.txt,lty=leg.lty)
-  legend('bottomright',title='Indel rate',inset=c(0,0.2),bg='white',
-    legend=unlist(rate.list),lty='solid',col=cols)
-  # Try plotting a tree.
-  library(ape)
-  library(Hmisc)
-  plot.tree = function() {
-    tree = read.tree('trees/anisimova_01_bglobin.nh')
-    plot.phylo(tree,cex=0.3)
-  }
-  subplot(plot.tree,x=0.087,y=0.65,size=c(1.5,1.5))
-
 }
