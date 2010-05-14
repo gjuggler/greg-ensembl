@@ -12,9 +12,8 @@ SKIP_DISTRIBUTION_CLASSES = 1;
 /* Give us two filenames on standard input. */
 fscanf (stdin, "String",  alignmentFilename);
 fscanf (stdin, "String",  treeFilename);
-fscanf (stdin, "String",  modelFilename);
 
-fprintf(stdout,"\n",alignmentFilename,"\n",treeFilename,"\n",modelFilename,"\n");
+fprintf(stdout,"\n",alignmentFilename,"\n",treeFilename,"\n");
 DataSet codon_ds = ReadDataFile (alignmentFilename);
 DataSetFilter codon_dsf = CreateFilter (codon_ds,3,"","",GeneticCodeExclusions);
 fprintf (stdout,"\n______________READ THE FOLLOWING DATA______________\n", codon_ds,"\n");
@@ -38,8 +37,10 @@ distribution = 3;
 resp = 3;
 
 /* generate codon model */
+/* I can't figure out a way to switch between importing one file or the other, so we're going to be really stupid and 
+use the Perl wrapper to variably replace the placeholder string with the contents of the appropriate file. */
+[MODEL_BF]
 /*#include "gy94.bf";*/
-#include "mg94.bf";
 
 /* read in tree from file */
 ACCEPT_BRANCH_LENGTHS = 1;
@@ -50,7 +51,7 @@ Tree	codon_tree = tree_string;
 
 LikelihoodFunction codon_lf = (codon_dsf, codon_tree);
 
-AUTO_PARALLELIZE_OPTIMIZE = 1;	/* attempt to use MPI */
+AUTO_PARALLELIZE_OPTIMIZE = 0;	/* attempt to use MPI */
 Optimize (res, codon_lf);
 AUTO_PARALLELIZE_OPTIMIZE = 0;
 

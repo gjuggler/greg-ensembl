@@ -11,7 +11,7 @@ sub fetch_input {
   ### DEFAULT PARAMETERS ###
   my $defaults = {
     window_width => 100,
-    window_step => 30,
+    window_step => 20,
   };
   ##########################
 
@@ -43,6 +43,8 @@ sub flow_window {
 
   print "Window: $aln_lo $aln_hi\n";
 
+  # See Bio::Greg::Hive::Process->_get_aln method, where the input alignments are actually
+  # split up into slices.
   my $added_params = {
     alignment_slice => "$aln_lo-$aln_hi"
   };

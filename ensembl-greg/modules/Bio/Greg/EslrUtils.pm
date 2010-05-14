@@ -27,6 +27,15 @@ sub urlFromConnection {
   return $url;
 }
 
+sub mysqlArgsFromConnection {
+  my $class = shift;
+  my $dbc = shift;
+  
+  my $args = sprintf("-h%s -u%s -p%s -P%s %s",
+		     $dbc->host,$dbc->username,$dbc->password,$dbc->port,$dbc->dbname);
+  return $args;
+}
+
 sub loadConfiguration {
   my $class  = shift;
   my $params = shift;
@@ -523,7 +532,7 @@ sub run_r {
   my $r_cmd = "R-2.10.0";
   if ( $params->{'farm'} ) {
     $r_cmd = "/software/bin/R-2.9.0";
-  } elsif ( $params->{'bigmen'} ) {
+  } elsif ( $params->{'bigmem'} ) {
     $r_cmd = "bsub -Is -R'select[mem>10000] rusage[mem=10000]' -M10000000 /software/R-2.9.0/bin/R ";
   } elsif ( $ENV{'USER'} =~ /gj1/ ) {
     $r_cmd = "/software/R-2.9.0/bin/R";

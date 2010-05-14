@@ -129,6 +129,27 @@ sub duplication_fraction {
   return $dup_sum / $node_sum;
 }
 
+sub root_node_gene_count {
+  my $class = shift;
+  my $tree = shift;
+
+  my $root_node_id = $class->root_node_id($tree);
+
+  my $pta = $tree->adaptor;
+  my $root_tree = $pta->fetch_node_by_node_id($root_node_id);
+  return scalar($root_tree->leaves);
+}
+
+sub root_node_id {
+  my $class = shift;
+  my $tree = shift;
+
+  my $root_id = $tree->node_id;
+  my $cmd = qq^SELECT parent.node_id FROM protein_tree_node parent, protein_tree_node child
+               WHERE child.left_index BETWEEN parent.left_index AND parent.right_index
+               AND child.node_id=$root_id^;
+  return $class->mysql_getval($tree,$cmd);
+}
 
 sub seq_length_mean {
   my $class = shift;
@@ -177,9 +198,10 @@ sub get_tag_hash {
   my $table   = "sitewise_tag";
   my $pset    = $params->{'parameter_set_id'} || 0;
   my $data_id = $class->data_id;
+  my $node_id = $params->{'node_id'};
 
   my $cmd = qq^SELECT aln_position,tag,value
-    FROM $table WHERE ( parameter_set_id=$pset or parameter_set_id=0 ) and node_id=$data_id
+    FROM $table WHERE ( parameter_set_id=$pset or parameter_set_id=0 ) and node_id=$node_id
     ^;
   print $cmd."\n";
   my $tag_hash = {};
@@ -187,6 +209,7 @@ sub get_tag_hash {
   my $sth = $dbc->prepare($cmd);
   $sth->execute;
   while ( my $obj = $sth->fetchrow_hashref ) {
+    print " -> DOMAIN!!!\n";
     my $aln_position = $obj->{'aln_position'};
 
     $tag_hash->{$aln_position} = {} if (!defined $tag_hash->{$aln_position});
@@ -204,6 +227,7 @@ sub get_psc_hash {
   my $table   = $params->{'omega_table'};
   my $pset    = $params->{'parameter_set_id'} || '0';
   my $data_id = $class->data_id;
+  my $node_id = $params->{'node_id'};
   my $include_crappy_sites = $params->{'get_all_sites'};
   
   my $CLEAN_WHERE = qq^
@@ -220,23 +244,22 @@ sub get_psc_hash {
   if ( $params->{genome} ) {
     $cmd = qq^SELECT * from $table o, sitewise_genome g WHERE o.parameter_set_id=$pset AND 
       o.node_id=$data_id
-      AND g.node_id=$data_id
+      AND g.node_id=$node_id
       AND o.aln_position=g.aln_position $CLEAN_WHERE^;
   }
 
   if ($params->{filtered} ) {
-    my $filter_value = $params->{mammals_alignment_filtering_value} || 1;
+    my $filter_value = $params->{alignment_filtering_value} || 1;
     print "Filtering value: $filter_value\n";
 
     # Filter on alignment columns that pass Pollard et al's filtering criteria.
     $cmd = qq^SELECT * from $table o, sitewise_tag t  WHERE
       o.parameter_set_id=$pset AND 
       o.node_id=$data_id
-      AND t.node_id=$data_id
+      AND t.node_id=$node_id
       AND o.aln_position=t.aln_position
       AND t.tag="FILTER" AND t.value >= $filter_value $CLEAN_WHERE;
       ^;
-    # TODO: Join with the sitewise_tag table where tag = "FILTER".
   }
 
   print $cmd."\n";

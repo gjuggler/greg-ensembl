@@ -1,0 +1,7 @@
+### 2010-05-10 ###
+
+- Started project.
+
+- The plan:
+  [ ] Get a sample of trees & alignments to Inigo.
+  [ ] Think more about filtering, etc.

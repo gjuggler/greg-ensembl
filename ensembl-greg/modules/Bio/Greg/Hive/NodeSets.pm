@@ -21,13 +21,6 @@ use base ('Bio::Greg::Hive::Process');
 my $dba;
 my $pta;
 
-# INPUT FILES / OBJECTS.
-my $tree;
-my $params;
-
-# OUTPUT FILES / OBJECTS / STATES.
-my %node_set_hash;
-
 sub fetch_input {
   my ($self) = @_;
 
@@ -36,14 +29,14 @@ sub fetch_input {
   $pta = $dba->get_ProteinTreeAdaptor;
 
   ### DEFAULT PARAMETERS ###
-  $params = {
+  my $params = {
     flow_node_set => 'Primates',
     flow_parent_and_children => 0,
     debug => 0
   };
   ##########################
 
-  $self->load_all_params;
+  $self->load_all_params($params);
 
   $self->param('tree',$self->get_tree);
 }
@@ -77,32 +70,32 @@ sub write_output {
   my $self = shift;
 
   my $tree = $self->param('tree');
-  
-  if (defined $params->{flow_node_set}) {
+
+  if (defined $self->param('flow_node_set')) {
     $self->autoflow_inputjob(0);
-    my $flow_set = $params->{flow_node_set};
-    
+    my $flow_set = $self->param('flow_node_set');
+
     foreach my $node ($tree->nodes) {
       next if ($node->is_leaf);
-      
+
       my $id = $node->node_id;
       if ($node->has_tag("cc_root_".$flow_set)) {
 
         my $output_id = { node_id => $id, orig_node_id => $self->param('node_id') };
-	my ($output_job_id) = @{ $self->dataflow_output_id( $output_id, 1 ) };
-	print " -> Flowed node $id (job id: $output_job_id)\n";
-        if ( $params->{flow_parent_and_children} ) {
+        my ($output_job_id) = @{ $self->dataflow_output_id( $output_id, 1 ) };
+        print " -> Flowed node $id (job id: $output_job_id)\n";
+        if ( $self->param('flow_parent_and_children') ) {
           my $i = 0;
           foreach my $child ( @{ $node->children } ) {
-            my $output_id = { 
-	      node_id => $child->node_id,
+            my $output_id = {
+              node_id => $child->node_id,
               orig_node_id => $self->param('node_id'),
-	      node_set_parent_id => $id, node_set_child_number => $i++ 
-	      };
-	    my ($output_job_id) = @{ $self->dataflow_output_id( $output_id, 1 ) };
-	    print "  --> Flowed child $output_job_id\n";
-	  }
-	}
+              node_set_parent_id => $id, node_set_child_number => $i++
+              };
+            my ($output_job_id) = @{ $self->dataflow_output_id( $output_id, 1 ) };
+            print "  --> Flowed child $output_job_id\n";
+          }
+        }
       }
     }
   }
@@ -307,6 +300,8 @@ sub generic_parent_has_good_children {
 
 sub DESTROY {
   my $self = shift;
+
+  my $tree = $self->get_tree;
   $tree->release_tree if ($tree);
   $tree = undef;
   $self->SUPER::DESTROY if $self->can("SUPER::DESTROY");

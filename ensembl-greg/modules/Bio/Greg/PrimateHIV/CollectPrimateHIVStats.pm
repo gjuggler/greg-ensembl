@@ -1,4 +1,4 @@
-package Bio::Greg::Mammals::CollectMammalsStats;
+package Bio::Greg::PrimateHIV::CollectPrimateHIVStats;
 
 use strict;
 use Time::HiRes qw(sleep);
@@ -12,30 +12,39 @@ use Bio::EnsEMBL::Hive::Process;
 
 use base ('Bio::Greg::Hive::CollectSitewiseStats');
 
-sub run {
+sub get_gene_table_structure {
   my $self = shift;
-
-  my $check = $self->check_tree_aln;
-  if ($check == -1) {
-    $self->store_tag("no_stats","Tree or align doesn't look good!");
-    return;
-  }
-
-  $self->SUPER::run;
+  
+  my $added_structure = {
+    domain_id => 'string',
+    alignment_slice => 'string',
+    
+    human_protein => 'string',
+    human_gene    => 'string',
+    human_gene_list => 'string',
+    human_protein_list => 'string',
+    
+    chr_name => 'string',
+    chr_start => 'int',
+    chr_end => 'int',
+    chr_strand => 'int',
+  };
+  
+  my $structure = $self->SUPER::get_gene_table_structure();
+  $structure = $self->replace_params($structure,$added_structure);
+  return $structure;
 }
 
 sub get_sites_table_structure {
   my $self = shift;
 
   my $added_structure = {
+    domain_id => 'string',
     filter_value => 'int',
-    domain => 'string',
     
     chr_name  => 'string',
     chr_start => 'int',
     chr_end   => 'int',
-
-    unique_keys => 'aln_position,node_id,parameter_set_id'
   };
   
   my $structure = $self->SUPER::get_sites_table_structure;
@@ -43,34 +52,10 @@ sub get_sites_table_structure {
   return $structure;
 }
 
-sub get_gene_table_structure {
-  my $self = shift;
-  
-  my $added_structure = {
-    'human_protein' => 'string',
-    'human_gene'    => 'string',
-    
-    'chr_name' => 'string',
-    'chr_start' => 'int',
-    'chr_end' => 'int',
-    'chr_strand' => 'int',
-    
-    unique_keys => 'node_id,parameter_set_id'
-    };
-  
-  my $structure = $self->SUPER::get_gene_table_structure();
-  $structure = $self->replace_params($structure,$added_structure);
-  return $structure;
-}
-
 sub data_for_gene {
   my $self = shift;
-
-  $self->param('filtered',1);
-  $self->param('alignment_filtering_value',3);
-
-  my $data = $self->SUPER::data_for_gene();
-  return undef unless (defined $data);
+  
+  my $data = $self->SUPER::data_for_gene();  
   my $tree = $self->get_tree;
 
   # Collect human protein.
@@ -95,9 +80,9 @@ sub data_for_gene {
       my $start  = $tscr->coding_region_start;
       my $end    = $tscr->coding_region_end;
       $data->{chr_name}    = $chr;
-      $data->{start}  = $start;
-      $data->{end}    = $end;
-      $data->{strand} = $strand;
+      $data->{chr_start}  = $start;
+      $data->{chr_end}    = $end;
+      $data->{chr_strand} = $strand;
     }
   }
 
@@ -110,8 +95,7 @@ sub data_for_site {
 
   $self->param('genome',1);
 
-  my $data;
-#  my $data = $self->SUPER::data_for_site($aln_position);
+  my $data = $self->SUPER::data_for_site($aln_position);
   return undef unless (defined $data);
 
   my $tag_hash = $self->param('tag_hash');
@@ -121,11 +105,9 @@ sub data_for_site {
   }
 
   my $site_tags = $tag_hash->{$aln_position};
-  $self->hash_print($site_tags);
+  #$self->hash_print($site_tags);
   if (defined $site_tags) {
     $data->{'filter_value'} = $site_tags->{'FILTER'};
-    $data->{'domain'} = $site_tags->{'DOMAIN'};
-#    print "DOMAIN: ".$site_tags->{'DOMAIN'}."\n";
   }
   return $data;
 }
