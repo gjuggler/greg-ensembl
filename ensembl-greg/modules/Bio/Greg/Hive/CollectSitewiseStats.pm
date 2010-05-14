@@ -115,6 +115,11 @@ sub data_for_gene {
   $cur_params->{'hyphy_dnds_lo'} = $self->param('hyphy_dnds_lo');
   $cur_params->{'hyphy_dnds_hi'} = $self->param('hyphy_dnds_hi');
 
+  # Get the SLR-inferred tree.
+  my $newick = $self->param('slr_tree');
+  my $slr_tree = Bio::EnsEMBL::Compara::TreeUtils->from_newick($newick);
+  $data->{'slr_tree_length'} = $self->tree_length($slr_tree);
+
   return $cur_params;
 }
 
@@ -213,6 +218,7 @@ sub get_gene_table_structure {
 
     'slr_dnds'      => 'float',
     'slr_kappa'     => 'float',
+    'slr_tree_length' => 'float',
     'hyphy_dnds'    => 'float',
     'hyphy_dnds_lo' => 'float',
     'hyphy_dnds_hi' => 'float',
