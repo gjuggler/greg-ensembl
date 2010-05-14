@@ -91,8 +91,8 @@ sub data_for_gene {
   $cur_params->{'sitewise_value_count'} = $self->sitewise_count($psc_hash);
   if ( scalar( keys(%$psc_hash) ) > 0 ) {
     foreach my $i (1 .. 4) {
-      $cur_params->{'positive'.$i} = $self->psc_count( $psc_hash, $i );
-      $cur_params->{'negative'.$i} = $self->psc_count( $psc_hash, -$i );
+      $cur_params->{'positive_'.$i} = $self->psc_count( $psc_hash, $i );
+      $cur_params->{'negative_'.$i} = $self->psc_count( $psc_hash, -$i );
     }
   }
 

@@ -35,8 +35,8 @@ parameter_sets();
 node_sets();
 align();
 sequence_quality();
-split_by_windows();
 split_by_parameter_set();
+split_by_windows();
 gene_omegas();
 sitewise_omegas();
 mapping();
@@ -54,31 +54,16 @@ $h->connect_analysis("SitewiseOmegas","CollectStats");
 
 $h->connect_analysis("Align","Mapping");
 $h->wait_for("CollectStats",["Mapping"]);
-$h->wait_for("OutputTabularData",["CollectStats"]);
+$h->wait_for("OutputTabularData",["GeneOmegas","SitewiseOmegas","CollectStats"]);
 
 my @genes = gene_list();
 $h->add_genes_to_analysis("NodeSets",\@genes);
 
 sub gene_list {
-  my @list =  qw(
-RPL29
-CYBB
-);
-
-#IFI27
-#IFI44
-#MAP4
-#MCART1
-#MPDU1
-#MT1DP
-#MT1F
-#PMAIP1
-#RPL37
-#SLPI
-#SPRR4
-#TRIM5
-#);
-  return @list;
+  open INPUT, "<candidate_genes.txt";
+  my @lines = <INPUT>;
+  close INPUT;
+  return @lines;
 }
 
 sub parameter_sets {
@@ -110,20 +95,19 @@ sub parameter_sets {
 
   my $non_primates = join(",",subtract(\@mammals_arr,\@primates_arr));
  
-#  $params = {
-#    parameter_set_name => "Homininae",
-#    parameter_set_shortname => 'hmn',
-#    keep_species => $homininae,
-#    gorilla_count_species => '9593,9598,9606'
-#    };
-#  $h->add_parameter_set($params);
+  $params = {
+    parameter_set_name => "Homininae",
+    parameter_set_shortname => 'hmn',
+    keep_species => $homininae,
+    };
+  $h->add_parameter_set($params);
   
-#  $params = {
-#    parameter_set_name => "Hominidae",
-#    parameter_set_shortname => 'hmd',
-#    keep_species => $hominidae
-#    };
-#  $h->add_parameter_set($params);
+  $params = {
+    parameter_set_name => "Hominidae",
+    parameter_set_shortname => 'hmd',
+    keep_species => $hominidae
+    };
+  $h->add_parameter_set($params);
   
 #  $params = {
 #    parameter_set_name => "NonHominidPrimates",

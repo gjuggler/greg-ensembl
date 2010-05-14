@@ -4,13 +4,14 @@ use strict;
 use Bio::EnsEMBL::Utils::Argument;
 use Bio::EnsEMBL::Utils::Exception;
 
-use Bio::EnsEMBL::Compara::ComparaUtils;
 use Bio::EnsEMBL::Hive;
-use Bio::EnsEMBL::Compara::DBSQL::DBAdaptor;
-
 use Bio::EnsEMBL::Hive::Utils 'stringify';  # import 'stringify()'
 
+use Bio::EnsEMBL::Compara::ComparaUtils;
+use Bio::EnsEMBL::Compara::DBSQL::DBAdaptor;
+
 use File::Path;
+use POSIX qw(strftime mktime);
 
 use base ('Bio::EnsEMBL::Hive::ProcessWithParams');
 
@@ -600,12 +601,17 @@ sub get_output_folder {
   my $self = shift;
   my $output_base = shift;
 
-  die("No output base folder specified!") unless ($output_base);
-  
   if (defined $self->param('output_folder')) {
-    return $self->param('output_folder');
+    my $folder = $self->param('output_folder');
+    print "$folder\n";
+    if (!-e $folder) {
+      mkpath([$folder]);
+    }
+    return $folder;
   }
-  
+
+  die("No output base folder specified!") unless ($output_base);
+    
   my $date_string = strftime("%Y-%m-%d",localtime);
   my $i=0;
 

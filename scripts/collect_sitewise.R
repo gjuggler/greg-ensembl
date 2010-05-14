@@ -48,9 +48,17 @@ get.genes.list = function(db="gj1_eslr_57") {
   return(data)
 }
 
-get.genes.merged = function(db="gj1_eslr_57",exclude.cols=c()) {
-  #all.node.ids = get.vector(con,sprintf('SELECT DISTINCT(node_id) FROM %s.stats_genes',db))
-  
+get.genes.merged = function(db="gj1_eslr_57",exclude.cols=NULL,pset.cols=NULL) {
+  pset.cols <- c(pset.cols,
+    'slr_dnds','hyphy_dnds','hyphy_dnds_lo','hyphy_dnds_hi',
+    'positive_1','positive_2',
+    'tree_length', 'tree_max_path')
+  pset.cols <- unique(pset.cols)
+
+  if (is.null(exclude.cols)) {
+    exclude.cols <- c('tree_newick',pset.cols)
+  }
+
   param.sets = get.psets(db=db)
   print(param.sets)
   
@@ -62,34 +70,23 @@ get.genes.merged = function(db="gj1_eslr_57",exclude.cols=c()) {
     print(param.sets[i,]$parameter_set_shortname)
     cur.genes = get.genes(pset,db=db)
 
-    create.name = function(ext) {paste(param.sets[pset,]$parameter_set_shortname,ext,sep='')}
-    
-    col.slr.dnds = create.name('.slr.dnds')
-    col.hyphy.dnds = create.name('.hyphy.dnds')
-    col.hyphy.dnds.lo = create.name('.hyphy.dnds.lo')
-    col.hyphy.dnds.hi = create.name('.hyphy.dnds.hi')
-    col.psc.count = create.name('.psc.count')
-    col.weak.psc.count = create.name('.weak.psc.count')
+    create.name = function(ext) {paste(param.sets[pset,]$parameter_set_shortname,ext,sep='_')}
 
     genes.subset = data.frame(
-      a=cur.genes$node_id,
-      b=cur.genes$slr_dnds,
-      c=cur.genes$hyphy_dnds,
-      d=cur.genes$hyphy_dnds_lo,
-      d=cur.genes$hyphy_dnds_hi,
-      e=cur.genes$psc_count,
-      f=cur.genes$weak_psc_count
-      )
-    colnames(genes.subset) = c(
-              'node_id',
-              col.slr.dnds,
-              col.hyphy.dnds,
-              col.hyphy.dnds.lo,
-              col.hyphy.dnds.hi,
-              col.psc.count,
-              col.weak.psc.count
-              )
-    
+      a=cur.genes$data_id
+    )
+
+    for (i in 1:length(pset.cols)) {
+      print(pset.cols[i])
+      genes.subset[,paste('col.',i,sep="")] <- cur.genes[,pset.cols[i]]
+    }
+
+    col.names = c('data_id')
+    for (i in 1:length(pset.cols)) {
+      col.names = c(col.names,create.name(pset.cols[i]))
+    }
+
+    colnames(genes.subset) = col.names
     genes = merge(genes,genes.subset,all.x=T)
   }
   return(genes);

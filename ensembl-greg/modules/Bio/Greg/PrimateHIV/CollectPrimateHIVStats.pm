@@ -93,8 +93,13 @@ sub data_for_gene {
 
   my $alignment_slice = $self->param('alignment_slice');
   my ($start,$end) = split(",",$alignment_slice);
-  $data->{alignment_slice_start} = $start;
-  $data->{alignment_slice_end} = $end;
+
+  # Find the postion of this sliding window within the original full alignment.
+  my $aln = $self->get_aln;
+  my $orig_start = $self->get_orig_aln_position($aln,1);
+  my $orig_end = $self->get_orig_aln_position($aln,$aln->length);
+  $data->{alignment_slice_start} = $orig_start;
+  $data->{alignment_slice_end} = $orig_end;
 
   return $data;
 }

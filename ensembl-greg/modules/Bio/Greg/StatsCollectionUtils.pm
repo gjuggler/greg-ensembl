@@ -296,8 +296,6 @@ sub psc_count {
   my $psc_hash          = shift;
   my $include_psc_num   = shift;
 
-  $include_psc_num = 3 unless (defined $include_psc_num);
-
   my @obj_array = map { $psc_hash->{$_} } keys %$psc_hash;
   my @psc_objs;
 

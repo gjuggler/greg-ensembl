@@ -5,6 +5,8 @@ use strict;
 
 use Bio::EnsEMBL::Hive::DBSQL::AnalysisJobAdaptor;
 
+use Bio::EnsEMBL::Hive::Utils 'stringify';  # import 'stringify()'
+
 our $analysis_counter = 1;
 
 sub new {
@@ -64,7 +66,9 @@ sub add_job_to_analysis {
     -input_job_id => 0,
     );
 
-  print " -> Added job $job_id to $analysis_name\n";
+  my $input_string = stringify($input_id_hash);
+
+  print " -> Added job #$job_id to $analysis_name  [$input_string]\n";
 
   return $job_id;
 }

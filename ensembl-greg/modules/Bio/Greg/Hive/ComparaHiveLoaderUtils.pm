@@ -14,7 +14,10 @@ sub add_genes_to_analysis {
 
   my @node_ids = ();
   foreach my $gene_id (@$gene_id_arrayref) {
+    chomp $gene_id;
     my $member;
+
+    print "Trying to add $gene_id...\n";
 
     my $ext_member = $self->_find_member_by_external_id($gene_id);
     $member = $ext_member if (defined $ext_member);
@@ -52,6 +55,7 @@ sub _find_member_by_external_id {
   push @genes, $gene_adaptor->fetch_by_stable_id($id) if (scalar @genes == 0);
   
   foreach my $gene (@genes) {
+    print "$gene\n";
     my $stable_id = $gene->stable_id;
     #print $stable_id."\n";
     my $member = $member_adaptor->fetch_by_source_stable_id(undef,$stable_id);
