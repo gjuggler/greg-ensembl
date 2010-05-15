@@ -118,7 +118,7 @@ sub data_for_gene {
   # Get the SLR-inferred tree.
   my $newick = $self->param('slr_tree');
   my $slr_tree = Bio::EnsEMBL::Compara::TreeUtils->from_newick($newick);
-  $data->{'slr_tree_length'} = $self->tree_length($slr_tree);
+  $cur_params->{'slr_tree_length'} = $self->tree_length($slr_tree);
 
   return $cur_params;
 }
