@@ -196,8 +196,8 @@ sub load_simulation_params {
     lognormal => {
       omega_distribution_name     => "2xmammals Lognormal",
       phylosim_omega_distribution => 'lognormal',
-      phylosim_meanlog            => -1.7,
-      phylosim_sdlog              => 1.23
+      phylosim_meanlog            => -5.39,
+      phylosim_sdlog              => 4.01
 
     }
   };
@@ -239,7 +239,13 @@ sub load_simulation_params {
       phylosim_insertmodel => 'NB 0.35 2',
       phylosim_deletemodel => 'NB 0.35 2',
       phylosim_insertrate  => 0.05,
-      phylosim_deleterate  => 0.05
+      phylosim_deleterate  => 0.05,
+    },
+    none => {
+      phylosim_insertmodel => 'NB 0.35 2',
+      phylosim_deletemodel => 'NB 0.35 2',
+      phylosim_insertrate  => 0,
+      phylosim_deleterate  => 0,
     }
   };
   $self->param( 'indel_models', $indel_models );
@@ -252,8 +258,34 @@ sub load_simulation_sets {
 
 sub mammals_simulations {
   my $self = shift;
-
   
+  my $params = {
+    slrsim_replicates => 100,
+    experiment_name   => "mammals_simulations",
+    slrsim_tree_mult => 1,
+    phylosim_seq_length => 1000,
+    slrsim_ref => 'human'
+  };
+
+  my $indel       = $self->param('indel_models')->{'none'};
+  my $distr       = $self->param('omega_distributions')->{'lognormal'};
+  my $filter      = $self->filter_param('none');
+  my $analysis    = $self->param('phylo_analyses')->{'slr'};
+  my $aln         = $self->aln_param('true');
+  my $base_params = $self->replace_params($params, $indel, $distr, $filter, $analysis, $aln );
+
+  my @sets = ();
+
+  # First, add the true alignment.
+  push @sets, $self->replace_params($base_params,$self->tree_param('2x_full'));
+  push @sets, $self->replace_params($base_params,$self->tree_param('2x_nox'));
+  push @sets, $self->replace_params($base_params,$self->tree_param('2x_primates'));
+  push @sets, $self->replace_params($base_params,$self->tree_param('2x_glires'));
+
+  # Store the overall simulation parameters in the meta table. This will be later dumped by the Plots.pm script.
+  $self->store_meta($base_params);
+
+  return \@sets;
 }
 
 sub alignment_comparison {
@@ -507,6 +539,15 @@ sub filter_sweep {
   $self->store_meta($creation_tags);
 
   return \@sets;
+}
+
+sub tree_param {
+  my $self = shift;
+  my $tree_name = shift;
+
+  my $tree = $self->param('trees')->{$tree_name};
+  
+  return {slrsim_tree_file => $tree};
 }
 
 sub aln_param {

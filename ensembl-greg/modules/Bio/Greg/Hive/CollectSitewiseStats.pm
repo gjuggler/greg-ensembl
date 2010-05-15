@@ -174,6 +174,7 @@ sub data_for_site {
   $site_data->{'chr_start'} = $site->{chr_start};
   $site_data->{'chr_end'}   = $site->{chr_end};
 
+  $site_data->{'node_id'} = $self->node_id;
   $site_data->{'data_id'} = $self->data_id;
   $site_data->{'parameter_set_id'} = $self->parameter_set_id;
 

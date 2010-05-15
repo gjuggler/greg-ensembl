@@ -92,6 +92,35 @@ save(data,file="${filename}");
   
 }
 
+sub mammals_simulations {
+  my $self = shift;
+
+  my $filename = $self->param('output_folder') . '/reference_comparison_roc.png';
+  my $rcmd = qq^
+dbname="slrsim_2x"
+source("collect_slrsim.R")
+data = get.all.data()
+
+full.roc = generic.roc.plot(data,col.names=c('slrsim_tree_file'),plot=F)
+
+for (lbl in sort(unique(full.roc[,'label']))) {
+  roc = subset(full.roc,label==lbl)
+  for (fdr in c(0.01,0.05,0.1,0.2)) {
+    fdr.ok = roc[which(roc[,'fdr'] <= fdr),]
+    max.row = fdr.ok[nrow(fdr.ok),]
+    score.at.fdr = max.row[,'score']
+    tpr.at.fdr = max.row[,'tpr']
+    print(paste(lbl,'[',fdr,'=>',score.at.fdr,tpr.at.fdr,']'))
+  }
+}
+
+q()
+^;
+  print "$rcmd\n";
+  my $params = {};
+  Bio::Greg::EslrUtils->run_r($rcmd,$params);
+}
+
 sub reference_comparison {
   my $self = shift;
   

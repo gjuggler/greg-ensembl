@@ -352,6 +352,7 @@ sub _store_sitewise_omegas {
 
   my @blocks           = ();
   my $data_id          = $self->data_id;
+  my $node_id          = $self->node_id;
   my $parameter_set_id = $self->parameter_set_id;
 
   eval {
@@ -380,8 +381,8 @@ sub _store_sitewise_omegas {
 
       push @insert_strings,
         sprintf(
-        '(%d,%.5f,%d,%d,%.5f,%.5f,%.5f,"%s",%d)',
-        $hr->{aln_position}, $aln_position_fraction, $data_id,
+        '(%d,%.5f,%d,%d,%d,%.5f,%.5f,%.5f,"%s",%d)',
+        $hr->{aln_position}, $aln_position_fraction, $node_id, $data_id,
         $parameter_set_id,   $hr->{omega},           $hr->{omega},
         $hr->{omega},        $type,                  $ncod
         );
@@ -389,7 +390,7 @@ sub _store_sitewise_omegas {
 
     my $insert = join( ",", @insert_strings );
     $self->dbc->do(
-      "INSERT IGNORE INTO $output_table (aln_position,aln_position_fraction,node_id,parameter_set_id,omega,omega_lower,omega_upper,type,ncod) values $insert ;"
+      "INSERT INTO $output_table (aln_position,aln_position_fraction,node_id,data_id,parameter_set_id,omega,omega_lower,omega_upper,type,ncod) values $insert ;"
     );
   };
 }
