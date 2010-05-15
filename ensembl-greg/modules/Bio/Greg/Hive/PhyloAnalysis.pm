@@ -518,6 +518,7 @@ sub run_sitewise_dNdS
   my $cdna_aln = shift;
   my $params = shift;
 
+  $tree = Bio::EnsEMBL::Compara::TreeUtils->unroot($tree);
   my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
   
   # LOAD VARIABLES FROM PARAMS.
@@ -539,10 +540,10 @@ sub run_sitewise_dNdS
   my $tmpdir = $self->worker_temp_directory;
 
   # CLEAN UP OLD RESULTS FILES.
-  unlink "$tmpdir/slr.res";
-  unlink "$tmpdir/tree";
-  unlink "$tmpdir/aln";
-  unlink "$tmpdir/slr.ctl";
+#  unlink "$tmpdir/slr.res";
+#  unlink "$tmpdir/tree";
+#  unlink "$tmpdir/aln";
+#  unlink "$tmpdir/slr.ctl";
 
   # OUTPUT THE ALIGNMENT.
   my $alnout = Bio::AlignIO->new

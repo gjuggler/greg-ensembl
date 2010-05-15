@@ -39,6 +39,36 @@ sub add_genes_to_analysis {
   }
 }
 
+sub add_nodes_to_analysis {
+  my $self = shift;
+  my $analysis_name = shift;
+  my $node_id_arrayref = shift;
+
+  foreach my $node_id (@$node_id_arrayref) {
+    $self->add_job_to_analysis($analysis_name,{node_id => $node_id});
+  }
+}
+
+sub select_node_ids {
+  my $self = shift;
+  my $cmd = shift;
+
+  my $dba = $self->dba;
+  if ( !defined $cmd ) {
+    $cmd = "SELECT node_id FROM protein_tree_node WHERE parent_id=1 AND root_id=1";
+  }
+  my $sth = $dba->dbc->prepare($cmd);
+  $sth->execute();
+
+  my $array_ref = $sth->fetchall_arrayref( [0] );
+  my @node_ids = @{$array_ref};
+  @node_ids =
+    map { @{$_}[0] } @node_ids;    # Some weird mappings to unpack the numbers from the arrayrefs.
+  $sth->finish;
+  return @node_ids;
+}
+
+
 sub _find_member_by_external_id {
   my $self = shift;
   my $id = shift;
@@ -79,15 +109,15 @@ sub add_parameter_set {
     my $name_cmd =
       "REPLACE INTO parameter_set VALUES ('$parameter_set_id','name',\"$parameter_set_name\");";
     $dbc->do($name_cmd);
-}
+  }
 
   if ( exists $params->{'parameter_set_shortname'} ) {
     my $parameter_set_shortname = $params->{'parameter_set_shortname'} || '';
     my $shortname_cmd =
       "REPLACE INTO parameter_set VALUES ('$parameter_set_id','parameter_set_shortname',\"$parameter_set_shortname\");";
     $dbc->do($shortname_cmd);
-}
-
+  }
+  
   my $param_string = Bio::EnsEMBL::Compara::ComparaUtils->hash_to_string($params);
   my $cmd = "REPLACE INTO parameter_set VALUES ('$parameter_set_id','params',\"$param_string\");";
   $dbc->do($cmd);

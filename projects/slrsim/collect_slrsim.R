@@ -315,7 +315,7 @@ generic.roc.plot = function(data,col.names='label',na.rm=F,plot=T,...) {
       mark.neutral = sub.roc[neutral.row,]
       mark.neutral$colour = 'gray'
       comb.fdrs <- rbind(comb.fdrs,mark.neutral)
-    }    
+    }
   }
 
   if (plot) {

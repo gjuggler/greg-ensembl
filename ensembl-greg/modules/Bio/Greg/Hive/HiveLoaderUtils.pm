@@ -151,6 +151,17 @@ sub wait_for {
   }
 }
 
+sub truncate_tables {
+  my $self = shift;
+  my $tables = shift;
+
+  my $dba = $self->dba;
+  foreach my $table ($tables) {
+    print "$table\n";
+    eval { $dba->dbc->do("truncate table $table"); }
+  }
+}
+
 sub clean_hive_tables {
   my $self = shift;
   my $dba = $self->dba;

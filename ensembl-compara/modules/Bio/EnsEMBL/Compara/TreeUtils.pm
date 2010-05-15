@@ -97,6 +97,37 @@ sub midpoint_root {
   # TODO!!
 }
 
+sub unroot {
+  my $class = shift;
+  my $tree = shift;
+
+  my $n_at_root = scalar @{$tree->children};
+  return $tree if ($n_at_root == 3); # No need to unroot.
+
+  if ($n_at_root == 2) {
+    my $new_root_node, $moving_node;
+    my ($child_a,$child_b) = @{$tree->children};
+
+    if (scalar @{$child_a->children} == 2) {
+      $new_root_node = $child_a;
+      $moving_node = $child_b;
+    } elsif (scalar @{$child_b->children} == 2) {
+      $new_root_node = $child_b;
+      $moving_node = $child_a;
+    } else {
+      $tree->throw("Error unrooting tree!");
+    }
+    
+    my $new_dist = $moving_node->distance_to_parent + $new_root_node->distance_to_parent;
+    $moving_node->disavow_parent;
+    $new_root_node->add_child($moving_node);
+    $moving_node->distance_to_parent($new_dist);
+    return $new_root_node;
+  } else {
+    $tree->throw("Error unrooting tree!");
+  }
+}
+
 # Returns whether $node has an ancestor with the same node_id as $ancestor.
 sub has_ancestor_node_id {
   my $class = shift;

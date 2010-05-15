@@ -195,17 +195,17 @@ sub data_for_site {
     my $aln_table_name = $data->{'omega_table'};
     my $sth1           = $self->compara_dba->dbc->prepare(
       "SELECT aln_position,omega,type,note,ncod,lrt_stat FROM sitewise_omega WHERE node_id=?;");
-    my $cmd = "SELECT aln_position,omega,type,note,ncod,lrt_stat FROM $aln_table_name WHERE node_id=?;";
-    
+    my $cmd = "SELECT aln_position,omega,type,note,ncod,lrt_stat FROM $aln_table_name WHERE data_id=?;";
     my $sth2 = $self->compara_dba->dbc->prepare($cmd);
-    $sth1->execute($self->data_id);
-    $sth2->execute( $self->data_id);
+    $sth1->execute($self->node_id);
+    $sth2->execute($self->data_id);
     $true_omegas = $sth1->fetchall_hashref('aln_position');
     $aln_omegas  = $sth2->fetchall_hashref('aln_position');
     
     $self->param('true_omegas',$true_omegas);
     $self->param('aln_omegas',$aln_omegas);
   }
+  print "node: ".$self->node_id."\n";
 
   my @true_entropies;
   my @aln_entropies;
