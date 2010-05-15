@@ -19,11 +19,11 @@ sub run {
   my $base = 'nfs/users/nfs_g/gj1/scratch/mammals/output';
   $self->get_output_folder($base);
   
-  $self->export_genes;
-#   $self->export_sites;
-#  $self->summarize_sites;
+#  $self->export_genes;
+  $self->export_sites;
+  $self->summarize_sites;
 #  $self->model_sites_distribution;
-   $self->get_psg_overlaps;
+#   $self->get_psg_overlaps;
 #  $self->plot_global_distribution;
 }
 
@@ -65,10 +65,10 @@ sub export_sites {
     my $mysqlArgs = Bio::Greg::EslrUtils->mysqlArgsFromConnection($self->dbc);
     if (!-e $sites_zipped) {
       my $cmd = qq^
-mysql $mysqlArgs -e "SELECT node_id,parameter_set_id,domain,filter_value,omega,omega_lower,omega_upper,note,type from stats_sites WHERE parameter_set_id=$i;" > ${sites_file}
+mysql $mysqlArgs -e "SELECT node_id,parameter_set_id,domain,filter_value,omega,omega_lower,omega_upper,lrt_stat,note,type from stats_sites WHERE parameter_set_id=$i;" > ${sites_file}
 ^;
       $cmd = qq^
-mysql $mysqlArgs -e "SELECT node_id,parameter_set_id,domain,filter_value,omega,omega_lower,omega_upper,note,type from stats_sites WHERE parameter_set_id=1 LIMIT 500000;" > ${sites_file}
+mysql $mysqlArgs -e "SELECT node_id,parameter_set_id,domain,filter_value,omega,omega_lower,omega_upper,lrt_stat,note,type from stats_sites WHERE parameter_set_id=1 LIMIT 500000;" > ${sites_file}
 ^ if ($i == 0);
       print "$cmd\n";
       system($cmd);

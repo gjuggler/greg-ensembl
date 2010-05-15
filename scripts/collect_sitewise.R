@@ -129,8 +129,8 @@ sites.summary = function(db="gj1_eslr_57", sites.dir='.', filter.fn=NULL) {
   param.sets = get.psets(db=db)
 
   df = data.frame()
-  for (i in c(1)) {
-#  for (i in 1:nrow(param.sets)) {
+#  for (i in c(1)) {
+  for (i in 1:nrow(param.sets)) {
     pset <- param.sets[i,]$id
     name <- param.sets[i,]$parameter_set_shortname
     print(pset)
@@ -163,6 +163,13 @@ sites.summary = function(db="gj1_eslr_57", sites.dir='.', filter.fn=NULL) {
     x <- sub.sites[,c('node_id')]
     n.total.genes <- length(unique(x))
 
+    fdr.thresh = switch(name,
+      m = c(2.14,0.219,-0.015),
+      p = c(5.76,2.06,0.734),
+      g = c(3.92,0.861,0.209),
+      c(2.14,0.219,-0.015)
+    )
+
     summary.df <- data.frame(
       parameter_set_id = pset,
       parameter_set_name = name,
@@ -186,7 +193,13 @@ sites.summary = function(db="gj1_eslr_57", sites.dir='.', filter.fn=NULL) {
       `n.positive.domains` = n.pos.domains,
       `n.positive.domain.types` = n.pos.domain.types,
       `n.positive.genes` = n.pos.genes,
-      `n.total.genes` = n.total.genes
+      `n.total.genes` = n.total.genes,
+      `fdr.01` = nrow(subset(sub.sites, lrt_stat >= fdr.thresh[1] & omega > 1))/n,
+      `fdr.05` = nrow(subset(sub.sites, lrt_stat >= fdr.thresh[2] & omega > 1))/n,
+      `fdr.1` = nrow(subset(sub.sites, lrt_stat >= fdr.thresh[3] & omega > 1))/n,
+      `n.fdr.01` = nrow(subset(sub.sites, lrt_stat >= fdr.thresh[1] & omega > 1)),
+      `n.fdr.05` = nrow(subset(sub.sites, lrt_stat >= fdr.thresh[2] & omega > 1)),
+      `n.fdr.1` = nrow(subset(sub.sites, lrt_stat >= fdr.thresh[3] & omega > 1))
     )
     df <- rbind(df,summary.df)
     rm(pos.sites,pos.domains,sub.sites)
