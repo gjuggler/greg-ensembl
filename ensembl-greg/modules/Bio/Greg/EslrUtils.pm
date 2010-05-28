@@ -2,6 +2,15 @@ package Bio::Greg::EslrUtils;
 
 use strict;
 
+sub baseDirectory {
+  my $class = shift;
+  if ( $ENV{'USER'} =~ /gj1/ ) {
+    return $ENV{'HOME'} . '/src/greg-ensembl';
+  } else {
+    return $ENV{'HOME'} . '/lib/greg-ensembl';
+  }
+}
+
 sub defaultMysqlURL {
   my $class = shift;
 
@@ -529,17 +538,7 @@ sub run_r {
   my $vanilla = "--vanilla";
   $vanilla = "--slave" if ( $params->{'silent'} );
 
-  my $r_cmd = "R-2.10.0";
-  if ( $params->{'farm'} ) {
-    $r_cmd = "/software/bin/R-2.9.0";
-  } elsif ( $params->{'bigmem'} ) {
-    $r_cmd = "bsub -Is -R'select[mem>10000] rusage[mem=10000]' -M10000000 /software/R-2.9.0/bin/R ";
-  } elsif ( $ENV{'USER'} =~ /gj1/ ) {
-    $r_cmd = "/software/R-2.9.0/bin/R";
-  } else {
-
-  }
-
+  my $r_cmd = $class->get_r_command($params);
   print "Using executable: '$r_cmd'\n";
 
   my $rc = system("$r_cmd $vanilla < $temp_in");
@@ -547,6 +546,23 @@ sub run_r {
 
   unlink($temp_in);
   unlink($temp_dir);
+}
+
+sub get_r_command {
+  my $class = shift;
+  my $params = shift || {};
+
+  my $r_cmd = "R-2.10.0";
+  if ( $params->{'farm'} ) {
+    $r_cmd = "/software/bin/R-2.10.0";
+  } elsif ( $params->{'bigmem'} ) {
+    $r_cmd = "bsub -Is -R'select[mem>10000] rusage[mem=10000]' -M10000000 /software/R-2.9.0/bin/R ";
+  } elsif ( $ENV{'USER'} =~ /gj1/ ) {
+    $r_cmd = "/software/R-2.10.0/bin/R";
+  } else {
+
+  }  
+  return $r_cmd;
 }
 
 sub get_r_values {
@@ -573,14 +589,18 @@ sub get_r_values {
   close(OUT);
 
   # cmd to run: /software/R-2.7.1/bin/R CMD BATCH $filename
+  my $r_cmd = $class->get_r_command;
   my $rc = system(
-    "/ebi/research/software/Linux_x86_64/bin/R-2.7.0 --slave --vanilla < $temp_in > $temp_out");
+    "$r_cmd --slave --vanilla < $temp_in > $temp_out");
 
   #my $rc = system("/software/R-2.7.1/bin/R --vanilla --slave < $temp_in ");
 
   open( IN, "$temp_out" );
   my @lines = <IN>;
-  map { chomp } @lines;
+  map { 
+    chomp $_; 
+    $_ =~ s/\s*\[\d+\]\s*//g 
+} @lines;
   close(IN);
 
   if ($rc) {
