@@ -149,11 +149,36 @@ sub check_tree_aln {
 sub compara_dba {
   my $self = shift;
 
-  if (!defined $self->param('compara_dba')) {
+  if (!defined $self->{_compara_dba}) {
+    print " >>>> Getting new DBA!!!!\n";
     my $compara_dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new( -DBCONN => $self->db->dbc );
     $self->{_compara_dba} = $compara_dba;
   }
   return $self->{_compara_dba};
+}
+
+sub pta {
+  my $self = shift;
+
+  if (!defined $self->param('_pta')) {
+    print " >>>> Getting new DBA!!!!\n";
+    my $compara_dba = $self->compara_dba;
+    my $pta = $compara_dba->get_ProteinTreeAdaptor;
+    $self->param('_pta',$pta);
+  }
+  return $self->param('_pta');
+}
+
+sub mba {
+  my $self = shift;
+
+  if (!defined $self->param('_mba')) {
+    print " >>>> Getting new DBA!!!!\n";
+    my $compara_dba = $self->compara_dba;
+    my $pta = $compara_dba->get_MemberAdaptor;
+    $self->param('_mba',$pta);
+  }
+  return $self->param('_mba');
 }
 
 sub db_handle {
@@ -185,6 +210,8 @@ sub data_id {
   $data_id = $self->param('data_id') if (defined $self->param('data_id'));
   return $data_id;
 }
+
+
 
 sub parameter_set_id {
   my $self = shift;
@@ -256,6 +283,30 @@ sub store_meta {
     $self->db_handle->do("DELETE from meta where meta_key='$key';");
     $self->db_handle->do("REPLACE into meta (meta_key,meta_value) VALUES ('$key','$value');");
   }
+}
+
+sub get_parameter_sets {
+  my $self = shift;
+  my $dbname = shift || $self->dbc->dbname;
+
+  my $sth = $self->db_handle->prepare("SELECT * from ${dbname}.parameter_set;");
+  $sth->execute;
+  
+  my $hash;
+  while (my $obj = $sth->fetchrow_hashref) {
+    my $id = $obj->{parameter_set_id};
+    $hash->{$id} = {} unless (defined $hash->{$id});
+    my $param_name = $obj->{parameter_name};
+    my $param_value = $obj->{parameter_value};
+    $hash->{$id}->{$param_name} = $param_value;
+    $hash->{$id}->{parameter_set_id} = $id;
+  }
+
+  my @sets;
+  foreach my $pset (1 .. scalar(keys %$hash)) {
+    push @sets,$hash->{$pset};
+  }
+  return @sets;
 }
 
 sub new_data_id {
@@ -493,7 +544,7 @@ sub create_table_from_params {
 	     CREATE TABLE $table_name (
 				       data_id INT(10) NOT NULL,
 				       parameter_set_id TINYINT(3) NOT NULL DEFAULT 0
-				       )
+				       ) engine=InnoDB;
 	     ^
     );
   };
@@ -509,7 +560,7 @@ sub create_table_from_params {
 
     foreach my $key ( sort keys %$params ) {
       next if ($key eq 'data_id' || $key eq 'parameter_set_id');
-      print "Creating key $key\n";
+      print "Creating column $key\n";
       my $type = $params->{$key};
 
       my $type_map = {
@@ -526,6 +577,7 @@ sub create_table_from_params {
 
     my $unique_cmd = ""; #qq^ALTER TABLE $table_name ADD UNIQUE (data_id)^;
     if ($unique_keys) {
+      print "Creating UNIQUE $unique_keys\n";
       $unique_cmd = qq^ALTER TABLE $table_name ADD UNIQUE ($unique_keys)^;
       $dbh->do($unique_cmd);
     }
@@ -533,6 +585,7 @@ sub create_table_from_params {
     if ($extra_keys) {
       my @keys = split(',',$extra_keys);
       foreach my $key (@keys) {
+	print "Creating KEY $key\n";
 	my $key_cmd = qq^ALTER TABLE $table_name ADD KEY (`$key`)^;
 	$dbh->do($key_cmd);
       }
@@ -587,7 +640,7 @@ sub store_tag {
   my $value = shift;
 
   my $node_id = $self->param('node_id');
-  my $tree = $self->compara_dba->get_ProteinTreeAdaptor->fetch_node_by_node_id($node_id);
+  my $tree = $self->pta->fetch_node_by_node_id($node_id);
 
   if ($self->param('breadcrumb')) {
     $tag = $self->param('breadcrumb') . "." . $tag;
@@ -595,6 +648,12 @@ sub store_tag {
 
   print "  -> Storing tag [$tag] => [$value]\n";
   $tree->store_tag($tag,$value);
+}
+
+sub base {
+  my $self = shift;
+
+  return Bio::Greg::EslrUtils->baseDirectory;
 }
 
 sub get_output_folder {
@@ -629,6 +688,25 @@ sub get_output_folder {
   mkpath([$filename]);
 
   return $filename;
+}
+
+sub get_r_dbc_string {
+  my $self = shift;
+  my $dbname = shift || $self->compara_dba->dbc->dbname;
+
+  my $dbc = $self->compara_dba->dbc;
+  my $u = $dbc->username;
+  my $p = $dbc->password;
+  my $h = $dbc->host;
+  my $port = $dbc->port;
+  
+  return qq^
+dbname='$dbname'
+host = '$h'
+port = $port
+user = '$u'
+password = '$p'
+^;
 }
 
 sub cleanup_temp {
