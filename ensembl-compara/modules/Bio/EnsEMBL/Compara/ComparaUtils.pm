@@ -24,26 +24,32 @@ my $COMPARA = "Bio::EnsEMBL::Compara::ComparaUtils";
 
 if ($ENV{'USER'} =~ /gj1/) {
   Bio::EnsEMBL::Registry->load_registry_from_multiple_dbs(
-#							  {
-#							    -host => 'ens-staging',
-#							    -user => 'ensro',
-#							    #-verbose => 1
-#							    },
-#							  {
-#							    -host => 'ens-staging1',
-#							    -user => 'ensro',
-#							    #-verbose => 1
-#							    },
-#							  {
-#							    -host => 'ens-staging2',
-#							    -user => 'ensro',
-#							    #-verbose => 1
-#							    },
 							  {
-							    -host => 'ens-livemirror',
+							    -host => 'ens-staging',
 							    -user => 'ensro',
-							    #-verbose => 1
-							  }
+#							    -verbose => 1
+							    },
+							  {
+							    -host => 'ens-staging1',
+							    -user => 'ensro',
+#							    -verbose => 1
+							    },
+							  {
+							    -host => 'ens-staging2',
+							    -user => 'ensro',
+#							    -verbose => 1
+							    },
+#							  {
+#							    -host => 'ens-livemirror',
+#							    -user => 'ensro',
+#							    -verbose => 1
+#							  },
+    {
+      -host => 'ensdb-archive',
+      -port => 5304,
+      -user => 'ensro',
+#      -verbose => 1
+    }
 							  );
   Bio::EnsEMBL::Registry->set_disconnect_when_inactive(1);
   } else {
@@ -760,6 +766,46 @@ sub tree_aln_cdna {
   my $filtered_cdna = Bio::EnsEMBL::Compara::ComparaUtils->fetch_masked_alignment($aa,$cdna,$tree,$params,1);
 
   return ($tree,$filtered_aa,$filtered_cdna);
+}
+
+sub get_species_subtree {
+  my $class = shift;
+  my $dba = shift;
+  my $species_tree = shift;
+  my $params = shift;
+
+  $species_tree = $species_tree->copy();
+
+  my $taxon_a = $dba->get_NCBITaxonAdaptor;
+
+  my %keep_hash; 
+  my %remove_hash;
+  my @keep_species = split(",",$params->{keep_species});
+  my @keep_names = map {
+    my $taxon = $taxon_a->fetch_node_by_taxon_id($_);
+    my $binomial = $taxon->binomial;
+    $binomial =~ s/\s/_/g;
+    $binomial;
+  } @keep_species;
+  map {$keep_hash{$_}=1} @keep_names;
+  
+  foreach my $leaf ($species_tree->leaves) {
+    #print "label: ".$leaf->name."\n";
+    my $name = $leaf->name;
+    if (!exists $keep_hash{$name}) {
+      $remove_hash{$name} = 1;
+    }    
+  }
+  my @remove_names = keys %remove_hash;
+
+  # Add fake node_ids for use by the TreeUtils methods.
+  my $count=1;
+  map {$_->node_id($count++)} $species_tree->nodes;
+  if (scalar @remove_names > 0) {
+    $species_tree = $TREE->remove_members_by_method_call($species_tree,\@remove_names,'name');
+  }
+
+  return $species_tree;
 }
 
 # GJ 2009-01-15
