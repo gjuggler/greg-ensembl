@@ -61,7 +61,13 @@ sub _get_aln {
   my $cdna = shift;
 
   $params = $self->params unless (defined $params);
-  my $tree = $self->get_tree;
+
+  my $tree;
+  if (defined $params->{tree}) {
+    $tree = $params->{tree};
+  } else {
+    $tree = $self->get_tree;
+  }
 
   my $aa_aln = $tree->get_SimpleAlign();
   my $cdna_aln = $tree->get_SimpleAlign(-cdna => 1, -hide_positions => 1);
@@ -313,6 +319,9 @@ sub new_data_id {
   my $self = shift;
   my $params = shift;
 
+  my $dbh = $self->db_handle;
+#  $dbh->do("LOCK TABLES protein_tree_tag READ WRITE");
+
   my $sth = $self->db_handle->prepare("SELECT value from protein_tree_tag WHERE node_id=0 AND tag='data_id_counter';");
   $sth->execute;
   my @row = $sth->fetchrow_array;
@@ -328,6 +337,8 @@ sub new_data_id {
 
   $self->param('data_id',$data_id);
   $params->{data_id} = $data_id;
+
+#  $dbh->do("UNLOCK TABLES");
 
   return $data_id;
 }
@@ -564,9 +575,12 @@ sub create_table_from_params {
       my $type = $params->{$key};
 
       my $type_map = {
-        'tinyint' => 'TINYINT(3)',
+        'tinyint' => 'TINYINT',
+        'smallint'    => 'SMALLINT',
         'int'    => 'INT',
         'string' => 'TEXT',
+        'char16' => 'CHAR(16)',
+        'char32' => 'CHAR(32)',
         'float'  => 'FLOAT'
       };
       $type = $type_map->{$type};
@@ -596,11 +610,9 @@ sub create_table_from_params {
 
 sub store_params_in_table {
   my $self       = shift;
-  my $dba        = shift;
+  my $dbh        = shift;
   my $table_name = shift;
   my $params     = shift;
-
-  my $dbh = $self->db_handle;
 
   my @fields;
   my $cache_key = '_fields_arrayref_'.$table_name;

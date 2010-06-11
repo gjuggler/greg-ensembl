@@ -50,8 +50,9 @@ sub get_gene_data {
 
   my $gene_data = $self->data_for_gene;
 
-#  $self->hash_print($gene_data);
-  $self->store_params_in_table( $self->compara_dba, $self->param('genes_table'), $gene_data );
+  print " -> Storing gene data...\n";
+  $self->hash_print($gene_data);
+  $self->store_params_in_table( $self->compara_dba->dbc->db_handle, $self->param('genes_table'), $gene_data );
 }
 
 sub data_for_gene {
@@ -66,7 +67,9 @@ sub data_for_gene {
   ( $tree, $sa_aln, $cdna_aln ) =
     Bio::EnsEMBL::Compara::ComparaUtils->tree_aln_cdna( $self->compara_dba, $cur_params );
 
-  $cur_params->{'data_id'} = $self->data_id;
+#  $cur_params->{'data_id'} = $self->data_id;
+  # Temporary hack for 2xmammals data output: store node_id as data_id.
+  $cur_params->{'data_id'} = $self->node_id;
   $cur_params->{'node_id'} = $self->node_id;
 
   $cur_params->{'parameter_set_id'} = $self->parameter_set_id;
@@ -96,17 +99,11 @@ sub data_for_gene {
     }
   }
 
-# TODO: Add some summary of combined p-values.
-# P-values from lrt_stats:
-#  lrt_stats = data[,4];
-#  abs_lrt = abs(lrt_stats);
-#  pvals = 1 - pchisq(abs_lrt,1);
-#  #pvals = pvals * sign(lrt_stats);
-#  pvals = format(pvals,digits=3)
-#  data\$pvals = pvals;
-#  names(data) = c("chr","start","end","lrt_stat","pval");
-#  write.table(data,file="${file_out}",sep="\t",col.names=TRUE,row.names=FALSE,quote=FALSE);
-
+  # Combine p-values for an aggregate p-value for positive selection.
+  my $pval_stouffer = $self->combined_pval($psc_hash,'stouffer');
+  my $pval_fisher = $self->combined_pval($psc_hash,'fisher');
+  $cur_params->{pval_stouffer} = $pval_stouffer;
+  $cur_params->{pval_fisher} = $pval_fisher;
 
   my $ps = $cur_params->{'parameter_set_id'};
   $cur_params->{'slr_dnds'}      = $self->param('slr_omega');
@@ -126,15 +123,25 @@ sub data_for_gene {
 sub get_sites_data {
   my $self = shift;
 
+  return; # Temporary 2xmammals speed-up. Don't store sites for now, this worked OK the last time.
+
   my $tree = $self->get_tree;
   my $aln  = $tree->get_SimpleAlign;
+
+  my $dba = $self->compara_dba;
+  $dba->dbc->disconnect_when_inactive(0);
+  my $dbh = $dba->dbc->db_handle;
+  $dbh->{AutoCommit} = 0;
 
   foreach my $aln_position ( 1 .. $aln->length ) {
     my $site_data = $self->data_for_site($aln_position);
     if ( defined $site_data ) {
-      $self->store_params_in_table( $self->compara_dba, $self->param('sites_table'), $site_data );
+      $self->store_params_in_table( $dbh, $self->param('sites_table'), $site_data );
     }
   }
+
+  $dbh->commit();
+  $dbh->{AutoCommit} = 1;
 
 }
 
@@ -217,6 +224,9 @@ sub get_gene_table_structure {
     'negative_3'           => 'int',
     'negative_4'           => 'int',
 
+    'pval_stouffer' => 'float',
+    'pval_fisher' => 'float',
+
     'slr_dnds'      => 'float',
     'slr_kappa'     => 'float',
     'slr_tree_length' => 'float',
@@ -224,7 +234,7 @@ sub get_gene_table_structure {
     'hyphy_dnds_lo' => 'float',
     'hyphy_dnds_hi' => 'float',
 
-    unique_keys => 'data_id,parameter_set_id',
+    unique_keys => 'parameter_set_id,node_id,data_id',
     extra_keys => 'data_id,parameter_set_id,node_id,orig_node_id'
   };
 
@@ -244,14 +254,14 @@ sub get_sites_table_structure {
     omega_lower => 'float',
     omega_upper => 'float',
     lrt_stat    => 'float',
-    ncod        => 'float',
-    type        => 'string',
-    note        => 'string',
+    ncod        => 'tinyint',
+    type        => 'char16',
+    note        => 'char16',
 
-    aln_position          => 'int',
+    aln_position          => 'smallint',
     aln_position_fraction => 'float',
 
-    unique_keys => 'data_id,parameter_set_id,aln_position',
+    unique_keys => 'parameter_set_id,node_id,data_id,aln_position',
     extra_keys => 'data_id,parameter_set_id,node_id,orig_node_id'
   };
 

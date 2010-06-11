@@ -15,6 +15,7 @@ use base ('Bio::Greg::Hive::CollectSitewiseStats');
 sub run {
   my $self = shift;
 
+  print "Hey!\n";
   my $check = $self->check_tree_aln;
   if ($check == -1) {
     $self->store_tag("no_stats","Tree or align doesn't look good!");
@@ -28,14 +29,13 @@ sub get_sites_table_structure {
   my $self = shift;
 
   my $added_structure = {
-    filter_value => 'int',
-    domain => 'string',
+    filter_value => 'tinyint',
+    domain => 'char32',
     
-    chr_name  => 'string',
+    chr_name  => 'char16',
     chr_start => 'int',
     chr_end   => 'int',
 
-    unique_keys => 'aln_position,node_id,parameter_set_id'
   };
   
   my $structure = $self->SUPER::get_sites_table_structure;
@@ -47,15 +47,16 @@ sub get_gene_table_structure {
   my $self = shift;
   
   my $added_structure = {
-    'human_protein' => 'string',
-    'human_gene'    => 'string',
-    
-    'chr_name' => 'string',
+    'human_protein' => 'char32',
+    'human_gene'    => 'char32',
+    'human_gene_list' => 'string',
+    'human_protein_list' => 'string',
+    'human_gene_count' => 'smallint',
+
+    'chr_name' => 'char16',
     'chr_start' => 'int',
     'chr_end' => 'int',
-    'chr_strand' => 'int',
-    
-    unique_keys => 'node_id,parameter_set_id'
+    'chr_strand' => 'tinyint',
     };
   
   my $structure = $self->SUPER::get_gene_table_structure();
@@ -66,6 +67,7 @@ sub get_gene_table_structure {
 sub data_for_gene {
   my $self = shift;
 
+  $self->param('genome',1);
   $self->param('filtered',1);
   $self->param('alignment_filtering_value',3);
 
@@ -75,14 +77,15 @@ sub data_for_gene {
 
   # Collect human protein.
   my @human_proteins = grep { $_->taxon_id == 9606 } $tree->leaves;
-  my @human_genes    = map  { $_->get_Gene } @human_proteins;
+  my @human_genes    = map  { $_->gene_member } @human_proteins;
   if ( scalar @human_proteins > 0 ) {
     my $member = $human_proteins[0];
     $data->{'human_protein'} = $member->stable_id;
-    $data->{'human_gene'}    = $member->get_Gene->stable_id;
+    $data->{'human_gene'}    = $human_genes[0]->stable_id;
     $data->{'human_protein_list'} = join( ",", map { $_->stable_id } @human_proteins );
     $data->{'human_gene_list'} = join( ",", map { $_->stable_id } @human_genes );
   }
+  $data->{human_gene_count} = scalar(@human_proteins);
 
   # Collect protein coords.
   if ( scalar @human_proteins > 0) {
@@ -95,9 +98,9 @@ sub data_for_gene {
       my $start  = $tscr->coding_region_start;
       my $end    = $tscr->coding_region_end;
       $data->{chr_name}    = $chr;
-      $data->{start}  = $start;
-      $data->{end}    = $end;
-      $data->{strand} = $strand;
+      $data->{chr_start}  = $start;
+      $data->{chr_end}    = $end;
+      $data->{chr_strand} = $strand;
     }
   }
 
@@ -109,9 +112,11 @@ sub data_for_site {
   my $aln_position = shift;
 
   $self->param('genome',1);
+  $self->param('filtered',0);
+  $self->param('alignment_filtering_value',0);
 
   my $data;
-#  my $data = $self->SUPER::data_for_site($aln_position);
+  my $data = $self->SUPER::data_for_site($aln_position);
   return undef unless (defined $data);
 
   my $tag_hash = $self->param('tag_hash');
@@ -121,7 +126,7 @@ sub data_for_site {
   }
 
   my $site_tags = $tag_hash->{$aln_position};
-  $self->hash_print($site_tags);
+#  $self->hash_print($site_tags);
   if (defined $site_tags) {
     $data->{'filter_value'} = $site_tags->{'FILTER'};
     $data->{'domain'} = $site_tags->{'DOMAIN'};

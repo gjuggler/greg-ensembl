@@ -348,7 +348,7 @@ if (nrow(pos.sites) > 0) {
 print(p.value)
 ^;
   my @values = Bio::Greg::EslrUtils->get_r_values($rcmd,$class->worker_temp_directory);
-  print "[@values]\n";
+  print " combined p-val ($method): [@values]\n";
   my $pval = $values[0];
   $pval = undef if ($pval eq 'NULL');
   return $pval;
