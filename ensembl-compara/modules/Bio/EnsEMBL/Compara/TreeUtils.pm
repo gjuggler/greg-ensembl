@@ -90,6 +90,21 @@ sub k_tree_dist {
   
 }
 
+sub translate_ids {
+  my $class = shift;
+  my $tree = shift;
+  my $map = shift;
+  
+  foreach my $leaf ($tree->leaves) {
+    my $id = $leaf->stable_id;
+    if (defined $id && defined $map->{$id}) {
+      $leaf->stable_id($map->{$id});
+    }
+  }
+
+  return $tree;
+}
+
 
 # Root a tree at its midpoint.
 sub midpoint_root {
@@ -159,13 +174,14 @@ sub to_treeI {
   } elsif ($tree->isa($TREEI)) {
     return $tree;
   } elsif ($tree->isa($NSET)) {
-    $newick = $tree->newick_format();
+    $newick = $tree->newick_format('no_zero_branch_length');
+    print $newick."\n";
   }
   
   open(my $fake_fh, "+<", \$newick);
   my $treein = new Bio::TreeIO
     (-fh => $fake_fh,
-     #-verbose => 1,
+#     -verbose => 1,
      -format => 'newick');
   my $treeI = $treein->next_tree;
   $treein->close;
@@ -546,6 +562,37 @@ sub remove_members_by_node_id {
   return $tree;
 }
 
+sub remove_members_by_method_call {
+  my $class = shift;
+  my $tree = shift;
+  my $species_arrayref = shift;
+  my $method = shift || 'taxon_id';
+
+  my @tax_ids = @{$species_arrayref};
+  # Turn the arrayref into a hash.
+  my %tax_hash;
+  map {$tax_hash{$_}=1} @tax_ids;
+
+  printf "Pruning leaves by $method: %-40.40s ...\n", join(",",sort(@tax_ids));
+  print " > Before: " . scalar($tree->leaves) . "\n";
+
+  # Take the complement of the "delete me" set and extract a subtree.
+  my @keep_me;
+  foreach my $leaf ($tree->leaves) {
+    if (!exists $tax_hash{$leaf->$method()}) {
+      #print ">". $leaf->name." ".$leaf->node_id."\n";
+      push @keep_me, $leaf->node_id;
+    } else {
+      #print "Exists: ".$leaf->$method()."\n";
+    }
+  }
+  if (scalar @keep_me > 0) {
+    $tree = $class->extract_subtree_from_leaves($tree,\@keep_me);
+    print " > After: " . scalar($tree->leaves) . "\n";
+  }
+  return $tree;
+}
+
 sub remove_members_by_taxon_id {
   my $class = shift;
   my $tree = shift;
@@ -575,6 +622,7 @@ sub remove_members_by_taxon_id {
   return $tree;
 }
 
+
 sub get_leaves_for_species {
   my $class = shift;
   my $tree = shift;
@@ -585,7 +633,7 @@ sub get_leaves_for_species {
   my @leaves = ();
   foreach my $leaf ($tree->leaves) {
     if (grep {$leaf->taxon_id == $_} @taxon_ids) {
-      printf "%s %s\n",$leaf->taxon_id,$leaf->stable_id;
+#      printf "%s %s\n",$leaf->taxon_id,$leaf->stable_id;
       push @leaves, $leaf;
     }
   }
