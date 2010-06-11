@@ -149,7 +149,7 @@ sub node_sets {
   my $logic_name = "NodeSets";
   my $module = "Bio::Greg::Hive::NodeSets";
   my $params = {
-    flow_node_set => 'MammalPlusTwoOutgroups'
+    flow_node_set => 'MammalPlusOutgroup'
   };
   $h->create_analysis($logic_name,$module,$params,50,1);
 }
@@ -158,7 +158,7 @@ sub align {
   my $logic_name = "Align";
   my $module = "Bio::Greg::Hive::Align";
   my $params = {
-    alignment_method => 'none',
+    alignment_method => 'prank',
   };
 
   $h->create_analysis($logic_name,$module,$params,400,1);
