@@ -7,10 +7,14 @@ if (exists('drv')) {
 
 if (!exists('dbname')) {
   dbname = 'slrsim_anisimova'
+  host = 'mysql-greg.ebi.ac.uk'
+  port=4134
+  user='slrsim'
+  password='slrsim'
 }
-print(paste("dbname is: ",dbname))
-con <- dbConnect(drv, host='mysql-greg.ebi.ac.uk', port=4134, user='slrsim', password='slrsim', dbname=dbname)
-url = paste("mysql://slrsim:slrsim@mysql-greg.ebi.ac.uk:4134/",dbname,sep="")
+print(paste("dbname:",dbname,"host:",host,"user:",user))
+con <- dbConnect(drv, host=host, port=port, user=user, password=password, dbname=dbname)
+#url = paste("mysql://slrsim:slrsim@mysql-greg.ebi.ac.uk:4134/",dbname,sep="")
 
 get.vector = function(con,query,columns=1) {
   res = dbSendQuery(con,query)
@@ -33,6 +37,7 @@ get.all.data = function() {
 
   all = merge(sites,genes,by=c('data_id','node_id','parameter_set_id'))
   
+  #print(str(all))
   return(all)
 }
 
@@ -219,6 +224,8 @@ df.alignment.accuracy = function(df) {
 summarize.results = function(data,thresh=3.8,paml_thresh=0.95) {
 
   # Paste together some metadata so that we have one ID per experiment.
+  labels <- apply(as.data.frame(data[,col.names]),1,paste,collapse='/')
+  data[,'label'] <- labels
   attrs = c('slrsim_file','alignment_name','filtering_name','alignment_score_threshold','slrsim_ref','sitewise_action','phylosim_insertrate','slrsim_tree_length')
 
   ids = rep("",nrow(data))
@@ -304,14 +311,14 @@ generic.roc.plot = function(data,col.names='label',na.rm=F,plot=T,...) {
     comb.roc <- rbind(sub.roc,comb.roc)      
     fdr.row <- max(which(sub.roc[,'fdr'] <= 0.1))
     if (!is.na(fdr.row)) {
-      print(paste(sub.roc[fdr.row,'tn'],sub.roc[fdr.row,'tp']))
+      #print(paste(sub.roc[fdr.row,'tn'],sub.roc[fdr.row,'tp']))
       mark.fdr = sub.roc[fdr.row,]
       mark.fdr$colour = 'black'
       comb.fdrs <- rbind(comb.fdrs,mark.fdr)
     }
     neutral.row <- max(which(sub.roc[,'score'] >= 0))
     if (!is.na(neutral.row)) {
-      print(neutral.row)
+      #print(neutral.row)
       mark.neutral = sub.roc[neutral.row,]
       mark.neutral$colour = 'gray'
       comb.fdrs <- rbind(comb.fdrs,mark.neutral)
@@ -384,6 +391,27 @@ generic.roc = function(data,col.names='label',na.rm=F) {
     comb.roc <- rbind(sub.roc,comb.roc)
   }
   return(comb.roc)
+}
+
+get.fdr.thresholds = function(data,col.names=c('parameter_set_name')) {
+  full.roc = generic.roc.plot(data,col.names=col.names,plot=F)
+
+  output.df = data.frame()
+  for (lbl in sort(unique(full.roc[,'label']))) {
+    roc = subset(full.roc,label==lbl)
+
+    for (fdr in c(0.01,0.05,0.1,0.2,0.5)) {
+      fdr.ok = roc[which(roc[,'fdr'] <= fdr),]
+      if (nrow(fdr.ok) == 0) {next}
+      max.row = fdr.ok[nrow(fdr.ok),]
+      score.at.fdr = max.row[,'score']
+      tpr.at.fdr = max.row[,'tpr']
+      print(paste(lbl,'[',fdr,'=>',score.at.fdr,tpr.at.fdr,']'))
+      max.row[,'fdr.threshold'] = fdr
+      output.df = rbind(output.df,max.row)
+    }
+  }
+  return(output.df)
 }
 
 facet.roc.plot = function(data,col.names='label',na.rm=F,plot.x='fp',plot.y='tp',facet.x='alignment_name',facet.y='filtering_name',zoom=F) {

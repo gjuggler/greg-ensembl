@@ -2,8 +2,11 @@ package Bio::Greg::Slrsim::LoadTrees;
 
 use strict;
 use Cwd;
-use Bio::EnsEMBL::Hive::Process;
+use Time::HiRes;
 use POSIX qw(strftime mktime);
+
+use Bio::EnsEMBL::Hive::Process;
+use Bio::EnsEMBL::Utils::Exception;
 
 use base ('Bio::Greg::Hive::Process');
 
@@ -13,7 +16,7 @@ sub fetch_input {
   ### DEFAULT PARAMETERS ###
   my $defaults = {
     experiment_name => 'filter_sweeps',
-    tree_root_dir   => '/homes/greg/lib/greg-ensembl/projects/slrsim/trees'
+    tree_root_dir => Bio::Greg::EslrUtils->baseDirectory.'/projects/slrsim/trees'
   };
   ##########################
 
@@ -37,26 +40,35 @@ sub run {
     throw("Experiment $experiment_name not found!") unless ( defined @simsets );
 
   my $tree_dir = $self->param('tree_root_dir') || '.';
+
   foreach my $params (@simsets) {
     $self->verify_params($params);
 
-    my $replicates = $params->{'slrsim_replicates'};
+    my $replicates = $params->{slrsim_replicates};
 
-    my $file = $tree_dir . '/' . $params->{'slrsim_tree_file'};
-    print " -> Tree file: $file\n";
-    open( IN, "$file" );
-    my $newick_str = join( "", <IN> );
-    $newick_str =~ s/\n//g;
-    close(IN);
-    print " -> Tree string: $newick_str\n";
-    my $base_node = Bio::EnsEMBL::Compara::TreeUtils->from_newick($newick_str);
+    my $base_node;
+    if (defined $params->{slrsim_tree}) {
+      $base_node = $params->{slrsim_tree};
+    } elsif (defined $params->{slrsim_tree_file}) {
+      my $file = $tree_dir . '/' . $params->{'slrsim_tree_file'};
+      print " -> Tree file: $file\n";
+      open( IN, "$file" );
+      my $newick_str = join( "", <IN> );
+      $newick_str =~ s/\n//g;
+      close(IN);
+      print " -> Tree string: $newick_str\n";
+      $base_node = Bio::EnsEMBL::Compara::TreeUtils->from_newick($newick_str);
+    } elsif (defined $params->{slrsim_tree_newick}) {
+      $base_node = Bio::EnsEMBL::Compara::TreeUtils->from_newick($params->{slrsim_tree_newick});
+    }
 
     foreach my $sim_rep ( 1 .. $replicates ) {
       $self->load_tree_into_database( $base_node, $sim_rep, $params );
+      sleep(0.1);
     }
   }
 
-  my $pta = $self->compara_dba->get_ProteinTreeAdaptor;
+  my $pta = $self->pta;
   foreach my $node ( @{ $pta->fetch_all_roots } ) {
     print $node->get_tagvalue("input_file") . "\t"
       . $node->node_id . "\t"
@@ -72,8 +84,8 @@ sub load_tree_into_database {
   my $sim_rep = shift;
   my $params  = shift;
 
-  my $mba = $self->compara_dba->get_MemberAdaptor;
-  my $pta = $self->compara_dba->get_ProteinTreeAdaptor;
+  my $mba = $self->mba;
+  my $pta = $self->pta;
 
   my $node = $tree->copy;
 
@@ -116,6 +128,7 @@ sub load_tree_into_database {
   my $sim_param_str = Bio::EnsEMBL::Compara::ComparaUtils->hash_to_string($params);
   foreach my $tag ( keys %{$params} ) {
     $self->store_tag( $tag, $params->{$tag} );
+    sleep(0.1);
   }
 
   # Store the whole parameter set as a string.
@@ -196,8 +209,8 @@ sub load_simulation_params {
     lognormal => {
       omega_distribution_name     => "2xmammals Lognormal",
       phylosim_omega_distribution => 'lognormal',
-      phylosim_meanlog            => -5.39,
-      phylosim_sdlog              => 4.01
+      phylosim_meanlog            => -1.864,
+      phylosim_sdlog              => 1.2007
 
     }
   };
@@ -256,15 +269,22 @@ sub load_simulation_sets {
 
 }
 
+sub mammals_indel_simulations {
+  my $self = shift;
+
+  return $self->mammals_simulations(1);
+}
+
 sub mammals_simulations {
   my $self = shift;
+  my $use_indels = shift || 0;
   
   my $params = {
     slrsim_replicates => 100,
     experiment_name   => "mammals_simulations",
-    slrsim_tree_mult => 1,
+    slrsim_tree_length => 1,
     phylosim_seq_length => 1000,
-    slrsim_ref => 'human'
+    slrsim_ref => 'Homo_sapiens'
   };
 
   my $indel       = $self->param('indel_models')->{'none'};
@@ -272,20 +292,74 @@ sub mammals_simulations {
   my $filter      = $self->filter_param('none');
   my $analysis    = $self->param('phylo_analyses')->{'slr'};
   my $aln         = $self->aln_param('true');
+
+  if ($use_indels) {
+    $params->{experiment_name} = "mammals_indel_simulations";
+    $indel = $self->param('indel_models')->{'power_law'};
+    $aln = $self->aln_param('cmcoffee');
+  }
+
+
   my $base_params = $self->replace_params($params, $indel, $distr, $filter, $analysis, $aln );
 
   my @sets = ();
 
-  # First, add the true alignment.
-  push @sets, $self->replace_params($base_params,$self->tree_param('2x_full'));
-  push @sets, $self->replace_params($base_params,$self->tree_param('2x_nox'));
-  push @sets, $self->replace_params($base_params,$self->tree_param('2x_primates'));
-  push @sets, $self->replace_params($base_params,$self->tree_param('2x_glires'));
+  # Go through each parameter set, get the median branch length, and scale our simulations by that parameter.
+  my $dbname = $self->compara_dba->dbc->dbname;
+
+  my $compara_dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new( -url => 'mysql://ensadmin:ensembl@ens-research/gj1_2x_57');
+  my $tree_f = Bio::Greg::EslrUtils->baseDirectory . "/projects/slrsim/trees/2xmammals.nh";
+  my $species_tree = Bio::EnsEMBL::Compara::TreeUtils->from_file($tree_f);
+
+  my @param_sets = $self->get_parameter_sets('gj1_2x_57');
+  foreach my $pset (@param_sets) {
+    my $i = $pset->{parameter_set_id};
+    #print "$i\n";
+    my $params = eval $pset->{params};
+    #$self->hash_print($params);
+    my $subtree = Bio::EnsEMBL::Compara::ComparaUtils->get_species_subtree($compara_dba,$species_tree,$params);
+
+    my $tree_newick = $subtree->newick_format;
+    my $tree_length = $self->_get_median_tree_length($i);
+
+    my $pset_params = {
+      parameter_set_name => $params->{parameter_set_shortname},
+      slrsim_tree_length => $tree_length,
+      slrsim_tree_newick => $tree_newick
+    };
+    push @sets, $self->replace_params($base_params,$pset_params);
+  }
 
   # Store the overall simulation parameters in the meta table. This will be later dumped by the Plots.pm script.
   $self->store_meta($base_params);
 
   return \@sets;
+}
+
+sub _get_median_tree_length {
+  my $self = shift;
+  my $parameter_set_id = shift;
+
+  use Bio::Greg::EslrUtils;
+  my $script = Bio::Greg::EslrUtils->baseDirectory . "/scripts/collect_sitewise.R";
+
+  my $rcmd = qq^
+dbname = "gj1_2x_57"
+host = 'ens-research'
+port = 3306
+user = 'ensadmin'
+password = 'ensembl'
+script = "$script"
+source(script)
+
+genes = get.genes(parameter.set.id=$parameter_set_id)
+good.genes = subset(genes,tree_length < 8)
+median.length = median(good.genes[,'tree_length'])
+print(median.length)
+^;
+  my @values = Bio::Greg::EslrUtils->get_r_values($rcmd,$self->worker_temp_directory);
+  print "[@values]\n";
+  return $values[0];
 }
 
 sub alignment_comparison {

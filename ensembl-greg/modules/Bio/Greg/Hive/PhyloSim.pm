@@ -191,10 +191,11 @@ $models_trees_partitions
 
   my $aln = Bio::EnsEMBL::Compara::AlignUtils->from_file($aln_f);
 
-  print "$output\n";
+  print "output:\n<<<<$output>>>>\n";
 
 my @sitewise_omegas;
 my $class_to_omega = $self->param('class_to_omega');
+      Bio::EnsEMBL::Compara::ComparaUtils->hash_print($class_to_omega);
 
   # Collect the omega values.
   my $rate_f = $output_f . "_RATES.txt";
@@ -204,7 +205,6 @@ my $class_to_omega = $self->param('class_to_omega');
       my $omg = $class_to_omega->{$2};
       push @sitewise_omegas, {
         aln_position => int($1),
-        node_id      => $self->data_id,
         omega_lower  => $omg,
         omega_upper  => $omg,
         omega        => $omg
@@ -219,6 +219,7 @@ my $class_to_omega = $self->param('class_to_omega');
   unlink $output_f;
   chdir($cwd);
 
+print "Omegas: ". @sitewise_omegas."\n";
 $self->param('sitewise_omegas',\@sitewise_omegas);
 
   return $aln;
@@ -355,7 +356,7 @@ sub _store_sitewise_omegas {
   my $node_id          = $self->node_id;
   my $parameter_set_id = $self->parameter_set_id;
 
-  eval {
+#  eval {
 
 # Insert new omegas into the node.
 #  my $sth = $self->dbc->prepare("INSERT IGNORE INTO $output_table (aln_position,aln_position_fraction,node_id,parameter_set_id,omega,omega_lower,omega_upper,type,ncod) values (?,?,?,?,?,?,?,?,?);");
@@ -364,7 +365,7 @@ sub _store_sitewise_omegas {
     my @insert_strings = ();
     foreach my $hr ( @{$sitewise_ref} ) {
 
-      #Bio::EnsEMBL::Compara::ComparaUtils->hash_print($hr);
+      Bio::EnsEMBL::Compara::ComparaUtils->hash_print($hr);
       #print "hr: $hr\n";
       #printf "%d %d\n",$hr->{aln_position},$hr->{omega};
 
@@ -389,10 +390,10 @@ sub _store_sitewise_omegas {
     }
 
     my $insert = join( ",", @insert_strings );
-    $self->dbc->do(
-      "INSERT INTO $output_table (aln_position,aln_position_fraction,node_id,data_id,parameter_set_id,omega,omega_lower,omega_upper,type,ncod) values $insert ;"
-    );
-  };
+    my $cmd = "INSERT INTO $output_table (aln_position,aln_position_fraction,node_id,data_id,parameter_set_id,omega,omega_lower,omega_upper,type,ncod) values $insert ;";
+    print "$cmd\n";
+    $self->dbc->do($cmd);
+#  };
 }
 
 sub get_m3_bins {
@@ -527,8 +528,8 @@ sub get_r_numbers {
   my @lines = Bio::Greg::EslrUtils->get_r_values( $r_cmd, $self->worker_temp_directory );
   my $line = join( " ", @lines );
 
-  #  print $line."\n";
-  $line =~ s/\[.+?\]//g;
+  #print "values:". $line."\n";
+  #$line =~ s/\[.+?\]//g;
   $line =~ s/"//g;
   my @toks = split( " ", $line );
   return @toks;
