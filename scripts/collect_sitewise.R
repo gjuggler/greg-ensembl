@@ -4,11 +4,16 @@ if (exists('drv')) {
   library(RMySQL)
   drv <- dbDriver('MySQL')
 }
-connect.db = function(dbName) {
-  con <- dbConnect(drv, host='ens-research', port=3306, user='ensro', password='', dbname='gj1_eslr_57')
+
+if (!exists('dbname')) {
+  dbname = 'gj1_eslr_57'
+}
+#print(paste("dbname is: ",dbname))
+connect.db = function(dbname) {
+  con <- dbConnect(drv, host='ens-research', port=3306, user='ensro', password='', dbname=dbname)
   return(con)
 }
-con = connect.db("gj1_eslr_57")
+con = connect.db(dbname)
 
 get.vector = function(con,query,columns='all') {
   res = dbSendQuery(con,query)
@@ -27,7 +32,7 @@ factorize = function(data,columns=names(data)) {
 }
 
 # Get the parameter sets.
-get.psets = function(db='gj1_eslr_57') {
+get.psets = function(db=dbname) {
   query = sprintf(
     paste('SELECT n.parameter_set_id AS id,sn.parameter_value AS parameter_set_shortname, n.parameter_value AS name FROM %s.parameter_set n, %s.parameter_set sn',
       'WHERE n.parameter_set_id=sn.parameter_set_id AND n.parameter_name="name" AND sn.parameter_name="parameter_set_shortname";'),
@@ -35,24 +40,26 @@ get.psets = function(db='gj1_eslr_57') {
   return(get.vector(con,query,columns='all'))
 }
 
-get.genes = function(parameter.set.id=1,db="gj1_eslr_57") {
+get.genes = function(parameter.set.id=1,db=dbname) {
   query = sprintf("SELECT * FROM %s.stats_genes where parameter_set_id=%s",db,parameter.set.id);
   data = get.vector(con,query,columns='all')
 
   return(data)
 }
 
-get.genes.list = function(db="gj1_eslr_57") {
+get.genes.list = function(db=dbname) {
   query = sprintf("SELECT * FROM %s.stats_genes",db);
   data = get.vector(con,query,columns='all')
   return(data)
 }
 
-get.genes.merged = function(db="gj1_eslr_57",exclude.cols=NULL,pset.cols=NULL) {
+get.genes.merged = function(db=dbname,exclude.cols=NULL,pset.cols=NULL) {
   pset.cols <- c(pset.cols,
-    'slr_dnds','hyphy_dnds','hyphy_dnds_lo','hyphy_dnds_hi',
-    'positive_1','positive_2',
-    'tree_length', 'tree_max_path')
+    'slr.dnds','hyphy.dnds'
+#'hyphy_dnds_lo','hyphy_dnds_hi',
+#    'positive_1','positive_2',
+#    'tree_length', 'tree_max_path'
+  )
   pset.cols <- unique(pset.cols)
 
   if (is.null(exclude.cols)) {
@@ -69,11 +76,11 @@ get.genes.merged = function(db="gj1_eslr_57",exclude.cols=NULL,pset.cols=NULL) {
     pset = param.sets[i,]$id
     print(param.sets[i,]$parameter_set_shortname)
     cur.genes = get.genes(pset,db=db)
-
+    print(str(cur.genes))
     create.name = function(ext) {paste(param.sets[pset,]$parameter_set_shortname,ext,sep='_')}
 
     genes.subset = data.frame(
-      a=cur.genes$data_id
+      a=cur.genes$data_id # Need to make sure the data_id is here to merge back with the main genes vector.
     )
 
     for (i in 1:length(pset.cols)) {
@@ -92,19 +99,19 @@ get.genes.merged = function(db="gj1_eslr_57",exclude.cols=NULL,pset.cols=NULL) {
   return(genes);
 }
 
-get.positive.sites = function(parameter.set.id=1,db="gj1_eslr_57",limit="") {
+get.positive.sites = function(parameter.set.id=1,db=dbname,limit="") {
   query = sprintf("SELECT * from %s.stats_sites WHERE parameter_set_id=%s AND type IN ('positive1','positive2','positive3','positive4') %s",db,parameter.set.id,limit)
   sites = get.vector(con,query,columns='all')
   return(sites)  
 }
 
-get.sites = function(parameter.set.id=1,db="gj1_eslr_57",limit="") {
+get.sites = function(parameter.set.id=1,db=dbname,limit="") {
   query = sprintf("SELECT * from %s.stats_sites WHERE parameter_set_id=%s %s",db,parameter.set.id,limit)
   sites = get.vector(con,query,columns='all')
   return(sites)
 }
 
-get.sites.slim = function(fields.list=NA,parameter.set.id=NA,db="gj1_eslr_57",limit.string="") {
+get.sites.slim = function(fields.list=NA,parameter.set.id=NA,db=dbname,limit.string="") {
   if (is.na(fields.list)) {
     fields.list <- c('node_id','parameter_set_id','filter_value','domain','omega','note','type')
   }
@@ -120,55 +127,81 @@ get.sites.slim = function(fields.list=NA,parameter.set.id=NA,db="gj1_eslr_57",li
   return(sites)
 }
 
-get.sites.for.parameter.set = function(dir='.',parameter.set.id) {
+get.sites.for.parameter.set = function(dir='.',parameter.set.id,filter.fn=NULL) {
   load(paste(dir,"/sites_",parameter.set.id,".Rdata",sep=""))
+  if (!is.null(filter.fn)) {
+    sites <- filter.fn(sites)
+  }
+
   return(sites)
 }
 
-sites.summary = function(db="gj1_eslr_57", sites.dir='.', filter.fn=NULL) {
+sites.summary = function(db=dbname, sites.dir='.', filter.fn=NULL) {
   param.sets = get.psets(db=db)
 
   df = data.frame()
-#  for (i in c(1)) {
+#  for (i in c(5)) {
   for (i in 1:nrow(param.sets)) {
     pset <- param.sets[i,]$id
     name <- param.sets[i,]$parameter_set_shortname
     print(pset)
     print(name)
 
-    sub.sites <- get.sites.for.parameter.set(dir=sites.dir,parameter.set.id=pset)
-
-    if (!is.null(filter.fn)) {
-      sub.sites <- filter.fn(sub.sites)
-    }
+    sub.sites <- get.sites.for.parameter.set(dir=sites.dir,parameter.set.id=pset,filter.fn=filter.fn)
     
     n <- nrow(sub.sites)
     if (n == 0) {
       next
     }
-    pos.sites <- subset(sub.sites, type %in% c('positive1','positive2','positive3','positive4'))
-    strong.pos.sites <- subset(sub.sites, type %in% c('positive2','positive3','positive4'))
-    n.pos.sites <- nrow(pos.sites)
-    n.strong.pos.sites <- nrow(strong.pos.sites)
+
+    # Collect FDR threshold values from simulated datasets.
+    for (thresh in c(0.01,0.05,0.1)) {
+      #print(thresh)
+      x <- subset(fdr.thresholds, parameter_set_name==name & fdr.threshold==thresh)
+      #print(x)
+      var.name <- paste('fdr.thresh.',thresh,sep="")
+      if (nrow(x)>0) {
+        assign(var.name,x[,'score'])
+      } else {
+        assign(var.name,1000)
+      }
+    }
+
+    # Collect from indel-simulated datasets.
+    for (thresh in c(.01,.05,.1)) {
+      x <- subset(fdr.indel.thresholds,parameter_set_name==name & fdr.threshold==thresh)
+      var.name <- paste('fdr.indel.thresh.',thresh,sep="")
+      if (nrow(x)>0) {
+        assign(var.name,x$score)
+      } else {
+        assign(var.name,1000)
+      }
+    }
+    
+    # Use p.adjust to do B-H multiple testing correction.
+    sub.above.one = subset(sub.sites, omega > 1)
+    pvals = sub.above.one$pval
+    pvals.adj = p.adjust(pvals,method="fdr")
+    sub.above.one[,'pval.adj'] = pvals.adj
+
+    fdr.pos.sites <- subset(sub.sites, lrt_stat >= `fdr.thresh.0.05` & omega > 1)
+    fdr.strong.pos.sites <- subset(sub.sites, lrt_stat >= `fdr.thresh.0.01` & omega > 1)
+    n.pos.sites <- nrow(fdr.pos.sites)
+    n.strong.pos.sites <- nrow(fdr.strong.pos.sites)
     n.neg.sites <- nrow(subset(sub.sites, type %in% c('negative1','negative2','negative3','negative4')))
     n.strong.neg.sites <- nrow(subset(sub.sites, type %in% c('negative2','negative3','negative4')))
-    pos.domains <- subset(strong.pos.sites,!is.na(domain))
+
+    # Define positive domains and genes using the simulated FDR thresholds.
+    pos.domains <- subset(fdr.strong.pos.sites,!is.na(domain))
     x <- pos.domains[,c('node_id','domain')]
     y <- pos.domains[,c('domain')]
     n.pos.domains <- nrow(unique(x))
     n.pos.domain.types <- length(unique(y))
 
-    x <- strong.pos.sites[,c('node_id')]
+    x <- fdr.strong.pos.sites[,c('node_id')]
     n.pos.genes <- length(unique(x))
     x <- sub.sites[,c('node_id')]
     n.total.genes <- length(unique(x))
-
-    fdr.thresh = switch(name,
-      m = c(2.14,0.219,-0.015),
-      p = c(5.76,2.06,0.734),
-      g = c(3.92,0.861,0.209),
-      c(2.14,0.219,-0.015)
-    )
 
     summary.df <- data.frame(
       parameter_set_id = pset,
@@ -182,27 +215,31 @@ sites.summary = function(db="gj1_eslr_57", sites.dir='.', filter.fn=NULL) {
       `omega_lt_one` = nrow(subset(sub.sites, omega < 1)) / n,
       `omega_gt_one` = nrow(subset(sub.sites, omega > 1)) / n,
       `omega_gt_onep5` = nrow(subset(sub.sites, omega > 1.5)) / n,
-      `positive` = n.pos.sites / n,
-      `negative` = n.neg.sites / n,
-      `strong.positive` = n.strong.pos.sites / n,
-      `strong.negative` = n.strong.neg.sites / n,
-      `n.positive` = n.pos.sites,
-      `n.negative` = n.neg.sites,
-      `n.strong.positive` = n.strong.pos.sites,
-      `n.strong.negative` = n.strong.neg.sites,
       `n.positive.domains` = n.pos.domains,
       `n.positive.domain.types` = n.pos.domain.types,
       `n.positive.genes` = n.pos.genes,
       `n.total.genes` = n.total.genes,
-      `fdr.01` = nrow(subset(sub.sites, lrt_stat >= fdr.thresh[1] & omega > 1))/n,
-      `fdr.05` = nrow(subset(sub.sites, lrt_stat >= fdr.thresh[2] & omega > 1))/n,
-      `fdr.1` = nrow(subset(sub.sites, lrt_stat >= fdr.thresh[3] & omega > 1))/n,
-      `n.fdr.01` = nrow(subset(sub.sites, lrt_stat >= fdr.thresh[1] & omega > 1)),
-      `n.fdr.05` = nrow(subset(sub.sites, lrt_stat >= fdr.thresh[2] & omega > 1)),
-      `n.fdr.1` = nrow(subset(sub.sites, lrt_stat >= fdr.thresh[3] & omega > 1))
+      `n.pval.01` = nrow(subset(sub.sites, pval <= 0.01 & omega > 1)),
+      `n.pval.05` = nrow(subset(sub.sites, pval <= 0.05 & omega > 1)),
+      `n.pval.1` = nrow(subset(sub.sites, pval <= 0.1 & omega > 1)),
+      `n.adj.01` = nrow(subset(sub.above.one, pval.adj <= 0.01)),
+      `n.adj.05` = nrow(subset(sub.above.one, pval.adj <= 0.05)),
+      `n.adj.1` = nrow(subset(sub.above.one, pval.adj <= 0.1)),
+      `n.fdr.01` = nrow(subset(sub.sites, lrt_stat >= `fdr.thresh.0.01` & omega > 1)),
+      `n.fdr.05` = nrow(subset(sub.sites, lrt_stat >= `fdr.thresh.0.05` & omega > 1)),
+      `n.fdr.1` = nrow(subset(sub.sites, lrt_stat >= `fdr.thresh.0.1` & omega > 1)),
+      `n.fdr.indel.01` = nrow(subset(sub.sites, lrt_stat >= `fdr.indel.thresh.0.01` & omega > 1)),
+      `n.fdr.indel.05` = nrow(subset(sub.sites, lrt_stat >= `fdr.indel.thresh.0.05` & omega > 1)),
+      `n.fdr.indel.1` = nrow(subset(sub.sites, lrt_stat >= `fdr.indel.thresh.0.1` & omega > 1)),
+      `fdr.thresh.01` = `fdr.thresh.0.01`,
+      `fdr.thresh.05` = `fdr.thresh.0.05`,
+      `fdr.thresh.1` = `fdr.thresh.0.1`,
+      `fdr.indel.thresh.01` = `fdr.indel.thresh.0.01`,
+      `fdr.indel.thresh.05` = `fdr.indel.thresh.0.05`,
+      `fdr.indel.thresh.1` = `fdr.indel.thresh.0.1`
     )
     df <- rbind(df,summary.df)
-    rm(pos.sites,pos.domains,sub.sites)
+    rm(sub.sites)
     gc()
   }
 
@@ -210,42 +247,60 @@ sites.summary = function(db="gj1_eslr_57", sites.dir='.', filter.fn=NULL) {
   return(df)
 }
 
-sites.fit.distributions = function(db="gj1_eslr_57", sites.dir='.', filter.fn=NULL) {
-  library(MASS)
+
+sites.fit.distributions = function(db=dbname, sites.dir='.', filter.fn=NULL, fit.type='values') {
+  library(fitdistrplus)
   param.sets = get.psets(db=db)
   df = data.frame()
-  for (i in 1:nrow(param.sets)) {
+  for (i in c(1)) {
+#  for (i in 1:nrow(param.sets)) {
     pset <- param.sets[i,]$id
     name <- param.sets[i,]$parameter_set_shortname
     print(name)
-    sites <- get.sites.for.parameter.set(dir=sites.dir,parameter.set.id=pset)
-    if (!is.null(filter.fn)) {
-      sites <- filter.fn(sites)
-    }
-    
-    omegas <- sites$omega
+    sites <- get.sites.for.parameter.set(dir=sites.dir,parameter.set.id=pset,filter.fn=filter.fn)
+
     sites.adj <- sites
+    sites.adj = sites.adj[sample(1:nrow(sites.adj),size=100000),]
     sites.adj[sites.adj$omega == 0,]$omega <- 0.0001
     omegas.adj <- sites.adj$omega
+    sites.adj[,'left'] = sites.adj[,'omega_lower']    
+    sites.adj[,'right'] = sites.adj[,'omega_upper']
 
     set.seed(0)
-    omegas.adj <- sample(omegas.adj, size=1000000)
     omegas.below.one <- omegas.adj[omegas.adj < 1]
     param.min = sqrt(.Machine$double.eps)
 
-    for (distr in c('weibull','beta','exponential','gamma','lognormal')) {
+    for (distr in c('weibull','beta','exp','gamma','lnorm')) {
       print(paste("Fit",distr,"..."))
-      start = NULL
-      values = omegas.adj
-      lower = -Inf
-      if (distr == 'beta') {values = omegas.below.one; start = list(shape1=1,shape2=1); lower=c(param.min,param.min)}
-      if (distr == 'weibull') {start = list(shape=0.5,scale=0.5); lower=c(param.min,param.min)}
+      start <- NULL
+      values <- omegas.adj
+      data <- sites.adj
+      lower <- -Inf
+      if (distr == 'beta') {
+        #data <- subset(data,right < 1);values <- omegas.below.one;
+	start <- list(shape1=1,shape2=1); lower<-c(param.min,param.min)}
+      if (distr == 'weibull') {start <- list(shape=0.5,scale=0.5); lower <- c(param.min,param.min)}
       if (distr == 'gamma') {lower=c(param.min,param.min)}
+#      if (distr == 'lognormal') {start <- list(-5,4);}
       do.fit = function() {
-        if (!is.null(start)) {
-          fit <- fitdistr(values,distr,start=start,lower=lower)
+        fit = NA
+        if (fit.type == 'ci') {
+	  # Use 'fitdistcens' from the Fitdistrplus package.
+  	  library(fitdistrplus)
+          if (!is.null(start)) {
+            fit <- fitdistcens(data,distr,start=start)
+          } else {
+            fit <- fitdistcens(data,distr)
+          }
         } else {
-          fit <- fitdistr(values,distr,lower=lower)
+          if (!is.null(start)) {
+            fit <- fitdist(values,distr,start=start,lower=lower)
+          } else {
+            fit <- fitdist(values,distr,lower=lower)
+          }
+	  if (!is.na(fit) && is.null(fit$aic)) {
+  	    fit$aic = AIC(fit)
+          }
         }
         return(fit)
       }
@@ -254,11 +309,12 @@ sites.fit.distributions = function(db="gj1_eslr_57", sites.dir='.', filter.fn=NU
         return(NA)
       }
       fit = tryCatch(do.fit(),error=error.fit)
+      #fit = do.fit()
 
       fit.str = NA
       aic = NA
       if (!is.na(fit)) {
-        aic <- AIC(fit)
+        aic = fit$aic
 	fit.str = as.character(fit)[1]
       }
 
@@ -269,7 +325,8 @@ sites.fit.distributions = function(db="gj1_eslr_57", sites.dir='.', filter.fn=NU
 	aic = aic,
 	params = fit.str
       )    
-      df <- rbind(df,fit.df)      
+      df <- rbind(df,fit.df)
+      print(df)
     }
   }
 
@@ -277,7 +334,51 @@ sites.fit.distributions = function(db="gj1_eslr_57", sites.dir='.', filter.fn=NU
   return(df)
 }
 
-sites.plot.distributions = function(db="gj1_eslr_57", sites.dir='.', filter.fn=NULL) {
+sites.fit.intervals = function(db=dbname, sites.dir='.',filter.fn=NULL) {
+  library(fitdistrplus)
+  param.sets = get.psets(db=db)
+  df = data.frame()
+  for (i in 1:nrow(param.sets)) {
+    pset <- param.sets[i,]$id
+    name <- param.sets[i,]$parameter_set_shortname
+    print(name)
+    sites <- get.sites.for.parameter.set(dir=sites.dir,parameter.set.id=pset,filter.fn=filter.fn)
+    sites <- sites[sample(100000),]
+    sites$left <- sites$omega_lower
+    sites$right <- sites$omega_upper
+
+    for (distr in c('weibull','exp','gamma','lnorm')) {
+      print(paste("Fit",distr,"..."))
+ 
+      error.fit = function(e) {return(NA)}
+      fit = tryCatch(fit.fn(sites,distr),error=error.fit)
+      fit.str = NA
+      aic = NA
+      if (!is.na(fit)) {
+        aic = fit$aic
+	fit.str = as.character(fit)[1]
+      }
+      fit.df = data.frame(
+        parameter_set_id = pset,
+        parameter_set_name = name,
+        distr = distr,
+	aic = aic,
+	params = fit.str
+      )    
+      df <- rbind(df,fit.df)
+      print(df)
+    }
+  }
+  return(df)
+}
+
+fit.fn = function(df,fn) {
+  require(fitdistrplus)
+  ft <- fitdistcens(df,fn,lower=-Inf)
+  return(ft)
+}
+
+sites.plot.distributions = function(db=dbname, sites.dir='.', filter.fn=NULL) {
   library(MASS)
   param.sets = get.psets(db=db)
 #  param.sets = subset(param.sets,id==1)
@@ -433,3 +534,4 @@ dens.lines = function(field,data,
     lines(poly_x,poly_y,lwd=lwd,col=line.col,...)
   }
 }
+
