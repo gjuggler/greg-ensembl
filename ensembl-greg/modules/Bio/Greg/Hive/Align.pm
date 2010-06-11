@@ -406,8 +406,10 @@ sub align_with_mcoffee
     $mcoffee_executable = $params->{'t_coffee_executable'} if (!defined $mcoffee_executable);
     unless (-e $mcoffee_executable) {
 	print "Using default T-Coffee executable!\n";
-	#$mcoffee_executable = "t_coffee";
         $mcoffee_executable = "/homes/greg/src/T-COFFEE_distribution_Version_8.69/bin/binaries/linux/t_coffee";
+	unless (-e $mcoffee_executable) {
+	  $mcoffee_executable = "t_coffee";
+        }
     }
     #throw("can't find a M-Coffee executable to run\n") unless(-e $mcoffee_executable);
     
@@ -453,8 +455,8 @@ sub align_with_mcoffee
     
     print OUTPARAMS $method_string;
     print OUTPARAMS "-mode=mcoffee\n";
-    print OUTPARAMS "-n_core=1\n";
-    print OUTPARAMS "-multi_core=no\n";
+#    print OUTPARAMS "-n_core=1\n";
+#    print OUTPARAMS "-multi_core=no\n";
     print OUTPARAMS "-output=fasta_aln,score_ascii\n";
     print OUTPARAMS "-outfile=$output_file\n";
     print OUTPARAMS "-newtree=$tree_temp\n";
@@ -526,7 +528,7 @@ sub parse_and_store_alignment_into_proteintree
   my $tree = shift;
   my $aln = shift;
   
-  my $pta = $self->compara_dba->get_ProteinTreeAdaptor;
+  my $pta = $self->pta;
   $pta->protein_tree_member($self->param('alignment_table'));
 
   my %align_hash;
@@ -575,22 +577,22 @@ sub parse_and_store_alignment_into_proteintree
         die("While storing the cigar line, the returned cigar length did not match the sequence length\n");
       }
             
-      if ($table_name eq 'protein_tree_member') {
+#      if ($table_name eq 'protein_tree_member') {
 	  # We can use the default store method for the $member.
-	  $pta->store($member);
-      } else {
+#	  $pta->store($member);
+#      } else {
 	  # Do a manual insert into the correct output table.
       #my $cmd = "CREATE TABLE IF NOT EXISTS $table_name LIKE protein_tree_member;";
       #$pta->dbc->do($cmd);
 	  printf("Updating $table_name %.10s : %.30s\n",$member->stable_id,$member->cigar_line) if ($self->debug);
-          my $sth = $pta->prepare("INSERT INTO $table_name
+          my $sth = $pta->prepare("REPLACE INTO $table_name
                                (node_id,
                                 member_id,
                                 method_link_species_set_id,
                                 cigar_line)  VALUES (?,?,?,?)");
       $sth->execute($member->node_id,$member->member_id,$member->method_link_species_set_id,$member->cigar_line);
       $sth->finish;
-      }
+#      }
 	  # Do a manual insert of the *scores* into the correct score output table.
       
       sleep(0.1);
