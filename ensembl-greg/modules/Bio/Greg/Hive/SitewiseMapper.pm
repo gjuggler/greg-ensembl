@@ -455,8 +455,11 @@ sub do_filter {
     my $total_count = 0;
 
     my $taxon_id_hash = {};
-    
-    my $slice = $sa->slice($aln_position,$aln_position,1);
+    my $slice;
+    eval {
+      $slice = $sa->slice($aln_position,$aln_position,1);
+    };
+    next if ($@);
     
     foreach my $leaf ($tree->leaves) {
       my $seq = Bio::EnsEMBL::Compara::AlignUtils->get_seq_with_id($slice,$leaf->stable_id);
