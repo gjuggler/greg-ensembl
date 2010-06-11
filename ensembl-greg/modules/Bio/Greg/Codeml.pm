@@ -873,22 +873,24 @@ sub branch_model_likelihood {
     model => 2
   };
 
+  # If the 'model' or 'omega' parameters are given, apply them to the parameter object
+  # passed to the new Codeml instance.
   my $final_params = {%$default_params};
   foreach my $param ('model','omega') {
     $final_params->{$param} = $params->{$param} if (defined $params->{$param});
   }
   $final_params->{verbose} = 1;
 
+  # Create the new Codeml object and run it.
   my $codeml = $class->new(-params => $final_params, -tree => $tree, -alignment => $codon_aln, -tempdir => $tempdir);
-#  $codeml->save_tempfiles(1);
+  # Note: we'll ignore the $parser object here because it doesn't seem to work...
   my ($rs,$parser) = $codeml->run();
 
-#  my @file_lines = file_array($tempdir."/mlc");
-#  $codeml->main_results(\@file_lines);
-
+  # Instead, manually extract likelihood and omega values from the results file.
   my $lnL = $codeml->extract_lnL();
   my @omegas = $codeml->extract_omegas();
 
+  # Return an object with our results of interest.
   return {
     lnL => $lnL,
     omegas => \@omegas
