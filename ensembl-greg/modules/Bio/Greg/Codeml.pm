@@ -529,6 +529,7 @@ sub run {
        $exit_status = close($run);
        $self->error_string(join('',@output));
        if( (grep { /error/io } @output)  || !$exit_status) {
+#       if (!$exit_status) {
 	   $self->warn("ERROR RUNNING CODEML:\n".$self->error_string);
 	   $rc = 0;
        }
@@ -773,6 +774,43 @@ sub extract_lnL {
     }
 }
 
+# GJ 2009-01-09 Extracting log-likelihoods from runs.
+sub extract_omegas {
+    my $self = shift;
+    my $main_arrayref = shift;
+    $main_arrayref = $self->main_results unless (defined $main_arrayref);
+    my @main = @{$main_arrayref};
+
+    foreach my $line(@main) {
+	chomp $line;
+	next if (length($line) == 0); # skip blank lines.
+
+	if ($line =~ m/omega/) {
+	  #print "$line\n";
+	  my @tokens = split("=",$line);
+	  my $value_string = $tokens[1];
+	  $value_string = strip($value_string);
+	  return ($value_string);
+        } elsif ($line =~ m/w \(dN\/dS\) for branches/) {
+	  #print "$line\n";
+	  my @tokens = split(":",$line);
+	  #print "Tokens: @tokens\n";
+	  my $values_string = $tokens[1];
+	  $values_string = strip($values_string);
+	  my @values = split(/\s/,$values_string);
+	  #print "Omegas: @values\n";
+	  return @values;
+	}
+    }
+}
+
+sub strip {
+  my $string = shift;
+  $string =~ s/^\s+//;
+  $string =~ s/\s+$//;
+  return $string;
+}
+
 # GJ 2009-01-08 : Convenience method for re-estimating branch lengths using the M0 model.
 sub get_m0_tree {
     my $class = shift;
@@ -795,6 +833,77 @@ sub get_m0_tree {
     return $new_tree;
 }
 
+sub codon_model_likelihood {
+  my $class = shift;
+  my $tree = shift;
+  my $codon_aln = shift;
+  my $tempdir = shift;
+  my $params = shift;
+
+  my $default_params = {
+    NSsites => 0, # No sites categories.
+    model => 0, # One rate throughout tree.
+    fix_blength => 0, # Ignore input branch lengths
+  };
+
+  my $final_params = $default_params;
+
+  my $codeml = $class->new(-params => $final_params, -tree => $tree, -alignment => $codon_aln, -tempdir => $tempdir);
+  $codeml->save_tempfiles(1);
+  my ($rs,$parser) = $codeml->run();
+  my $lnL = $codeml->extract_lnL();
+  my @omegas = $codeml->extract_omegas();  
+
+  return {
+    lnL => $lnL,
+    omegas => \@omegas
+  };
+}
+
+sub branch_model_likelihood {
+  my $class = shift;
+  my $tree = shift;
+  my $codon_aln = shift;
+  my $tempdir = shift;
+  my $params = shift;
+
+  my $default_params = {
+    NSsites => 0, # No sites categories.
+    fix_blength => 1, # Use initial branch lengths as estimates.
+    model => 2
+  };
+
+  my $final_params = {%$default_params};
+  foreach my $param ('model','omega') {
+    $final_params->{$param} = $params->{$param} if (defined $params->{$param});
+  }
+  $final_params->{verbose} = 1;
+
+  my $codeml = $class->new(-params => $final_params, -tree => $tree, -alignment => $codon_aln, -tempdir => $tempdir);
+#  $codeml->save_tempfiles(1);
+  my ($rs,$parser) = $codeml->run();
+
+#  my @file_lines = file_array($tempdir."/mlc");
+#  $codeml->main_results(\@file_lines);
+
+  my $lnL = $codeml->extract_lnL();
+  my @omegas = $codeml->extract_omegas();
+
+  return {
+    lnL => $lnL,
+    omegas => \@omegas
+  };
+}
+
+
+sub file_array {
+  my $file = shift;
+
+  open(IN,$file);
+  my @lines = <IN>;
+  close(IN);
+  return @lines;
+}
 
 # GJ 2009-01-09 : Ratio tests for pos-sel.
 sub NSsites_ratio_test {
