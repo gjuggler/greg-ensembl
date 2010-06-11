@@ -1,0 +1,73 @@
+constrain = function(data,lo,hi) {
+  data = pmin(data,hi)
+  data = pmax(data,lo)
+  return(data)
+}
+
+plot.cum = function(df, new.plot=T, x.lim=NULL, y.lim=NULL, ...) {
+  require(doBy)
+
+  df$mid <- (df$right-df$left)/2.0
+  df$signed_lrt = df$lrt_stat
+  df[df$omega < 1,]$signed_lrt = -df[df$omega < 1,]$signed_lrt
+  df <- orderBy(~signed_lrt,data=df)
+  df$index <- (1:nrow(df))/nrow(df)
+  df$index_lo <- (1:nrow(df))/nrow(df) - 1/nrow(df)
+  print(df[1,])
+  if (is.null(x.lim)) {
+    x.lim = c(min(df$left),max(df$right))
+  }
+  if (is.null(y.lim)) {
+    y.lim = c(0,1)
+  }
+
+  if (new.plot) {
+    plot.new()
+    plot(NULL,xlim=x.lim,ylim=y.lim,xlab='omega',ylab='cumulative density')
+  }
+
+  X = 6
+  Y = 1/3
+  lrt = df$signed_lrt
+  lrt.blue = -constrain(lrt,-X,0)
+  lrt.red = constrain(lrt,0,X)
+  lrt.blue = (lrt.blue/X) ^ (Y)
+  lrt.red = (lrt.red/X) ^ (Y)
+
+  #W = 0.75
+  #Z = df$lrt_stat < 6.6
+  #lrt.blue[Z] = lrt.blue[Z]*W
+  #lrt.red[Z] = lrt.red[Z]*W
+
+  #V = 0.75
+  #Z = df$lrt_stat < 3.8
+  #lrt.blue[Z] = lrt.blue[Z]*V
+  #lrt.red[Z] = lrt.red[Z]*V
+
+  sig.lines <- function(thresh,...) {
+    a <- subset(df,signed_lrt < thresh)
+    abline(h=a[nrow(a),]$index,col='gray',...)
+  }
+  sig.lines(-6.6)
+  sig.lines(-3.8,lty='dashed')
+  sig.lines(3.8,lty='dashed')
+  sig.lines(6.6)
+
+  rect(xleft=df$left,xright=df$right,ybottom=df$index_lo,ytop=df$index,
+    col=rgb(lrt.red,0,lrt.blue,.5),border=NA,...)
+}
+
+plot.cum(df,x.lim=c(0,5))
+
+plot.fn = function(ft,col) {
+  a <- ft$estimate[1]
+  b <- ft$estimate[2]
+  xx <- seq(from=0,to=10,length.out=200)
+  str <- paste("p",fn,"(xx,a,b)",sep="")
+  yy <- eval(parse(text=str))
+  lines(xx,yy,col=col,lwd=1.5)
+}
+
+fit.fn(df,'lnorm','orange')
+fit.fn(df,'gamma','green')
+fit.fn(df,'weibull','purple')
