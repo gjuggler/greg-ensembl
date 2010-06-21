@@ -31,26 +31,27 @@ my $counts_genes_def = {
   parameter_set_id => 'int',
   node_id => 'int',
 
-  human_gene => 'string',
-  human_chr => 'string',
+  human_gene => 'char32',
+  human_protein => 'char32',
+  human_chr => 'char16',
   human_start => 'int',
   human_end => 'int',
-  human_strand => 'int',
+  human_strand => 'tinyint',
 
-  most_frequent_pattern => 'string',
+  most_frequent_pattern => 'char16',
   most_frequent_pattern_excess => 'float',
 
-  synon => 'int',
-  nonsynon => 'int',
-  constant => 'int',
-  gap => 'int',
+  synon => 'smallint',
+  nonsynon => 'smallint',
+  constant => 'smallint',
+  gap => 'smallint',
   
   tree_newick => 'string',
-  tree_pattern => 'string',
+  tree_pattern => 'char16',
   tree_length => 'float',
   tree_max_path => 'float',
   seq_length_mean => 'float',
-  orig_leaf_count => 'int',
+  orig_leaf_count => 'smallint',
 
   unique_keys => 'data_id,parameter_set_id',
   extra_keys => 'data_id,node_id,tree_pattern'
@@ -58,33 +59,33 @@ my $counts_genes_def = {
 
 my $counts_sites_def = {
   node_id => 'int',
-  aln_position => 'int',
-  chr_name => 'string',
+  aln_position => 'smallint',
+  chr_name => 'char16',
   chr_start => 'int',
   chr_end => 'int',
   chr_strand => 'string',
-  chr_codon => 'string',
+  chr_codon => 'char16',
 
-  type => 'string',
-  pattern    => 'string',
+  type => 'char32',
+  pattern    => 'char16',
 
-  codon_a    => 'string',
-  codon_b    => 'string',
-  species_a => 'string',
-  species_b => 'string',
-  species_gapped => 'string',
+  codon_a    => 'char8',
+  codon_b    => 'char8',
+  species_a => 'char8',
+  species_b => 'char8',
+  species_gapped => 'char8',
 
-  has_cpg    => 'int',
-  has_gap    => 'int',
-  has_n      => 'int',
+  has_cpg    => 'tinyint',
+  has_gap    => 'tinyint',
+  has_n      => 'tinyint',
 
-  n_nucleotide_diffs => 'int',
-  mut_position => 'int',
-  mut_s_w => 'int',
-  mut_w_s => 'int',
-  mut_ts => 'int',
-  mut_tv => 'int',
-  mut_cpg => 'int',
+  n_nucleotide_diffs => 'tinyint',
+  mut_position => 'tinyint',
+  mut_s_w => 'tinyint',
+  mut_w_s => 'tinyint',
+  mut_ts => 'tinyint',
+  mut_tv => 'tinyint',
+  mut_cpg => 'tinyint',
   
   unique_keys => 'data_id,parameter_set_id,aln_position',
   extra_keys => 'data_id,node_id,type',
@@ -106,10 +107,45 @@ sub fetch_input {
   # Fetch parameters from all possible locations.
   $self->load_all_params($params);
 
+  # Add in specialized keys to the data hashes.
+  $self->add_special_keys();
+
   # Create table if necessary.
   $self->create_table_from_params($self->compara_dba,$self->params->{counts_sites_table},$counts_sites_def);
   $self->create_table_from_params($self->compara_dba,$self->params->{counts_genes_table},$counts_genes_def);
+}
 
+sub add_special_keys {
+  my $self = shift;
+
+  foreach my $key ($self->used_species_letters) {
+    $counts_genes_def->{'n_bad_'.$key} = 'smallint';
+    $counts_genes_def->{'n_syn_'.$key} = 'smallint';
+    $counts_genes_def->{'n_nsyn_'.$key} = 'smallint';
+  }
+}
+
+sub used_species_letters {
+  my $self = shift;
+
+  my $taxon_to_letter = $self->taxon_to_letter;
+  my $species_str = $self->param('gorilla_count_species');
+  my @species_list = split(',',$species_str);
+  my @letter_list = map {$taxon_to_letter->{$_}} @species_list;
+
+  return @letter_list;
+}
+
+sub taxon_to_letter {
+  my $self = shift;
+  
+  my $taxon_to_letter = {
+    9606 => 'H',
+    9598 => 'C',
+    9593 => 'G',
+    9600 => 'O'
+  };
+  return $taxon_to_letter;
 }
 
 sub run {
@@ -122,12 +158,7 @@ sub run {
   my $species_str = $self->param('gorilla_count_species');
   my @species_list = split(',',$species_str);
 
-  my $taxon_to_letter = {
-    9606 => 'H',
-    9598 => 'C',
-    9593 => 'G',
-    9600 => 'O'
-  };
+  my $taxon_to_letter = $self->taxon_to_letter;
 
   my @keeper_leaves = $TREE->get_leaves_for_species($tree,\@species_list);
 
@@ -164,6 +195,7 @@ sub run {
     gap => 0,
     most_frequent_pattern => '',
     most_frequent_pattern_excess => 0,
+    n_bad_codons => 0,
     tree_newick => $tree->newick_format(),
     tree_length => $self->tree_length($tree),
     tree_max_path => $self->max_path($tree),
@@ -171,13 +203,19 @@ sub run {
     seq_length_mean => $self->seq_length_mean($tree)
   };
 
+  foreach my $key ($self->used_species_letters) {
+    $gene_data->{'n_bad_'.$key} = 0;
+    $gene_data->{'n_syn_'.$key} = 0;
+    $gene_data->{'n_nsyn_'.$key} = 0;
+  }
+
   $gene_data->{orig_leaf_count} = $self->root_node_gene_count($tree);
   # Collect human protein.
   my @human_proteins = grep { $_->taxon_id == 9606 } $tree->leaves;
-  my @human_genes    = map  { $_->get_Gene } @human_proteins;
   if ( scalar @human_proteins > 0 ) {
     my $member = $human_proteins[0];
-    $gene_data->{'human_gene'}    = $member->get_Gene->stable_id;
+    $gene_data->{'human_gene'}    = $member->gene_member->stable_id;
+    $gene_data->{'human_protein'}    = $member->stable_id;
   }
   # Collect protein coords.
   if ( scalar @human_proteins > 0) {
@@ -326,6 +364,16 @@ sub run {
     if ($n_nucleotide_diffs > 0) {
       print "$n_nucleotide_diffs $w_s $s_w $n_cpg_muts $species_a $species_b\n";
       $ALN->pretty_print($slice,{length=>200});
+      
+      $gene_data->{'n_syn_'.$species_a}++ if ($type eq 'synonymous');
+      $gene_data->{'n_nsyn_'.$species_a}++ if ($type eq 'nonsynonymous');
+    }
+
+    if ($n_nucleotide_diffs > 2) {
+      # Codons with 3 nucleotide canges are probably badly aligned.
+      # Mark it as a bad alignment position in the gene data collector.
+      $gene_data->{n_bad_codons}++;
+      $gene_data->{'n_bad_'.$species_a}++;
     }
 
     my $site_data = {
@@ -379,6 +427,9 @@ sub run {
     $other_count = $gene_data->{$key} if ($key ne $most_frequent_pattern && $gene_data->{$key} > $other_count);
   }
   $gene_data->{most_frequent_pattern_excess} = ($most_frequent_count+1) / ($other_count+1);
+
+  
+
 
   # Apply the gene-wide data and store a row in the gene-count table.
   $gene_data = $self->replace_params($self->params,$gene_data);

@@ -579,6 +579,7 @@ sub create_table_from_params {
         'smallint'    => 'SMALLINT',
         'int'    => 'INT',
         'string' => 'TEXT',
+        'char8' => 'CHAR(8)',
         'char16' => 'CHAR(16)',
         'char32' => 'CHAR(32)',
         'float'  => 'FLOAT'

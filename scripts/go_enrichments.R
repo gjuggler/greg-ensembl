@@ -1,50 +1,101 @@
 go.cmd = 'select node_id, stable_id, group_concat(DISTINCT go_term) AS go from go_terms WHERE source_taxon=%s AND evidence_code != "%s" group by stable_id';
 
-go.hs = get.vector(con,sprintf(go.cmd,9606,'IEA'),columns='all')
-go.hs.iea = get.vector(con,sprintf(go.cmd,9606,''),columns='all')
+if (!exists('go.hs')) {
+  go.hs = get.vector(con,sprintf(go.cmd,9606,'IEA'),columns='all')
+  go.hs.iea = get.vector(con,sprintf(go.cmd,9606,''),columns='all')
 
-go.mm = get.vector(con,sprintf(go.cmd,'10090','IEA'),columns='all')
-go.mm.iea = get.vector(con,sprintf(go.cmd,'10090',''),columns='all')
-
+  go.mm = get.vector(con,sprintf(go.cmd,'10090','IEA'),columns='all')
+  go.mm.iea = get.vector(con,sprintf(go.cmd,'10090',''),columns='all')
+}
 library(biomaRt)
 library(topGO)
 
-get.go.table = function(int.symbols,all.symbols,symbols.to.go,ontology) {
-  myGeneList <- factor(as.integer(all.symbols %in% int.symbols))
-  names(myGeneList) <- all.symbols
-  GOdata <- new("topGOdata",ontology=ontology,annot=annFUN.gene2GO,gene2GO=symbols.to.go,allGenes=myGeneList)
-  
-  test.stat <- new("elimCount",testStatistic=GOFisherTest,name="Fisher count")
-  res.Fis <- getSigGroups(GOdata,test.stat)
-  
-  ts <- termStat(GOdata)
-  df.terms = data.frame(
-    id=row.names(ts),
-    ann=ts$Annotated,
-    sig=ts$Significant,
-    exp=ts$Expected
-    )
-  df.scores = data.frame(
-    id=names(res.Fis@score),
-    pval=res.Fis@score
-    )
-  df.extra = data.frame(ont=rep(ontology,nrow(df.scores)))
-  my.df = merge(df.terms,df.scores)
-  my.df = cbind(my.df,df.extra)
-  return(my.df)
+get.go.table.subset = function(int.symbols,all.symbols,symbols.to.go,ontology,nodeSize=5,description='') {
+ scores <- factor(as.integer(all.symbols %in% int.symbols))
+ names(scores) <- all.symbols
+ return(get.go.table(scores,symbols.to.go,ontology,nodeSize,description))
 }
 
+get.go.table = function(scores,symbols.to.go,ontology,nodeSize=5,description='',scoresAreBinary=FALSE) {
+  if (scoresAreBinary) {
+    geneSelectionFun = function(score){return(score >= 1)}
+  } else {
+    geneSelectionFun = function(score){return(score < 0.1)}
+  }
 
-get.enrich.df = function(subset,all,go.df,go.field.name='node_id') {
+  GOdata <- new("topGOdata",
+    ontology = ontology,
+    allGenes = scores,
+    annot = annFUN.gene2GO,
+    gene2GO = symbols.to.go,
+    geneSelectionFun = geneSelectionFun,
+    nodeSize = nodeSize,
+    description = description
+  )
+
+  go.terms = usedGO(GOdata)
+
+  if (scoresAreBinary) {
+    res.Fis <- runTest(GOdata,algorithm="classic",statistic="Fisher")
+    res.Fis.weight <- runTest(GOdata,algorithm="weight",statistic="Fisher")
+    res.Fis.elim <- runTest(GOdata,algorithm="elim",statistic="Fisher")
+    res.Fis.parentChild <- runTest(GOdata,algorithm="parentChild",statistic="Fisher")
+    test.df = GenTable(GOdata, 
+      pval.fis = res.Fis,
+      pval.fis.weight = res.Fis.weight,
+      pval.fis.elim = res.Fis.elim,
+      pval.fis.parentchild = res.Fis.parentChild,
+      topNodes=length(go.terms)
+    )
+  } else {
+    res.KS <- runTest(GOdata,algorithm="classic",statistic="KS")
+    res.KS.elim <- runTest(GOdata,algorithm="elim",statistic="KS")
+    res.T <- runTest(GOdata,algorithm="classic",statistic="t")
+    res.Fis <- runTest(GOdata,algorithm="classic",statistic="Fisher")
+    test.df = GenTable(GOdata,
+      pval.ks.elim = res.KS.elim,
+      pval.ks = res.KS,
+      pval.t = res.T,
+      pval.fis = res.Fis,
+      topNodes=length(go.terms)
+    )
+  }
+
+
+  return(test.df)
+}
+
+get.enrich.by.score = function(named.scores,go.df,go.field.name='node_id',nodeSize=5) {
   go.vec = strsplit(go.df$go,split=",",fixed=T)
   names(go.vec) = go.df[,go.field.name]
-  print(go.vec[1:5])
-  bp = get.go.table(subset,all,go.vec,"BP")
+
+  bp = get.go.table(
+    scores = named.scores,
+    symbols.to.go = go.vec,
+    ontology = 'BP',
+    nodeSize = nodeSize,
+    description = '',
+    scoresAreBinary = FALSE
+  )
   return(bp)
-  # Ignore MF and CC enrichments for now.
-  #mf = get.go.table(subset,all,go.vec,"MF")
-  #cc = get.go.table(subset,all,go.vec,"CC")
-  #return(rbind(bp,mf,cc))
+}
+
+get.enrich.by.subset = function(subset,all,go.df,go.field.name='node_id',nodeSize=5) {
+  go.vec = strsplit(go.df$go,split=",",fixed=T)
+  names(go.vec) = go.df[,go.field.name]
+
+  scores = as.integer(all %in% subset)
+  names(scores) = all
+
+  bp = get.go.table(
+    scores = scores,
+    symbols.to.go = go.vec,
+    ontology = 'BP',
+    nodeSize = nodeSize,
+    description = '',
+    scoresAreBinary = TRUE
+  )
+  return(bp)
 }
 
 do.vizbi.enrichments = function() {

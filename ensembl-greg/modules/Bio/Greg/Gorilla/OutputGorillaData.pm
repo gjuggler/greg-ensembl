@@ -33,10 +33,12 @@ sub export_topologies {
   my $data_file = $self->get_output_folder . "/stats_topology.Rdata";
   my $folder = $self->get_output_folder;
 
+  my $script = Bio::Greg::EslrUtils->baseDirectory."/scripts/collect_sitewise.R";
+
   if (!-e $data_file) {
     my $cmd = qq^
 dbname="gj1_gor_57"
-source("../../scripts/collect_sitewise.R");
+source("${script}");
 
 gcinfo(TRUE)
 stats.topology <- get.vector(con,"SELECT * from stats_topology;")
@@ -52,15 +54,27 @@ sub export_likelihoods {
   my $self = shift;
 
   my $data_file = $self->get_output_folder . "/stats_lnl.Rdata";
+
   my $folder = $self->get_output_folder;
+
+  my $collect_script = Bio::Greg::EslrUtils->baseDirectory."/scripts/collect_sitewise.R";
+  my $lrt_script = Bio::Greg::EslrUtils->baseDirectory."/projects/gorilla/lrt_analysis.R";
+  my $go_script = Bio::Greg::EslrUtils->baseDirectory."/scripts/go_enrichments.R";
   
-  my $force = 0;
+  my $force = 1;
   if (!-e $data_file || $force) {
     my $cmd = qq^
 dbname="gj1_gor_57"
-source("../../scripts/collect_sitewise.R");
+source("${collect_script}");
 
 stats.lnl <- get.vector(con,"SELECT * from stats_lnl;")
+genes.lnl <- get.vector(con,"SELECT * from lnl_genes;")
+
+# Merge the gene-count data with the likelihood calculations.
+genes = merge(stats.lnl,genes.lnl)
+# Filter out genes that have too many bad H or G mutations.
+bad_site_t = 1 # number of 'bad' sites to allow (codons with all 3 sites mutated, which should be unlikely in well-aligned regions)
+stats.lnl = subset(genes, n_bad_G < bad_site_t & n_bad_H < bad_site_t)
 
 # Likelihoods key:
 # a: (H, G, others)
@@ -71,8 +85,8 @@ stats.lnl <- get.vector(con,"SELECT * from stats_lnl;")
 # Which omegas are which for each test?
 # pval.1: fg=b_omega_1, bg=b_omega_0 # human
 # pval.2: fg=c_omega_1, bg=c_omega_0 # gorilla
-# pval.3: fg=d_omega_2, bg=d_omega_0 [and d_omega_1] # human
-# pval.4: fg=d_omega_1, bg=d_omega_0 [and d_omega_2] # gorilla
+# pval.3: fg=d_omega_1, bg=d_omega_0 # gorilla
+# pval.4: fg=d_omega_2, bg=d_omega_0 # human
 # pval.5: fg=e_omega_1, bg=e_omega_0 # both
 
 # Add the p-values
@@ -81,9 +95,150 @@ stats.lnl[,'pval.2'] = with(stats.lnl,1 - pchisq(2*(c_lnL-a_lnL),df=1))
 stats.lnl[,'pval.3'] = with(stats.lnl,1 - pchisq(2*(d_lnL-b_lnL),df=1))
 stats.lnl[,'pval.4'] = with(stats.lnl,1 - pchisq(2*(d_lnL-c_lnL),df=1))
 stats.lnl[,'pval.5'] = with(stats.lnl,1 - pchisq(2*(e_lnL-a_lnL),df=1))
+stats.lnl[,'pval.6'] = with(stats.lnl,1 - pchisq(2*(d_lnL-e_lnL),df=1))
+
+method = 'BH'
+stats.lnl[,'pval.1.bh'] = with(stats.lnl,p.adjust(pval.1,method=method))
+stats.lnl[,'pval.2.bh'] = with(stats.lnl,p.adjust(pval.2,method=method))
+stats.lnl[,'pval.3.bh'] = with(stats.lnl,p.adjust(pval.3,method=method))
+stats.lnl[,'pval.4.bh'] = with(stats.lnl,p.adjust(pval.4,method=method))
+stats.lnl[,'pval.5.bh'] = with(stats.lnl,p.adjust(pval.5,method=method))
+stats.lnl[,'pval.6.bh'] = with(stats.lnl,p.adjust(pval.6,method=method))
 
 # Save the data
 save(stats.lnl,file="${data_file}")
+
+source("${lrt_script}",echo=T)
+source("${go_script}")
+
+t = 0.05 # pval / FDR threshold.
+
+print(paste("Before: ",nrow(genes)))
+print(paste("After: ",nrow(stats.lnl)))
+
+stats.lnl[,'stable_id'] = stats.lnl[,'human_protein']
+go.df = go.hs
+all.ids = stats.lnl[,'stable_id']
+
+get.df.subset = function(subset) {
+  print(paste("size: ",nrow(subset)))
+  return(get.enrich.by.subset(
+    subset = subset[,'stable_id'],
+    all = all.ids,
+    go.df = go.df,
+    go.field.name = 'stable_id',
+    nodeSize = 3
+  ))
+}
+get.df.scores = function(score.field.name,gene.universe) {
+  scores = gene.universe[,score.field.name]
+  names(scores) = gene.universe[,'stable_id']
+  return(get.enrich.by.score(
+    named.scores=scores,
+    go.df = go.df,
+    go.field.name = 'stable_id',
+    nodeSize = 3
+  ))
+}
+
+get.go.data = function() {
+  scores = stats.lnl[,'pval.3.bh']
+  names(scores) = stats.lnl[,'stable_id']
+  geneSelectionFun = function(score){return(score < 0.1)}
+
+  go.vec = strsplit(go.df[,'go'],split=",",fixed=T)
+  names(go.vec) = go.df[,'stable_id']
+
+  GOdata <- new("topGOdata",
+    ontology = 'BP',
+    allGenes = scores,
+    annot = annFUN.gene2GO,
+    gene2GO = go.vec,
+    nodeSize = 3,
+    description = '',
+    geneSelectionFun = geneSelectionFun
+  )
+  return(GOdata)
+}
+
+GOdata = get.go.data()
+save(GOdata,file="${folder}/go_data.Rdata")
+
+# Useful things to do with the GOdata object:
+
+#usedTerms <- usedGO(GOdata)
+#term <- usedTerms[1]
+#annotated.genes <- genesInTerm(GOdata,term)[[1]]
+#sig.genes <- sigGenes(GOdata) # Get the significant genes according to the score threshold.
+
+#q()
+
+`1.up`   = subset(stats.lnl,pval.1.bh < t & b_omega_1 > b_omega_0)
+`2.up`     = subset(stats.lnl,pval.2.bh < t & c_omega_1 > c_omega_0)
+`3.up`   = subset(stats.lnl,pval.3.bh < t & d_omega_1 > d_omega_0)
+`4.up` = subset(stats.lnl,pval.4.bh < t & d_omega_2 > d_omega_0)
+`5.up` = subset(stats.lnl,pval.5.bh < t & e_omega_1 > e_omega_0)
+`6.up` = subset(stats.lnl,pval.6.bh < t & d_omega_1 > d_omega_2)
+
+`tbl.1.up` = get.df.subset(subset=`1.up`)
+`tbl.2.up` = get.df.subset(subset=`2.up`)
+`tbl.3.up` = get.df.subset(subset=`3.up`)
+`tbl.4.up` = get.df.subset(subset=`4.up`)
+`tbl.5.up` = get.df.subset(subset=`5.up`)
+`tbl.6.up` = get.df.subset(subset=`5.up`)
+
+`1.down`   = subset(stats.lnl,pval.1.bh < t & b_omega_1 < b_omega_0)
+`2.down`     = subset(stats.lnl,pval.2.bh < t & c_omega_1 < c_omega_0)
+`3.down` = subset(stats.lnl,pval.3.bh < t & d_omega_1 < d_omega_0)
+`4.down`   = subset(stats.lnl,pval.4.bh < t & d_omega_2 < d_omega_0)
+`5.down` = subset(stats.lnl,pval.5.bh < t & e_omega_1 < e_omega_0)
+`6.down` = subset(stats.lnl,pval.6.bh < t & d_omega_2 > d_omega_1)
+
+`tbl.1.down` = get.df.subset(subset=`1.down`)
+`tbl.2.down` = get.df.subset(subset=`2.down`)
+`tbl.3.down` = get.df.subset(subset=`3.down`)
+`tbl.4.down` = get.df.subset(subset=`4.down`)
+`tbl.5.down` = get.df.subset(subset=`5.down`)
+`tbl.6.down` = get.df.subset(subset=`6.down`)
+
+for (i in c(1:6)) {
+  up.name = paste('tbl.',i,'.up',sep="")
+  down.name = paste('tbl.',i,'.down',sep="")
+  
+  up = get(up.name)
+  down = get(down.name)
+
+  write.csv(up,file=paste("${folder}/",up.name,".csv",sep=""),row.names=F)
+  write.csv(down,file=paste("${folder}/",down.name,".csv",sep=""),row.names=F)
+}
+
+gor.up = subset(stats.lnl,d_omega_1 > d_omega_0)
+tbl.gor.up = get.df.scores('pval.3.bh',gor.up)
+gor.down = subset(stats.lnl,d_omega_1 < d_omega_0)
+tbl.gor.down = get.df.scores('pval.3.bh',gor.down)
+
+hum.up = subset(stats.lnl,d_omega_2 > d_omega_0)
+tbl.hum.up = get.df.scores('pval.4.bh',hum.up)
+hum.down = subset(stats.lnl,d_omega_2 < d_omega_0)
+tbl.hum.down = get.df.scores('pval.4.bh',hum.down)
+
+write.csv(tbl.gor.up,file="${folder}/gor.up.ks.csv",row.names=F)
+write.csv(tbl.gor.down,file="${folder}/gor.down.ks.csv",row.names=F)
+write.csv(tbl.hum.up,file="${folder}/hum.up.ks.csv",row.names=F)
+write.csv(tbl.hum.down,file="${folder}/hum.down.ks.csv",row.names=F)
+
+# Using uncorrected p-values here!!
+gor.up   = subset(stats.lnl,pval.3 < t & d_omega_1 > d_omega_0)
+hum.up = subset(stats.lnl,pval.4 < t & d_omega_2 > d_omega_0)
+both.up = merge(hum.up,gor.up)
+print(nrow(both.up))
+tbl.both.up = get.df.subset(subset=both.up)
+
+stats.lnl[,'pval.x'] = stats.lnl[,'pval.3'] * stats.lnl[,'pval.4']
+tbl.both.up.scores = get.df.scores('pval.x',stats.lnl)
+
+write.csv(tbl.both.up,file="${folder}/both.up.csv",row.names=F)
+write.csv(tbl.both.up.scores,file="${folder}/both.up.ks.csv",row.names=F)
 
 ^;    
 #    print "$cmd\n";
