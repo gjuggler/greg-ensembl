@@ -19,12 +19,87 @@ sub run {
   my $base = '/nfs/users/nfs_g/gj1/scratch/gorilla/output';
   $self->get_output_folder($base);
 
-  $self->export_topologies;
+  #$self->export_topologies;
   $self->export_likelihoods;
+
+  $self->bryndis_enrichments;
 
   #$self->export_counts;
   #$self->analyze_counts;
   #$self->get_enriched_genes;
+}
+
+sub bryndis_enrichments {
+  my $self = shift;
+
+  my $folder = $self->get_output_folder;
+  my $base = Bio::Greg::EslrUtils->baseDirectory;
+  my $bryndis_list = "${base}/projects/gorilla/bryndis_genes.txt";
+  my $go_script = Bio::Greg::EslrUtils->baseDirectory."/scripts/go_enrichments.R";
+  my $eslr_script = Bio::Greg::EslrUtils->baseDirectory."/scripts/collect_sitewise.R";
+
+  my $cmd = qq^
+dbname = 'gj1_gor_57'
+source("${eslr_script}",echo=F)
+
+bryndis.genes <- read.csv("${bryndis_list}",header=T)
+names(bryndis.genes) = c('gor_gene')
+stats.lnl <- get.vector(con,"SELECT * from stats_lnl;")
+genes.lnl <- get.vector(con,"SELECT * from lnl_genes;")
+
+source("${go_script}")
+
+interesting.genes = merge(bryndis.genes,stats.lnl)
+all.genes = stats.lnl
+
+go.df = go.hs
+
+all.ids = all.genes[,'node_id']
+interesting.ids = interesting.genes[,'node_id']
+
+get.df.subset = function(subset) {
+  print(paste("size: ",nrow(subset)))
+  return(get.enrich.by.subset(
+    subset = subset,
+    all = all.ids,
+    go.df = go.df,
+    go.field.name = 'node_id',
+    nodeSize = 3
+  ))
+}
+
+get.go.data = function(subset,all) {
+  geneSelectionFun = function(score){return(score >= 1)}
+
+  go.vec = strsplit(go.df[,'go'],split=",",fixed=T)
+  names(go.vec) = go.df[,'node_id']
+
+  scores = as.integer(all %in% subset)
+  names(scores) = all
+
+  GOdata <- new("topGOdata",
+    ontology = 'BP',
+    allGenes = scores,
+    annot = annFUN.gene2GO,
+    gene2GO = go.vec,
+    geneSelectionFun = geneSelectionFun,
+    nodeSize = 1,
+    description = ''
+  )
+  return(GOdata)
+}
+
+go.data = get.go.data(interesting.ids,all.ids)
+enrichment.table = get.df.subset(interesting.ids)
+
+save(go.data,stats.lnl,bryndis.genes,enrichment.table,file="${folder}/bryndis_enrichments.Rdata")
+write.csv(enrichment.table,file="${folder}/bryndis_enrichments.csv",row.names=F)
+
+^;
+
+    my $params = {};
+    Bio::Greg::EslrUtils->run_r($cmd,$params);
+
 }
 
 sub export_topologies {
@@ -70,6 +145,10 @@ source("${collect_script}");
 stats.lnl <- get.vector(con,"SELECT * from stats_lnl;")
 genes.lnl <- get.vector(con,"SELECT * from lnl_genes;")
 
+# Get gene copy count data and save as CSV.
+stats.dups <- get.vector(con,"SELECT * from stats_dups;")
+write.csv(stats.dups,file="${folder}/gene_copy_counts.csv")
+
 # Merge the gene-count data with the likelihood calculations.
 genes = merge(stats.lnl,genes.lnl)
 # Filter out genes that have too many bad H or G mutations.
@@ -97,7 +176,7 @@ stats.lnl[,'pval.4'] = with(stats.lnl,1 - pchisq(2*(d_lnL-c_lnL),df=1))
 stats.lnl[,'pval.5'] = with(stats.lnl,1 - pchisq(2*(e_lnL-a_lnL),df=1))
 stats.lnl[,'pval.6'] = with(stats.lnl,1 - pchisq(2*(d_lnL-e_lnL),df=1))
 
-method = 'BH'
+method = 'none'
 stats.lnl[,'pval.1.bh'] = with(stats.lnl,p.adjust(pval.1,method=method))
 stats.lnl[,'pval.2.bh'] = with(stats.lnl,p.adjust(pval.2,method=method))
 stats.lnl[,'pval.3.bh'] = with(stats.lnl,p.adjust(pval.3,method=method))
@@ -161,8 +240,8 @@ get.go.data = function() {
   return(GOdata)
 }
 
-GOdata = get.go.data()
-save(GOdata,file="${folder}/go_data.Rdata")
+#GOdata = get.go.data()
+#save(GOdata,file="${folder}/go_data.Rdata")
 
 # Useful things to do with the GOdata object:
 
@@ -180,19 +259,52 @@ save(GOdata,file="${folder}/go_data.Rdata")
 `5.up` = subset(stats.lnl,pval.5.bh < t & e_omega_1 > e_omega_0)
 `6.up` = subset(stats.lnl,pval.6.bh < t & d_omega_1 > d_omega_2)
 
-`tbl.1.up` = get.df.subset(subset=`1.up`)
-`tbl.2.up` = get.df.subset(subset=`2.up`)
-`tbl.3.up` = get.df.subset(subset=`3.up`)
-`tbl.4.up` = get.df.subset(subset=`4.up`)
-`tbl.5.up` = get.df.subset(subset=`5.up`)
-`tbl.6.up` = get.df.subset(subset=`5.up`)
-
 `1.down`   = subset(stats.lnl,pval.1.bh < t & b_omega_1 < b_omega_0)
 `2.down`     = subset(stats.lnl,pval.2.bh < t & c_omega_1 < c_omega_0)
 `3.down` = subset(stats.lnl,pval.3.bh < t & d_omega_1 < d_omega_0)
 `4.down`   = subset(stats.lnl,pval.4.bh < t & d_omega_2 < d_omega_0)
 `5.down` = subset(stats.lnl,pval.5.bh < t & e_omega_1 < e_omega_0)
 `6.down` = subset(stats.lnl,pval.6.bh < t & d_omega_2 > d_omega_1)
+
+# Save the top N genes for each of the tests.
+n = 100
+all.genes = merge(stats.lnl,stats.dups,by=c('human_gene'))
+print(nrow(all.genes))
+top.genes = data.frame()
+for (i in c(1:6)) {
+  up.name = paste(i,'.up',sep="")
+  down.name = paste(i,'.down',sep="")
+
+  up = get(up.name)
+  down = get(down.name)
+
+  pval.name = paste('pval.',i,'.bh',sep='')
+  up[,'lrt'] = up[,pval.name]
+  down[,'lrt'] = down[,pval.name]
+
+  up.genes = merge(up,stats.dups)
+  down.genes = merge(down,stats.dups)
+
+  up.top <- orderBy(~lrt,data=up.genes)
+  down.top <- orderBy(~lrt,data=down.genes)
+
+  up.top[,'label'] <- paste(pval.name,'up')
+  top.genes = rbind(top.genes,up.top[1:n,])
+  
+  down.top[,'label'] <- paste(pval.name,'down')
+  top.genes = rbind(top.genes,down.top[1:n,])
+}
+top.genes = subset(top.genes,!is.na(label))
+write.csv(top.genes,file="${folder}/top.genes.csv",row.names=F)
+
+q()
+
+`tbl.1.up` = get.df.subset(subset=`1.up`)
+`tbl.2.up` = get.df.subset(subset=`2.up`)
+`tbl.3.up` = get.df.subset(subset=`3.up`)
+`tbl.4.up` = get.df.subset(subset=`4.up`)
+`tbl.5.up` = get.df.subset(subset=`5.up`)
+`tbl.6.up` = get.df.subset(subset=`5.up`)
 
 `tbl.1.down` = get.df.subset(subset=`1.down`)
 `tbl.2.down` = get.df.subset(subset=`2.down`)
