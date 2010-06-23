@@ -52,6 +52,8 @@ sub run {
   my $action      = $params->{'alignment_scores_action'};
   my $table       = $params->{'alignment_score_table'};
 
+  $action = 'prank_column';
+
   if ( $action =~ m/gblocks/i ) {
     print " -> RUN GBLOCKS\n";
     my $score_hash = $self->run_gblocks( $tree, $aln, $params );

@@ -38,7 +38,7 @@ if ($clean) {
       aln aln_scores omega
       meta
   ^;
-  $h->truncate_tables(@truncate_tables);
+  $h->truncate_tables(\@truncate_tables);
 }
 #output_dir();
 

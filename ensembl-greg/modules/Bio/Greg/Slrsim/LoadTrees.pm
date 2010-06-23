@@ -34,7 +34,13 @@ sub run {
     @simsets = @{ $self->$experiment_name() };
   }
 
-    throw("Experiment $experiment_name not found!") unless ( defined @simsets );
+  my $creation_tags = {
+    timestamp => strftime("%Y-%m-%d",localtime),
+    experiment_name => $experiment_name
+  };
+  $self->store_meta($creation_tags);
+
+  throw("No simulation sets for experiment $experiment_name !") unless ( defined @simsets );
 
   my $tree_dir = $self->param('tree_root_dir') || '.';
   foreach my $params (@simsets) {
@@ -90,6 +96,11 @@ sub load_tree_into_database {
   if ($tree_length) {
     $node = Bio::EnsEMBL::Compara::TreeUtils->scale_to( $node, $tree_length );
   }
+  my $tree_max_path = $params->{'slrsim_tree_max_path'};
+  if ($tree_max_path) {
+    $node = Bio::EnsEMBL::Compara::TreeUtils->scale_max_to( $node, $tree_max_path );
+  }
+
   my $final_length = Bio::EnsEMBL::Compara::TreeUtils->total_distance($node);
 
   # Go through each leaf and store the member objects.
@@ -143,7 +154,8 @@ sub load_simulation_params {
     '44mammals'            => '44mammals.nh',
     '2xmammals'  => '2xmammals.nh',
     'ensembl_a'            => 'ensembl.nh',
-    'ensembl_b'            => 'ensembl_2.nh'
+    'ensembl_b'            => 'ensembl_2.nh',
+    'mammals_test'         => 'mammals_test.nh'
   };
   $self->param( 'trees', $trees );
 
@@ -196,8 +208,8 @@ sub load_simulation_params {
     lognormal => {
       omega_distribution_name     => "2xmammals Lognormal",
       phylosim_omega_distribution => 'lognormal',
-      phylosim_meanlog            => -5.39,
-      phylosim_sdlog              => 4.01
+      phylosim_meanlog            => -1.864,
+      phylosim_sdlog              => 1.2007
 
     }
   };
@@ -230,8 +242,8 @@ sub load_simulation_params {
 
   my $indel_models = {
     power_law => {
-      phylosim_insertmodel => 'POW 1.8 50',
-      phylosim_deletemodel => 'POW 1.8 50',
+      phylosim_insertmodel => 'POW 1.8 40',
+      phylosim_deletemodel => 'POW 1.8 40',
       phylosim_insertrate  => 0.05,
       phylosim_deleterate  => 0.05,
     },
@@ -495,16 +507,16 @@ sub filter_sweep {
   my @sets = ();
 
   my $final_params = {
-    slrsim_replicates => 30,
+    slrsim_replicates => 20,
     experiment_name   => "filter_sweep",
-    slrsim_tree_file  => $self->param('trees')->{'anisimova_bglobin'},
-    slrsim_tree_mult => 1.8,
-    phylosim_seq_length => 400,
+    slrsim_tree_file  => $self->param('trees')->{'mammals_test'},
+    slrsim_tree_max_path => 0.7,
+    phylosim_seq_length => 500,
     slrsim_ref => 'human'
   };
 
   my $indel       = $self->param('indel_models')->{'power_law'};
-  my $distr       = $self->param('omega_distributions')->{'massingham_05_A2'};
+  my $distr       = $self->param('omega_distributions')->{'lognormal'};
   my $analysis    = $self->param('phylo_analyses')->{'slr'};
   my $base_params = $self->replace_params( $indel, $distr, $analysis );
 
@@ -516,9 +528,9 @@ sub filter_sweep {
   );
   push @sets, $p;
 
-  my @aln_params = map { $self->aln_param($_) } ('fmcoffee'); #,'prank', 'papaya', 'prank_f', 'prank_codon' );
+  my @aln_params = map { $self->aln_param($_) } ('clustalw'); #,'prank', 'papaya', 'prank_f', 'prank_codon' );
   my @filter_params =
-    map { $self->filter_param($_) } ( 'indelign','tcoffee','trimal','prank_treewise_after'); #, 'indelign', 'prank_mean' ); #, 'tcoffee', 'indelign', 'prank_treewise', 'prank_mean' );
+    map { $self->filter_param($_) } ( 'prank_column'); #, 'indelign', 'prank_mean' ); #, 'tcoffee', 'indelign', 'prank_treewise', 'prank_mean' );
 
   foreach my $aln (@aln_params) {
     foreach my $fp (@filter_params) {
@@ -532,11 +544,6 @@ sub filter_sweep {
 
   # Store the overall simulation parameters in the meta table. This will be later dumped by the Plots.pm script.
   $self->store_meta($self->replace($base_params,$final_params));
-
-  my $creation_tags = {
-    timestamp => strftime("%Y-%m-%d",localtime),
-  };
-  $self->store_meta($creation_tags);
 
   return \@sets;
 }

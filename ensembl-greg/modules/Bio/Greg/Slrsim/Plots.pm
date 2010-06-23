@@ -25,6 +25,7 @@ sub run {
 
   $self->output_params_file;
   $self->dump_sql;
+  $self->dump_data;
   # Tricky Perl: Call the method corresponding to the current experiment.
   $self->$experiment_name();
 }
@@ -77,18 +78,27 @@ sub dump_sql {
   }
 }
 
+sub script {
+  my $self = shift;
+  return $self->base . "/projects/slrsim/collect_slrsim.R";
+}
+
 sub dump_data {
   my $self = shift;
 
   my $filename = $self->param('output_folder') . '/slrsim_sites.Rdata';
-  my $rcmd = qq^
-source("collect_slrsim.R")
+  my $script = $self->script;
+
+  if (!-e $filename) {
+    my $rcmd = qq^
+source("$script")
 data = get.all.data()
 save(data,file="${filename}");
 ^;
-  print "$rcmd\n";
-  my $params = {};
-  Bio::Greg::EslrUtils->run_r($rcmd,$params);
+    print "$rcmd\n";
+    my $params = {};
+    Bio::Greg::EslrUtils->run_r($rcmd,$params);
+  }
   
 }
 
@@ -96,10 +106,12 @@ sub mammals_simulations {
   my $self = shift;
 
   my $filename = $self->param('output_folder') . '/reference_comparison_roc.png';
+  my $folder = $self->param('output_folder');
+  my $script = $self->base . "/collect_slrsim.R";
   my $rcmd = qq^
 dbname="slrsim_2x"
-source("collect_slrsim.R")
-data = get.all.data()
+source("$script")
+data = get.all.data(dir="$folder")
 
 full.roc = generic.roc.plot(data,col.names=c('slrsim_tree_file'),plot=F)
 
@@ -125,8 +137,9 @@ sub reference_comparison {
   my $self = shift;
   
   my $filename = $self->param('output_folder') . '/reference_comparison_roc.png';
+  my $script = $self->script;
   my $rcmd = qq^
-source("collect_slrsim.R")
+source("$script")
 data = get.all.data()
 png(file="${filename}",width=600,height=600)
 generic.roc.plot(data,col.names=c('slrsim_ref','alignment_name'))
@@ -143,9 +156,10 @@ sub alignment_comparison {
   my $self = shift;
 
   my $filename = $self->param('output_folder') . '/alignment_roc.png';
+  my $script = $self->script;
 
   my $rcmd = qq^
-source("collect_slrsim.R")
+source("$script")
 data = get.all.data()
 png(file="${filename}",width=600,height=600,pointsize=24)
 generic.roc.plot(data,col.names=c('alignment_name'))
@@ -182,15 +196,18 @@ sub filter_sweep {
   my $filename = $self->param('output_folder') . '/filter_sweep_roc.png';
 
   my $dbname = $self->compara_dba->dbc->dbname;
-
+  
+  $self->_plot_scatter;
+  $self->_plot_scores;
   $self->_fdr_sweep;
-#  $self->_plot_proteins;
+  $self->_plot_proteins;
+  my $script = $self->script;
 
   my $rcmd = qq^
 dbname = "$dbname"
-source("collect_slrsim.R")
+source("$script")
 
-data = get.all.data()
+data = get.all.data(dir="$folder")
 data[is.na(data[,'alignment_score_threshold']),'alignment_score_threshold'] = 0;
 
 label.names = c('alignment_name','filtering_name','alignment_score_threshold')
@@ -224,13 +241,51 @@ q()
   Bio::Greg::EslrUtils->run_r($rcmd,$params);
 }
 
+sub _plot_scores {
+  my $self = shift;
+  my $folder = $self->get_output_folder;
+  my $script = $self->script;
+  my $rcmd = qq^
+source("$script")
+data = get.all.data(dir="$folder")
+col.names=c('filtering_name','alignment_score_threshold')
+
+png(file="${folder}/ncod_plots.png",width=1800,height=600)
+plot.ncod(data,col.names=col.names)
+dev.off()
+^;
+  print "$rcmd\n";
+  my $params = {};
+  Bio::Greg::EslrUtils->run_r($rcmd,$params);
+  
+}
+
+sub _plot_scatter {
+  my $self = shift;
+  my $folder = $self->get_output_folder;
+  my $script = $self->script;
+  my $rcmd = qq^
+source("$script")
+data = get.all.data(dir="$folder")
+col.names=c('alignment_name','filtering_name','alignment_score_threshold')
+
+png(file="${folder}/scatter_plots.png",width=1800,height=1800)
+plot.scatter(data,col.names=col.names)
+dev.off()
+^;
+  print "$rcmd\n";
+  my $params = {};
+  Bio::Greg::EslrUtils->run_r($rcmd,$params);
+
+}
+
 sub _plot_proteins {
   my $self = shift;
-  my $folder = $self->param('output_folder');
-
+  my $folder = $self->get_output_folder;
+  my $script = $self->script;
   my $rcmd = qq^
-source("collect_slrsim.R")
-data = get.all.data()
+source("$script")
+data = get.all.data(dir="$folder")
 col.names=c('alignment_name','filtering_name','alignment_score_threshold','sitewise_filter_order','alignment_score_mask_character_cdna')
 plot.by.columns(data,base.dir="${folder}",col.names=col.names)
 ^;
@@ -242,11 +297,12 @@ plot.by.columns(data,base.dir="${folder}",col.names=col.names)
 sub _fdr_sweep {
   my $self = shift;
   my $folder = $self->get_output_folder;
+  my $script = $self->script;
 
 my $rcmd = qq^
-source("collect_slrsim.R")
+source("$script")
 png(file="${folder}/fdr_sweep.png",width=1200,height=1200)
-data = get.all.data()
+data = get.all.data(dir="$folder")
 label.names = c('alignment_name','filtering_name','alignment_score_threshold')
 group.names = c('alignment_name','filtering_name')
 roc = generic.roc(data,na.rm=F,col.names=label.names)
@@ -269,13 +325,14 @@ sub output_params_file {
   my $self = shift;
 
   my $filename = $self->param('output_folder') . '/params.txt';
-  print "$filename\n";
-  my $out;
-  open($out,">$filename");
 
-  $self->hash_print($self->params,$out);
-  
-  close($out);
+  if (!-e $filename) {
+    print "$filename\n";
+    my $out;
+    open($out,">$filename");
+    $self->hash_print($self->params,$out);
+    close($out);
+  }
 }
 
 1;

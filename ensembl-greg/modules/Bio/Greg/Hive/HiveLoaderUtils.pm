@@ -156,7 +156,7 @@ sub truncate_tables {
   my $tables = shift;
 
   my $dba = $self->dba;
-  foreach my $table ($tables) {
+  foreach my $table (@$tables) {
     print "$table\n";
     eval { $dba->dbc->do("truncate table $table"); }
   }

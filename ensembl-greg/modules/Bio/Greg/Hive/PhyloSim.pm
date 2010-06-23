@@ -49,7 +49,7 @@ sub fetch_input {
     #phylosim_w => 2.081,
     ### End Omega Distribution Parameters ###
 
-    phylosim_num_bins           => 20,
+    phylosim_num_bins           => 50,
     phylosim_omega_distribution => 'M3',
 
     # We can start to simulate based on domains using this type of format:
@@ -156,6 +156,8 @@ sub simulate_alignment_indelible {
   my $randomseed_string = $models_trees_partitions;
   $randomseed_string .= $params->{slrsim_rep};
   my $randomseed = crc32($randomseed_string);
+
+  $self->store_tag('random_seed',$randomseed);
 
   my $ctrl_str = qq^
 [TYPE] CODON 1

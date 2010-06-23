@@ -24,7 +24,12 @@ get.vector = function(con,query,columns=1) {
 }
 
 # Grabs from the database the true and inferred omegas for the given reference sequence.
-get.all.data = function() {
+get.all.data = function(dir=NULL) {
+
+  if (!is.null(dir)) {
+    load(paste(dir,"/slrsim_sites.Rdata",sep=""))
+    return(data)
+  }
   query = sprintf("SELECT * FROM stats_sites")
   sites = get.vector(con,query,columns='all')
   
@@ -556,11 +561,35 @@ my.own.roc = function(data, score.field='score', truth.fun=NULL) {
   return(data)
 }
 
+plot.ncod = function(data,col.names=c('alignment_name')) {
+  require(ggplot2)
+  labels <- apply(as.data.frame(data[,col.names]),1,paste,collapse='/')
+  data[,'label'] <- labels
+  print(str(data))
+  nodes = sort(unique(data$slrsim_rep))
+  for (node in nodes[1]) {
+    df = subset(data,slrsim_rep==node)
+    p <- ggplot(df,aes(x=seq_position,y=aln_ncod,colour=label)) + geom_line()
+    print(p)
+  }
+}
+
+plot.scatter = function(data,col.names=c('alignment_name','filtering_name')) {
+  require(ggplot2)
+  labels <- apply(as.data.frame(data[,col.names]),1,paste,collapse='/')
+  data[,'label'] <- labels
+  p <- ggplot(data, aes(x=true_dnds,y=aln_dnds,colour=aln_lrt)) + xlim(0,2) + ylim(0,2)
+  p <- p + opts(aspect.ratio=1) + geom_point()
+  p <- p + facet_wrap(~ label)
+  print(p)
+}
+
 plot.by.columns = function(data,base.dir='.',col.names=c('alignment_name')) {
 source("aln-tools/aln.tools.R")
 source("aln-tools/phylo.tools.R")
 source("aln-tools/plot.phylo.greg.R")
-library(ape)
+require(ape)
+require(doBy)
 
   labels <- apply(as.data.frame(data[,col.names]),1,paste,collapse='_')
   labels <- sub(" ","",labels)
@@ -568,6 +597,7 @@ library(ape)
 
   for (lbl in sort(unique(labels))) {
     sub <- subset(data,label==lbl)
+    sub <- orderBy(~slrsim_rep,data=sub)
     first.row = sub[1,]
     
     node_id = first.row$node_id    

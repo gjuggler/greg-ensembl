@@ -123,6 +123,7 @@ sub run
     my $method = $self->param('alignment_method');
     if ($method =~ m/clustalw/) {
       $sa_aligned = $self->align_with_clustalw($sa,$tree,$params);
+      $sa_aligned->map_chars('\.','-'); # Clustalw sucks and puts gaps as periods.
     } elsif ($method =~ m/muscle/) {
       $sa_aligned = $self->align_with_muscle($sa,$tree,$params);      
     }elsif ($method =~ m/coffee/) {
@@ -144,6 +145,8 @@ sub run
     } elsif ($method =~ m/none/i) {
       $sa_aligned = $self->no_align($sa,$tree,$params);
     }
+
+    Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $sa_aligned, { length => 200 } );
 
     $self->param('sa_aligned',$sa_aligned);
 }
@@ -194,7 +197,6 @@ sub no_align {
   my $alignio = Bio::AlignIO->new(-file => $aln_file,
                                   -format => "fasta");
   my $aln = $alignio->next_aln();
-  Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $aln, { length => 200 } );
   return $aln;
 }
 
@@ -352,7 +354,7 @@ sub align_with_clustalw {
   my $executable = $params->{'alignment_executable'} || 'clustalw';
   my $extra_params = '';
   
-  my $cmd = qq^$executable $extra_params -INFILE=$aln_file -USETREE=$tree_file -OUTFILE=$output_file -OUTPUT=PHYLIP -align^;
+  my $cmd = qq^$executable $extra_params -INFILE=$aln_file -USETREE=$tree_file -OUTFILE=$output_file -OUTPUT=GCG -align^;
 
   # Run the command.
   $self->compara_dba->dbc->disconnect_when_inactive(1);
@@ -366,7 +368,7 @@ sub align_with_clustalw {
   
   use Bio::AlignIO;
   my $alignio = Bio::AlignIO->new(-file => $output_file,
-                                  -format => "phylip");
+                                  -format => "msf");
   return $alignio->next_aln();
 }
 
@@ -561,7 +563,7 @@ sub parse_and_store_alignment_into_proteintree
   # Align cigar_lines to members and store
   foreach my $member ($tree->leaves) {
       if (!$align_hash{$member->stable_id}) {
-	  die("mcoffee produced an empty cigar_line for ".$member->stable_id."\n");
+	  die("Align.pm produced an empty cigar_line for ".$member->stable_id."\n");
       }
       $member->cigar_line($align_hash{$member->stable_id});
       ## Check that the cigar length (Ms) matches the sequence length
