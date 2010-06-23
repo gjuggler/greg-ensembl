@@ -861,7 +861,48 @@ sub get_prank_filter_matrices {
 
   my $aln_len = $aln->length;
 
-  if ($params->{'prank_filtering_scheme'} =~ m/prank_mean/i) {
+  if ($params->{'prank_filtering_scheme'} =~ m/prank_column/i) {
+    my @score_array;
+
+    for (my $i=0; $i < $aln_len; $i++) {
+      my $score_sum = 0;
+      my $bl_sum = 0;
+      foreach my $node ($tree->nodes) {
+        my $bl = $node->distance_to_parent;
+
+        my $xml_node = $node_to_xml->{$node};
+        my $post_prob = $pp_hash->{$xml_node}[$i];
+        if (defined $xml_node && defined $post_prob && $post_prob != -1) {
+          $score_sum += $post_prob * $bl;
+          $bl_sum += 1 * $bl;
+        } else {
+
+        }
+      }
+      $score_array[$i] = 0;
+      if ($bl_sum > 0) {
+        my $weighted_score = $score_sum / $bl_sum;
+        $score_array[$i] = $weighted_score;
+      }
+    }
+
+    foreach my $leaf ($tree->leaves) {
+      my $score_string = "";
+      my $aln_string = $leaf->alignment_string;
+      my @aln_arr = split("",$aln_string);
+      for (my $i=0; $i < $aln_len; $i++) {
+        if ($aln_arr[$i] eq '-') {
+          $score_string .= '-';
+        } else {
+          my $sitewise_score = $score_array[$i] / 10;
+          $sitewise_score = 0 if ($sitewise_score < 0);
+          $sitewise_score = 9 if ($sitewise_score > 9);
+          $score_string .= sprintf("%1d",$sitewise_score);
+        }
+      }
+      $leaf_scores->{$leaf->name} = $score_string;
+    }
+  } elsif ($params->{'prank_filtering_scheme'} =~ m/prank_mean/i) {
     foreach my $leaf ($tree->leaves) {
       my $score_string = "";
       my $aln_string = $leaf->alignment_string;
