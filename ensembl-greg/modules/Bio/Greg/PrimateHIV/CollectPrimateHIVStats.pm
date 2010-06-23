@@ -33,6 +33,9 @@ sub get_gene_table_structure {
     chr_start => 'int',
     chr_end => 'int',
     chr_strand => 'int',
+
+    pval_stouffer => 'float',
+    pval_fisher => 'float',
   };
   
   my $structure = $self->SUPER::get_gene_table_structure();
@@ -100,6 +103,15 @@ sub data_for_gene {
   my $orig_end = $self->get_orig_aln_position($aln,$aln->length);
   $data->{alignment_slice_start} = $orig_start;
   $data->{alignment_slice_end} = $orig_end;
+
+  # Combine p-values for an aggregate p-value for positive selection.
+  my $psc_hash = $self->get_psc_hash( $self->compara_dba->dbc, $self->params );
+  my $pval_stouffer = $self->combined_pval($psc_hash,'stouffer');
+  my $pval_fisher = $self->combined_pval($psc_hash,'fisher');
+
+  print "PVAL: $pval_stouffer $pval_fisher\n";
+  $data->{pval_stouffer} = $pval_stouffer;
+  $data->{pval_fisher} = $pval_fisher;
 
   return $data;
 }

@@ -57,6 +57,7 @@ sub export_sites {
     $max_pset = $row[0];
   }
 
+#  $max_pset = 1;
   foreach my $i (0 .. $max_pset) {
     my $sites_file = $self->get_output_folder . "/sites_$i.tsv";
     my $sites_zipped = $self->get_output_folder . "/sites_$i.tsv.gz";
@@ -65,10 +66,10 @@ sub export_sites {
     my $mysqlArgs = Bio::Greg::EslrUtils->mysqlArgsFromConnection($self->dbc);
     if (!-e $sites_zipped) {
       my $cmd = qq^
-mysql $mysqlArgs -e "SELECT node_id,parameter_set_id,domain,filter_value,omega,omega_lower,omega_upper,lrt_stat,note,type from stats_sites WHERE parameter_set_id=$i;" > ${sites_file}
+mysql $mysqlArgs -e "SELECT node_id,aln_position,parameter_set_id,domain,filter_value,omega,omega_lower,omega_upper,lrt_stat,note,type from stats_sites WHERE parameter_set_id=$i;" > ${sites_file}
 ^;
       $cmd = qq^
-mysql $mysqlArgs -e "SELECT node_id,parameter_set_id,domain,filter_value,omega,omega_lower,omega_upper,lrt_stat,note,type from stats_sites WHERE parameter_set_id=1 LIMIT 500000;" > ${sites_file}
+mysql $mysqlArgs -e "SELECT node_id,aln_position,parameter_set_id,domain,filter_value,omega,omega_lower,omega_upper,lrt_stat,note,type from stats_sites WHERE parameter_set_id=1 LIMIT 500000;" > ${sites_file}
 ^ if ($i == 0);
       print "$cmd\n";
       system($cmd);
@@ -82,7 +83,14 @@ mysql $mysqlArgs -e "SELECT node_id,parameter_set_id,domain,filter_value,omega,o
 source("../../scripts/collect_sitewise.R");
 gcinfo(TRUE)
 sites = read.table(gzfile("${sites_zipped}"),header=T,stringsAsFactors=T,na.strings="NULL")
-print(nrow(sites))
+
+# Add p-value for nonneutral evolution.
+#print(sites[1:10,])
+p.values = 1 - pchisq(sites[,'lrt_stat'],1)
+sites[,'pval'] = p.values
+
+#print(nrow(sites))
+print(str(sites))
 save(sites,file="${sites_rdata}")
 ^;
       print "$rcmd\n";
@@ -96,29 +104,52 @@ sub summarize_sites {
   my $self = shift;
 
   my $sites_file = $self->get_output_folder . "/sites.Rdata";
+  my $fdr_file = $self->get_output_folder . "/fdr_thresholds.Rdata";
+
   my $folder = $self->get_output_folder;
+
+  my $slrsim_r_connection = $self->get_r_dbc_string('gj1_slrsim');
+  my $indel_r_connection = $self->get_r_dbc_string('gj1_indelsim');
+
+  my $dbname = $self->compara_dba->dbc->dbname;
 my $cmd = qq^
+
+if (!file.exists("$fdr_file")) {
+  $slrsim_r_connection
+  source("../../projects/slrsim/collect_slrsim.R")
+  data = get.all.data()
+  fdr.thresholds = get.fdr.thresholds(data,col.names=c('parameter_set_name'))
+
+  $indel_r_connection
+  source("../../projects/slrsim/collect_slrsim.R")
+  data = get.all.data()
+  fdr.indel.thresholds = get.fdr.thresholds(data,col.names=c('parameter_set_name'))
+  save(fdr.thresholds,fdr.indel.thresholds,file="$fdr_file")
+} else {
+  load("$fdr_file")
+}
+
+dbname="$dbname"
 source("../../scripts/collect_sitewise.R");
 #gcinfo(TRUE)
 
 # Summarize sites.
-#summary = sites.summary(db="gj1_2x_57",sites.dir="${folder}")
+#summary = sites.summary(sites.dir="${folder}",filter.fn=NULL)
 #write.csv(summary,file="${folder}/summary_table.csv",row.names=F)
 
 # Summarize the filtered version.
 filter.fn = function(df) {
   return(subset(df,filter_value >= 3))
 }
-summary = sites.summary(db="gj1_2x_57",sites.dir="${folder}",filter.fn=filter.fn)
+summary = sites.summary(sites.dir="${folder}",filter.fn=filter.fn)
 write.csv(summary,file="${folder}/summary_table_filt.csv",row.names=F)
 
 # Summarize the filtered version.
 filter.fn = function(df) {
   return(subset(df,!is.na(domain)))
 }
-summary = sites.summary(db="gj1_2x_57",sites.dir="${folder}",filter.fn=filter.fn)
+summary = sites.summary(sites.dir="${folder}",filter.fn=filter.fn)
 write.csv(summary,file="${folder}/summary_table_domains.csv",row.names=F)
-
 
 ^;
   print "$cmd\n";
@@ -133,23 +164,29 @@ sub model_sites_distribution {
   my $folder = $self->get_output_folder;
 
 my $rcmd = qq^
-source("../../scripts/collect_sitewise.R");
+source("../../scripts/collect_sitewise.R")
+library(fitdistrplus)
 
-fits = sites.fit.distributions(db="gj1_2x_57",sites.dir="${folder}")
+fits = sites.fit.intervals(db="gj1_2x_57",sites.dir="${folder}")
 write.csv(fits,file="${folder}/distribution_fits.csv",row.names=F)
 
 filter.fn = function(df) {
   return(subset(df,filter_value >= 3))
 }
-fits = sites.fit.distributions(db="gj1_2x_57",sites.dir="${folder}",filter.fn=filter.fn)
+fits = sites.fit.intervals(db="gj1_2x_57",sites.dir="${folder}",filter.fn=filter.fn)
 write.csv(fits,file="${folder}/distribution_fits_filt.csv",row.names=F)
-
 
 filter.fn = function(df) {
   return(subset(df,omega < 1 & filter_value >= 3))
 }
-fits = sites.fit.distributions(db="gj1_2x_57",sites.dir="${folder}",filter.fn=filter.fn)
-write.csv(fits,file="${folder}/distribution_fits_omega_lt_one.csv",row.names=F)
+fits = sites.fit.intervals(db="gj1_2x_57",sites.dir="${folder}",filter.fn=filter.fn)
+write.csv(fits,file="${folder}/distribution_fits_filt_below_one.csv",row.names=F)
+
+filter.fn = function(df) {
+  return(subset(df,!is.na(domain) & filter_value >= 3))
+}
+fits = sites.fit.intervals(db="gj1_2x_57",sites.dir="${folder}",filter.fn=filter.fn)
+write.csv(fits,file="${folder}/distribution_fits_filt_domains.csv",row.names=F)
 
 ^;
   print "$rcmd\n";

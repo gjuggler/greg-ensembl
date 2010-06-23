@@ -28,10 +28,16 @@ sub export_windows {
   my $genes_file = $self->get_output_folder . "/gene_windows.Rdata";
   my $genes_csv = $self->get_output_folder . "/gene_windows.csv";
 
+  my $sitewise_script = Bio::Greg::EslrUtils->baseDirectory . "/scripts/collect_sitewise.R";
+
+  my $dbname = $self->compara_dba->dbc->dbname;
+
   my $cmd = qq^
-source("../../scripts/collect_sitewise.R");
-source("./collect_primate_hiv.R");
-genes <- get.genes.merged(db="gj1_hiv_57",pset.cols=c('alignment_slice_start'))
+dbname = "$dbname"
+source("$sitewise_script");
+#source("./collect_primate_hiv.R");
+genes <- get.genes.list()
+print(nrow(genes))
 save(genes,file="${genes_file}")
 write.csv(genes,file="${genes_csv}",row.names=F)
 

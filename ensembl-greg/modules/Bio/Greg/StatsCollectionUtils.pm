@@ -4,6 +4,8 @@ use strict;
 
 use Bio::EnsEMBL::Compara::NestedSet;
 
+use Bio::Greg::EslrUtils;
+
 our @ISA = qw();
 
 
@@ -218,6 +220,18 @@ sub get_tag_hash {
   return $tag_hash;
 }
 
+sub get_gene_name {
+  my $class = shift;
+  my $tree = shift;
+  my $taxon_id = shift;
+
+  foreach my $member ($tree->leaves) {
+    if ($member->taxon_id == $taxon_id) {
+      
+    }
+  }
+}
+
 sub get_psc_hash {
   my $class  = shift;
   my $dbc    = shift;
@@ -236,41 +250,108 @@ sub get_psc_hash {
     $CLEAN_WHERE = '';
   }
 
-  # Select from the PSC table using the data_id.
-  my $cmd     = qq^SELECT aln_position,omega,omega_lower,omega_upper,lrt_stat,ncod,type,note 
-    FROM $table o WHERE parameter_set_id=$pset and (data_id=$data_id) $CLEAN_WHERE
-    ^;
+  my $cmd;
 
-  # Join to the sitewise_genome table using the node_id (because we map genomic coordinates *before* running the phylo analyses).
-  if ( $params->{genome} ) {
-    $cmd = qq^SELECT * from $table o, sitewise_genome g WHERE o.parameter_set_id=$pset AND 
-      (o.data_id=$data_id)
-      AND g.node_id=$node_id
-      AND o.aln_position=g.aln_position $CLEAN_WHERE^;
-  }
-
-  if ($params->{filtered} ) {
+  if ($params->{filtered} && $params->{genome}) {
+    print "Both!\n";
     my $filter_value = $params->{alignment_filtering_value} || 1;
     print "Filtering value: $filter_value\n";
 
+    $cmd = qq^SELECT * from
+$table o LEFT OUTER JOIN sitewise_genome g ON
+  g.node_id=$node_id AND g.aln_position=o.aln_position AND g.parameter_set_id=0
+LEFT OUTER JOIN sitewise_tag t ON
+  t.node_id=$node_id AND t.aln_position=o.aln_position AND t.parameter_set_id=0
+WHERE
+  o.parameter_set_id=$pset AND o.node_id=$data_id
+  AND t.tag="FILTER" AND t.value >= $filter_value
+$CLEAN_WHERE;
+      ^;    
+  } elsif ($params->{filtered} ) {
+    print "Filtered!\n";
+    my $filter_value = $params->{alignment_filtering_value} || 1;
+ 
     # Filter on alignment columns that pass Pollard et al's filtering criteria.
     $cmd = qq^SELECT * from $table o, sitewise_tag t  WHERE
       o.parameter_set_id=$pset AND 
-      (o.data_id=$data_id)
+      (o.node_id=$data_id)
       AND t.node_id=$node_id
       AND o.aln_position=t.aln_position
       AND t.tag="FILTER" AND t.value >= $filter_value $CLEAN_WHERE;
       ^;
-  }
+} elsif ($params->{genome}) {
+    print "Genome!\n";
+    $cmd = qq^SELECT * from $table o, sitewise_genome g WHERE o.parameter_set_id=$pset AND 
+      (o.node_id=$data_id)
+      AND g.node_id=$node_id
+      AND o.aln_position=g.aln_position $CLEAN_WHERE^;
+} else {
+  $cmd     = qq^SELECT aln_position,omega,omega_lower,omega_upper,lrt_stat,ncod,type,note 
+    FROM $table o WHERE parameter_set_id=$pset and (node_id=$data_id) $CLEAN_WHERE
+    ^;
+}
 
-  print $cmd."\n";
+#  print $cmd."\n";
 
   my $sth = $dbc->prepare($cmd);
   $sth->execute;
   my $id_field = 'aln_position';
   my $obj = $sth->fetchall_hashref($id_field);
   $sth->finish;
+
+  printf "SITE COUNT: %d\n", scalar(keys(%$obj));
   return $obj;
+}
+
+sub combined_pval {
+  my $class = shift;
+  my $psc_hash = shift;
+  my $method = shift || 'stouffer';
+
+  my @obj_array = map { $psc_hash->{$_} } keys %$psc_hash;
+  return undef if (scalar @obj_array == 0);
+
+  my $first_obj = $obj_array[0];
+  my @keys = sort keys %$first_obj;
+
+  my $header = join("\t",@keys);
+  my $body;
+  foreach my $obj (@obj_array) {
+    my $line = join("\t",map {$obj->{$_}} @keys);
+    $body .= $line."\n";
+  }
+
+  my $temp_f = $class->worker_temp_directory."/temp.txt";
+  open(OUT,">$temp_f");
+  print OUT $header."\n";
+#  print $header."\n";
+  print OUT $body."\n";
+#  print $body."\n";
+  close(OUT);
+
+  my $combine_p = Bio::Greg::EslrUtils->baseDirectory."/scripts/combine.p.R";
+  my $rcmd = qq^
+sites = read.table(file="$temp_f",sep="\t",header=T)
+source("$combine_p")
+#print(sites)
+p.values = 1 - pchisq(sites[,'lrt_stat'],1)
+p.values[p.values <= 0] = 1e-10
+p.values[p.values >= 1] = 1
+sites[,'pval'] = p.values
+
+pos.sites = subset(sites,omega>1)
+p.value = NULL
+if (nrow(pos.sites) > 0) {
+  comb.p = combine.p(pos.sites[,'pval'],method='$method')
+  p.value = as.numeric(comb.p[['p.value']])
+}
+print(p.value)
+^;
+  my @values = Bio::Greg::EslrUtils->get_r_values($rcmd,$class->worker_temp_directory);
+  print " combined p-val ($method): [@values]\n";
+  my $pval = $values[0];
+  $pval = undef if ($pval eq 'NULL');
+  return $pval;
 }
 
 sub max_lrt {

@@ -13,6 +13,28 @@ my $TREE = "Bio::EnsEMBL::Compara::TreeUtils";
 my $ALN = "Bio::EnsEMBL::Compara::AlignUtils";
 my $COMPARA = "Bio::EnsEMBL::Compara::ComparaUtils";
 
+sub translate_ids {
+  my $class = shift;
+  my $aln = shift;
+  my $map = shift;
+  $aln->set_displayname_flat;
+  
+  my $new_aln = new $aln;
+
+  foreach my $seq ($aln->each_seq) {
+    my $id = $seq->id;
+    my $nse = $seq->get_nse;
+
+    if (defined $id && defined $map->{$id}) {
+      $seq->id($map->{$id});
+#      $aln->displayname($nse,$map->{$id});
+      $new_aln->add_seq($seq);
+    }
+  }
+  return $new_aln;
+}
+
+
 sub indelign{
   # Setup steps:
   # 1) Install GSL from ftp://ftp.gnu.org/gnu/gsl/gsl-1.13.tar.gz

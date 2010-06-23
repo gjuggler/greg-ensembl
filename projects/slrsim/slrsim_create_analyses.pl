@@ -57,6 +57,7 @@ $h->connect_analysis( "AlignScores", "Omegas" );
 $h->connect_analysis( "Omegas",      "CollectStats" );
 
 $h->wait_for("Plots",["Omegas","CollectStats"]);
+$h->wait_for("PhyloSim",["LoadTrees"]);
 $h->wait_for("Align",["PhyloSim"]);
 $h->wait_for("AlignScores",["PhyloSim","Align"]);
 

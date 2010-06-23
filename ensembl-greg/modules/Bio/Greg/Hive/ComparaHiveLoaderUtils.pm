@@ -80,10 +80,14 @@ sub _find_member_by_external_id {
     });
   my $gene_adaptor = Bio::EnsEMBL::Registry->get_adaptor("human","core","gene");
   my $member_adaptor = $self->dba->get_MemberAdaptor;
-  
-  my @genes = @{ $gene_adaptor->fetch_all_by_external_name($id)};
-  push @genes, $gene_adaptor->fetch_by_stable_id($id) if (scalar @genes == 0);
-  
+
+  my @genes = ();
+  push @genes,@{ $gene_adaptor->fetch_all_by_external_name($id)};
+  if (scalar @genes == 0) {
+    my $stable_id_gene = $gene_adaptor->fetch_by_stable_id($id);
+    push @genes, $stable_id_gene if (defined $stable_id_gene);
+  }
+
   foreach my $gene (@genes) {
     print "$gene\n";
     my $stable_id = $gene->stable_id;
@@ -137,8 +141,11 @@ sub clean_compara_analysis_tables {
     print "$_\n";
     eval { $dba->dbc->do("truncate table $_")};
   } @truncate_tables;
+  print "Dropping sites...\n";
   eval { $dba->dbc->do("drop table stats_sites")};
+  print "Dropping genes...\n";
   eval { $dba->dbc->do("drop table stats_genes")};
+  print "Dropping brcmb tags...\n";
   eval {$dba->dbc->do("delete from protein_tree_tag where tag like 'bcrmb%';")};
 }
 

@@ -33,6 +33,9 @@ sub run {
   my @species_list = split(',',$one_to_one_taxon_list);
   print "@species_list\n";
   my @keeper_leaves = $TREE->get_leaves_for_species($tree,\@species_list);
+  my @keeper_ids = map {$_->node_id} @keeper_leaves;
+  my $pruned_tree = $TREE->extract_subtree_from_leaves($tree,\@keeper_ids);
+  print $pruned_tree->newick_format."\n";
   print map {$_->stable_id." "} @keeper_leaves;
   print "\n";
 

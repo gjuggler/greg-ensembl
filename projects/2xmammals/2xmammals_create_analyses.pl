@@ -12,16 +12,21 @@ use Bio::Greg::EslrUtils;
 use File::Path;
 use File::Basename;
 
+use Bio::Greg::Hive::ComparaHiveLoaderUtils;
+
 my ($url) = 'mysql://ensadmin:ensembl@ens-research/gj1_2xmc_57';
 GetOptions('url=s' => \$url);
 
+my $h = new Bio::Greg::Hive::ComparaHiveLoaderUtils;
+$h->init($url);
+
 my $clean = 1;
-my $dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new(-url => $url);
-my $hive_dba = Bio::EnsEMBL::Hive::DBSQL::DBAdaptor->new(-url => $url);
-my $dbc = $dba->dbc;
 
 # Clean up our mess.
-clean_tables();
+if ($clean) {
+  $h->clean_hive_tables;
+  $h->clean_compara_analysis_tables;
+}
 
 # Define parameters (species sets, filtering options, etc).
 parameter_sets();
@@ -38,30 +43,30 @@ collect_stats();
 output_data();
 
 # Connect the dots.
-connect_analysis("NodeSets","Align");
-connect_analysis("Align","SequenceQuality");
-connect_analysis("SequenceQuality","SplitByParameterSet");
-connect_analysis("SplitByParameterSet","GeneOmegas");
-connect_analysis("GeneOmegas","SitewiseOmegas");
-connect_analysis("SitewiseOmegas","CollectStats");
+$h->connect_analysis("NodeSets","Align");
+$h->connect_analysis("Align","SequenceQuality");
+$h->connect_analysis("SequenceQuality","SplitByParameterSet");
+$h->connect_analysis("SplitByParameterSet","GeneOmegas");
+$h->connect_analysis("GeneOmegas","SitewiseOmegas");
+$h->connect_analysis("SitewiseOmegas","CollectStats");
 
-connect_analysis("Align","Mapping");
-wait_for("CollectStats",["Mapping"]);
-wait_for("OutputTabularData",["CollectStats"]);
+$h->connect_analysis("Align","Mapping");
+$h->wait_for("CollectStats",["Mapping"]);
+$h->wait_for("OutputTabularData",["CollectStats","SitewiseOmegas"]);
 
 sub node_sets {
   my $logic_name = "NodeSets";
   my $module = "Bio::Greg::Hive::NodeSets";
   my $params = {
-    flow_node_set => 'MammalsPlusOutgroup'
+    flow_node_set => 'MammaleerPlusOutgroup'
   };
-  my $analysis_id = _create_analysis($logic_name,$module,$params,50,1);
+  my $analysis_id = $h->create_analysis($logic_name,$module,$params,50,1);
 
   # Add all root nodes to this analysis.
   $params = {};
   my $cmd = "SELECT node_id FROM protein_tree_node WHERE parent_id=1;";
   my @nodes = _select_node_ids($cmd);
-  _add_nodes_to_analysis($analysis_id,$params,\@nodes);  
+  _add_nodes_to_analysis($analysis_id,$params,\@nodes);
 }
 
 sub parameter_sets {
@@ -78,7 +83,7 @@ sub parameter_sets {
   # Subroutines to return a list of taxon IDs with specific features.
   sub clade_taxon_ids {
     my $clade = shift || 1;
-    my @genomes = Bio::EnsEMBL::Compara::ComparaUtils->get_genomes_within_clade($dba,$clade);
+    my @genomes = Bio::EnsEMBL::Compara::ComparaUtils->get_genomes_within_clade($h->dba,$clade);
     my @taxon_ids = map {$_->taxon_id} @genomes;
     
     return subtract(\@taxon_ids,\@off);
@@ -87,11 +92,12 @@ sub parameter_sets {
     my $coverage = shift;
 
     my @output;
-    my @all_gdb = Bio::EnsEMBL::Compara::ComparaUtils->get_genomes_within_clade($dba,1);
+    my @all_gdb = Bio::EnsEMBL::Compara::ComparaUtils->get_genomes_within_clade($h->dba,1);
     foreach my $gdb (@all_gdb) {
       # This is finicky: we need to call the "db_adaptor" method to get the Bio::EnsEMBL::DBSQL::DBAdaptor object, and then the meta container.
       my $meta = $gdb->db_adaptor->get_MetaContainer;
       my $str = @{$meta->list_value_by_key('assembly.coverage_depth')}[0];
+      print "Coverage: $str\n";
       push @output, $gdb->taxon_id if ($str eq $coverage);
     }
     return subtract(\@output,\@off);
@@ -142,6 +148,8 @@ sub parameter_sets {
   };
   $params = _combine_hashes($base_params,$params);
   _add_parameter_set($params);
+
+  return;
 
   $params = {
     parameter_set_name => "Primates",
@@ -230,19 +238,20 @@ sub align {
   my $logic_name = "Align";
   my $module = "Bio::Greg::Hive::Align";
   my $params = {
-    alignment_method => 'mcoffee'
+    parameter_set_id => 1,
+    alignment_method => 'prank'
   };
 
-  _create_analysis($logic_name,$module,$params,400,1);
+  $h->create_analysis($logic_name,$module,$params,400,1);
 }
 
 sub split_by_parameter_set {
   my $logic_name = "SplitByParameterSet";
   my $module = "Bio::Greg::Hive::SplitByParameterSet";
   my $params = {
-    flow_parameter_sets => 'all'
+    flow_parameter_sets => '1'
   };
-  _create_analysis($logic_name,$module,$params,100,1);
+  $h->create_analysis($logic_name,$module,$params,100,1);
 }
 
 sub sequence_quality {
@@ -251,7 +260,7 @@ sub sequence_quality {
   my $module = "Bio::Greg::Hive::SequenceQualityLoader";
   my $params = {};
   
-  _create_analysis($logic_name,$module,$params,50,1);
+  $h->create_analysis($logic_name,$module,$params,50,1);
 }
 
 sub gene_omegas {
@@ -261,7 +270,7 @@ sub gene_omegas {
     sequence_quality_filtering => 1,
     analysis_action => 'hyphy_dnds'
     };
-  _create_analysis($logic_name,$module,$base_params,500,1);
+  $h->create_analysis($logic_name,$module,$base_params,500,1);
 }
 
 sub sitewise_omegas {
@@ -271,7 +280,7 @@ sub sitewise_omegas {
     sequence_quality_filtering => 1,
     analysis_action => 'slr'
     };
-  _create_analysis($logic_name,$module,$base_params,500,1);
+  $h->create_analysis($logic_name,$module,$base_params,500,1);
 }
 
 sub mapping {
@@ -279,7 +288,7 @@ sub mapping {
   my $module = "Bio::Greg::Hive::SitewiseMapper";
   my $params = {
   };
-  _create_analysis($logic_name,$module,$params,50,1);
+  $h->create_analysis($logic_name,$module,$params,50,1);
 }
 
 
@@ -288,9 +297,8 @@ sub collect_stats {
   my $module = "Bio::Greg::Mammals::CollectMammalsStats";
   my $params = {
     sequence_quality_filtering => 1,
-    mammals_alignment_filtering_value => 1
   };
-  _create_analysis($logic_name,$module,$params,50,1);
+  $h->create_analysis($logic_name,$module,$params,50,1);
 }
 
 sub output_data {
@@ -299,28 +307,9 @@ sub output_data {
   my $params = {
     sequence_quality_filtering => 1,
   };
-  my $analysis_id = _create_analysis($logic_name,$module,$params,50,1);
+  my $analysis_id = $h->create_analysis($logic_name,$module,$params,50,1);
   _add_nodes_to_analysis($analysis_id,{},[0]);  
 }
-
-
-
-sub clean_tables {
-  if ($clean) {    
-    my @truncate_tables = qw^
-      analysis analysis_job analysis_stats dataflow_rule hive
-      parameter_set
-      node_set_member node_set
-      sitewise_omega sitewise_tag sitewise_genome
-      go_terms      
-      stats_sites stats_genes
-      ^;
-    map {
-      print "$_\n";
-      eval {$dba->dbc->do("truncate table $_");}} @truncate_tables;
-  }
-}
-
 
 
 ########*********########
@@ -343,6 +332,8 @@ our $param_set_counter;
 sub _add_parameter_set {
   my $params = shift;
 
+  my $dbc = $h->dba->dbc;
+
   $param_set_counter = 1 if (!$param_set_counter);
   my $parameter_set_id = $params->{'parameter_set_id'} || $param_set_counter++;
   $params->{'parameter_set_id'} = $parameter_set_id;
@@ -364,80 +355,12 @@ sub _add_parameter_set {
   $dbc->do($cmd);
 }
 
-our $analysis_counter = 0;
-sub _create_analysis {
-  my $logic_name = shift;
-  my $module = shift;
-  my $params = shift;
-  my $hive_capacity = shift || 500;
-  my $batch_size = shift || 1;
-
-  my $analysis_id = ++$analysis_counter;
-  
-  my $param_string = Bio::EnsEMBL::Compara::ComparaUtils->hash_to_string($params);
-  my $cmd = qq{REPLACE INTO analysis SET
-		 created=now(),
-		 analysis_id=$analysis_id,
-		 logic_name="$logic_name",
-		 module="$module",
-		 parameters="$param_string"
-		 ;};
-  $dbc->do($cmd);
-  $cmd = qq{REPLACE INTO analysis_stats SET
-	      analysis_id=$analysis_id,
-	      hive_capacity=$hive_capacity,
-	      batch_size=$batch_size,
-	      failed_job_tolerance=20000
-	      ;};
-  $dbc->do($cmd);
-  return $analysis_id;
-}
-
-sub connect_analysis {
-  my $from_name = shift;
-  my $to_name = shift;
-  my $branch_code = shift;
-  $branch_code = 1 unless (defined $branch_code);
-
-  my $dataflow_rule_adaptor = $hive_dba->get_DataflowRuleAdaptor;
-  my $analysis_adaptor = $hive_dba->get_AnalysisAdaptor;
-
-  my $from_analysis = $analysis_adaptor->fetch_by_logic_name($from_name);
-  my $to_analysis = $analysis_adaptor->fetch_by_logic_name($to_name);
-  
-  if($from_analysis and $to_analysis) {
-    $dataflow_rule_adaptor->create_rule( $from_analysis, $to_analysis, $branch_code);
-    warn "Created DataFlow rule: [$branch_code] $from_name -> $to_name\n";
-  } else {
-    die "Could not fetch analyses $from_analysis -> $to_analysis to create a dataflow rule";
-  }
-}
-
-sub wait_for {
-  my $waiting_name = shift;
-  my $wait_for_list = shift;
-  
-  my $ctrl_rule_adaptor = $hive_dba->get_AnalysisCtrlRuleAdaptor;
-  my $analysis_adaptor = $hive_dba->get_AnalysisAdaptor;
-
-  my $waiting_analysis = $analysis_adaptor->fetch_by_logic_name($waiting_name);
-
-  foreach my $wait_for_name (@$wait_for_list) {
-    my $wait_for_analysis = $analysis_adaptor->fetch_by_logic_name($wait_for_name);
-
-    if($waiting_analysis and $wait_for_analysis) {
-      $ctrl_rule_adaptor->create_rule( $wait_for_analysis, $waiting_analysis);
-      warn "Created Control rule: $waiting_name will wait for $wait_for_name\n";
-    } else {
-      die "Could not fetch $waiting_name -> $wait_for_name to create a control rule";
-    }
-  }
-}
-
 sub _add_nodes_to_analysis {
   my $analysis_id = shift;
   my $params = shift || {};
   my $node_arrayref = shift;
+
+  my $dbc = $h->dbc;
 
   my @node_ids = @{$node_arrayref};  
   my $sth = $dbc->prepare( qq{REPLACE INTO analysis_job SET
@@ -459,6 +382,7 @@ sub _select_node_ids {
   if (!defined $cmd) {
     $cmd = "SELECT node_id FROM protein_tree_node WHERE parent_id=1 AND root_id=1";
   }
+  my $dbc = $h->dbc;
   my $sth = $dbc->prepare($cmd);
   $sth->execute();
 

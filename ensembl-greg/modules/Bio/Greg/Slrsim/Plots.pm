@@ -102,6 +102,12 @@ save(data,file="${filename}");
   
 }
 
+sub mammals_indel_simulations {
+  my $self = shift;
+
+  $self->mammals_simulations;
+}
+
 sub mammals_simulations {
   my $self = shift;
 
@@ -109,22 +115,29 @@ sub mammals_simulations {
   my $folder = $self->param('output_folder');
   my $script = $self->base . "/collect_slrsim.R";
   my $rcmd = qq^
-dbname="slrsim_2x"
-source("$script")
-data = get.all.data(dir="$folder")
+dbname="gj1_slrsim"
+host = 'ens-research'
+port = 3306
+user = 'ensadmin'
+password = 'ensembl'
 
-full.roc = generic.roc.plot(data,col.names=c('slrsim_tree_file'),plot=F)
+source("collect_slrsim.R")
+data = get.all.data()
 
-for (lbl in sort(unique(full.roc[,'label']))) {
-  roc = subset(full.roc,label==lbl)
-  for (fdr in c(0.01,0.05,0.1,0.2)) {
-    fdr.ok = roc[which(roc[,'fdr'] <= fdr),]
-    max.row = fdr.ok[nrow(fdr.ok),]
-    score.at.fdr = max.row[,'score']
-    tpr.at.fdr = max.row[,'tpr']
-    print(paste(lbl,'[',fdr,'=>',score.at.fdr,tpr.at.fdr,']'))
-  }
-}
+thresh = get.fdr.thresholds(data,fdr=0.05,col.names=c('parameter_set_name'))
+
+#full.roc = generic.roc.plot(data,col.names=c('parameter_set_name'),plot=F)
+#
+#for (lbl in sort(unique(full.roc[,'label']))) {
+#  roc = subset(full.roc,label==lbl)
+#  for (fdr in c(0.01,0.05,0.1,0.2)) {
+#    fdr.ok = roc[which(roc[,'fdr'] <= fdr),]
+#    max.row = fdr.ok[nrow(fdr.ok),]
+#    score.at.fdr = max.row[,'score']
+#    tpr.at.fdr = max.row[,'tpr']
+#    print(paste(lbl,'[',fdr,'=>',score.at.fdr,tpr.at.fdr,']'))
+#  }
+#}
 
 q()
 ^;
