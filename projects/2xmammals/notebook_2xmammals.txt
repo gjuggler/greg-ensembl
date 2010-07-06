@@ -482,3 +482,42 @@ mysql> select parameter_set_id,count(*) from stats_sites group by parameter_set_
 +------------------+----------+
 11 rows in set (2 min 33.04 sec)
 
+
+### 2010-07-05 ###
+
+> subset(fdrs,fdr.threshold==0.1)
+                  slrsim_label fdr.threshold        fdr  score  pct_below
+414259                indel_01           0.1 0.10000000 2.9778 0.01520730
+507831                indel_02           0.1 0.09980806 2.8656 0.01564251
+645392                indel_03           0.1 0.09993202 3.1616 0.01468220
+701711                indel_04           0.1 0.10000000 3.4086 0.01314435
+800581                indel_05           0.1 0.09959514 3.6725 0.01234395
+100999           lnorm noindel           0.1 0.10000000 2.8789 0.01620000
+294560 lnorm very wide noindel           0.1 0.09999011 0.3380 0.20232000
+179619      lnorm wide noindel           0.1 0.09996343 1.1247 0.08203000
+> subset(fdrs,fdr.threshold==0.05)
+                  slrsim_label fdr.threshold        fdr  score   pct_below
+418026                indel_01          0.05 0.04981320 5.2121 0.008033856
+487328                indel_02          0.05 0.04994687 4.8326 0.009277422
+662639                indel_03          0.05 0.04961411 5.0237 0.009001350
+757578                indel_04          0.05 0.04951691 5.2473 0.008076527
+873611                indel_05          0.05 0.04930468 5.2310 0.007906126
+105011           lnorm noindel          0.05 0.04965243 4.6690 0.010070000
+267020 lnorm very wide noindel          0.05 0.04995710 1.1698 0.151530000
+120419      lnorm wide noindel          0.05 0.04995878 2.2185 0.060640000
+> subset(fdrs,fdr.threshold==0.01)
+                  slrsim_label fdr.threshold         fdr   score    pct_below
+350291                indel_01          0.01 0.009118541  8.8187 3.221546e-03
+447848                indel_02          0.01 0.009375000  9.7902 3.202562e-03
+575382                indel_03          0.01 0.008547009 11.0806 6.100915e-04
+690054                indel_04          0.01 0.000000000 30.3926 9.995702e-06
+805371                indel_05          0.01 0.000000000 18.2541 3.898090e-04
+61458            lnorm noindel          0.01 0.009074410  7.0242 5.510000e-03
+238700 lnorm very wide noindel          0.01 0.009959072  4.0891 7.301000e-02
+216321      lnorm wide noindel          0.01 0.009917355  6.3153 2.419000e-02
+> save(slrsim.data,fdrs,file="mammals_slrsim_tests.Rdata")
+
+
+### TODO NEXT: the full set of parameter_set simulations!
+
+

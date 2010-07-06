@@ -55,10 +55,9 @@ get.genes.list = function(db=dbname) {
 
 get.genes.merged = function(db=dbname,exclude.cols=NULL,pset.cols=NULL) {
   pset.cols <- c(pset.cols,
-    'slr.dnds','hyphy.dnds'
-#'hyphy_dnds_lo','hyphy_dnds_hi',
-#    'positive_1','positive_2',
-#    'tree_length', 'tree_max_path'
+    'slr_dnds','hyphy_dnds',
+    'pval_stouffer','pval_fisher',
+    'positive_1'
   )
   pset.cols <- unique(pset.cols)
 
@@ -72,11 +71,12 @@ get.genes.merged = function(db=dbname,exclude.cols=NULL,pset.cols=NULL) {
   genes = get.genes(1,db=db)
   genes <- within(genes,rm(list=exclude.cols))
   
-  for (i in 1:nrow(param.sets)) {
+  for (i in c(1:4)) {
+#  for (i in 1:nrow(param.sets)) {
     pset = param.sets[i,]$id
     print(param.sets[i,]$parameter_set_shortname)
     cur.genes = get.genes(pset,db=db)
-    print(str(cur.genes))
+    #print(str(cur.genes))
     create.name = function(ext) {paste(param.sets[pset,]$parameter_set_shortname,ext,sep='_')}
 
     genes.subset = data.frame(
@@ -254,19 +254,19 @@ sites.fit.distributions = function(db=dbname, sites.dir='.', filter.fn=NULL, fit
   df = data.frame()
   for (i in c(1)) {
 #  for (i in 1:nrow(param.sets)) {
+    set.seed(0)
     pset <- param.sets[i,]$id
     name <- param.sets[i,]$parameter_set_shortname
     print(name)
     sites <- get.sites.for.parameter.set(dir=sites.dir,parameter.set.id=pset,filter.fn=filter.fn)
 
     sites.adj <- sites
-    sites.adj = sites.adj[sample(1:nrow(sites.adj),size=100000),]
-    sites.adj[sites.adj$omega == 0,]$omega <- 0.0001
+    sites.adj = sites.adj[sample(1:nrow(sites.adj),size=50000),]
+    #sites.adj[sites.adj$omega == 0,]$omega <- 0.0001
     omegas.adj <- sites.adj$omega
     sites.adj[,'left'] = sites.adj[,'omega_lower']    
     sites.adj[,'right'] = sites.adj[,'omega_upper']
 
-    set.seed(0)
     omegas.below.one <- omegas.adj[omegas.adj < 1]
     param.min = sqrt(.Machine$double.eps)
 
@@ -338,12 +338,13 @@ sites.fit.intervals = function(db=dbname, sites.dir='.',filter.fn=NULL) {
   library(fitdistrplus)
   param.sets = get.psets(db=db)
   df = data.frame()
-  for (i in 1:nrow(param.sets)) {
+  for (i in c(1)) {
+#  for (i in 1:nrow(param.sets)) {
     pset <- param.sets[i,]$id
     name <- param.sets[i,]$parameter_set_shortname
     print(name)
     sites <- get.sites.for.parameter.set(dir=sites.dir,parameter.set.id=pset,filter.fn=filter.fn)
-    sites <- sites[sample(100000),]
+    sites <- sites[sample(1:nrow(sites),size=50000),]
     sites$left <- sites$omega_lower
     sites$right <- sites$omega_upper
 
