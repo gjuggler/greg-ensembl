@@ -162,7 +162,6 @@ sub get_gene_data {
     $cur_params->{'gor_gene'}    = $member->get_Gene->stable_id;
   }
 
-
   # Collect gorilla protein coords.
   if ( scalar @gor_proteins > 0) {
     my $member = $gor_proteins[0];

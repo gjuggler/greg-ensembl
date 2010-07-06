@@ -390,7 +390,7 @@ sub _store_sitewise_omegas {
     }
 
     my $insert = join( ",", @insert_strings );
-    my $cmd = "INSERT INTO $output_table (aln_position,aln_position_fraction,node_id,data_id,parameter_set_id,omega,omega_lower,omega_upper,type,ncod) values $insert ;";
+    my $cmd = "INSERT INTO $output_table (aln_position,aln_position_fraction,node_id,data_id,parameter_set_id,omega,omega_lower,omega_upper,type,ncod) values $insert;";
     print "$cmd\n";
     $self->dbc->do($cmd);
 #  };

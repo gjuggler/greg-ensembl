@@ -66,7 +66,7 @@ sub _get_aln {
   if (defined $params->{tree}) {
     $tree = $params->{tree};
   } else {
-    $tree = $self->get_tree;
+    $tree = $self->get_tree($params);
   }
 
   my $aa_aln = $tree->get_SimpleAlign();
@@ -151,6 +151,14 @@ sub check_tree_aln {
   return 1;
 }
 
+sub pretty_print {
+  my $self = shift;
+  my $aln = shift;
+  my $params = shift || {};
+
+  Bio::EnsEMBL::Compara::AlignUtils->pretty_print($aln,$params);
+}
+
 
 sub compara_dba {
   my $self = shift;
@@ -166,8 +174,10 @@ sub compara_dba {
 sub pta {
   my $self = shift;
 
+#  return $self->compara_dba->get_ProteinTreeAdaptor;
+
   if (!defined $self->param('_pta')) {
-    print " >>>> Getting new DBA!!!!\n";
+    print " >>>> Getting new PTA!!!!\n";
     my $compara_dba = $self->compara_dba;
     my $pta = $compara_dba->get_ProteinTreeAdaptor;
     $self->param('_pta',$pta);
@@ -178,8 +188,10 @@ sub pta {
 sub mba {
   my $self = shift;
 
+  #return $self->compara_dba->get_MemberAdaptor;
+
   if (!defined $self->param('_mba')) {
-    print " >>>> Getting new DBA!!!!\n";
+    print " >>>> Getting new MBA!!!!\n";
     my $compara_dba = $self->compara_dba;
     my $pta = $compara_dba->get_MemberAdaptor;
     $self->param('_mba',$pta);
@@ -190,14 +202,32 @@ sub mba {
 sub db_handle {
   my $self = shift;
 
-  my $dba = $self->compara_dba();
-  return $dba->dbc->db_handle();
+  if (!defined $self->param('_compara_dbh')) {
+    print " >>>> Getting new Compara DBH!!!!\n";
+    my $dbc = $self->dbc;
+    my $dbh = $dbc->db_handle;
+    $self->param('_compara_dbh',$dbh);
+    print $dbh."\n";
+  }
+  return $self->param('_compara_dbh');
 }
 
 sub dbc {
   my $self = shift;
 
-  return $self->compara_dba->dbc;
+  if (!defined $self->param('_compara_dbc')) {
+    print " >>>> Getting new Compara DBC!!!!\n";
+    my $compara_dba = $self->compara_dba;
+    my $dbc = $compara_dba->dbc;
+    print $dbc."\n";
+    # It's apparently important to turn off the inactive disconnect here, since we'll
+    # be sharing this DBC throughout the lifetime of this Process.
+    # TODO: Think of how to handle the case when a Process wants to let a connection
+    # run idle...
+    $dbc->disconnect_when_inactive(0);
+    $self->param('_compara_dbc',$dbc);
+  }
+  return $self->param('_compara_dbc');
 }
 
 sub node_id {
@@ -319,8 +349,12 @@ sub new_data_id {
   my $self = shift;
   my $params = shift;
 
+  my $ug = new Data::UUID;
+  my $uuid = $ug->create();
+  
+
   my $dbh = $self->db_handle;
-#  $dbh->do("LOCK TABLES protein_tree_tag READ WRITE");
+  $dbh->do("LOCK TABLES protein_tree_tag WRITE");
 
   my $sth = $self->db_handle->prepare("SELECT value from protein_tree_tag WHERE node_id=0 AND tag='data_id_counter';");
   $sth->execute;
@@ -338,7 +372,7 @@ sub new_data_id {
   $self->param('data_id',$data_id);
   $params->{data_id} = $data_id;
 
-#  $dbh->do("UNLOCK TABLES");
+  $dbh->do("UNLOCK TABLES");
 
   return $data_id;
 }
@@ -467,6 +501,13 @@ sub hash_print {
   select(STDOUT);
 }
 
+sub clone {
+  my $self = shift;
+  my $params = shift;
+
+  return $self->replace($params,{});
+}
+
 sub replace {
   my $self = shift;
   return $self->replace_params(@_);
@@ -575,6 +616,7 @@ sub create_table_from_params {
       my $type = $params->{$key};
 
       my $type_map = {
+	'uuid' => 'BINARY(16)',
         'tinyint' => 'TINYINT',
         'smallint'    => 'SMALLINT',
         'int'    => 'INT',
@@ -638,7 +680,9 @@ sub store_params_in_table {
   my @values = map {
     if ( defined $params->{$_} && $params->{$_} ne '' ) {
       $params->{$_};
-    } else {
+    } elsif ($_ eq 'parameter_set_id') {
+      0;
+} else {
       undef;
     }
   } @fields;
@@ -652,7 +696,7 @@ sub store_tag {
   my $tag = shift;
   my $value = shift;
 
-  my $node_id = $self->param('node_id');
+  my $node_id = $self->param('node_id') || 1;
   my $tree = $self->pta->fetch_node_by_node_id($node_id);
 
   if ($self->param('breadcrumb')) {
@@ -694,6 +738,7 @@ sub get_output_folder {
   } while (-e $filename);
   
   print "Output folder: $filename\n";
+  mkpath([$filename]);
   $self->param('output_folder',$filename);
   
   # We'll store this output folder in the meta table, so it will be re-used if this module is run again w/ the same database.

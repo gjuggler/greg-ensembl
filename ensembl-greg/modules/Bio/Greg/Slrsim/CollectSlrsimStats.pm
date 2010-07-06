@@ -20,8 +20,9 @@ sub get_gene_table_structure {
   my $added_structure = {
     experiment_name       => 'string',
 
+    slrsim_label       => 'string',
     alignment_score_threshold => 'float',
-    alignment_score_mask_character_cdna => 'string',
+    alignment_score_mask_character_cdna => 'char8',
     filtering_name            => 'string',
     alignment_name            => 'string',
     sitewise_action => 'string',
@@ -52,11 +53,15 @@ sub get_gene_table_structure {
     site_count               => 'float',
     unfiltered_site_count    => 'float',
     unfiltered_site_fraction => 'float',
+    unique_keys => 'data_id,slrsim_label'
   };
 
   # Add our structure on top of the base structure defined in CollectSitewiseStats.
   my $structure = $self->SUPER::get_gene_table_structure;
   $structure = $self->replace_params($structure,$added_structure);
+
+  delete $structure->{tree_newick};
+
   return $structure;
 }
 
@@ -95,6 +100,7 @@ sub get_sites_table_structure {
 sub data_for_gene {
   my $self = shift;
 
+  # This is used by the StatsCollectionUtils methods.
   $self->param('get_all_sites',1);
 
   my $data = $self->SUPER::data_for_gene();
@@ -196,6 +202,7 @@ sub data_for_site {
     my $sth1           = $self->compara_dba->dbc->prepare(
       "SELECT aln_position,omega,type,note,ncod,lrt_stat FROM sitewise_omega WHERE node_id=?;");
     my $cmd = "SELECT aln_position,omega,type,note,ncod,lrt_stat FROM $aln_table_name WHERE data_id=?;";
+    print "Getting true omegas...\n";
     my $sth2 = $self->compara_dba->dbc->prepare($cmd);
     $sth1->execute($self->node_id);
     $sth2->execute($self->data_id);
