@@ -1044,6 +1044,9 @@ sub _internal_newick_format {
     }
     $newick .= ")";
   }
+  if (ref $format_mode) {
+    $newick .= $format_mode->($self);
+  }
   if ($format_mode eq "no_bl") {
     $newick .= sprintf("%s", $self->name);    
   }
