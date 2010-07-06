@@ -31,6 +31,7 @@ sub fetch_input {
   my ($self) = @_;
 
   my $params = {
+    collect_duplication_species => '9606,9598,9593,9600',
     genes_table    => 'stats_dups',
   };
 
@@ -65,10 +66,14 @@ sub get_gene_data {
 
   print $tree->newick_format . "\n";
 
-  foreach my $taxon_id (9606,9598,9593,9600) {
+  my $taxon_list = $self->param('collect_duplication_species');
+  my @taxon_ids = split(',',$taxon_list);
+
+  foreach my $taxon_id (@taxon_ids) {
     my @proteins = grep { $_->taxon_id == $taxon_id } $tree->leaves;
     my $count = scalar @proteins;
     my $letter = Bio::Greg::Gorilla::Utils->taxon_letter($taxon_id);
+    $letter = $taxon_id if (!defined $letter);
     $cur_params->{$letter.'_count'} = $count;
   }
 
