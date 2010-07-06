@@ -125,7 +125,7 @@ sub get_SimpleAlign {
 #    $seqID .= "_" . $member->genome_db->taxon_id if($append_taxon_id); # this may be needed if you have subspecies or things like that
     $seqstr =~ s/\*/X/g if ($stop2x);
     my $seq = Bio::LocatableSeq->new(-SEQ    => $seqstr,
-                                     -START  => 1,
+#                                     -START  => 1,
 #                                     -END    => length($seqstr),
                                      -ID     => $seqID,
                                      -STRAND => 0);
