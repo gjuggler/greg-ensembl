@@ -27,7 +27,6 @@ sub translate_ids {
 
     if (defined $id && defined $map->{$id}) {
       $seq->id($map->{$id});
-#      $aln->displayname($nse,$map->{$id});
       $new_aln->add_seq($seq);
     }
   }
@@ -648,6 +647,27 @@ sub remove_blank_columns_in_threes {
       push @cols_to_remove, [$i-1,$i-1+2];
     }
   }
+  $aln = $aln->_remove_columns_by_num(\@cols_to_remove);
+  return $aln;
+}
+
+# Removes blank columns in threes, and returns a codon-wise column mapping.
+sub remove_gappy_columns_in_threes {
+  my $class = shift;
+  my $aln = shift;
+
+  my @cols_to_remove = ();
+  my $n = 0;
+  for (my $i=1; $i <= $aln->length-2; $i+= 3) {
+    my $col = $class->get_column_string($aln,$i);
+    my $col2 = $class->get_column_string($aln,$i+1);
+    my $col3 = $class->get_column_string($aln,$i+2);
+    if ($col =~ m/[-]/ || $col2 =~ m/[-]/ || $col3 =~ m/[-]/ ) { # Regex for any gaps in the column.
+      push @cols_to_remove, [$i-1,$i-1+2];
+      $n += 3;
+    }
+  }
+  print "Removing $n gappy columns...\n";
   $aln = $aln->_remove_columns_by_num(\@cols_to_remove);
   return $aln;
 }
