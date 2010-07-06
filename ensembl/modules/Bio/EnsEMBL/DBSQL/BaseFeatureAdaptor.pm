@@ -218,12 +218,15 @@ sub fetch_all_by_Slice_constraint {
 
   my @result = ();
 
-  if(!ref($slice) || !$slice->isa("Bio::EnsEMBL::Slice")) {
+  if(!ref($slice) || !($slice->isa('Bio::EnsEMBL::Slice') or $slice->isa('Bio::EnsEMBL::LRGSlice'))) {
     throw("Bio::EnsEMBL::Slice argument expected.");
   }
 
   $constraint ||= '';
   $constraint = $self->_logic_name_to_constraint($constraint, $logic_name);
+
+
+
 
   # If the logic name was invalid, undef was returned
   return [] if ( !defined($constraint) );
@@ -234,6 +237,17 @@ sub fetch_all_by_Slice_constraint {
   if (
     !( defined( $self->db()->no_cache() ) && $self->db()->no_cache() ) )
   {
+
+    #strain test and add to constraint if so to stop caching.
+    if($slice->isa('Bio::EnsEMBL::StrainSlice')){
+      my $string = $self->dbc->db_handle->quote($slice->strain_name);
+      if($constraint ne ""){
+	$constraint .= " AND $string = $string ";
+      }
+      else{
+	$constraint .= " $string = $string ";
+      }
+    }
 
     # Check the cache and return the cached results if we have already
     # done this query.  The cache key is the made up from the slice
@@ -567,7 +581,7 @@ sub _pre_store {
   my $slice_adaptor = $db->get_SliceAdaptor();
   my $slice = $feature->slice();
 
-  if(!ref($slice) || !$slice->isa('Bio::EnsEMBL::Slice')) {
+  if(!ref($slice) || !($slice->isa('Bio::EnsEMBL::Slice') or $slice->isa('Bio::EnsEMBL::LRGSlice'))  ) {
     throw('Feature must be attached to Slice to be stored.');
   }
 
@@ -628,7 +642,7 @@ sub _pre_store_userdata {
   my $slice = $feature->slice();
   my $slice_adaptor = $slice->adaptor;
 
-  if(!ref($slice) || !$slice->isa('Bio::EnsEMBL::Slice')) {
+  if(!ref($slice) || !($slice->isa('Bio::EnsEMBL::Slice') or $slice->isa('Bio::EnsEMBL::LRGSlice')) ) {
     throw('Feature must be attached to Slice to be stored.');
   }
 
@@ -913,7 +927,7 @@ sub remove {
 sub remove_by_Slice {
   my ($self, $slice) = @_;
 
-  if(!$slice || !ref($slice) || !$slice->isa('Bio::EnsEMBL::Slice')) {
+  if(!$slice || !ref($slice) || !($slice->isa('Bio::EnsEMBL::Slice') or $slice->isa('Bio::EnsEMBL::LRGSlice')) ) {
     throw("Slice argument is required");
   }
 
