@@ -10,7 +10,7 @@ use Bio::Greg::Hive::ComparaHiveLoaderUtils;
 #my ($url) = undef;
 #GetOptions('url=s' => \$url);
 
-my $url = 'mysql://ensadmin:ensembl@ens-research:3306/gj1_gor_58';
+my $url = 'mysql://ensadmin:ensembl@ens-research:3306/gj1_dnds_58';
 
 my $clean = 1;
 
@@ -70,7 +70,7 @@ sub tree_stats {
 }
 
 sub split_subtrees {
-  my $logic_name = "SplitBySubtrees";
+  my $logic_name = "SplitSubtrees";
   my $module = "Bio::Greg::Hive::SplitBySubtrees";
   my $params = {
     seed_species => '9606',
