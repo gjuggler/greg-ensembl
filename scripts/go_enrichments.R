@@ -1,12 +1,19 @@
-go.cmd = 'select node_id, stable_id, group_concat(DISTINCT go_term) AS go from go_terms WHERE source_taxon=%s AND evidence_code != "%s" group by stable_id';
+go.cmd = 'select data_id, protein_id AS stable_id, group_concat(DISTINCT go_term) AS go from go_terms 
+  WHERE taxon_id=%s
+  AND (evidence_code is null || evidence_code != "%s")
+  AND subset = "%s"
+  AND namespace = "%s"
+  AND ancestral_mapping = 0
+  GROUP BY protein_id';
 
 if (!exists('go.hs')) {
-  go.hs = get.vector(con,sprintf(go.cmd,9606,'IEA'),columns='all')
-  go.hs.iea = get.vector(con,sprintf(go.cmd,9606,''),columns='all')
+  go.hs = get.vector(con,sprintf(go.cmd,9606,'IEA','go','biological_process'),columns='all')
+  go.hs.iea = get.vector(con,sprintf(go.cmd,9606,'','go','biological_process'),columns='all')
 
-  go.mm = get.vector(con,sprintf(go.cmd,'10090','IEA'),columns='all')
-  go.mm.iea = get.vector(con,sprintf(go.cmd,'10090',''),columns='all')
+  go.mm = get.vector(con,sprintf(go.cmd,'10090','IEA','go','biological_process'),columns='all')
+  go.mm.iea = get.vector(con,sprintf(go.cmd,'10090','','go','biological_process'),columns='all')
 }
+
 library(biomaRt)
 library(topGO)
 
