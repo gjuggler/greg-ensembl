@@ -76,6 +76,7 @@ sub copy {
   foreach my $child (@{$self->sorted_children}) {  
     $mycopy->add_child($child->copy);
   }
+  $mycopy->adaptor($self->adaptor);
   return $mycopy;
 }
 
@@ -1043,6 +1044,9 @@ sub _internal_newick_format {
       $first_child = 0;
     }
     $newick .= ")";
+  }
+  if (ref $format_mode) {
+    $newick .= $format_mode->($self);
   }
   if ($format_mode eq "no_bl") {
     $newick .= sprintf("%s", $self->name);    

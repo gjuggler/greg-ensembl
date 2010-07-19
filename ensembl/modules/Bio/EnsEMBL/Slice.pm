@@ -780,14 +780,22 @@ sub project {
 						   $normal_slice->end());
     }
 
+
+    my $last_rank = 0;
     #construct a projection from the mapping results and return it
     foreach my $coord (@coords) {
       my $coord_start  = $coord->start();
       my $coord_end    = $coord->end();
       my $length       = $coord_end - $coord_start + 1;
+      
+      if( $last_rank != $coord->rank){
+	$current_start = 1;
+      }
+      $last_rank = $coord->rank;
 
       #skip gaps
       if($coord->isa('Bio::EnsEMBL::Mapper::Coordinate')) {
+
         my $coord_cs     = $coord->coord_system();
 
         # If the normalised projection just ended up mapping to the
@@ -1544,6 +1552,7 @@ sub get_all_VariationFeatures{
                  If $annotation_source is set only variations whose annotations come from
                  $annotation_source will be retrieved.
                  If $annotation_name is set only variations with that annotation will be retrieved.
+                 $annotation_name can be a phenotype's internal dbID.
     ReturnType : listref of Bio::EnsEMBL::Variation::VariationFeature
     Exceptions : none
     Caller     : contigview, snpview
@@ -1655,6 +1664,46 @@ sub get_all_StructuralVariations{
     return [];
   }
 }
+
+
+=head2 get_all_VariationFeatures_by_Population
+
+  Arg [1]    : Bio::EnsEMBL::Variation::Population
+  Arg [2]	 : $minimum_frequency (optional)
+  Example    : $pop = $pop_adaptor->fetch_by_dbID(659);
+               @vfs = @{$slice->get_all_VariationFeatures_by_Population(
+                 $pop,$slice)};
+  Description: Retrieves all variation features in a slice which are stored for
+			   a specified population. If $minimum_frequency is supplied, only
+			   variations with a minor allele frequency (MAF) greater than
+			   $minimum_frequency will be returned.
+  Returntype : listref of Bio::EnsEMBL::Variation::VariationFeature
+  Exceptions : throw on incorrect argument
+  Caller     : general
+  Status     : At Risk
+
+=cut
+
+sub get_all_VariationFeatures_by_Population {
+ my $self = shift;
+
+ if(!$self->adaptor()) {
+  warning('Cannot get variation features without attached adaptor');
+  return [];
+ }
+
+ my $vf_adaptor = Bio::EnsEMBL::DBSQL::MergedAdaptor->new(-species => $self->adaptor()->db()->species, -type => "VariationFeature");
+ if( $vf_adaptor ) {
+    return $vf_adaptor->fetch_all_by_Slice_Population($self, @_);
+ }
+ else {
+     warning("Variation database must be attached to core database to " .
+       "retrieve variation information" );
+  return [];
+ }
+}
+
+
 
 
 =head2 get_all_IndividualSlice
@@ -3033,7 +3082,7 @@ sub project_to_slice {
 
   my $cs = $to_slice->coord_system();
   my $slice_cs = $self->coord_system();
-
+  my $to_slice_id = $to_slice->get_seq_region_id;
 
   my @projection;
   my $current_start = 1;
@@ -3064,14 +3113,25 @@ sub project_to_slice {
 						   $normal_slice->end());
     }
 
+    my $last_rank =0;
     #construct a projection from the mapping results and return it
     foreach my $coord (@coords) {
       my $coord_start  = $coord->start();
       my $coord_end    = $coord->end();
       my $length       = $coord_end - $coord_start + 1;
 
+
+      if( $last_rank != $coord->rank){
+	$current_start = 1;
+      }
+      $last_rank = $coord->rank;
+
       #skip gaps
       if($coord->isa('Bio::EnsEMBL::Mapper::Coordinate')) {
+	if($coord->id != $to_slice_id){ # for multiple mappings only get the correct one
+	  $current_start += $length;
+	  next;
+	}
         my $coord_cs     = $coord->coord_system();
 
         # If the normalised projection just ended up mapping to the

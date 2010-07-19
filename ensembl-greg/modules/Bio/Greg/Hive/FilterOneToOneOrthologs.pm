@@ -50,7 +50,7 @@ sub run {
     $self->autoflow_inputjob(0);
     return;
   } else {
-    print " -> Good tree! Flowing output job...\n";
+    print " -> Good tree! Allowing output job to flow...\n";
   }
 }
 

@@ -117,8 +117,8 @@ sub fetch_input {
     collect_eslr_stats_pscs_table     => 'stats_pscs'
   };
 
-  my $p_params = $self->get_params( $self->parameters );
-  my $i_params = $self->get_params( $self->input_id );
+  my $p_params = $self->get_params_from_string( $self->parameters );
+  my $i_params = $self->get_params_from_string( $self->input_id );
   my $node_id  = $i_params->{'protein_tree_id'} || $i_params->{'node_id'};
   my $t_params = Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_tree_tags( $dba, $node_id );
 

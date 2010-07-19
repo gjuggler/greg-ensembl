@@ -162,6 +162,7 @@ sub has_ancestor_node_id {
 sub to_treeI {
   my $class = shift;
   my $tree = shift;
+  my $format = shift || 'no_zero_branch_length';
 
   my $newick = "";
   if (!ref $tree) {
@@ -174,8 +175,8 @@ sub to_treeI {
   } elsif ($tree->isa($TREEI)) {
     return $tree;
   } elsif ($tree->isa($NSET)) {
-    $newick = $tree->newick_format('no_zero_branch_length');
-    print $newick."\n";
+    $newick = $tree->newick_format($format).";";
+#    print $newick."\n";
   }
   
   open(my $fake_fh, "+<", \$newick);
@@ -562,6 +563,32 @@ sub remove_members_by_node_id {
   return $tree;
 }
 
+sub keep_members_by_method_call {
+  my $class = shift;
+  my $tree = shift;
+  my $value_arrayref = shift;
+  my $method = shift || 'taxon_id';
+
+  my %value_hash;
+  map {$value_hash{$_}=1} @{$value_arrayref};
+
+  # Take the complement of the "delete me" set and extract a subtree.
+  my @keep_me;
+  foreach my $leaf ($tree->leaves) {
+    if (exists $value_hash{$leaf->$method()}) {
+      push @keep_me, $leaf->node_id;
+    } else {
+    }
+  }
+  if (scalar @keep_me > 0) {
+    $tree = $class->extract_subtree_from_leaves($tree,\@keep_me);
+  } else {
+    $tree = new $tree;
+  }
+  return $tree;
+
+}
+
 sub remove_members_by_method_call {
   my $class = shift;
   my $tree = shift;
@@ -573,8 +600,8 @@ sub remove_members_by_method_call {
   my %tax_hash;
   map {$tax_hash{$_}=1} @tax_ids;
 
-  printf "Pruning leaves by $method: %-40.40s ...\n", join(",",sort(@tax_ids));
-  print " > Before: " . scalar($tree->leaves) . "\n";
+#  printf "Pruning leaves by $method: %-40.40s ...\n", join(",",sort(@tax_ids));
+#  print " > Before: " . scalar($tree->leaves) . "\n";
 
   # Take the complement of the "delete me" set and extract a subtree.
   my @keep_me;
@@ -588,7 +615,7 @@ sub remove_members_by_method_call {
   }
   if (scalar @keep_me > 0) {
     $tree = $class->extract_subtree_from_leaves($tree,\@keep_me);
-    print " > After: " . scalar($tree->leaves) . "\n";
+#    print " > After: " . scalar($tree->leaves) . "\n";
   }
   return $tree;
 }
@@ -603,8 +630,8 @@ sub remove_members_by_taxon_id {
   my %tax_hash;
   map {$tax_hash{$_}=1} @tax_ids;
 
-  print "Pruning leaves with taxon_ids: ". join(",",sort(@tax_ids))."\n";
-  print "  Before: " . scalar($tree->leaves) . "\n";
+#  print "Pruning leaves with taxon_ids: ". join(",",sort(@tax_ids))."\n";
+#  print "  Before: " . scalar($tree->leaves) . "\n";
 
   # Take the complement of the "delete me" set and extract a subtree.
   my @keep_me;
@@ -618,7 +645,7 @@ sub remove_members_by_taxon_id {
 
   $tree = $class->extract_subtree_from_leaves($tree,\@keep_me);
   
-  print "  After: " . scalar($tree->leaves) . "\n";
+#  print "  After: " . scalar($tree->leaves) . "\n";
   return $tree;
 }
 
@@ -781,6 +808,38 @@ sub build_tree_from_nodes {
   return $root;
 }
 
+sub has_one_to_one_orthology {
+  my $class = shift;
+  my $tree = shift;
+  my $taxon_id_arrayref = shift;
+
+  my @species_list = @$taxon_id_arrayref;
+
+  my @keeper_leaves = $class->get_leaves_for_species($tree,\@species_list);
+  my @keeper_ids = map {$_->node_id} @keeper_leaves;
+  my $pruned_tree = $class->extract_subtree_from_leaves($tree,\@keeper_ids);
+
+#  print $pruned_tree->newick_format."\n";
+#  print map {$_->stable_id." "} @keeper_leaves;
+#  print "\n";
+
+  # Test whether it's a good 1-1-1 orthology.
+  my $is_good_tree = 1;
+  my %keeper_hash;
+  map {$keeper_hash{$_->taxon_id}=1} @keeper_leaves;
+  
+  # Not good if we're missing any species.
+  map {$is_good_tree = 0 if (!defined $keeper_hash{$_})} @species_list;
+
+  # Not good if the species and leaf counts don't match -- this means we have a duplication somewhere.
+  $is_good_tree = 0 if ($#keeper_leaves != $#species_list);  
+
+  if (!$is_good_tree) {
+    return 0;
+  } else {
+    return 1;
+  }
+}
 
 
 1; # Keep perl happy.

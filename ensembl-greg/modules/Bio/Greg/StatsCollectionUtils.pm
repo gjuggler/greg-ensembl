@@ -8,6 +8,18 @@ use Bio::Greg::EslrUtils;
 
 our @ISA = qw();
 
+sub dawg_lambda {
+  my $self = shift;
+  my $tree = shift;
+
+  my $params = $self->params;
+  $params->{tree} = $tree;
+  my $aln = $self->get_cdna_aln($params);
+
+  my $lambda = Bio::EnsEMBL::Compara::AlignUtils->dawg_lambda($aln,$tree,{},$self->worker_temp_directory);
+
+  return $lambda;
+}
 
 sub max_path {
   my $class = shift;
@@ -263,7 +275,7 @@ $table o LEFT OUTER JOIN sitewise_genome g ON
 LEFT OUTER JOIN sitewise_tag t ON
   t.node_id=$node_id AND t.aln_position=o.aln_position AND t.parameter_set_id=0
 WHERE
-  o.parameter_set_id=$pset AND o.node_id=$data_id
+  o.parameter_set_id=$pset AND o.data_id=$data_id
   AND t.tag="FILTER" AND t.value >= $filter_value
 $CLEAN_WHERE;
       ^;    
@@ -274,7 +286,7 @@ $CLEAN_WHERE;
     # Filter on alignment columns that pass Pollard et al's filtering criteria.
     $cmd = qq^SELECT * from $table o, sitewise_tag t  WHERE
       o.parameter_set_id=$pset AND 
-      (o.node_id=$data_id)
+      (o.data_id=$data_id)
       AND t.node_id=$node_id
       AND o.aln_position=t.aln_position
       AND t.tag="FILTER" AND t.value >= $filter_value $CLEAN_WHERE;
@@ -282,16 +294,16 @@ $CLEAN_WHERE;
 } elsif ($params->{genome}) {
     print "Genome!\n";
     $cmd = qq^SELECT * from $table o, sitewise_genome g WHERE o.parameter_set_id=$pset AND 
-      (o.node_id=$data_id)
+      (o.data_id=$data_id)
       AND g.node_id=$node_id
       AND o.aln_position=g.aln_position $CLEAN_WHERE^;
 } else {
   $cmd     = qq^SELECT aln_position,omega,omega_lower,omega_upper,lrt_stat,ncod,type,note 
-    FROM $table o WHERE parameter_set_id=$pset and (node_id=$data_id) $CLEAN_WHERE
+    FROM $table o WHERE parameter_set_id=$pset and (data_id=$data_id) $CLEAN_WHERE
     ^;
 }
 
-#  print $cmd."\n";
+  print $cmd."\n";
 
   my $sth = $dbc->prepare($cmd);
   $sth->execute;

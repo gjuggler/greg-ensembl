@@ -613,7 +613,14 @@ sub get_r_values {
 
   #unlink($temp_dir);
 
-  return @lines;
+  # Take each line and make sure it's split up by all whitespace.
+  my @values;
+  foreach my $line (@lines) {
+    my @tokens = split /\s+/, $line;
+    push @values, @tokens;
+  }
+
+  return @values;
 }
 
 ## Please see file perltidy.ERR

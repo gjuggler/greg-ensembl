@@ -98,7 +98,7 @@ use strict;
 use Bio::EnsEMBL::DBSQL::BaseAdaptor;
 use Bio::EnsEMBL::Slice;
 use Bio::EnsEMBL::Mapper;
-
+use Bio::EnsEMBL::LRGSlice;
 use Bio::EnsEMBL::Utils::Exception qw(throw deprecate warning stack_trace_dump);
 
 
@@ -119,6 +119,13 @@ sub new {
   $self->{'sr_name_cache'} = $seq_region_cache->{'name_cache'};
   $self->{'sr_id_cache'}   = $seq_region_cache->{'id_cache'};
 
+
+  $self->{'lrg_region_test'} = undef;
+  my $meta_container = $self->db->get_MetaContainer();
+  my @values = $meta_container->list_value_by_key("LRG");
+  if(scalar(@values) and $values[0]->[0]){
+    $self->{'lrg_region_test'} = $values[0]->[0];
+  }
   return $self;
 }
 
@@ -388,15 +395,27 @@ sub fetch_by_region {
            ) );
   }
 
-  return
-    Bio::EnsEMBL::Slice->new_fast({ 
-	                      'coord_system'      => $cs,
-                              'seq_region_name'   => $seq_region_name,
-                              'seq_region_length' => $length,
-                              'start'             => $start,
-                              'end'               => $end,
-                              'strand'            => $strand,
-                              'adaptor'           => $self} );
+  if(defined($self->{'lrg_region_test'}) and substr($cs->name,0,3) eq $self->{'lrg_region_test'}){
+    return
+      Bio::EnsEMBL::LRGSlice->new( -COORD_SYSTEM      => $cs,
+				   -SEQ_REGION_NAME   => $seq_region_name,
+				   -SEQ_REGION_LENGTH => $length,
+				   -START             => $start,
+				   -END               => $end,
+				   -STRAND            => $strand,
+				   -ADAPTOR           => $self );    
+  }
+  else{
+    return
+      Bio::EnsEMBL::Slice->new_fast({ 
+				     'coord_system'      => $cs,
+				     'seq_region_name'   => $seq_region_name,
+				     'seq_region_length' => $length,
+				     'start'             => $start,
+				     'end'               => $end,
+				     'strand'            => $strand,
+				     'adaptor'           => $self} );
+  }
 } ## end sub fetch_by_region
 
 
@@ -540,7 +559,7 @@ sub get_seq_region_id {
   my $self = shift;
   my $slice = shift;
 
-  if(!$slice || !ref($slice) || !$slice->isa('Bio::EnsEMBL::Slice')) {
+  if(!$slice || !ref($slice) || !($slice->isa('Bio::EnsEMBL::Slice') or $slice->isa('Bio::EnsEMBL::LRGSlice'))) {
     throw('Slice argument is required');
   }
   
@@ -993,7 +1012,7 @@ sub fetch_by_transcript_id {
   Arg [2]    : (optional) int $size
                The length of the flanking regions the slice should encompass
                on either side of the gene (0 by default)
-  Example    : $slc = $sa->fetch_by_transcript_stable_id('ENSG00000012123',10);
+  Example    : $slc = $sa->fetch_by_gene_stable_id('ENSG00000012123',10);
   Description: Creates a slice around the region of the specified gene.
                If a context size is given, the slice is extended by that
                number of basepairs on either side of the gene.
@@ -1054,7 +1073,7 @@ sub fetch_by_Feature{
   }
 
   my $slice = $feature->slice();
-  if(!$slice || !$slice->isa('Bio::EnsEMBL::Slice')) {
+  if(!$slice || !($slice->isa('Bio::EnsEMBL::Slice') or $slice->isa('Bio::EnsEMBL::LRGSlice') )) {
     throw('Feature must be attached to a valid slice.');
   }
 
@@ -1342,7 +1361,7 @@ sub store {
   # Get all of the sanity checks out of the way before storing anything
   #
 
-  if(!ref($slice) || !$slice->isa('Bio::EnsEMBL::Slice')) {
+  if(!ref($slice) || !($slice->isa('Bio::EnsEMBL::Slice') or $slice->isa('Bio::EnsEMBL::LRGSlice'))) {
     throw('Slice argument is required');
   }
 
@@ -1448,10 +1467,10 @@ sub store_assembly{
   # Get all of the sanity checks out of the way before storing anything
   #
 
-  if(!ref($asm_slice) || !$asm_slice->isa('Bio::EnsEMBL::Slice')) {
+  if(!ref($asm_slice) || !($asm_slice->isa('Bio::EnsEMBL::Slice') or $asm_slice->isa('Bio::EnsEMBL::LRGSlice'))) {
     throw('Assembled Slice argument is required');
   }
-  if(!ref($cmp_slice) || !$cmp_slice->isa('Bio::EnsEMBL::Slice')) {
+  if(!ref($cmp_slice) || !($cmp_slice->isa('Bio::EnsEMBL::Slice') or $cmp_slice->isa('Bio::EnsEMBL::LRGSlice')) ) {
     throw('Assembled Slice argument is required');
   }
 

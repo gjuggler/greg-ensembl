@@ -1,5 +1,4 @@
 #!/usr/bin/env perl
-print "hey!\n";
 use warnings;
 use strict;
 use DBI;
@@ -7,8 +6,10 @@ use Getopt::Long;
 use Bio::EnsEMBL::Compara::ComparaUtils;
 use Bio::Greg::Hive::ComparaHiveLoaderUtils;
 
-my ($url) = undef;
-GetOptions('url=s' => \$url);
+#my ($url) = undef;
+#GetOptions('url=s' => \$url);
+
+my $url = 'mysql://ensadmin:ensembl@ens-research:3306/gj1_gor_58';
 my $clean = 1;
 
 my $h = new Bio::Greg::Hive::ComparaHiveLoaderUtils;
@@ -23,38 +24,47 @@ if ($clean) {
 # Define parameters (species sets, filtering options, etc).
 parameter_sets();
 
-# Create analyses.
+# Node sets.
 node_sets();
+
+### Genomewide omegas track.
+tree_stats();
+split_by_subtrees();
+paml_omegas();
+### End genomewide omegas.
+
+### Duplication counts track.
+collect_duplications();
+### End duplication counts.
+
+### Branch-model tests track.
 filter_one_to_one();
 count_sites();
 count_sites_outgroup();
 likelihood_tests();
-likelihood_stats();
-topology_tests();
-topology_stats();
-split_by_parameter_set();
-gene_omegas();
-sitewise_omegas();
-mapping();
-collect_stats();
+collect_go();
+### End branch-model tests.
+
+### Collect everything at the end. Run this one off-hive with an empty input_id
+output_all();
 
 # Connect the dots.
+### Genomewide omega track.
+$h->connect_analysis("NodeSets","TreeStats",1);
+# Add a single trigger job to SplitBySubtrees.
+$h->add_inputs_to_analysis("SplitBySubtrees",[{}]);  
+$h->wait_for("SplitBySubtrees",["NodeSets","TreeStats"]);
+$h->connect_analysis("SplitBySubtrees","PamlOmegas",1);
+###
+### Duplication counts track.
+$h->connect_analysis("NodeSets","CollectDuplications",1);
+###
+### Branch models track.
 $h->connect_analysis("NodeSets","FilterOneToOne",1);
-#$h->connect_analysis("FilterOneToOne","CountSites",1);
-#$h->connect_analysis("FilterOneToOne","CountSitesOutgroup",1);
-#$h->connect_analysis("FilterOneToOne","SplitByParameterSet",1);
+$h->connect_analysis("FilterOneToOne","CountSites",1);
+$h->connect_analysis("FilterOneToOne","CountSitesOutgroup",1);
 $h->connect_analysis("FilterOneToOne","LikelihoodTests",1);
-$h->connect_analysis("LikelihoodTests","LikelihoodStats",1);
-
-$h->connect_analysis("FilterOneToOne","TopologyTests",1);
-$h->connect_analysis("TopologyTests","TopologyStats",1);
-
-#$h->connect_analysis("SplitByParameterSet","GeneOmegas",1);
-#$h->connect_analysis("GeneOmegas","SitewiseOmegas",1);
-#$h->connect_analysis("SitewiseOmegas","Mapping",1);
-#$h->connect_analysis("Mapping","CollectStats",1);
-
-#$h->wait_for("CollectStats",["Mapping"]);
+$h->connect_analysis("NodeSets","CollectGo",1);
 
 add_all_nodes();
 
@@ -194,6 +204,46 @@ sub node_sets {
   my $id = $h->create_analysis($logic_name,$module,$params,150,1);
 }
 
+###
+sub tree_stats {
+  my $logic_name = "TreeStats";
+  my $module = "Bio::Greg::Hive::CollectTreeStats";
+  my $params = {
+  };
+  my $id = $h->create_analysis($logic_name,$module,$params,150,1);
+}
+sub split_by_subtrees {
+  my $logic_name = "SplitBySubtrees";
+  my $module = "Bio::Greg::Hive::SplitBySubtrees";
+  my $params = {
+    seed_species => '9606',
+    out_to => 'Mammalia'
+  };
+  $h->create_analysis($logic_name,$module,$params,100,1);
+}
+sub paml_omegas {
+  my $logic_name = "PamlOmegas";
+  my $module = "Bio::Greg::Hive::GenomewideOmegas";
+  my $params = {
+    method => 'paml',
+    foreground_species => '9606,9593'
+  };
+  $h->create_analysis($logic_name,$module,$params,100,1);
+}
+###
+
+###
+sub collect_duplications {
+  my $logic_name = "CollectDuplications";
+  my $module = "Bio::Greg::Gorilla::CollectDuplicationStats";
+  my $params = {
+    collect_duplication_species => '9606,9598,9593,9600'
+  };
+  $h->create_analysis($logic_name,$module,$params,100,1);
+}
+###
+
+###
 sub filter_one_to_one {
   my $logic_name = "FilterOneToOne";
   my $module = "Bio::Greg::Hive::FilterOneToOneOrthologs";
@@ -203,20 +253,13 @@ sub filter_one_to_one {
   $h->create_analysis($logic_name,$module,$params,150,1);
 }
 
-sub split_by_parameter_set {
-  my $logic_name = "SplitByParameterSet";
-  my $module = "Bio::Greg::Hive::SplitByParameterSet";
-  my $params = {
-    flow_parameter_sets => 'all'
-  };
-  $h->create_analysis($logic_name,$module,$params,100,1);
-}
-
 sub count_sites {
   my $logic_name = "CountSites";
   my $module = "Bio::Greg::Gorilla::CountSites";
   my $params = {
-    gorilla_count_species => '9593,9598,9606'
+    gorilla_count_species => '9593,9598,9606',
+    counts_sites_table => 'counts_sites',
+    counts_genes_table => 'counts_genes'
   };
   $h->create_analysis($logic_name,$module,$params,50,1);
 }
@@ -240,78 +283,21 @@ sub likelihood_tests {
   $h->create_analysis($logic_name,$module,$params,300,1);
 }
 
-sub likelihood_stats {
-  my $logic_name = "LikelihoodStats";
-  my $module = "Bio::Greg::Gorilla::CollectLikelihoodStats";
+sub collect_go {
+  my $logic_name = "CollectGo";
+  my $module = "Bio::Greg::Hive::CollectGO";
   my $params = {
-  };
-  $h->create_analysis($logic_name,$module,$params,50,1);
-}
-
-sub topology_tests {
-  my $logic_name = "TopologyTests";
-  my $module = "Bio::Greg::Gorilla::TopologyTests";
-  my $params = {
-  };
-  $h->create_analysis($logic_name,$module,$params,300,1);
-}
-
-sub topology_stats {
-  my $logic_name = "TopologyStats";
-  my $module = "Bio::Greg::Gorilla::CollectTopologyStats";
-  my $params = {
-  };
-  $h->create_analysis($logic_name,$module,$params,50,1);
-}
-
-sub gene_omegas {
-  my $logic_name = "GeneOmegas";
-  my $module = "Bio::Greg::Hive::PhyloAnalysis";
-  my $base_params = {
-    sitewise_minimum_leaf_count => 0,
-    sequence_quality_filtering => 0,
-    alignment_score_filtering => 0,
-
-    analysis_action => 'hyphy_dnds'
-    };
-  $h->create_analysis($logic_name,$module,$base_params,500,1);
-}
-
-sub sitewise_omegas {
-  my $logic_name = "SitewiseOmegas";
-  my $module = "Bio::Greg::Hive::PhyloAnalysis";
-  my $base_params = {
-    sitewise_minimum_leaf_count => 0,
-    sequence_quality_filtering => 0,
-    alignment_score_filtering => 0,
-    
-    analysis_action => 'slr'
-    };
-  $h->create_analysis($logic_name,$module,$base_params,500,1);
-}
-
-sub mapping {
-  my $logic_name = "Mapping";
-  my $module = "Bio::Greg::Hive::SitewiseMapper";
-  my $params = {
-    genome_taxon_id => 9606,
-    do_mapping => 1,
-    collect_pfam => 1,
-    collect_uniprot => 0,
-    collect_exons => 0,
-    collect_go => 1,
-    go_taxon_ids => '9606',
-    pfam_taxon_ids => '9606,9593'
+    go_taxon_ids => '9606,9593',
   };
   $h->create_analysis($logic_name,$module,$params,200,1);
 }
 
-sub collect_stats {
-  my $logic_name = "CollectStats";
-  my $module = "Bio::Greg::Gorilla::CollectGorillaStats";
+sub output_all {
+  my $logic_name = "OutputAll";
+  my $module = "Bio::Greg::Gorilla::OutputGorillaData";
   my $params = {
   };
-  $h->create_analysis($logic_name,$module,$params,80,1);
+  $h->create_analysis($logic_name,$module,$params,1,1);
 }
 
 ########*********########

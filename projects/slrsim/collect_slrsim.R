@@ -11,9 +11,18 @@ if (!exists('dbname')) {
   port=4134
   user='slrsim'
   password='slrsim'
+  userpass='slrsim:slrsim'
+} else if (exists('dbname') && dbname == 'gj1_slrsim') {
+  host = 'ens-research'
+  port=3306
+  user='ensro'
+  password=''
+  userpass='ensro'
 }
-print(paste("dbname:",dbname,"host:",host,"user:",user))
 con <- dbConnect(drv, host=host, port=port, user=user, password=password, dbname=dbname)
+dbURL = paste("mysql://",userpass,"@",host,":",port,"/",dbname,sep="")
+print(paste("Connected to:",user,"@",host,":",port,"/",dbname))
+print(paste("[",dbURL,"]"))
 #url = paste("mysql://slrsim:slrsim@mysql-greg.ebi.ac.uk:4134/",dbname,sep="")
 
 get.vector = function(con,query,columns=1) {
@@ -28,21 +37,16 @@ get.vector = function(con,query,columns=1) {
 }
 
 # Grabs from the database the true and inferred omegas for the given reference sequence.
-get.all.data = function(dir=NULL) {
-
-  if (!is.null(dir)) {
-    load(paste(dir,"/slrsim_sites.Rdata",sep=""))
-    return(data)
+get.all.data = function(sites.cols=NULL,genes.cols=NULL) {
+  if (is.null(sites.cols)) {
+    sites.cols = "s.aln_dnds,s.aln_lrt,s.seq_position,s.true_dnds,s.true_ncod,s.true_type";
   }
-  query = sprintf("SELECT * FROM stats_sites")
-  sites = get.vector(con,query,columns='all')
-  
-  query = sprintf("SELECT * FROM stats_genes")
-  genes = get.vector(con,query,columns='all')
-
-  all = merge(sites,genes,by=c('data_id','node_id','parameter_set_id'))
-  
-  #print(str(all))
+  if (is.null(genes.cols)) {
+    genes.cols = "g.data_id,g.slrsim_label";
+  }
+  query = sprintf("select %s,%s from stats_genes g JOIN stats_sites s ON g.data_id=s.data_id",genes.cols,sites.cols)
+  all = get.vector(con,query,columns='all')
+ 
   return(all)
 }
 
@@ -107,7 +111,10 @@ get.test.data = function() {
 }
 
 is.paml = function(df) {
-  if (grepl("paml",df[1,]$sitewise_action,ignore.case=T)) {
+  if (!any(colnames(df) %in% c('sitewise_action'))) {
+    return(FALSE)
+  }
+  if (grepl("paml",df[1,'sitewise_action'],ignore.case=T)) {
     return(TRUE)
   } else {
     return(FALSE)
@@ -226,24 +233,23 @@ df.alignment.accuracy = function(df) {
 }
 
 # Go through each experiment, calculate summary stats, and build a data frame.
-summarize.results = function(data,thresh=3.8,paml_thresh=0.95) {
+summarize.results = function(data,thresh=3.8,paml_thresh=0.95,col.names=c('slrsim_label')) {
 
   # Paste together some metadata so that we have one ID per experiment.
   labels <- apply(as.data.frame(data[,col.names]),1,paste,collapse='/')
   data[,'label'] <- labels
-  attrs = c('slrsim_file','alignment_name','filtering_name','alignment_score_threshold','slrsim_ref','sitewise_action','phylosim_insertrate','slrsim_tree_length')
+  attrs = c('label','slrsim_file','alignment_name','filtering_name','alignment_score_threshold','slrsim_ref','sitewise_action','phylosim_insertrate','slrsim_tree_length')
 
-  ids = rep("",nrow(data))
-  for (attr in attrs) {
-    ids = paste(ids,data[[attr]],sep=" ")
-  }
-  data$id = ids
+  #ids = rep("",nrow(data))
+  #for (attr in attrs) {
+  #  ids = paste(ids,data[[attr]],sep=" ")
+  #}
+  #data$id = ids
 
-  split.sets = split(data,data$id)
+  split.sets = split(data,data$label)
   for (i in 1:length(split.sets)) {
     df = split.sets[[i]]
-    print(df[1,]$id)
-    #df = data[ids==my_id,]
+    print(df[1,]$label)
 
     # Calculate the summaries.
     stats = df.stats(df,thresh=thresh,paml_thresh=paml_thresh)
@@ -311,9 +317,10 @@ generic.roc.plot = function(data,col.names='label',na.rm=F,plot=T,...) {
   for (lbl in sort(unique(labels))) {
     sub <- subset(data,label==lbl)
     print(paste("subset: ",lbl,nrow(sub),sep="/"))
-    if (nrow(sub)==0) {next}
+    if (nrow(sub)==0) {print("Skipping!");next;}
     sub.roc <- slr.roc(sub,na.rm=na.rm)
-    comb.roc <- rbind(sub.roc,comb.roc)      
+    comb.roc <- rbind(sub.roc,comb.roc)
+    #print(comb.roc[1,])
     fdr.row <- max(which(sub.roc[,'fdr'] <= 0.1))
     if (!is.na(fdr.row)) {
       #print(paste(sub.roc[fdr.row,'tn'],sub.roc[fdr.row,'tp']))
@@ -384,10 +391,11 @@ plot.roc = function(data,plot.x='tn',plot.y='tp',plot.unity=F,fill.below=F,plot.
   print(leg,vp=subplot(1:2,2))
 }
 
-generic.roc = function(data,col.names='label',na.rm=F) {
+generic.roc = function(data,by='slrsim_label',na.rm=F) {
   comb.roc <- data.frame()
-  labels <- apply(as.data.frame(data[,col.names]),1,paste,collapse='/')
-  data[,'label'] <- labels
+  #labels <- apply(as.data.frame(data[,col.names]),1,paste,collapse='/')
+  data[,'label'] <- data[,by]
+  labels = data[,'label']
   for (lbl in sort(unique(labels))) {
     print(lbl)
     sub <- subset(data,label==lbl)
@@ -398,12 +406,13 @@ generic.roc = function(data,col.names='label',na.rm=F) {
   return(comb.roc)
 }
 
-get.fdr.thresholds = function(data,col.names=c('parameter_set_name')) {
-  full.roc = generic.roc.plot(data,col.names=col.names,plot=F)
-
+get.fdr.thresholds = function(data,by='slrsim_label',summarize=T) {
   output.df = data.frame()
-  for (lbl in sort(unique(full.roc[,'label']))) {
-    roc = subset(full.roc,label==lbl)
+  data[,'label'] = data[,by]
+  for (lbl in unique(data[,'label'])) {
+    print(paste("Label subset:",lbl))
+    data.subset = subset(data,label==lbl)
+    roc = generic.roc(data.subset,by=by)
 
     for (fdr in c(0.01,0.05,0.1,0.2,0.5)) {
       fdr.ok = roc[which(roc[,'fdr'] <= fdr),]
@@ -411,12 +420,14 @@ get.fdr.thresholds = function(data,col.names=c('parameter_set_name')) {
       max.row = fdr.ok[nrow(fdr.ok),]
       score.at.fdr = max.row[,'score']
       tpr.at.fdr = max.row[,'tpr']
-      print(paste(lbl,'[',fdr,'=>',score.at.fdr,tpr.at.fdr,']'))
       max.row[,'fdr.threshold'] = fdr
+      max.row[,'pct_below'] = nrow(fdr.ok) / nrow(roc)
       output.df = rbind(output.df,max.row)
     }
   }
-  return(output.df)
+
+  summary = subset(output.df,select=c(slrsim_label,fdr.threshold,fdr,score,pct_below))
+  return(summary)
 }
 
 facet.roc.plot = function(data,col.names='label',na.rm=F,plot.x='fp',plot.y='tp',facet.x='alignment_name',facet.y='filtering_name',zoom=F) {
@@ -612,12 +623,16 @@ plot.scatter = function(data,col.names=c('alignment_name','filtering_name')) {
   print(p)
 }
 
-plot.by.columns = function(data,base.dir='.',col.names=c('alignment_name')) {
-source("aln-tools/aln.tools.R")
-source("aln-tools/phylo.tools.R")
-source("aln-tools/plot.phylo.greg.R")
-require(ape)
-require(doBy)
+plot.by.columns = function(data,
+  base.dir='.',
+  script.dir='~/src/greg-ensembl/scripts',
+  col.names=c('slrsim_label'),
+  skip.plot = F
+) {
+  source(paste(script.dir,"/aln-tools/aln.tools.R",sep=''))
+  source(paste(script.dir,"/aln-tools/phylo.tools.R",sep=''))
+  source(paste(script.dir,"/aln-tools/plot.phylo.greg.R",sep=''))
+  library(ape)
 
   labels <- apply(as.data.frame(data[,col.names]),1,paste,collapse='_')
   labels <- sub(" ","",labels)
@@ -627,24 +642,30 @@ require(doBy)
     sub <- subset(data,label==lbl)
     sub <- orderBy(~slrsim_rep,data=sub)
     first.row = sub[1,]
-    
-    node_id = first.row$node_id    
-    tree_file = paste(base.dir,"/",first.row$label,'.nh',sep='')
-    aln_file = paste(base.dir,"/",first.row$label,'.fa',sep='')
-    sitewise_file = paste(base.dir,"/",first.row$label,'.csv',sep='')
+ 
+    lbl = gsub('[^0-9a-z_]','x',lbl)   
+    print(paste(lbl,"..."))
 
-    system(paste("perl ~/lib/greg-ensembl/scripts/tree_dump.pl",
-    " --url=",url,
+    node_id = first.row$node_id    
+    tree_file = paste(base.dir,"/",lbl,'.nh',sep='')
+    aln_file = paste(base.dir,"/",lbl,'.fa',sep='')
+    sitewise_file = paste(base.dir,"/",lbl,'.csv',sep='')
+
+#    system(paste("perl ~/lib/greg-ensembl/scripts/tree_dump.pl",
+    system(paste("perl ~/src/greg-ensembl/scripts/tree_dump.pl",
+    " --url=",dbURL,
     " --id=",node_id,
     " --tree=",tree_file,
     " --aln=",aln_file,
     " --sw=",sitewise_file,
     sep=""))
 
-    plot.file = paste(base.dir,"/",first.row$label,".png",sep="")
-    png(file=plot.file,width=2000,height=200)
-    plot.protein(aln.file=aln_file,tree.file=tree_file,sitewise.file=sitewise_file,remove.files=T)
-    dev.off()
+    if (!skip.plot) {
+      plot.file = paste(base.dir,"/",first.row$label,".png",sep="")
+      png(file=plot.file,width=2000,height=200)
+      plot.protein(aln.file=aln_file,tree.file=tree_file,sitewise.file=sitewise_file,remove.files=T)
+      dev.off()
+    }
 
   }  
 }

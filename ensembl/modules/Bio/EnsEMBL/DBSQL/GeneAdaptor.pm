@@ -282,6 +282,14 @@ sub fetch_all_by_biotype {
 }
 
 
+sub fetch_all {
+  my ($self) = @_;
+
+  my $constraint = 'g.biotype != "LRG_gene" and g.is_current = 1';
+  my @genes  = @{ $self->generic_fetch($constraint) };
+  return \@genes ;
+}
+
 
 =head2 fetch_all_versions_by_stable_id 
 
@@ -1813,7 +1821,7 @@ sub fetch_all_by_exon_supporting_evidence {
   Description: Gets all the genes with transcripts with evidence for a
                specified hit on a particular type of feature. Optionally filter
                by analysis.
-  Returntype : Listref of Bio::EnsEMBL::Gene
+  Returntype : Listref of Bio::EnsEMBL::Gene.
   Exceptions : If feature_type is not of correct type.
   Caller     : general
   Status     : Stable
@@ -1864,6 +1872,165 @@ sub fetch_all_by_transcript_supporting_evidence {
   return \@genes;
 }
 
+=head2 fetch_nearest_Gene_by_Feature
+
+  Arg [1]    : Feature object
+  Example    : $genes = $gene_adaptor->fetch_nearest_Gene_by_Feature($feat);
+  Description: Gets the nearest gene to the feature 
+  Returntype : Listref of Bio::EnsEMBL::Gene, EMPTY list if no nearest
+  Caller     : general
+  Status     : UnStable
+
+=cut
+
+sub fetch_nearest_Gene_by_Feature{
+  my $self = shift;
+  my $feat = shift;
+
+  my $stranded = shift; 
+  my $stream = shift;  # 1 up stream -1 downstream
+  my @genes;
+
+
+  my $strand = $feat->strand;
+  if(defined($stream) and !$strand){
+    warn("stream specified but feature has no strand so +ve strand will be used");
+    $strand = 1;
+  }
+  my $min_dist = 999;
+  my $gene_id = 0;
+
+  my $overlapping = $feat->get_overlapping_Genes();
+
+  return $overlapping if(defined(@{$overlapping}[0]));
+
+  my $seq_region_id = $feat->slice->adaptor->get_seq_region_id($feat->slice);
+  my $start = ($feat->start + $feat->slice->start) -1;
+  my $end   = ($feat->end   + $feat->slice->start) -1;
+
+
+  my @gene_ids;
+  if(!defined($stream) or $stream == 0){
+
+    my $sql1 = "select g.gene_id, (? - g.seq_region_end)  as 'dist' from gene g where ";
+    if($stranded){
+      $sql1 .= "g.seq_region_strand = ".$strand." and ";
+    }
+    $sql1 .= "seq_region_id = ? and g.seq_region_end < ? order by dist limit 10";
+    
+    #
+    # MAYBE set the result of prepare to be static in case lots of calls.
+    #
+    my $sql1_sth = $self->prepare($sql1) || die "Could not prepare $sql1";
+    $sql1_sth->execute($start, $seq_region_id, $start) || die "Could not execute sql";
+    $sql1_sth->bind_columns(\$gene_id, \$min_dist)     || die "Could mot bin columns";
+ 
+    my $last_dist = 99999999999999999;
+    while($sql1_sth->fetch()){
+      if($min_dist <= $last_dist){
+	push @gene_ids, $gene_id;
+	$last_dist = $min_dist;
+      }
+    }	
+    $sql1_sth->finish();
+    
+
+
+    my $sql2 = "select g.gene_id, (g.seq_region_start - ?)  as 'dist' from gene g  where ";
+    if($stranded){
+      $sql2 .= "g.seq_region_strand = ".$feat->strand." and ";
+    }
+    $sql2 .= "seq_region_id = ? and g.seq_region_start > ? order by dist limit 10";
+
+    my $sql2_sth = $self->prepare($sql2) || die "could not prepare $sql2";
+    
+    my ($tmp_min_dist, $tmp_gene_id);
+    $sql2_sth->execute($end, $seq_region_id, $end)             || die "Could not execute sql";
+    $sql2_sth->bind_columns(\$tmp_gene_id, \$tmp_min_dist)     || die "Could mot bin columns";
+    my $first =1;
+    while($sql2_sth->fetch()){
+      if( $tmp_min_dist <= $last_dist){
+	if($first){
+	  $first = 0;
+	  if($tmp_min_dist < $last_dist){
+	    @gene_ids = (); #reset
+	  }
+	}	
+	push @gene_ids, $tmp_gene_id;
+	$last_dist = $tmp_min_dist;
+      }
+    }
+    $sql2_sth->finish();
+
+
+  }	
+  elsif(($stream*$strand) == 1){
+    my $sql1 = "select g.gene_id, (? - g.seq_region_end)  as 'dist' from gene g where ";
+    if($stranded){
+      $sql1 .= "g.seq_region_strand = ".$strand." and ";
+    }
+    $sql1 .= "seq_region_id = ? and g.seq_region_end < ? order by dist limit 10";
+    
+    #
+    # MAYBE set the result of prepare to be static in case lots of calls.
+    #
+    my $sql1_sth = $self->prepare($sql1) || die "Could not prepare $sql1";
+    $sql1_sth->execute($start, $seq_region_id, $start) || die "Could not execute sql";
+    $sql1_sth->bind_columns(\$gene_id, \$min_dist)     || die "Could mot bin columns";
+    
+    my $last_dist;
+    my $first = 1;
+    while($sql1_sth->fetch()){
+      if($first){
+	$first = 0;
+      }
+      else{
+	next if ($min_dist > $last_dist);
+      } 
+      push @gene_ids, $gene_id;
+      $last_dist = $min_dist;
+    }	
+    $sql1_sth->finish();
+  }	
+  elsif(($stream * $strand) == -1){
+
+    my $sql2 = "select g.gene_id, (g.seq_region_start - ?)  as 'dist' from gene g  where ";
+    if($stranded){
+      $sql2 .= "g.seq_region_strand = ".$feat->strand." and ";
+    }
+    $sql2 .= "seq_region_id = ? and g.seq_region_start > ? order by dist limit 10";
+    
+    my $sql2_sth = $self->prepare($sql2) || die "could not prepare $sql2";
+    
+    my ($tmp_min_dist, $tmp_gene_id);
+    $sql2_sth->execute($end, $seq_region_id, $end)             || die "Could not execute sql";
+    $sql2_sth->bind_columns(\$tmp_gene_id, \$tmp_min_dist)     || die "Could mot bin columns";
+    my $first =1;
+    my $last_dist;
+    while($sql2_sth->fetch()){
+      if($first){
+	$first = 0;	
+      }	
+      else{
+	next if ($tmp_min_dist > $last_dist);
+      }
+      push @gene_ids, $tmp_gene_id;
+      $last_dist = $tmp_min_dist;
+    }
+    $sql2_sth->finish();
+  }
+  else{
+    die "Invalid stream or strand must be -1, 0 or 1\n";
+  }
+
+
+
+  foreach my $gene_id (@gene_ids){
+    push @genes, $self->fetch_by_dbID($gene_id);
+  }
+  return \@genes;
+
+}
 
 ##########################
 #                        #

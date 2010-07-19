@@ -16,7 +16,7 @@ sub fetch_input {
   ### DEFAULT PARAMETERS ###
   my $defaults = {
     experiment_name => 'filter_sweeps',
-    tree_root_dir => Bio::Greg::EslrUtils->baseDirectory.'/projects/slrsim/trees'
+    tree_root_dir => $self->base.'/projects/slrsim/trees'
   };
   ##########################
 
@@ -50,6 +50,9 @@ sub run {
   foreach my $params (@simsets) {
     $self->verify_params($params);
 
+    print "Loading params:\n";
+    $self->hash_print($params);
+
     my $replicates = $params->{slrsim_replicates};
 
     my $base_node;
@@ -65,12 +68,24 @@ sub run {
       print " -> Tree string: $newick_str\n";
       $base_node = Bio::EnsEMBL::Compara::TreeUtils->from_newick($newick_str);
     } elsif (defined $params->{slrsim_tree_newick}) {
+      print "Loading from newick...\n";
       $base_node = Bio::EnsEMBL::Compara::TreeUtils->from_newick($params->{slrsim_tree_newick});
     }
 
+    my @tree_lengths;
+    if (defined $params->{slrsim_tree_lengths}) {
+      @tree_lengths = @{$params->{slrsim_tree_lengths}};
+      #print join(",",@tree_lengths)."\n";
+    }
+
     foreach my $sim_rep ( 1 .. $replicates ) {
+      # Take the next tree length if we're provided with a list of lengths.
+      if (defined @tree_lengths) {
+	my $length = $tree_lengths[$sim_rep-1];
+	$params->{slrsim_tree_length} = $length;
+      }
       $self->load_tree_into_database( $base_node, $sim_rep, $params );
-      sleep(0.1);
+      sleep(0.2);
     }
   }
 
@@ -90,8 +105,8 @@ sub load_tree_into_database {
   my $sim_rep = shift;
   my $params  = shift;
 
-  my $mba = $self->mba;
-  my $pta = $self->pta;
+  my $mba = $self->compara_dba->get_MemberAdaptor;
+  my $pta = $self->compara_dba->get_ProteinTreeAdaptor;
 
   my $node = $tree->copy;
 
@@ -131,13 +146,14 @@ sub load_tree_into_database {
   print " -> Node ID: $node_id\n";
   $self->param( 'node_id', $node_id );
 
-  printf "  > %.50s\n", $node->newick_format;
+#  printf "  > %.50s\n", $node->newick_format;
 
   # Store all parameters as tags.
   $params->{'slrsim_rep'}         = $sim_rep;
   $params->{'slrsim_tree_length'} = $final_length;
+  delete $params->{'slrsim_tree_lengths'};
   my $sim_param_str = Bio::EnsEMBL::Compara::ComparaUtils->hash_to_string($params);
-  foreach my $tag ( keys %{$params} ) {
+  foreach my $tag (sort keys %{$params} ) {
     $self->store_tag( $tag, $params->{$tag} );
     sleep(0.1);
   }
@@ -147,10 +163,12 @@ sub load_tree_into_database {
 
   my $output_params = {node_id => $node_id, parameter_set_id => $self->parameter_set_id, experiment_name => $self->param('experiment_name')};
   my $data_id = $self->new_data_id($output_params);
+  $output_params->{data_id} = $data_id;
 
   my ($job_id) = @{$self->dataflow_output_id($output_params, 1)};
   print "  -> Created job: $job_id \n";
 
+  $node->release_tree;
 }
 
 sub load_simulation_params {
@@ -223,8 +241,26 @@ sub load_simulation_params {
       phylosim_omega_distribution => 'lognormal',
       phylosim_meanlog            => -1.864,
       phylosim_sdlog              => 1.2007
-
+    },
+    lognormal_wide => {
+      omega_distribution_name     => "2xmammals Lognormal (wide)",
+      phylosim_omega_distribution => 'lognormal',
+      phylosim_meanlog            => -1.864,
+      phylosim_sdlog              => 1.8
+    },
+    lognormal_extreme => {
+      omega_distribution_name     => "2xmammals Lognormal (wide)",
+      phylosim_omega_distribution => 'lognormal',
+      phylosim_meanlog            => -1.5,
+      phylosim_sdlog              => 2.5
+    },
+    lognormal_narrow => {
+      omega_distribution_name     => "2xmammals Lognormal (wide)",
+      phylosim_omega_distribution => 'lognormal',
+      phylosim_meanlog            => -2,
+      phylosim_sdlog              => 1
     }
+
   };
   $self->param( 'omega_distributions', $omega_distributions );
 
@@ -255,8 +291,8 @@ sub load_simulation_params {
 
   my $indel_models = {
     power_law => {
-      phylosim_insertmodel => 'POW 1.8 40',
-      phylosim_deletemodel => 'POW 1.8 40',
+      phylosim_insertmodel => 'POW 2 50',
+      phylosim_deletemodel => 'POW 2 50',
       phylosim_insertrate  => 0.05,
       phylosim_deleterate  => 0.05,
     },
@@ -281,20 +317,16 @@ sub load_simulation_sets {
 
 }
 
-sub mammals_indel_simulations {
-  my $self = shift;
-
-  return $self->mammals_simulations(1);
-}
-
 sub mammals_simulations {
   my $self = shift;
   my $use_indels = shift || 0;
   
+  my $n_replicates = 100;
+
   my $params = {
-    slrsim_replicates => 100,
+    slrsim_replicates => $n_replicates,
     experiment_name   => "mammals_simulations",
-    slrsim_tree_length => 1,
+    #slrsim_tree_length => 1,
     phylosim_seq_length => 1000,
     slrsim_ref => 'Homo_sapiens'
   };
@@ -305,52 +337,115 @@ sub mammals_simulations {
   my $analysis    = $self->param('phylo_analyses')->{'slr'};
   my $aln         = $self->aln_param('true');
 
-  if ($use_indels) {
-    $params->{experiment_name} = "mammals_indel_simulations";
-    $indel = $self->param('indel_models')->{'power_law'};
-    $aln = $self->aln_param('cmcoffee');
-  }
-
-
   my $base_params = $self->replace_params($params, $indel, $distr, $filter, $analysis, $aln );
 
   my @sets = ();
 
   # Go through each parameter set, get the median branch length, and scale our simulations by that parameter.
   my $dbname = $self->compara_dba->dbc->dbname;
-
   my $compara_dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new( -url => 'mysql://ensadmin:ensembl@ens-research/gj1_2x_57');
-  my $tree_f = Bio::Greg::EslrUtils->baseDirectory . "/projects/slrsim/trees/2xmammals.nh";
+  my $tree_f = $self->base . "/projects/slrsim/trees/2xmammals.nh";
   my $species_tree = Bio::EnsEMBL::Compara::TreeUtils->from_file($tree_f);
 
   my @param_sets = $self->get_parameter_sets('gj1_2x_57');
+#  @param_sets = @param_sets[1..2];
+#  @param_sets = ($param_sets[0]);
   foreach my $pset (@param_sets) {
     my $i = $pset->{parameter_set_id};
-    #print "$i\n";
     my $params = eval $pset->{params};
-    #$self->hash_print($params);
     my $subtree = Bio::EnsEMBL::Compara::ComparaUtils->get_species_subtree($compara_dba,$species_tree,$params);
 
     my $tree_newick = $subtree->newick_format;
-    my $tree_length = $self->_get_median_tree_length($i);
+    my @tree_lengths = $self->_get_distribution_of_tree_lengths($i,$n_replicates);
+    
+    my $shortname = $params->{parameter_set_shortname};
+    print "Pset $shortname\n";
 
     my $pset_params = {
       parameter_set_name => $params->{parameter_set_shortname},
-      slrsim_tree_length => $tree_length,
+      slrsim_tree_lengths => \@tree_lengths,
       slrsim_tree_newick => $tree_newick
     };
-    push @sets, $self->replace_params($base_params,$pset_params);
+
+    my $cur_params = $self->replace_params($base_params,$pset_params);
+
+    # Neutral sim.
+    my $neutral_params = $self->clone($cur_params);
+    $neutral_params = $self->replace_params($neutral_params,$self->param('omega_distributions')->{'neutral'});
+    $neutral_params->{slrsim_label} = "$shortname noindel neutral";
+    push @sets, $neutral_params;
+
+    # No indels.
+    my $noindel_params = $self->clone($cur_params);
+    $noindel_params->{slrsim_label} = "$shortname noindel lnorm normal";
+    push @sets, $noindel_params;
+    
+    # No indels, but wider omega distr.
+    my $wide_params = $self->replace_params($cur_params,$self->param('omega_distributions')->{'lognormal_wide'});
+    $wide_params->{slrsim_label} = "$shortname noindel lnorm wide";
+    push @sets, $wide_params;    
+
+    # Very wide omega distr.
+    my $v_wide_params = $self->replace_params($cur_params,$self->param('omega_distributions')->{'lognormal_extreme'});
+    $v_wide_params->{slrsim_label} = "$shortname noindel lnorm vwide";
+    push @sets, $v_wide_params;    
+
+    # Narrow omega distr.
+    my $narrow_params = $self->replace_params($cur_params,$self->param('omega_distributions')->{'lognormal_narrow'});
+    $narrow_params->{slrsim_label} = "$shortname noindel lnorm narrow";
+    push @sets, $narrow_params;
+
+    my $indel = $self->param('indel_models')->{'power_law'};
+    my $aln = $self->aln_param('prank_f');
+
+    # Low indels.
+    my $indel_lo = $self->replace_params($cur_params,$indel,$aln);
+    $indel_lo->{phylosim_insertrate} = 0.01;
+    $indel_lo->{phylosim_deleterate} = 0.01;
+    $indel_lo->{slrsim_label} = "$shortname indel 01";
+    push @sets, $indel_lo;    
+    
+    # Med indels.
+    my $indel_mid = $self->replace_params($cur_params,$indel,$aln);
+    $indel_mid->{phylosim_insertrate} = 0.025;
+    $indel_mid->{phylosim_deleterate} = 0.025;
+    $indel_mid->{slrsim_label} = "$shortname indel 025";
+    push @sets, $indel_mid;    
+
+    # Med-hi indels.
+    #my $indel_midhi = $self->replace_params($cur_params,$indel,$aln);
+    #$indel_midhi->{phylosim_insertrate} = 0.03;
+    #$indel_midhi->{phylosim_deleterate} = 0.03;
+    #$indel_midhi->{slrsim_label} = "indel_03";
+    #push @sets, $indel_midhi;
+
+    # Med-hi indels.
+    #$indel_midhi = $self->replace_params($cur_params,$indel,$aln);
+    #$indel_midhi->{phylosim_insertrate} = 0.04;
+    #$indel_midhi->{phylosim_deleterate} = 0.04;
+    #$indel_midhi->{slrsim_label} = "indel_04";
+    #push @sets, $indel_midhi;
+
+    # High indels.
+    #my $indel_hi = $self->replace_params($cur_params,$indel,$aln);
+    #$indel_hi->{phylosim_insertrate} = 0.05;
+    #$indel_hi->{phylosim_deleterate} = 0.05;
+    #$indel_hi->{slrsim_label} = "indel_05";
+    #push @sets, $indel_hi;
+
   }
 
-  # Store the overall simulation parameters in the meta table. This will be later dumped by the Plots.pm script.
+  # Store the base simulation parameters in the meta table. This will be later dumped by the Plots.pm script.
   $self->store_meta($base_params);
 
   return \@sets;
 }
 
-sub _get_median_tree_length {
+# Gets the median tree length from all the gene trees in a compara database.
+sub _get_distribution_of_tree_lengths {
   my $self = shift;
   my $parameter_set_id = shift;
+  my $n_samples = shift;
 
   use Bio::Greg::EslrUtils;
   my $script = Bio::Greg::EslrUtils->baseDirectory . "/scripts/collect_sitewise.R";
@@ -359,19 +454,32 @@ sub _get_median_tree_length {
 dbname = "gj1_2x_57"
 host = 'ens-research'
 port = 3306
-user = 'ensadmin'
-password = 'ensembl'
+user = 'ensro'
+password = ''
 script = "$script"
 source(script)
 
 genes = get.genes(parameter.set.id=$parameter_set_id)
-good.genes = subset(genes,tree_length < 8)
-median.length = median(good.genes[,'tree_length'])
-print(median.length)
+good.genes = subset(genes,duplication_count < 3 & tree_length < 8 & tree_length > 0.01 & tree_length < 10 & !is.na(tree_length))
+tree.lengths = good.genes[,'tree_length']
+library(MASS)
+
+# Fit a gamma distribution to the empirical set of branch lengths.
+gamma.fit = fitdistr(tree.lengths,dgamma,list(shape=1.5,rate=1),lower=0.001)
+est = as.vector(gamma.fit[['estimate']])
+#print(est[1])
+#print(est[2])
+#median.length = median(tree.lengths)
+#print(median(tree.lengths))
+
+# Randomly sample N values from the gamma distribution.
+print(rgamma($n_samples,est[1],est[2]))
+#print(median.length)
+#print(sd(tree.lengths))
 ^;
   my @values = Bio::Greg::EslrUtils->get_r_values($rcmd,$self->worker_temp_directory);
-  print "[@values]\n";
-  return $values[0];
+  print "$parameter_set_id: [".join(",",@values)."]\n";
+  return @values;
 }
 
 sub alignment_comparison {

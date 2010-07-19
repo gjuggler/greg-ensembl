@@ -18,6 +18,11 @@ Examples of experimental validation in mammals:
    - The gene has a single residue shift (at a pos-sel site)  that substantially impacts on
      sensitivity to HIV-1 Vpu.
    -> BST2 (ENSG00000130303)
+ - CEP152 human variation Am J Hum Gen - Guernsey et al. 2010
+   - http://www.cell.com/AJHG/abstract/S0002-9297%2810%2900306-X
+   - http://www.sciencedirect.com/science?_ob=ArticleURL&_udi=B8JDD-50F4J67-3
+   - http://www.healthnewsdigest.com/news/Research_270/Scientists_Discover_Gene_Linked_to_Brain_Evolution.shtml
+   -> CEP152 (ENSG00000103995)
 
 Experimental validation elsewhere:
  - Bielawski et al. 2004 PNAS - proteorhodopsin - bacterial
@@ -481,4 +486,75 @@ mysql> select parameter_set_id,count(*) from stats_sites group by parameter_set_
 |               11 |  7692008 |
 +------------------+----------+
 11 rows in set (2 min 33.04 sec)
+
+
+### 2010-07-05 ###
+
+> subset(fdrs,fdr.threshold==0.1)
+                  slrsim_label fdr.threshold        fdr  score  pct_below
+414259                indel_01           0.1 0.10000000 2.9778 0.01520730
+507831                indel_02           0.1 0.09980806 2.8656 0.01564251
+645392                indel_03           0.1 0.09993202 3.1616 0.01468220
+701711                indel_04           0.1 0.10000000 3.4086 0.01314435
+800581                indel_05           0.1 0.09959514 3.6725 0.01234395
+100999           lnorm noindel           0.1 0.10000000 2.8789 0.01620000
+294560 lnorm very wide noindel           0.1 0.09999011 0.3380 0.20232000
+179619      lnorm wide noindel           0.1 0.09996343 1.1247 0.08203000
+> subset(fdrs,fdr.threshold==0.05)
+                  slrsim_label fdr.threshold        fdr  score   pct_below
+418026                indel_01          0.05 0.04981320 5.2121 0.008033856
+487328                indel_02          0.05 0.04994687 4.8326 0.009277422
+662639                indel_03          0.05 0.04961411 5.0237 0.009001350
+757578                indel_04          0.05 0.04951691 5.2473 0.008076527
+873611                indel_05          0.05 0.04930468 5.2310 0.007906126
+105011           lnorm noindel          0.05 0.04965243 4.6690 0.010070000
+267020 lnorm very wide noindel          0.05 0.04995710 1.1698 0.151530000
+120419      lnorm wide noindel          0.05 0.04995878 2.2185 0.060640000
+> subset(fdrs,fdr.threshold==0.01)
+                  slrsim_label fdr.threshold         fdr   score    pct_below
+350291                indel_01          0.01 0.009118541  8.8187 3.221546e-03
+447848                indel_02          0.01 0.009375000  9.7902 3.202562e-03
+575382                indel_03          0.01 0.008547009 11.0806 6.100915e-04
+690054                indel_04          0.01 0.000000000 30.3926 9.995702e-06
+805371                indel_05          0.01 0.000000000 18.2541 3.898090e-04
+61458            lnorm noindel          0.01 0.009074410  7.0242 5.510000e-03
+238700 lnorm very wide noindel          0.01 0.009959072  4.0891 7.301000e-02
+216321      lnorm wide noindel          0.01 0.009917355  6.3153 2.419000e-02
+> save(slrsim.data,fdrs,file="mammals_slrsim_tests.Rdata")
+
+
+### TODO NEXT: the full set of parameter_set simulations!
+### Done!
+
+
+### Reading some primate genome papers... for Chimpanzee, a genome-wide scan for positive selection was performed. Yielded a gene list:
+
+Accession    Gene name 	  Chr 	 Description   P value 	   Test 	 Dup
+AB126077 [GenBank] 	  KRTAP5-8 	       11 	   Keratin-associated protein 5-8	6.20 x 10-16	TM	{checkmark}
+NM_006669 [GenBank] 	  LILRB1 	       19 	   Leukocyte immunoglobulin-like receptor    7.20 x 10-14 	TH, TC  {checkmark}
+NM_001942 [GenBank] 	  DSG1 		       18 	   Desmoglein 1 preproprotein 	 1.10 x 10-10 	  . 		
+NM_173523 [GenBank] 	  MAGEB6 	       X 	   Melanoma antigen family B, 6  5.30 x 10-8 	  TC 		{checkmark}
+NM_054032 [GenBank] 	  MRGPRX4 	       11 	   G protein.coupled receptor MRGX4   5.60 x 10-8 		TM  {checkmark}
+NM_000397 [GenBank] 	  CYBB 		       X 	   Cytochrome b-245, beta polypeptide 	   1.50 x 10-7 		TM  
+NM_001911 [GenBank] 	  CTSG 		       14 	   Cathepsin G preproprotein 		   1.50 x 10-7 		TM  
+NM_000735 [GenBank] 	  CGA 		       6 	   Glycoprotein hormones, alpha polypeptide 	1.20 x 10-6 	TM  
+NM_001012709 		  KRTAP5-4 	       11 	   Keratin-associated protein 5-4 		2.70 x 10-6 	TM  {checkmark}
+NM_000201 [GenBank] 	  ICAM1 	       19 	   Intercellular adhesion molecule 1 precursor 	2.70 x 10-6 	TM  
+NM_001131 [GenBank] 	  CRISP1 	       6 	   Acidic epididymal glycoprotein-like 1 isoform 1   1.60 x 10-5    TM  
+NM_002287 [GenBank] 	  LAIR1 	       19 	   Leukocyte-associated immunoglobulin-like 	 3.10 x 10-5 	    TM 	{checkmark}
+NM_153368 [GenBank] 	  CX40.1 	       10 	   Connexin40.1 	4.90 x 10-5 		 .    
+NM_018643 [GenBank] 	  TREM1 	       6 	   Triggering receptor expressed on myeloid cells     6.30 x 10-5  TM  
+NM_000300 		  PLA2G2A 	       1 	   Phospholipase A2, group IIA 	 1.30 x 10-4 	      .    
+BC020840 [GenBank] 	  TCRA 		       14 	   T cell receptor alpha chain C region 	      1.50 x 10-4  .  
+NM_000733 [GenBank] 	  CD3E 		       11 	   CD3E antigen, epsilon polypeptide 		      1.50 x 10-4  TM  
+NM_001014975 		  CFH 		       1 	   Complement factor H isoform b precursor 	      1.50 x 10-4  .   
+NM_001423 [GenBank] 	  EMP1 		       12 	   Epithelial membrane protein 1 		      1.50 x 10-4  TM  
+NM_001424 [GenBank] 	  EMP2 		       16 	   Epithelial membrane protein 2 		      1.50 x 10-4  TM  
+NM_002170 [GenBank] 	  IFNA8 	       9 	   Interferon, alpha 8 	       1.50 x 10-4 	      .    
+NM_030766 [GenBank] 	  BCL2L14 	       12 	   BCL2-like 14 isoform 2      1.50 x 10-4 	      .    
+NM_006464 [GenBank] 	  TGOLN2 	       2 	   Trans-golgi network protein 2    1.80 x 10-4       TM   
+NM_014317 [GenBank] 	  PDSS1 	       10 	   Prenyl diphosphate synthase, subunit 1  1.80 x 10-4 	   .	
+NM_000518 [GenBank] 	  HBB 		       11 	   Beta globin 	      2.00 x 10-4 	TM 
+
+
 

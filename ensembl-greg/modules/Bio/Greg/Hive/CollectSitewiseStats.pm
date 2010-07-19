@@ -67,9 +67,12 @@ sub data_for_gene {
   ( $tree, $sa_aln, $cdna_aln ) =
     Bio::EnsEMBL::Compara::ComparaUtils->tree_aln_cdna( $self->compara_dba, $cur_params );
 
-#  $cur_params->{'data_id'} = $self->data_id;
+  if ($self->compara_dba->dbname eq 'gj1_2x_57') {
   # Temporary hack for 2xmammals data output: store node_id as data_id.
-  $cur_params->{'data_id'} = $self->node_id;
+    $cur_params->{'data_id'} = $self->node_id;
+  } else {
+    $cur_params->{'data_id'} = $self->data_id;
+  }
   $cur_params->{'node_id'} = $self->node_id;
 
   $cur_params->{'parameter_set_id'} = $self->parameter_set_id;

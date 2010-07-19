@@ -70,6 +70,7 @@ use Bio::EnsEMBL::Storable;
 use Bio::EnsEMBL::Utils::Argument qw(rearrange);
 use Bio::EnsEMBL::Utils::Exception qw(throw deprecate warning);
 use Bio::EnsEMBL::Slice;
+use Bio::EnsEMBL::StrainSlice;
 use vars qw(@ISA);
 
 @ISA = qw(Bio::EnsEMBL::Storable);
@@ -115,7 +116,7 @@ sub new {
       rearrange(['START','END','STRAND','SLICE','ANALYSIS', 'SEQNAME',
 		 'DBID', 'ADAPTOR'], @_);   
   if($slice) {
-    if(!ref($slice) || !$slice->isa('Bio::EnsEMBL::Slice')) {
+    if(!ref($slice) || !($slice->isa('Bio::EnsEMBL::Slice') or $slice->isa('Bio::EnsEMBL::LRGSlice')) ) {
       throw('-SLICE argument must be a Bio::EnsEMBL::Slice not '.$slice);
     }
   }
@@ -364,7 +365,7 @@ sub slice {
 
   if(@_) {
     my $sl = shift;
-    if(defined($sl) && (!ref($sl) || !$sl->isa('Bio::EnsEMBL::Slice'))) {
+    if(defined($sl) && (!ref($sl) || !($sl->isa('Bio::EnsEMBL::Slice') or $sl->isa('Bio::EnsEMBL::LRGSlice')) )) {
       throw('slice argument must be a Bio::EnsEMBL::Slice');
     }
 
@@ -409,6 +410,8 @@ sub transform {
   my $self = shift;
   my $cs_name = shift;
   my $cs_version = shift;
+  my $to_slice = shift;
+
   #
   # For backwards compatibility check if the arguments are old style args
   #
@@ -458,28 +461,48 @@ sub transform {
 
   my $projection = $self->project( $cs_name, $cs_version );
 
-  if( @$projection != 1 ) {
+  if( @$projection != 1 and !defined($to_slice)) {
+ #    warn "MORE than one projection and NO slice specified ";
+ #    warn "from ".$self->slice->name." to $cs_name, $cs_version\n";
     return undef;
-  } else {
-    my $p_slice = $projection->[0]->[2];
-    my $slice_adaptor = $db->get_SliceAdaptor;
-    $slice = $slice_adaptor->fetch_by_region($p_slice->coord_system()->name(),
-					     $p_slice->seq_region_name(),
-					     undef, #start
-					     undef, #end
-					     1, #strand
-					     $p_slice->coord_system()->version);
-
-    my $new_feature;
-    %$new_feature = %$self;
-    bless $new_feature, ref $self;
-    $new_feature->{'start'}  = $p_slice->start();
-    $new_feature->{'end'}    = $p_slice->end();
+  }
+  my $index = 0;
+  if(defined($to_slice) and @$projection != 1 ){
+    my $found = 0;
+    my $i = 0;
+    foreach my $proj (@{$projection}) {
+      my $slice = $proj->[2];
+      if($to_slice->get_seq_region_id eq $slice->get_seq_region_id){
+	$found =1;
+	$index = $i;
+      }
+      $i++;
+    }
+    if(!$found){
+      warn "MORE than one projection and none to slice specified\n";
+      return undef;
+    }
+  }
+ 
+  my $p_slice = $projection->[$index]->[2];
+  my $slice_adaptor = $db->get_SliceAdaptor;
+  $slice = $slice_adaptor->fetch_by_region($p_slice->coord_system()->name(),
+					   $p_slice->seq_region_name(),
+					   undef, #start
+					   undef, #end
+					   1, #strand
+					   $p_slice->coord_system()->version);
+  
+  my $new_feature;
+  %$new_feature = %$self;
+  bless $new_feature, ref $self;
+  $new_feature->{'start'}  = $p_slice->start();
+  $new_feature->{'end'}    = $p_slice->end();
     $new_feature->{'strand'} =
       ($self->{'strand'} == 0) ? 0 : $p_slice->strand();
-    $new_feature->{'slice'}  = $slice;
-    return $new_feature;
-  }
+  $new_feature->{'slice'}  = $slice;
+  return $new_feature;
+
 }
 
 
@@ -515,7 +538,7 @@ sub transfer {
   my $self = shift;
   my $slice = shift;
 
-  if(!$slice || !ref($slice) || !$slice->isa('Bio::EnsEMBL::Slice')) {
+  if(!$slice || !ref($slice) || (!$slice->isa('Bio::EnsEMBL::Slice') && !$slice->isa('Bio::EnsEMBL::LRGSlice'))) {
     throw('Slice argument is required');
   }
 
@@ -536,7 +559,7 @@ sub transfer {
 
   #if we are not in the same coord system a transformation step is needed first
   if(!$dest_cs->equals($cur_cs)) {
-    $feature = $feature->transform($dest_cs->name, $dest_cs->version);
+    $feature = $feature->transform($dest_cs->name, $dest_cs->version, $slice);
     return undef if(!defined($feature));
     $current_slice = $feature->{'slice'};
   }
@@ -813,16 +836,27 @@ sub feature_Slice {
     return undef;
   }
 
-  return Bio::EnsEMBL::Slice->new
-    (-seq_region_name   => $slice->seq_region_name,
-     -seq_region_length => $slice->seq_region_length,
-     -coord_system      => $slice->coord_system,
-     -start             => $self->seq_region_start(),
-     -end               => $self->seq_region_end(),
-     -strand            => $self->seq_region_strand(),
-     -adaptor           => $slice->adaptor());
-
-  
+  if($slice->isa("Bio::EnsEMBL::StrainSlice")){
+    return Bio::EnsEMBL::StrainSlice->new
+      (-seq_region_name   => $slice->seq_region_name,
+       -seq_region_length => $slice->seq_region_length,
+       -coord_system      => $slice->coord_system,
+       -start             => $self->seq_region_start(),
+       -end               => $self->seq_region_end(),
+       -strand            => $self->seq_region_strand(),
+       -adaptor           => $slice->adaptor(),
+       -strain_name       => $slice->strain_name());
+  }
+  else{
+    return Bio::EnsEMBL::Slice->new
+      (-seq_region_name   => $slice->seq_region_name,
+       -seq_region_length => $slice->seq_region_length,
+       -coord_system      => $slice->coord_system,
+       -start             => $self->seq_region_start(),
+       -end               => $self->seq_region_end(),
+       -strand            => $self->seq_region_strand(),
+       -adaptor           => $slice->adaptor());
+  }
 }
 
 
@@ -1167,6 +1201,48 @@ sub overlaps {
   
   return ($self->end >= $f->start and $self->start <= $f->end);
 }
+
+
+=head2 get_overlapping_Genes
+
+  Description: Get all the genes that overlap this feature.
+  Returntype : list ref of Bio::EnsEMBL::Gene
+  Caller     : general
+  Status     : UnStable
+
+=cut
+
+sub get_overlapping_Genes{
+  my $self = shift;
+
+  my $slice = $self->feature_Slice;
+  return $slice->get_all_Genes();
+}
+
+# query for absolute nearest.
+# select x.display_label, g.gene_id, g.seq_region_start, ABS(cast((32921638 - g.seq_region_end) as signed))  as 'dist' from gene g, xref x where g.display_xref_id = x.xref_id and seq_region_id = 27513 order by ABS(cast((32921638 - g.seq_region_end) as signed)) limit 10;
+
+=head2 get_nearest_Gene
+
+  Description: Get all the nearest  gene to the feature
+  Returntype : Bio::EnsEMBL::Gene
+  Caller     : general
+  Status     : UnStable
+
+=cut
+
+sub get_nearest_Gene {
+  my $self = shift;
+  my $stranded = shift;
+  my $stream = shift;
+
+  my $ga = Bio::EnsEMBL::Registry->get_adaptor($self->adaptor->db->species,"core","Gene");
+
+  return $ga->fetch_nearest_Gene_by_Feature($self, $stranded, $stream);
+
+}
+
+
 
 
 

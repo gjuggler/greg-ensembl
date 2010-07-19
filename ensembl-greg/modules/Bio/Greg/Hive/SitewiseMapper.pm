@@ -28,8 +28,6 @@ sub fetch_input {
   $params->{'genome_taxon_id'} = 9606;
   #########################
 
-  # Fetch parameters from the two possible locations. Input_id takes precedence!
-
   $self->load_all_params($params);
 }
 

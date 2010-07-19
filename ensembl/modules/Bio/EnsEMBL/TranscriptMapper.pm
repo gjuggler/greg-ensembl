@@ -88,8 +88,6 @@ sub new {
     throw("Transcript argument is required.");
   }
 
-  # Create a cdna <-> genomic mapper and load it with exon coords
-  my $mapper = _load_mapper($transcript);
 
   my $exons = $transcript->get_all_Exons();
   my $start_phase;
@@ -98,6 +96,9 @@ sub new {
   } else {
     $start_phase = -1;
   }
+
+  # Create a cdna <-> genomic mapper and load it with exon coords
+  my $mapper = _load_mapper($transcript,$start_phase);
 
   my $self = bless({'exon_coord_mapper' => $mapper,
                     'start_phase'       => $start_phase,
@@ -122,6 +123,7 @@ sub new {
 
 sub _load_mapper {
   my $transcript = shift;
+  my $start_phase = shift;
 
   my $mapper = Bio::EnsEMBL::Mapper->new( 'cdna', 'genomic');
 
@@ -136,7 +138,9 @@ sub _load_mapper {
   my $edit_shift = 0;
 
   my $cdna_start = undef;
-  my $cdna_end   = 0;
+
+  my $cdna_end = 0;
+
 
   foreach my $ex (@{$transcript->get_all_Exons}) {
     my $gen_start = $ex->start();
@@ -245,7 +249,8 @@ sub cdna2genomic {
 
   my $mapper = $self->{'exon_coord_mapper'};
 
-  return $mapper->map_coordinates( 'cdna', $start, $end, 1, "cdna" );
+  return  $mapper->map_coordinates( 'cdna', $start, $end, 1, "cdna" );
+
 }
 
 
@@ -306,21 +311,22 @@ sub genomic2cdna {
 =cut
 
 sub pep2genomic {
-  my ($self,$start,$end) = @_;
+  my ( $self, $start, $end ) = @_;
 
-  if( !defined $end ) {
-    throw("Must call with start/end");
+  if ( !( defined($start) && defined($end) ) ) {
+    throw("Must call with start and end");
   }
 
-  # move start end into translate cDNA coordinates now.
-  # much easier!
-  $start = 3* $start-2 + ($self->{'cdna_coding_start'} - 1);
-  $end   = 3* $end + ($self->{'cdna_coding_start'} - 1);
+  # Take possible N-padding at beginning of CDS into account.
+  my $start_phase = $self->{'start_phase'};
+  my $shift = ( $start_phase > 0 ) ? $start_phase : 0;
+
+  # Move start end into translate cDNA coordinates now.
+  $start = 3*$start - 2 + ( $self->{'cdna_coding_start'} - 1 ) - $shift;
+  $end = 3*$end + ( $self->{'cdna_coding_start'} - 1 ) - $shift;
 
   return $self->cdna2genomic( $start, $end );
 }
-
-
 
 =head2 genomic2cds
 

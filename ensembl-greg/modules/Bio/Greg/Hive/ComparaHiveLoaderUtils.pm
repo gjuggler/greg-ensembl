@@ -7,6 +7,17 @@ use base ('Bio::Greg::Hive::HiveLoaderUtils');
 
 our $param_set_counter = 1;
 
+sub add_inputs_to_analysis {
+  my $self = shift;
+  my $analysis_name = shift;
+  my $job_hashref_arrayref = shift;
+
+  my @input_ids = @$job_hashref_arrayref;
+  foreach my $input_id (@input_ids) {
+    $self->add_job_to_analysis($analysis_name,$input_id);
+  }
+}
+
 sub add_genes_to_analysis {
   my $self = shift;
   my $analysis_name = shift;

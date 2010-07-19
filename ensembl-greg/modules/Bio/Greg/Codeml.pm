@@ -283,9 +283,11 @@ BEGIN {
 		     # these correspond to 1-11 in the genbank transl table
 		     
 		     'icode'    => [ 0..10], 
-		     
-		     'Mgene'    => [0,1], # 0:rates, 1:separate
-		     
+
+                   
+		     'Mgene'    => [0,1,2,3,4], # 0:rates, 1:separate analysis, 2: same (k,w) but diff pi and b.l.s
+                                                # 3: same pi, diff. (k,w) and b.l.s, 4: different (k,w,), pis, and b.l.s
+                     'gene_codon_counts' => '',
 		     'fix_kappa'=> [0,1], # 0:estimate kappa, 1:fix kappa
 		     'kappa'    => '2',   # initial or fixed kappa
 		     'fix_omega'=> [0,1], # 0: estimate omega, 1: fix omega
@@ -444,10 +446,14 @@ sub prepare{
 	   ('-dir' => $tempdir, 
 	    UNLINK => ($self->save_tempfiles ? 0 : 1));
        print "TEMP DIR: $tempdir\n";
+       my $gene_codon_counts = $self->{_codemlparams}->{gene_codon_counts};
+       delete $self->{_codemlparams}->{gene_codon_counts};
        my $alnout = Bio::AlignIO->new('-format'      => 'phylip',
 				     '-fh'          => $tempseqFH,
                                      '-interleaved' => 0,
-                                     '-idlength'    => $MINNAMELEN > $aln->maxdisplayname_length() ? $MINNAMELEN : $aln->maxdisplayname_length() +1);
+				     '-idlength'    => $MINNAMELEN > $aln->maxdisplayname_length() ? $MINNAMELEN : $aln->maxdisplayname_length() +1,
+				      '-paml_mgenes' => $gene_codon_counts
+	 );
        
        $alnout->write_aln($aln);
        $alnout->close();
@@ -534,6 +540,7 @@ sub run {
 	   $rc = 0;
        }
 
+       $self->warn("Maybe an error: ".$self->error_string) if (!$exit_status);
        # GJ 2009-01-08: Put the main results into a string and store it.
        open(IN,"$tmpdir/$outfile");
        my @main_results_lines = <IN>;
@@ -785,8 +792,8 @@ sub extract_omegas {
 	chomp $line;
 	next if (length($line) == 0); # skip blank lines.
 
+	#print "$line\n";
 	if ($line =~ m/omega/) {
-	  #print "$line\n";
 	  my @tokens = split("=",$line);
 	  my $value_string = $tokens[1];
 	  $value_string = strip($value_string);
@@ -802,6 +809,163 @@ sub extract_omegas {
 	  return @values;
 	}
     }
+}
+
+sub each_line {
+  my $self = shift;
+  my $main_arrayref = shift;
+  $main_arrayref = $self->main_results unless (defined $main_arrayref);
+  my @main = @{$main_arrayref};
+  return @main;
+}
+
+sub get_t_tree {
+  my $self = shift;
+  my $tree = shift;
+
+  return $self->get_tree($tree,'t');
+}
+
+sub get_ds_tree {
+  my $self = shift;
+  my $tree = shift;
+
+  return $self->get_tree($tree,'dS');
+}
+
+sub get_dnds_tree {
+  my $self = shift;
+  my $tree = shift;
+
+  return $self->get_tree($tree,'dN/dS');
+}
+
+sub get_tree {
+  my $self = shift;
+  my $tree = shift;
+  my $value = shift || 't';
+
+  # Create a copy of the tree.
+  my $newick = Bio::EnsEMBL::Compara::TreeUtils->to_newick($tree);
+  my $new_tree = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($newick);
+  
+  my $hash = $self->extract_branch_params();
+
+  foreach my $node ($new_tree->get_leaf_nodes) {
+    warn "No dnds id for ".$node->id."\n" unless (defined $hash->{$node->id});
+    return undef if (!defined $hash->{$node->id});
+    while (defined $hash->{$node->id}) {
+      #print "Node: ".$node->id."\n";
+      $self->_set_branch_length($node,$hash,$value);
+
+      my $obj = $hash->{$node->id};
+      my $parent_id = $obj->{'parent'};
+      my $parent_node = $node->ancestor;
+      $parent_node->id($parent_id);
+      $node = $parent_node;
+    }
+  }
+  return $new_tree;
+}
+
+sub _set_branch_length {
+  my $self = shift;
+  my $node = shift;
+  my $dnds_hash = shift;
+  my $value_to_set = shift;
+
+  die "No branch length ID!" unless (defined $dnds_hash->{$node->id});
+  my $obj = $dnds_hash->{$node->id};
+  my $dnds = $obj->{$value_to_set};
+  $node->branch_length($dnds);
+}
+
+sub extract_branch_params {
+  my $self = shift;
+
+  my $values;
+  my $map = $self->get_leaf_number_map;
+
+  my $looking = 0;
+  foreach my $line($self->each_line) {
+    chomp $line;
+    next if (length($line) == 0); # skip blank lines.
+    
+    if ($line =~ m/dN & dS for each branch/i) {
+      $looking = 1;
+      next;
+    }
+    
+    if ($looking) {
+      if ($line =~ m/\d\.\.\d/) {
+	$line = strip($line);
+#	print $line."\n";
+	# branch           t        N        S    dN/dS       dN       dS   N*dN   S*dS
+	#   5..6       0.101   2374.1    973.9   0.2223   0.0166   0.0747   39.4   72.8
+	my @tokens = split(/\s+/,$line);
+	my @branches = split(/\.\./,$tokens[0]);
+	my $child = $branches[1];
+	my $id = $map->{$child} || $child;
+	my $parent = $branches[0];
+#	print "$child!!\n";
+	my $obj = {
+	  't' => $tokens[1],
+	  'N' => $tokens[2],
+	  'S' => $tokens[3],
+	  'dN/dS' => $tokens[4],
+	  'dN' => $tokens[5],
+	  'dS' => $tokens[6],
+	  'parent' => $parent
+        };
+	$values->{$id} = $obj;
+      }      
+    }
+  }
+  return $values;
+}
+
+sub get_leaf_number_map {
+  my $self = shift;
+
+  my $look_for_tree_one = 0;
+  my $look_for_tree_two = 0;
+  my $tree_one;
+  my $tree_two;
+  foreach my $line($self->each_line) {
+    chomp $line;
+    next if (length($line) == 0); # skip blank lines.
+    
+    if ($line =~ m/^tree length =/i) {
+      $look_for_tree_one = 1;
+      next;
+    }
+    if ($look_for_tree_one) {
+      $tree_one = Bio::TreeIO->new(-string => $line)->next_tree;
+      $look_for_tree_one = 0;
+      $look_for_tree_two = 1;
+      next;
+    }
+    if ($look_for_tree_two) {
+      $tree_two = Bio::TreeIO->new(-string => $line)->next_tree;
+      $look_for_tree_two = 0;
+    }
+  }
+
+  my $map;
+  # Tree one contains the PAML-numbered names.
+  my @one_nodes = $tree_one->get_nodes;
+  print "Nodes: ".scalar(@one_nodes)."\n";
+  # Tree two contains the input names.
+  my @two_nodes = $tree_two->get_nodes;
+  for (my $i=0; $i < scalar(@one_nodes); $i++) {
+    my $one = $one_nodes[$i];
+    my $two = $two_nodes[$i];
+#    print $one->id."  ".$two->id."\n";
+    if ($one->id && $two->id) {
+      $map->{strip($one->id)} = strip($two->id);
+    }
+  }  
+  return $map;
 }
 
 sub strip {
@@ -849,7 +1013,7 @@ sub codon_model_likelihood {
   my $final_params = $default_params;
 
   my $codeml = $class->new(-params => $final_params, -tree => $tree, -alignment => $codon_aln, -tempdir => $tempdir);
-  $codeml->save_tempfiles(1);
+  #$codeml->save_tempfiles(1);
   my ($rs,$parser) = $codeml->run();
   my $lnL = $codeml->extract_lnL();
   my @omegas = $codeml->extract_omegas();  
@@ -873,27 +1037,40 @@ sub branch_model_likelihood {
     model => 2
   };
 
-  # If the 'model' or 'omega' parameters are given, apply them to the parameter object
+  # If certain parameters are given, apply them to the parameter object
   # passed to the new Codeml instance.
   my $final_params = {%$default_params};
-  foreach my $param ('model','omega') {
+  foreach my $param ('model','omega','Mgene','gene_codon_counts') {
     $final_params->{$param} = $params->{$param} if (defined $params->{$param});
   }
   $final_params->{verbose} = 1;
 
   # Create the new Codeml object and run it.
-  my $codeml = $class->new(-params => $final_params, -tree => $tree, -alignment => $codon_aln, -tempdir => $tempdir);
+  my $codeml = $class->new(-params => $final_params, -tree => $tree, -alignment => $codon_aln, -tempdir => $tempdir, no_param_checks => 1);
+  $codeml->save_tempfiles(1);
   # Note: we'll ignore the $parser object here because it doesn't seem to work...
   my ($rs,$parser) = $codeml->run();
 
   # Instead, manually extract likelihood and omega values from the results file.
   my $lnL = $codeml->extract_lnL();
   my @omegas = $codeml->extract_omegas();
+  print "Omegas: @omegas\n";
+
+  my $dnds = $codeml->extract_branch_params();
+  my $dnds_tree = $codeml->get_dnds_tree($tree);
+  my $t_tree = $codeml->get_t_tree($tree);
+  my $ds_tree = $codeml->get_ds_tree($tree);
+
+  my $newick = Bio::EnsEMBL::Compara::TreeUtils->to_newick($dnds_tree);
 
   # Return an object with our results of interest.
   return {
     lnL => $lnL,
-    omegas => \@omegas
+    omegas => \@omegas,
+    dnds => $dnds,
+    dnds_tree => $dnds_tree,
+    ds_tree => $ds_tree,
+    t_tree => $t_tree
   };
 }
 
@@ -997,10 +1174,10 @@ sub _ensure_unrooted_tree {
     my $root = $tree->get_root_node;
     my @children = $root->each_Descendent;
     my $root_child_count = scalar(@children);
-    #print "CHILD COUNT: $root_child_count\n";
     if ($root_child_count == 2) {
+#      print "CHILD COUNT: $root_child_count\n";
 	my $child = $children[0];
-	$tree->reroot($child);
+#	$tree->reroot($child);
     }
     return $tree;
 }
