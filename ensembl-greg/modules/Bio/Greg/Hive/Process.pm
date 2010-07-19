@@ -4,6 +4,9 @@ use strict;
 use Bio::EnsEMBL::Utils::Argument;
 use Bio::EnsEMBL::Utils::Exception;
 
+use Data::UUID;
+use Digest::MD5 qw(md5_hex);
+
 use Bio::EnsEMBL::Hive;
 use Bio::EnsEMBL::Hive::Utils 'stringify';  # import 'stringify()'
 
@@ -201,8 +204,9 @@ sub mba {
 
 sub db_handle {
   my $self = shift;
+  my $force = shift;
 
-  if (!defined $self->param('_compara_dbh')) {
+  if (!defined $self->param('_compara_dbh') || $force == 1) {
     print " >>>> Getting new Compara DBH!!!!\n";
     my $dbc = $self->dbc;
     my $dbh = $dbc->db_handle;
@@ -224,7 +228,7 @@ sub dbc {
     # be sharing this DBC throughout the lifetime of this Process.
     # TODO: Think of how to handle the case when a Process wants to let a connection
     # run idle...
-    $dbc->disconnect_when_inactive(0);
+    $dbc->disconnect_when_inactive(1);
     $self->param('_compara_dbc',$dbc);
   }
   return $self->param('_compara_dbc');
@@ -246,8 +250,6 @@ sub data_id {
   $data_id = $self->param('data_id') if (defined $self->param('data_id'));
   return $data_id;
 }
-
-
 
 sub parameter_set_id {
   my $self = shift;
@@ -538,6 +540,12 @@ sub replace_params {
 }
 
 sub get_params {
+  my $self = shift;
+  
+  return $self->params;
+}
+
+sub get_params_from_string {
   my $self         = shift;
   my $param_string = shift;
 
@@ -719,8 +727,10 @@ sub get_output_folder {
 
   if (defined $self->param('output_folder')) {
     my $folder = $self->param('output_folder');
-    print "$folder\n";
+    #print "Output folder: $folder\n";
     if (!-e $folder) {
+      print "Warning: Output folder was already stored in the database, but the folder did not exist.\n";
+      print " -> Creating folder: $folder\n";
       mkpath([$folder]);
     }
     return $folder;
@@ -747,6 +757,44 @@ sub get_output_folder {
 
   return $filename;
 }
+
+sub save_aln {
+  my $self = shift;
+  my $aln = shift;
+  my $params = shift;
+  
+  my @seqs = $aln->each_seq;
+  my $first = @seqs[0];
+  my $filename = $first->id;
+  my $id = $filename;
+  $filename = $params->{filename} if (defined $params->{filename});
+  $id = $params->{id} if (defined $params->{id});
+
+  my $subfolder = '';
+  $subfolder = $params->{subfolder} if (defined $params->{subfolder});
+  
+  my $output_base = $self->get_output_folder;
+
+  my $lo = 0;
+  my $hi = 1;
+  my (@md5) = md5_hex($id) =~ /\G(..)/g;
+  my $hash_subfolder = join('/',@md5[$lo .. $hi]);
+
+  my $full_dir = "$output_base/$subfolder/$hash_subfolder";
+  mkpath([$full_dir]);
+
+  my $full_file = "$full_dir/$filename.fasta";
+  print $full_file."\n";
+
+  my $rel_file = "$hash_subfolder/$filename.fasta";
+
+  # TODO: Output the aln.
+  Bio::EnsEMBL::Compara::AlignUtils->to_file($aln,$full_file);
+
+  return $rel_file;
+}
+
+
 
 sub get_r_dbc_string {
   my $self = shift;
