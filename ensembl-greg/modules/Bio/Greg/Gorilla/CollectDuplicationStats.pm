@@ -87,7 +87,7 @@ sub get_gene_data {
     $cur_params->{'human_gene'}    = $member->gene_member->stable_id;
     $cur_params->{'human_desc'} = $member->get_Gene->description;
   }
-  $cur_params->{'human_names'} = join(", ",map {$_->display_label} @human_proteins);
+  $cur_params->{'human_names'} = join(", ",map {$_->get_Gene->external_name} @human_genes);
 
   # Collect gorilla protein.
   my @gor_proteins = grep { $_->taxon_id == 9593 } $tree->leaves;
@@ -98,13 +98,13 @@ sub get_gene_data {
     $cur_params->{'gor_gene'}    = $member->gene_member->stable_id;
     $cur_params->{'gor_desc'} = $member->get_Gene->description;
   }
-  $cur_params->{'gor_names'} = join(", ",map {$_->display_label} @gor_proteins);
+  $cur_params->{'gor_names'} = join(", ",map {$_->get_Gene->external_name} @gor_genes);
 
   $cur_params->{'description'} = $cur_params->{'human_desc'} || $cur_params->{'gor_desc'};
 
   my @all_proteins = (@human_proteins,@gor_proteins);
   if (scalar @all_proteins > 0) {
-    $cur_params->{'name'} = $all_proteins[0]->display_label;
+    $cur_params->{'name'} = $all_proteins[0]->get_Gene->external_name;
 }
 
   # Collect gene tag values into the params hash.
