@@ -33,6 +33,47 @@ sub translate_ids {
   return $new_aln;
 }
 
+sub dawg_lambda {
+  # Setup steps:
+  # 1) Download lambda.py from the DAWG package and put it somewhere in your PATH.
+  # http://scit.us/projects/files/dawg/Releases/dawg-release.tar.gz
+  my $class = shift;
+  my $aln = shift;
+  my $tree = shift;
+  my $params = shift;
+  my $temp_dir = shift;
+  if (!defined $temp_dir) {
+    $temp_dir = '/tmp/dawg';
+    rmtree([$temp_dir]);
+    mkpath([$temp_dir]);
+  }
+  $temp_dir =~ s/\/$//;
+
+  my $aln_out = "$temp_dir/aln.fa";
+  my $tree_out = "$temp_dir/tree.nh";
+  my $lambda_out = "$temp_dir/lambda.out";
+
+  $class->to_file($aln,$aln_out);
+  Bio::EnsEMBL::Compara::TreeUtils->to_file($tree,$tree_out);
+  
+  my $cmd = "lambda.pl $tree_out $aln_out > $lambda_out";
+  my $ret = system("$cmd");
+
+  open(IN,"$lambda_out");
+  my @lines = <IN>;
+  close(IN);
+  
+  my $lambda = -1;
+  foreach my $line (@lines) {
+    if ($line =~ m/Lambda = (.*)/) {
+      $lambda = $1;
+    }
+  }
+
+  #rmtree([$temp_dir]);
+  return $lambda;
+}
+
 
 sub indelign{
   # Setup steps:
@@ -668,6 +709,44 @@ sub remove_gappy_columns_in_threes {
     }
   }
   print "Removing $n gappy columns...\n";
+  
+  $aln = $aln->_remove_columns_by_num(\@cols_to_remove);
+  return $aln;
+}
+
+# Removes codons where all three nucleotide positions differe between two species.
+sub remove_triple_mutated_codons {
+  my $class = shift;
+  my $aln = shift;
+  my $id1 = shift;
+  my $id2 = shift;
+
+  my $seq1 = $class->get_seq_with_id($aln,$id1);
+  my $seq2 = $class->get_seq_with_id($aln,$id2);
+
+  my @removed_column_strings = ();
+  my @cols_to_remove = ();
+  my $n=0;
+  for (my $i=1; $i <= $aln->length-2; $i+= 3) {
+    my $bad_pos_count = 0;
+    for (my $j=$i; $j <= $i+2; $j++) {
+      my $char1 = $seq1->subseq($j,$j);
+      my $char2 = $seq2->subseq($j,$j);
+      if ($char1 ne $char2 && $char1 ne '-' && $char2 ne '-') {
+	$bad_pos_count++;
+      }
+    }
+    if ($bad_pos_count >= 2) {
+      push @cols_to_remove, [$i-1,$i-1+2];
+      push @removed_column_strings, $class->get_column_string($aln,$i);
+      push @removed_column_strings, $class->get_column_string($aln,$i+1);
+      push @removed_column_strings, $class->get_column_string($aln,$i+2);
+      push @removed_column_strings, "";
+      $n++;
+    }
+  }
+  print "Removing $n funky codons...\n";
+  print join("\n",@removed_column_strings);
   $aln = $aln->_remove_columns_by_num(\@cols_to_remove);
   return $aln;
 }
@@ -1271,6 +1350,21 @@ sub mask_seq_from_aln {
   return $aln;
 }
 
+sub remove_seq_from_aln {
+  my $class = shift;
+  my $aln = shift;
+  my $seq_id = shift;
+
+  my $seq = $class->get_seq_with_id($aln,$seq_id);
+
+  my $new_aln = new $aln;
+
+  foreach my $old_seq ($aln->each_seq) {
+    $new_aln->add_seq($old_seq) if ($old_seq != $seq);
+  }
+  return $new_aln;
+}
+
 sub pretty_print {
   my $class = shift;
   my $aln = shift;
@@ -1353,6 +1447,91 @@ sub output {
     printf OUT ">%s\n%s\n",$seq->id,$seq_str;
   }
   close(OUT);
+}
+
+
+sub get_genomic_align {
+  my $class = shift;
+  my $tree = shift;
+  my $params = shift;
+
+  my $ref_taxon_id = 9606;
+  if ($params->{ref_taxon_id}) {
+    $ref_taxon_id = $params->{ref_taxon_id};
+  }
+
+  my ($ref_member) = grep {$_->taxon_id == 9606} $tree->leaves;
+  my $ref_gene = $ref_member->get_Gene;
+  my $ref_tx = $ref_member->transcript;
+  my @exons = @{$ref_tx->get_all_translateable_Exons};
+
+  foreach my $exon (@exons) {
+    my $pep_exon = $exon->peptide($tx);
+
+    my $slice = $exon->slice;
+    $exon = $exon->transfer($tx->slice);
+    my $dna_seq = $exon->seq->seq;
+  }
+
+}
+
+# Thread cdna sequences through a given peptide alignment and ProteinTree.
+sub peptide_to_cdna_alignment {
+  my $class = shift;
+  my $aln = shift;
+  my $tree = shift;
+
+  my $cdna_aln = new $aln;
+
+  my @leaves = $tree->leaves;
+  foreach my $seq ($aln->each_seq) {
+    my $pep_string = $seq->seq;
+    my ($member) = grep {$_->stable_id eq $seq->id} @leaves;
+    die ("No member found for ".$seq->id."!") unless (defined $member);
+
+    my $cdna_seq = $member->sequence_cds;
+
+    my $cdna_aln_string = $class->cdna_alignment_string($cdna_seq,$pep_string);
+    $cdna_aln_string =~ s/ //g;
+    my $new_seq = new Bio::LocatableSeq(-seq => $cdna_aln_string, -id => $seq->id);
+    $cdna_aln->add_seq($new_seq);
+  }
+  return $cdna_aln;
+}
+
+# Stolen from AlignedMember.pm, wrapped into a standalone method.
+sub cdna_alignment_string {
+  my $class = shift;
+  my $cdna = shift;  # CDNA string (no gaps)
+  my $alignment_string = shift; # Peptide alignment string (with gaps)
+
+    my $cdna_len = length($cdna);
+    my $start = 0;
+    my $cdna_align_string = '';
+
+    #printf "%s %s\n", $self->stable_id,$self->member_id;
+    # foreach my $pep (split(//, $self->alignment_string)) { # Speed up below
+    foreach my $pep (unpack("A1" x length($alignment_string), $alignment_string)) {
+      if($pep eq '-') {
+        $cdna_align_string .= '--- ';
+      } else {
+        my $codon = substr($cdna, $start, 3);
+        unless (length($codon) == 3) {
+          # sometimes the last codon contains only 1 or 2 nucleotides.
+          # making sure that it has 3 by adding as many Ns as necessary
+          $codon .= 'N' x (3 - length($codon));
+        }
+	#print $pep." $codon ";
+	if ($codon =~ m/(tga|tag|taa)/ig) {
+	  #print "$codon ";
+	  print " -> Stop codon found in alignment string! Masking...\n";
+	  $codon = 'N' x length($codon);
+	}
+        $cdna_align_string .= $codon . ' ';
+        $start += 3;
+      }
+  }
+  return $cdna_align_string;
 }
 
 
