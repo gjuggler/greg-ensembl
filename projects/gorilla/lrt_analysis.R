@@ -1,38 +1,11 @@
 ### This part of the script gets the data from my local DB and saves it to a file.
 ## I'm commenting it all out for now.
-#dbname="gj1_gor_57"
-#source("../../scripts/collect_sitewise.R");
-
-#stats.lnl <- get.vector(con,"SELECT * from stats_lnl;")
-
-## Likelihoods key:
-## a: (H, G, others)
-## b: (H#1, G, others)
-## c: (H, G#1, others)
-## d: (H#2, G#1, others)
-## e: (H#1, G#1, others)
-## Which omegas are which for each test?
-## pval.1: fg=b_omega_1, bg=b_omega_0 # human
-## pval.2: fg=c_omega_1, bg=c_omega_0 # gorilla
-## pval.3: fg=d_omega_1, bg=d_omega_0 # gorilla
-## pval.4: fg=d_omega_2, bg=d_omega_0 # human
-## pval.5: fg=e_omega_1, bg=e_omega_0 # both
-
-## Add the p-values
-#stats.lnl[,'pval.1'] = with(stats.lnl,1 - pchisq(2*(b_lnL-a_lnL),df=1))
-#stats.lnl[,'pval.2'] = with(stats.lnl,1 - pchisq(2*(c_lnL-a_lnL),df=1))
-#stats.lnl[,'pval.3'] = with(stats.lnl,1 - pchisq(2*(d_lnL-b_lnL),df=1))
-#stats.lnl[,'pval.4'] = with(stats.lnl,1 - pchisq(2*(d_lnL-c_lnL),df=1))
-#stats.lnl[,'pval.5'] = with(stats.lnl,1 - pchisq(2*(e_lnL-a_lnL),df=1))
-
-## Save the data
-#save(stats.lnl,file="stats_lnl.Rdata")
-
 ### Quick example of how to use the data.
 
 # Load the data
 if (!exists("stats.lnl")) {
-  load("stats_lnl.Rdata")
+  print("Need to load the stats.lnl dataset!")
+  q()
 }
 
 #ls()
