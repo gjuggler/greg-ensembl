@@ -76,6 +76,7 @@ sub copy {
   foreach my $child (@{$self->sorted_children}) {  
     $mycopy->add_child($child->copy);
   }
+  $mycopy->adaptor($self->adaptor);
   return $mycopy;
 }
 
