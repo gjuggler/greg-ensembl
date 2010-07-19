@@ -283,9 +283,11 @@ BEGIN {
 		     # these correspond to 1-11 in the genbank transl table
 		     
 		     'icode'    => [ 0..10], 
-		     
-		     'Mgene'    => [0,1], # 0:rates, 1:separate
-		     
+
+                   
+		     'Mgene'    => [0,1,2,3,4], # 0:rates, 1:separate analysis, 2: same (k,w) but diff pi and b.l.s
+                                                # 3: same pi, diff. (k,w) and b.l.s, 4: different (k,w,), pis, and b.l.s
+                     'gene_codon_counts' => '',
 		     'fix_kappa'=> [0,1], # 0:estimate kappa, 1:fix kappa
 		     'kappa'    => '2',   # initial or fixed kappa
 		     'fix_omega'=> [0,1], # 0: estimate omega, 1: fix omega
@@ -444,10 +446,14 @@ sub prepare{
 	   ('-dir' => $tempdir, 
 	    UNLINK => ($self->save_tempfiles ? 0 : 1));
        print "TEMP DIR: $tempdir\n";
+       my $gene_codon_counts = $self->{_codemlparams}->{gene_codon_counts};
+       delete $self->{_codemlparams}->{gene_codon_counts};
        my $alnout = Bio::AlignIO->new('-format'      => 'phylip',
 				     '-fh'          => $tempseqFH,
                                      '-interleaved' => 0,
-                                     '-idlength'    => $MINNAMELEN > $aln->maxdisplayname_length() ? $MINNAMELEN : $aln->maxdisplayname_length() +1);
+				     '-idlength'    => $MINNAMELEN > $aln->maxdisplayname_length() ? $MINNAMELEN : $aln->maxdisplayname_length() +1,
+				      '-paml_mgenes' => $gene_codon_counts
+	 );
        
        $alnout->write_aln($aln);
        $alnout->close();
@@ -534,6 +540,7 @@ sub run {
 	   $rc = 0;
        }
 
+       $self->warn("Maybe an error: ".$self->error_string) if (!$exit_status);
        # GJ 2009-01-08: Put the main results into a string and store it.
        open(IN,"$tmpdir/$outfile");
        my @main_results_lines = <IN>;
@@ -785,7 +792,7 @@ sub extract_omegas {
 	chomp $line;
 	next if (length($line) == 0); # skip blank lines.
 
-#	  print "$line\n";
+	#print "$line\n";
 	if ($line =~ m/omega/) {
 	  my @tokens = split("=",$line);
 	  my $value_string = $tokens[1];
@@ -845,9 +852,10 @@ sub get_tree {
   my $hash = $self->extract_branch_params();
 
   foreach my $node ($new_tree->get_leaf_nodes) {
-    die "No dnds id for".$node->id."\n" unless (defined $hash->{$node->id});
+    warn "No dnds id for ".$node->id."\n" unless (defined $hash->{$node->id});
+    return undef if (!defined $hash->{$node->id});
     while (defined $hash->{$node->id}) {
-      print "Node: ".$node->id."\n";
+      #print "Node: ".$node->id."\n";
       $self->_set_branch_length($node,$hash,$value);
 
       my $obj = $hash->{$node->id};
@@ -1029,16 +1037,16 @@ sub branch_model_likelihood {
     model => 2
   };
 
-  # If the 'model' or 'omega' parameters are given, apply them to the parameter object
+  # If certain parameters are given, apply them to the parameter object
   # passed to the new Codeml instance.
   my $final_params = {%$default_params};
-  foreach my $param ('model','omega') {
+  foreach my $param ('model','omega','Mgene','gene_codon_counts') {
     $final_params->{$param} = $params->{$param} if (defined $params->{$param});
   }
   $final_params->{verbose} = 1;
 
   # Create the new Codeml object and run it.
-  my $codeml = $class->new(-params => $final_params, -tree => $tree, -alignment => $codon_aln, -tempdir => $tempdir);
+  my $codeml = $class->new(-params => $final_params, -tree => $tree, -alignment => $codon_aln, -tempdir => $tempdir, no_param_checks => 1);
   $codeml->save_tempfiles(1);
   # Note: we'll ignore the $parser object here because it doesn't seem to work...
   my ($rs,$parser) = $codeml->run();
@@ -1046,6 +1054,7 @@ sub branch_model_likelihood {
   # Instead, manually extract likelihood and omega values from the results file.
   my $lnL = $codeml->extract_lnL();
   my @omegas = $codeml->extract_omegas();
+  print "Omegas: @omegas\n";
 
   my $dnds = $codeml->extract_branch_params();
   my $dnds_tree = $codeml->get_dnds_tree($tree);
