@@ -8,6 +8,18 @@ use Bio::Greg::EslrUtils;
 
 our @ISA = qw();
 
+sub dawg_lambda {
+  my $self = shift;
+  my $tree = shift;
+
+  my $params = $self->params;
+  $params->{tree} = $tree;
+  my $aln = $self->get_cdna_aln($params);
+
+  my $lambda = Bio::EnsEMBL::Compara::AlignUtils->dawg_lambda($aln,$tree,{},$self->worker_temp_directory);
+
+  return $lambda;
+}
 
 sub max_path {
   my $class = shift;
