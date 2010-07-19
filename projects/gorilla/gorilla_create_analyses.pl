@@ -42,8 +42,6 @@ filter_one_to_one();
 count_sites();
 count_sites_outgroup();
 likelihood_tests();
-likelihood_stats();
-collect_likelihoods();
 collect_go();
 ### End branch-model tests.
 
@@ -53,7 +51,9 @@ output_all();
 # Connect the dots.
 ### Genomewide omega track.
 $h->connect_analysis("NodeSets","TreeStats",1);
-$h->connect_analysis("TreeStats","SplitBySubtrees",1);
+# Add a single trigger job to SplitBySubtrees.
+$h->add_inputs_to_analysis("SplitBySubtrees",[{}]);  
+$h->wait_for("SplitBySubtrees",["NodeSets","TreeStats"]);
 $h->connect_analysis("SplitBySubtrees","PamlOmegas",1);
 ###
 ### Duplication counts track.
@@ -64,8 +64,6 @@ $h->connect_analysis("NodeSets","FilterOneToOne",1);
 $h->connect_analysis("FilterOneToOne","CountSites",1);
 $h->connect_analysis("FilterOneToOne","CountSitesOutgroup",1);
 $h->connect_analysis("FilterOneToOne","LikelihoodTests",1);
-$h->connect_analysis("LikelihoodTests","LikelihoodStats",1);
-$h->connect_analysis("LikelihoodStats","CollectLikelihoods",1);
 $h->connect_analysis("NodeSets","CollectGo",1);
 
 add_all_nodes();
@@ -285,14 +283,6 @@ sub likelihood_tests {
   $h->create_analysis($logic_name,$module,$params,300,1);
 }
 
-sub likelihood_stats {
-  my $logic_name = "LikelihoodStats";
-  my $module = "Bio::Greg::Gorilla::CollectLikelihoodStats";
-  my $params = {
-  };
-  $h->create_analysis($logic_name,$module,$params,50,1);
-}
-
 sub collect_go {
   my $logic_name = "CollectGo";
   my $module = "Bio::Greg::Hive::CollectGO";
@@ -300,14 +290,6 @@ sub collect_go {
     go_taxon_ids => '9606,9593',
   };
   $h->create_analysis($logic_name,$module,$params,200,1);
-}
-
-sub collect_likelihoods {
-  my $logic_name = "CollectLikelihoods";
-  my $module = "Bio::Greg::Gorilla::CollectGorillaStats";
-  my $params = {
-  };
-  $h->create_analysis($logic_name,$module,$params,80,1);
 }
 
 sub output_all {

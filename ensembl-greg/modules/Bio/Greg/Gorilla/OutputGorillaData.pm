@@ -19,15 +19,39 @@ sub run {
   my $base = '/nfs/users/nfs_g/gj1/scratch/gorilla/output';
   $self->get_output_folder($base);
 
-  #$self->export_topologies;
-  $self->export_likelihoods;
+  #$self->export_likelihoods('stats_branch','stats_branch_human.Rdata','human');
+  #$self->export_likelihoods('stats_chimp_branch','stats_branch_chimp.Rdata','chimp');
+
+  #$self->branch_enrichments('stats_branch','stats_branch_human.Rdata','human');
+  #$self->branch_enrichments('stats_chimp_branch','stats_branch_chimp.Rdata','chimp');
 
   $self->bryndis_enrichments;
+  #$self->bryndis_dup_counts;
 
   #$self->export_counts;
   #$self->analyze_counts;
   #$self->get_enriched_genes;
 }
+
+
+sub bryndis_dup_counts {
+  my $self = shift;
+
+  my $folder = $self->get_output_folder;
+  my $base = Bio::Greg::EslrUtils->baseDirectory;
+  my $eslr_script = $self->base."/scripts/collect_sitewise.R";
+  my $bryndis_output = "$folder/gene_copy_counts.csv";
+
+  my $cmd = qq^
+dbname = 'gj1_gor_58'
+source("${eslr_script}",echo=F)
+# Get gene copy count data and save as CSV.
+stats.dups <- get.vector(con,"SELECT * from stats_dups;")
+write.csv(stats.dups,file="$bryndis_output")
+^;
+  Bio::Greg::EslrUtils->run_r($cmd,{});
+}
+
 
 sub bryndis_enrichments {
   my $self = shift;
@@ -39,23 +63,22 @@ sub bryndis_enrichments {
   my $eslr_script = Bio::Greg::EslrUtils->baseDirectory."/scripts/collect_sitewise.R";
 
   my $cmd = qq^
-dbname = 'gj1_gor_57'
+dbname = 'gj1_gor_58'
 source("${eslr_script}",echo=F)
 
 bryndis.genes <- read.csv("${bryndis_list}",header=T)
-names(bryndis.genes) = c('gor_gene')
-stats.lnl <- get.vector(con,"SELECT * from stats_lnl;")
-genes.lnl <- get.vector(con,"SELECT * from lnl_genes;")
+names(bryndis.genes) = c('gorilla_gene')
+stats.dups <- get.vector(con,"SELECT * from stats_dups;")
+stats.branch <- get.vector(con,"SELECT * from stats_branch;")
 
 source("${go_script}")
 
-interesting.genes = merge(bryndis.genes,stats.lnl)
-all.genes = stats.lnl
-
+stats.branch[,'stable_id'] = stats.branch[,'human_protein']
+interesting.genes = merge(bryndis.genes,stats.branch,by='gorilla_gene')
 go.df = go.hs
 
-all.ids = all.genes[,'node_id']
-interesting.ids = interesting.genes[,'node_id']
+all.ids = stats.branch[,'stable_id']
+interesting.ids = interesting.genes[,'stable_id']
 
 get.df.subset = function(subset) {
   print(paste("size: ",nrow(subset)))
@@ -63,7 +86,7 @@ get.df.subset = function(subset) {
     subset = subset,
     all = all.ids,
     go.df = go.df,
-    go.field.name = 'node_id',
+    go.field.name = 'stable_id',
     nodeSize = 3
   ))
 }
@@ -72,7 +95,7 @@ get.go.data = function(subset,all) {
   geneSelectionFun = function(score){return(score >= 1)}
 
   go.vec = strsplit(go.df[,'go'],split=",",fixed=T)
-  names(go.vec) = go.df[,'node_id']
+  names(go.vec) = go.df[,'stable_id']
 
   scores = as.integer(all %in% subset)
   names(scores) = all
@@ -92,45 +115,26 @@ get.go.data = function(subset,all) {
 go.data = get.go.data(interesting.ids,all.ids)
 enrichment.table = get.df.subset(interesting.ids)
 
-save(go.data,stats.lnl,bryndis.genes,enrichment.table,file="${folder}/bryndis_enrichments.Rdata")
+save(go.data,interesting.genes,enrichment.table,file="${folder}/bryndis_enrichments.Rdata")
 write.csv(enrichment.table,file="${folder}/bryndis_enrichments.csv",row.names=F)
 
 ^;
 
     my $params = {};
     Bio::Greg::EslrUtils->run_r($cmd,$params);
-
-}
-
-sub export_topologies {
-  my $self = shift;
-
-  my $data_file = $self->get_output_folder . "/stats_topology.Rdata";
-  my $folder = $self->get_output_folder;
-
-  my $script = Bio::Greg::EslrUtils->baseDirectory."/scripts/collect_sitewise.R";
-
-  if (!-e $data_file) {
-    my $cmd = qq^
-dbname="gj1_gor_57"
-source("${script}");
-
-gcinfo(TRUE)
-stats.topology <- get.vector(con,"SELECT * from stats_topology;")
-save(stats.topology,file="${data_file}")
-^;    
-#    print "$cmd\n";
-    my $params = {};
-    Bio::Greg::EslrUtils->run_r($cmd,$params);
-  }   
 }
 
 sub export_likelihoods {
   my $self = shift;
+  my $table = shift;
+  my $output_filename = shift;
+  my $short_prefix = shift;
 
-  my $data_file = $self->get_output_folder . "/stats_lnl.Rdata";
+  my $data_file = $self->get_output_folder . "/$output_filename";
 
   my $folder = $self->get_output_folder;
+  mkpath([$folder]);
+  print "FOLDER: $folder\n";
 
   my $collect_script = Bio::Greg::EslrUtils->baseDirectory."/scripts/collect_sitewise.R";
   my $lrt_script = Bio::Greg::EslrUtils->baseDirectory."/projects/gorilla/lrt_analysis.R";
@@ -139,21 +143,13 @@ sub export_likelihoods {
   my $force = 1;
   if (!-e $data_file || $force) {
     my $cmd = qq^
-dbname="gj1_gor_57"
+dbname="gj1_gor_58"
 source("${collect_script}");
 
-stats.lnl <- get.vector(con,"SELECT * from stats_lnl;")
-genes.lnl <- get.vector(con,"SELECT * from lnl_genes;")
-
-# Get gene copy count data and save as CSV.
+stats.lnl <- get.vector(con,"SELECT * from $table;")
 stats.dups <- get.vector(con,"SELECT * from stats_dups;")
-write.csv(stats.dups,file="${folder}/gene_copy_counts.csv")
 
-# Merge the gene-count data with the likelihood calculations.
-genes = merge(stats.lnl,genes.lnl)
-# Filter out genes that have too many bad H or G mutations.
-bad_site_t = 1 # number of 'bad' sites to allow (codons with all 3 sites mutated, which should be unlikely in well-aligned regions)
-stats.lnl = subset(genes, n_bad_G < bad_site_t & n_bad_H < bad_site_t)
+stats.lnl = merge(stats.lnl,stats.dups[,c('data_id','name')],by='data_id')
 
 # Likelihoods key:
 # a: (H, G, others)
@@ -175,6 +171,75 @@ stats.lnl[,'pval.3'] = with(stats.lnl,1 - pchisq(2*(d_lnL-b_lnL),df=1))
 stats.lnl[,'pval.4'] = with(stats.lnl,1 - pchisq(2*(d_lnL-c_lnL),df=1))
 stats.lnl[,'pval.5'] = with(stats.lnl,1 - pchisq(2*(e_lnL-a_lnL),df=1))
 stats.lnl[,'pval.6'] = with(stats.lnl,1 - pchisq(2*(d_lnL-e_lnL),df=1))
+stats.lnl[,'pval.7'] = with(stats.lnl,1 - pchisq(2*(f_lnL-h_lnL),df=1))
+stats.lnl[,'pval.8'] = with(stats.lnl,1 - pchisq(2*(g_lnL-h_lnL),df=1))
+
+method = 'BH'
+stats.lnl[,'pval.1.bh'] = with(stats.lnl,p.adjust(pval.1,method=method))
+stats.lnl[,'pval.2.bh'] = with(stats.lnl,p.adjust(pval.2,method=method))
+stats.lnl[,'pval.3.bh'] = with(stats.lnl,p.adjust(pval.3,method=method))
+stats.lnl[,'pval.4.bh'] = with(stats.lnl,p.adjust(pval.4,method=method))
+stats.lnl[,'pval.5.bh'] = with(stats.lnl,p.adjust(pval.5,method=method))
+stats.lnl[,'pval.6.bh'] = with(stats.lnl,p.adjust(pval.6,method=method))
+stats.lnl[,'pval.7.bh'] = with(stats.lnl,p.adjust(pval.7,method=method))
+stats.lnl[,'pval.8.bh'] = with(stats.lnl,p.adjust(pval.8,method=method))
+
+# Save the data
+save(stats.lnl,file="${data_file}")
+^;
+#    print "$cmd\n";
+    my $params = {};
+    Bio::Greg::EslrUtils->run_r($cmd,$params);
+  }
+}
+
+sub branch_enrichments {
+  my $self = shift;
+  my $table = shift;
+  my $output_filename = shift;
+  my $short_prefix = shift;
+
+  my $data_file = $self->get_output_folder . "/$output_filename";
+
+  my $folder = $self->get_output_folder . "/$short_prefix";
+  mkpath([$folder]);
+  print "FOLDER: $folder\n";
+
+  my $collect_script = Bio::Greg::EslrUtils->baseDirectory."/scripts/collect_sitewise.R";
+  my $lrt_script = Bio::Greg::EslrUtils->baseDirectory."/projects/gorilla/lrt_analysis.R";
+  my $go_script = Bio::Greg::EslrUtils->baseDirectory."/scripts/go_enrichments.R";
+  
+  my $force = 1;
+  if (!-e $data_file || $force) {
+    my $cmd = qq^
+dbname="gj1_gor_58"
+source("${collect_script}");
+
+stats.lnl <- get.vector(con,"SELECT * from $table;")
+stats.dups <- get.vector(con,"SELECT * from stats_dups;")
+
+# Likelihoods key:
+# a: (H, G, others)
+# b: (H#1, G, others)
+# c: (H, G#1, others)
+# d: (H#1, G#2, others)
+# e: (H#1, G#1, others)
+# Which omegas are which for each test?
+# pval.1: fg=b_omega_1, bg=b_omega_0 # human
+# pval.2: fg=c_omega_1, bg=c_omega_0 # gorilla
+# pval.3: fg=d_omega_1, bg=d_omega_0 # gorilla
+# pval.4: fg=d_omega_2, bg=d_omega_0 # human
+# pval.5: fg=e_omega_1, bg=e_omega_0 # both
+
+# Add the p-values
+stats.lnl[,'pval.1'] = with(stats.lnl,1 - pchisq(2*(b_lnL-a_lnL),df=1))
+stats.lnl[,'pval.2'] = with(stats.lnl,1 - pchisq(2*(c_lnL-a_lnL),df=1))
+stats.lnl[,'pval.3'] = with(stats.lnl,1 - pchisq(2*(d_lnL-b_lnL),df=1))
+stats.lnl[,'pval.4'] = with(stats.lnl,1 - pchisq(2*(d_lnL-c_lnL),df=1))
+stats.lnl[,'pval.5'] = with(stats.lnl,1 - pchisq(2*(e_lnL-a_lnL),df=1))
+stats.lnl[,'pval.6'] = with(stats.lnl,1 - pchisq(2*(d_lnL-e_lnL),df=1))
+stats.lnl[,'pval.7'] = with(stats.lnl,1 - pchisq(2*(f_lnL-h_lnL),df=1))
+stats.lnl[,'pval.8'] = with(stats.lnl,1 - pchisq(2*(g_lnL-h_lnL),df=1))
 
 method = 'none'
 stats.lnl[,'pval.1.bh'] = with(stats.lnl,p.adjust(pval.1,method=method))
@@ -183,6 +248,8 @@ stats.lnl[,'pval.3.bh'] = with(stats.lnl,p.adjust(pval.3,method=method))
 stats.lnl[,'pval.4.bh'] = with(stats.lnl,p.adjust(pval.4,method=method))
 stats.lnl[,'pval.5.bh'] = with(stats.lnl,p.adjust(pval.5,method=method))
 stats.lnl[,'pval.6.bh'] = with(stats.lnl,p.adjust(pval.6,method=method))
+stats.lnl[,'pval.7.bh'] = with(stats.lnl,p.adjust(pval.7,method=method))
+stats.lnl[,'pval.8.bh'] = with(stats.lnl,p.adjust(pval.8,method=method))
 
 # Save the data
 save(stats.lnl,file="${data_file}")
@@ -240,8 +307,8 @@ get.go.data = function() {
   return(GOdata)
 }
 
-#GOdata = get.go.data()
-#save(GOdata,file="${folder}/go_data.Rdata")
+GOdata = get.go.data()
+save(GOdata,file="${folder}/go_data.Rdata")
 
 # Useful things to do with the GOdata object:
 
@@ -258,20 +325,24 @@ get.go.data = function() {
 `4.up` = subset(stats.lnl,pval.4.bh < t & d_omega_2 > d_omega_0)
 `5.up` = subset(stats.lnl,pval.5.bh < t & e_omega_1 > e_omega_0)
 `6.up` = subset(stats.lnl,pval.6.bh < t & d_omega_1 > d_omega_2)
+`7.up` = subset(stats.lnl,pval.7.bh < t & f_omega_1 > f_omega_0)
+`8.up` = subset(stats.lnl,pval.8.bh < t & g_omega_1 > g_omega_0)
 
 `1.down`   = subset(stats.lnl,pval.1.bh < t & b_omega_1 < b_omega_0)
 `2.down`     = subset(stats.lnl,pval.2.bh < t & c_omega_1 < c_omega_0)
 `3.down` = subset(stats.lnl,pval.3.bh < t & d_omega_1 < d_omega_0)
 `4.down`   = subset(stats.lnl,pval.4.bh < t & d_omega_2 < d_omega_0)
 `5.down` = subset(stats.lnl,pval.5.bh < t & e_omega_1 < e_omega_0)
-`6.down` = subset(stats.lnl,pval.6.bh < t & d_omega_2 > d_omega_1)
+`6.down` = subset(stats.lnl,pval.6.bh < t & d_omega_1 < d_omega_2)
+`7.down` = subset(stats.lnl,pval.7.bh < t & f_omega_1 < f_omega_0)
+`8.down` = subset(stats.lnl,pval.8.bh < t & g_omega_1 < g_omega_0)
 
 # Save the top N genes for each of the tests.
 n = 100
 all.genes = merge(stats.lnl,stats.dups,by=c('human_gene'))
 print(nrow(all.genes))
 top.genes = data.frame()
-for (i in c(1:6)) {
+for (i in c(1:8)) {
   up.name = paste(i,'.up',sep="")
   down.name = paste(i,'.down',sep="")
 
@@ -297,14 +368,16 @@ for (i in c(1:6)) {
 top.genes = subset(top.genes,!is.na(label))
 write.csv(top.genes,file="${folder}/top.genes.csv",row.names=F)
 
-q()
+#q()
 
 `tbl.1.up` = get.df.subset(subset=`1.up`)
 `tbl.2.up` = get.df.subset(subset=`2.up`)
 `tbl.3.up` = get.df.subset(subset=`3.up`)
 `tbl.4.up` = get.df.subset(subset=`4.up`)
 `tbl.5.up` = get.df.subset(subset=`5.up`)
-`tbl.6.up` = get.df.subset(subset=`5.up`)
+`tbl.6.up` = get.df.subset(subset=`6.up`)
+`tbl.7.up` = get.df.subset(subset=`7.up`)
+`tbl.8.up` = get.df.subset(subset=`8.up`)
 
 `tbl.1.down` = get.df.subset(subset=`1.down`)
 `tbl.2.down` = get.df.subset(subset=`2.down`)
@@ -312,8 +385,10 @@ q()
 `tbl.4.down` = get.df.subset(subset=`4.down`)
 `tbl.5.down` = get.df.subset(subset=`5.down`)
 `tbl.6.down` = get.df.subset(subset=`6.down`)
+`tbl.7.down` = get.df.subset(subset=`7.down`)
+`tbl.8.down` = get.df.subset(subset=`8.down`)
 
-for (i in c(1:6)) {
+for (i in c(1:8)) {
   up.name = paste('tbl.',i,'.up',sep="")
   down.name = paste('tbl.',i,'.down',sep="")
   
@@ -370,7 +445,7 @@ sub export_counts {
 
   if (!-e $counts_file || !-e $test_file) {
     my $cmd = qq^
-dbname="gj1_gor_57"
+dbname="gj1_gor_58"
 source("../../scripts/collect_sitewise.R");
 gcinfo(TRUE)
 counts.sites <- get.vector(con,"SELECT * from outgroup_sites;")
@@ -389,7 +464,7 @@ save(counts.sites,counts.genes,stats.genes,file="${test_file}")
   my $genes_file = $self->get_output_folder . "/genes_merged.Rdata";
   if (!-e $genes_file) {
     my $cmd = qq^
-dbname="gj1_gor_57"
+dbname="gj1_gor_58"
 source("../../scripts/collect_sitewise.R");
 genes.merged = get.genes.merged()
 save(genes.merged,file="${genes_file}")
@@ -475,7 +550,7 @@ sub get_enriched_genes {
   my $enrich_file = $f . "/enriched.csv";
 
   my $cmd = qq^
-dbname="gj1_gor_57"
+dbname="gj1_gor_58"
 source("${scripts_dir}/collect_sitewise.R")
 source("${scripts_dir}/go_enrichments.R")
 
@@ -485,7 +560,7 @@ merged = merge(top.genes,genes.merged,by=c('node_id','human_gene'))
 
 all.go = merged
 print(nrow(all.go))
-sub.go = subset(merged,g.muts.corrected > 5 & m_slr.dnds < 0.7)
+sub.go = subset(merged,g.muts.corrected > 5 & m_slr_dnds < 0.7)
 print(nrow(sub.go))
 
 enriched = get.enrich.df(sub.go[,'human_protein'],all.go[,'human_protein'],go.hs,go.field.name='stable_id')
