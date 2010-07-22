@@ -18,6 +18,12 @@ if (!exists('dbname')) {
   user='ensro'
   password=''
   userpass='ensro'
+} else {
+  host = 'mysql-greg.ebi.ac.uk'
+  port=4134
+  user='slrsim'
+  password='slrsim'
+  userpass='slrsim:slrsim'
 }
 con <- dbConnect(drv, host=host, port=port, user=user, password=password, dbname=dbname)
 dbURL = paste("mysql://",userpass,"@",host,":",port,"/",dbname,sep="")
@@ -41,9 +47,23 @@ get.all.data = function(sites.cols=NULL,genes.cols=NULL) {
   if (is.null(sites.cols)) {
     sites.cols = "s.aln_dnds,s.aln_lrt,s.seq_position,s.true_dnds,s.true_ncod,s.true_type";
   }
+  if (is.vector(sites.cols)) {
+    sites.cols = paste(sites.cols,collapse=",")
+  }
   if (is.null(genes.cols)) {
     genes.cols = "g.data_id,g.slrsim_label";
   }
+  if (is.vector(genes.cols)) {
+    genes.cols = paste(genes.cols,collapse=",")
+  }
+
+  for (necessary in c('g.slrsim_label','g.data_id')) {
+    if (!necessary %in% genes.cols) {
+      genes.cols = paste(genes.cols,necessary,sep=',')
+    }
+  }
+
+  print(genes.cols)
   query = sprintf("select %s,%s from stats_genes g JOIN stats_sites s ON g.data_id=s.data_id",genes.cols,sites.cols)
   all = get.vector(con,query,columns='all')
  
@@ -156,6 +176,9 @@ df.stats = function(df,
   pos_true = pos_all/all # proportion of true positives
   pos_inf = all_pos/all # proportion of inferred positives
 
+  true_pos_count = pos_pos
+  true_neg_count = neg_neg
+
   return(list(
     sens=sens,
     spec=spec,
@@ -165,7 +188,9 @@ df.stats = function(df,
     fpr=fpr,
 #    dlr=dlr,
     pos_true=pos_true,
-    pos_inf=pos_inf
+    pos_inf=pos_inf,
+    true_pos_count = true_pos_count,
+    true_neg_count = true_neg_count
   ))
 }
 
@@ -236,15 +261,17 @@ df.alignment.accuracy = function(df) {
 summarize.results = function(data,thresh=3.8,paml_thresh=0.95,col.names=c('slrsim_label')) {
 
   # Paste together some metadata so that we have one ID per experiment.
-  labels <- apply(as.data.frame(data[,col.names]),1,paste,collapse='/')
-  data[,'label'] <- labels
-  attrs = c('label','slrsim_file','alignment_name','filtering_name','alignment_score_threshold','slrsim_ref','sitewise_action','phylosim_insertrate','slrsim_tree_length')
+  #labels <- apply(as.data.frame(data[,col.names]),1,paste,collapse='/')
+  #data[,'label'] <- labels
+  #attrs = c('label','slrsim_file','alignment_name','filtering_name','alignment_score_threshold','slrsim_ref','sitewise_action','phylosim_insertrate','slrsim_tree_length')
 
   #ids = rep("",nrow(data))
   #for (attr in attrs) {
   #  ids = paste(ids,data[[attr]],sep=" ")
   #}
   #data$id = ids
+
+  data[,'label'] <- data[,'slrsim_label']
 
   split.sets = split(data,data$label)
   for (i in 1:length(split.sets)) {
@@ -404,6 +431,23 @@ generic.roc = function(data,by='slrsim_label',na.rm=F) {
     comb.roc <- rbind(sub.roc,comb.roc)
   }
   return(comb.roc)
+}
+
+my_summary <- function(df) {
+  stats = df.stats(df,thresh=3.8)
+  data.frame(
+    fpr = stats$fpr,
+    fdr = stats$fdr,
+    pos = stats$true_pos_count,
+    pos_inf = stats$pos_inf,
+    pos_true = stats$pos_true
+  )
+}
+
+summarize.by.labels = function(data,by='slrsim_label') {
+  library(plyr)
+  a = ddply(data,.(slrsim_label),my_summary)
+  print(a)
 }
 
 get.fdr.thresholds = function(data,by='slrsim_label',summarize=T) {
