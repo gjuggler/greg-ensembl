@@ -360,41 +360,48 @@ sub _store_sitewise_omegas {
 
 #  eval {
 
-# Insert new omegas into the node.
-#  my $sth = $self->dbc->prepare("INSERT IGNORE INTO $output_table (aln_position,aln_position_fraction,node_id,parameter_set_id,omega,omega_lower,omega_upper,type,ncod) values (?,?,?,?,?,?,?,?,?);");
-#print "sw: $sitewise_ref\n";
-#  $self->dbc->do("LOCK TABLES $output_table WRITE");
-    my @insert_strings = ();
-    foreach my $hr ( @{$sitewise_ref} ) {
-
-      Bio::EnsEMBL::Compara::ComparaUtils->hash_print($hr);
-      #print "hr: $hr\n";
-      #printf "%d %d\n",$hr->{aln_position},$hr->{omega};
-
-      my $type;
-      if ( $hr->{omega} <= 1 ) {
-        $type = "negative1";
-      } else {
-        $type = "positive1";
-      }
-
-      my $aln_position_fraction = $hr->{aln_position} / $sa->length;
-      my $ncod =
-        Bio::EnsEMBL::Compara::AlignUtils->get_nongaps_at_column( $sa, $hr->{aln_position} );
-
-      push @insert_strings,
-        sprintf(
-        '(%d,%.5f,%d,%d,%d,%.5f,%.5f,%.5f,"%s",%d)',
-        $hr->{aln_position}, $aln_position_fraction, $node_id, $data_id,
-        $parameter_set_id,   $hr->{omega},           $hr->{omega},
-        $hr->{omega},        $type,                  $ncod
-        );
+  my @insert_strings = ();
+  foreach my $hr ( @{$sitewise_ref} ) {
+    
+    Bio::EnsEMBL::Compara::ComparaUtils->hash_print($hr);
+    #print "hr: $hr\n";
+    #printf "%d %d\n",$hr->{aln_position},$hr->{omega};
+    
+    my $type;
+    if ( $hr->{omega} <= 1 ) {
+      $type = "negative1";
+    } else {
+      $type = "positive1";
     }
-
+    
+    my $aln_position_fraction = $hr->{aln_position} / $sa->length;
+    my $ncod =
+      Bio::EnsEMBL::Compara::AlignUtils->get_nongaps_at_column( $sa, $hr->{aln_position} );
+    
+    push @insert_strings,
+    sprintf(
+      '(%d,%.5f,%d,%d,%d,%.5f,%.5f,%.5f,"%s",%d)',
+      $hr->{aln_position}, $aln_position_fraction, $node_id, $data_id,
+      $parameter_set_id,   $hr->{omega},           $hr->{omega},
+      $hr->{omega},        $type,                  $ncod
+      );
+    
+    if (scalar(@insert_strings) >= 1000) {
+      my $insert = join( ",", @insert_strings );
+      my $cmd = "INSERT INTO $output_table (aln_position,aln_position_fraction,node_id,data_id,parameter_set_id,omega,omega_lower,omega_upper,type,ncod) values $insert;";
+      print "$cmd\n";
+      $self->dbc->do($cmd);
+      @insert_strings = ();
+    }
+  }
+  
+  if (scalar(@insert_strings) > 0) {
     my $insert = join( ",", @insert_strings );
     my $cmd = "INSERT INTO $output_table (aln_position,aln_position_fraction,node_id,data_id,parameter_set_id,omega,omega_lower,omega_upper,type,ncod) values $insert;";
     print "$cmd\n";
-    $self->dbc->do($cmd);
+    $self->dbc->do($cmd);        
+  }
+    
 #  };
 }
 

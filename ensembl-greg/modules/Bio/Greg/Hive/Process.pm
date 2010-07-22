@@ -206,6 +206,8 @@ sub db_handle {
   my $self = shift;
   my $force = shift;
 
+  warn('Shouldn\'t be accessing db_handle directly -- use $dbc->do and $dbc->prepare');
+
   if (!defined $self->param('_compara_dbh') || $force == 1) {
     print " >>>> Getting new Compara DBH!!!!\n";
     my $dbc = $self->dbc;
@@ -213,7 +215,23 @@ sub db_handle {
     $self->param('_compara_dbh',$dbh);
     print $dbh."\n";
   }
-  return $self->param('_compara_dbh');
+
+  my $dbh = $self->param('_compara_dbh');
+
+  my $ping = $dbh->ping;
+  print "PING: $ping\n";
+#  if (!$ping) {
+#    $dbh = $dbh->clone;
+#    $self->param('_compara_dbh',$dbh);
+#  }
+  return $dbh;
+}
+
+sub disconnect_when_inactive {
+  my $self = shift;
+  my $discon = shift;
+
+  $self->dbc->disconnect_when_inactive($discon);
 }
 
 sub dbc {
@@ -223,7 +241,6 @@ sub dbc {
     print " >>>> Getting new Compara DBC!!!!\n";
     my $compara_dba = $self->compara_dba;
     my $dbc = $compara_dba->dbc;
-    print $dbc."\n";
     # It's apparently important to turn off the inactive disconnect here, since we'll
     # be sharing this DBC throughout the lifetime of this Process.
     # TODO: Think of how to handle the case when a Process wants to let a connection
@@ -355,10 +372,9 @@ sub new_data_id {
   my $uuid = $ug->create();
   
 
-  my $dbh = $self->db_handle;
-  $dbh->do("LOCK TABLES protein_tree_tag WRITE");
+  $self->dbc->do("LOCK TABLES protein_tree_tag WRITE");
 
-  my $sth = $self->db_handle->prepare("SELECT value from protein_tree_tag WHERE node_id=0 AND tag='data_id_counter';");
+  my $sth = $self->dbc->prepare("SELECT value from protein_tree_tag WHERE node_id=0 AND tag='data_id_counter';");
   $sth->execute;
   my @row = $sth->fetchrow_array;
   $sth->finish;
@@ -368,13 +384,13 @@ sub new_data_id {
   }
 
   $data_id++;
-  $self->db_handle->do("REPLACE into protein_tree_tag (node_id,tag,value) VALUES (0,'data_id_counter',$data_id);");
+  $self->dbc->do("REPLACE into protein_tree_tag (node_id,tag,value) VALUES (0,'data_id_counter',$data_id);");
   $self->add_breadcrumb($params,$data_id);
 
   $self->param('data_id',$data_id);
   $params->{data_id} = $data_id;
 
-  $dbh->do("UNLOCK TABLES");
+  $self->dbc->do("UNLOCK TABLES");
 
   return $data_id;
 }
