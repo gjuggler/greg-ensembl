@@ -324,7 +324,6 @@ sub _add_nodeI_to_node {
   }
 }
 
-
 # Scales all the branches in a tree by a given factor.
 # @created GJ 2008-12-12
 sub scale {
@@ -352,6 +351,39 @@ sub scale {
   return $tree;
 }
 
+sub mean_path {
+  my $class = shift;
+  my $tree  = shift;
+
+  my $dist  = 0;
+  map { $dist += $class->dist_to_root($_); } $tree->leaves;
+  $dist = $dist / scalar( $tree->leaves );
+  return sprintf "%.3f", $dist;
+}
+
+sub dist_to_root {
+  my $class = shift;
+  my $leaf  = shift;
+
+  my $d = $leaf->distance_to_parent;
+  my $p = $leaf->parent;
+  while ($p) {
+    $d += $p->distance_to_parent;
+    $p = $p->parent;
+  }
+  return $d;
+}
+
+sub scale_mean_to {
+  my $class = shift;
+  my $tree = shift;
+  my $new_mean = shift;
+
+  my $mean_dist = $class->mean_path($tree);
+  my $scale_factor = $new_mean / $mean_dist;
+  return $class->scale($tree,$scale_factor);
+}
+
 sub scale_max_to {
   my $class = shift;
   my $tree = shift;
@@ -361,6 +393,17 @@ sub scale_max_to {
   my $scale_factor = $new_max / $max_dist;
   return $class->scale($tree,$scale_factor);
 }
+
+sub scale_max_to {
+  my $class = shift;
+  my $tree = shift;
+  my $new_max = shift;
+
+  my $max_dist = $tree->max_distance;
+  my $scale_factor = $new_max / $max_dist;
+  return $class->scale($tree,$scale_factor);
+}
+
 
 # Scales a tree to a certain total branch length.
 # NOTE: Tree is modified in-place!
@@ -576,12 +619,12 @@ sub keep_members_by_method_call {
   my @keep_me;
   foreach my $leaf ($tree->leaves) {
     if (exists $value_hash{$leaf->$method()}) {
-      push @keep_me, $leaf->node_id;
+      push @keep_me, $leaf;
     } else {
     }
   }
   if (scalar @keep_me > 0) {
-    $tree = $class->extract_subtree_from_leaves($tree,\@keep_me);
+    $tree = $class->extract_subtree_from_leaf_objects($tree,\@keep_me);
   } else {
     $tree = new $tree;
   }
@@ -648,7 +691,6 @@ sub remove_members_by_taxon_id {
 #  print "  After: " . scalar($tree->leaves) . "\n";
   return $tree;
 }
-
 
 sub get_leaves_for_species {
   my $class = shift;
@@ -726,6 +768,48 @@ sub prune_leaves_outside_taxon {
 
   return $tree;
 }
+
+# Extracts a subtree given a ProteinTree and an arrayref of node_ids.
+# @updated GJ 2010-03-27 : Overhaul for Gorilla project, lots of stuff was broken here.
+# @updated GJ 2009-01-14 : Smarter version, uses the inner method NestedSetAdaptor->_build_tree_from_nodes.
+# @created GJ 2009-01-12
+sub extract_subtree_from_leaf_objects {
+  my $class = shift;
+  my $tree = shift;
+  my $leaf_objs = shift;	# Array ref of node_ids.
+
+  die("Object not a NestedSet!") unless ($tree->isa("Bio::EnsEMBL::Compara::NestedSet"));
+
+  my @keepers = @{$leaf_objs};
+
+  # Add all ancestors of kept nodes to the keep list.
+  my %keepers_hash;
+  foreach my $keeper (@keepers) {
+    
+    $keepers_hash{$keeper} = 1;
+
+    my $parent = $keeper->parent;
+    while (defined $parent) {
+      $keepers_hash{$parent} = 1;
+      $parent = $parent->parent;
+    }
+  }
+
+  # Remove all nodes NOT in the keepers hash.
+  my @remove_me = ();
+  foreach my $node ($tree->nodes) {
+    if ($keepers_hash{$node}) {
+      #print $node->node_id."\n";
+    } else {
+      push @remove_me, $node;
+    }
+  }
+  
+  $tree = $tree->remove_nodes(\@remove_me);
+  #$tree = $tree->minimize_tree;
+  return $tree;
+}
+
 
 # Extracts a subtree given a ProteinTree and an arrayref of node_ids.
 # @updated GJ 2010-03-27 : Overhaul for Gorilla project, lots of stuff was broken here.
@@ -841,5 +925,14 @@ sub has_one_to_one_orthology {
   }
 }
 
+sub subtree {
+  my $class = shift;
+  my $tree = shift;
+  my $stable_id_arrayref = shift;
+
+  $tree = $tree->copy;
+  my $subtree = $class->keep_members_by_method_call($tree,$stable_id_arrayref,'stable_id');
+  return $subtree;
+}
 
 1; # Keep perl happy.
