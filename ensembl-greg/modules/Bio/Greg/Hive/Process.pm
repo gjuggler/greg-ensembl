@@ -578,14 +578,14 @@ sub get_params_from_param_set {
   my $param_set_id = shift;
 
   my $dba = $self->compara_dba;
-  my $dbh = $self->db_handle;
+  my $dbc = $self->dbc;
 
   throw "Undefined parameter_set_id!" unless (defined $param_set_id);
 
   my $params;
 
   my $cmd = qq^SELECT parameter_value FROM parameter_set WHERE parameter_set_id=$param_set_id AND parameter_name="params";  ^;
-  my $sth = $dbh->prepare($cmd);
+  my $sth = $dbc->prepare($cmd);
   $sth->execute();
   my @row;
   while (@row = $sth->fetchrow_array) {
@@ -594,7 +594,7 @@ sub get_params_from_param_set {
   $sth->finish;
 
   my $cmd = qq^SELECT parameter_value FROM parameter_set WHERE parameter_set_id=$param_set_id AND parameter_name="name";  ^;
-  $sth = $dbh->prepare($cmd);
+  $sth = $dbc->prepare($cmd);
   $sth->execute();
   my @row;
   while (@row = $sth->fetchrow_array) {
@@ -611,11 +611,11 @@ sub create_table_from_params {
   my $table_name = shift;
   my $params     = shift;
 
-  my $dbh = $self->db_handle;
+  my $dbc = $self->dbc;
 
   # First, create the table with node_id and parameter_set columns.
   eval {
-    $dbh->do(
+    $dbc->do(
       qq^
 	     CREATE TABLE $table_name (
 				       data_id INT(10) NOT NULL,
@@ -653,14 +653,14 @@ sub create_table_from_params {
       $type = $type_map->{$type};
 
       my $create_cmd = qq^ALTER TABLE $table_name ADD COLUMN `$key` $type^;
-      $dbh->do($create_cmd);
+      $dbc->do($create_cmd);
     }
 
     my $unique_cmd = ""; #qq^ALTER TABLE $table_name ADD UNIQUE (data_id)^;
     if ($unique_keys) {
       print "Creating UNIQUE $unique_keys\n";
       $unique_cmd = qq^ALTER TABLE $table_name ADD UNIQUE ($unique_keys)^;
-      $dbh->do($unique_cmd);
+      $dbc->do($unique_cmd);
     }
 
     if ($extra_keys) {
@@ -668,7 +668,7 @@ sub create_table_from_params {
       foreach my $key (@keys) {
 	print "Creating KEY $key\n";
 	my $key_cmd = qq^ALTER TABLE $table_name ADD KEY (`$key`)^;
-	$dbh->do($key_cmd);
+	$dbc->do($key_cmd);
       }
     }
   };

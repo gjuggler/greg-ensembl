@@ -118,6 +118,7 @@ sub unroot {
 
   my $n_at_root = scalar @{$tree->children};
   return $tree if ($n_at_root == 3); # No need to unroot.
+  return $tree if (scalar $tree->leaves == 2);
 
   if ($n_at_root == 2) {
     my $new_root_node, $moving_node;

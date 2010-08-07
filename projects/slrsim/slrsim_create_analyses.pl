@@ -78,7 +78,7 @@ sub simulate {
   my $logic_name = "PhyloSim";
   my $module     = "Bio::Greg::Hive::PhyloSim";
   my $params     = {};
-  $h->create_analysis( $logic_name, $module, $params, 30, 1 );
+  $h->create_analysis( $logic_name, $module, $params, 80, 1 );
 }
 
 sub align {
@@ -87,7 +87,7 @@ sub align {
   my $params     = {
     # These params will be filled in by the LoadTree simulation definitions.
   };
-  $h->create_analysis( $logic_name, $module, $params, 100, 1 );
+  $h->create_analysis( $logic_name, $module, $params, 200, 1 );
 }
 
 sub scores {
@@ -107,14 +107,14 @@ sub omegas {
 
     # These params will be filled in by the LoadTree simulation definitions.
   };
-  $h->create_analysis( $logic_name, $module, $params, 500, 1 );
+  $h->create_analysis( $logic_name, $module, $params, 200, 1 );
 }
 
 sub collect_stats {
   my $logic_name = "CollectStats";
   my $module     = "Bio::Greg::Slrsim::CollectSlrsimStats";
   my $params     = {};
-  $h->create_analysis( $logic_name, $module, $params, 100, 1 );
+  $h->create_analysis( $logic_name, $module, $params, 50, 1 );
 }
 
 sub plots {

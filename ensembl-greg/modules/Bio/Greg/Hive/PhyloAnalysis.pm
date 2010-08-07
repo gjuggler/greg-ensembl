@@ -34,7 +34,7 @@ sub fetch_input {
 
     sitewise_store_opt_tree         => 1,
     sitewise_store_gaps             => 0,
-    sitewise_minimum_leaf_count     => 3,
+    sitewise_minimum_leaf_count     => 2,
     sitewise_strip_gaps             => 0,
     sitewise_parameter_sets         => 'all',
     analysis_action                 => 'hyphy_dnds',                # Which action(s) to perform. Space-delimited.
@@ -69,8 +69,6 @@ sub fetch_input {
 sub run {
   my $self = shift;  
 
-  $self->compara_dba->dbc->disconnect_when_inactive(1);
-  
   my $tree = $self->get_tree;
 
   print $tree->newick_format."\n";
@@ -123,6 +121,7 @@ sub run {
     }
   }
   $tree->release_tree;
+
 }
 
 sub run_with_params {
@@ -164,6 +163,8 @@ sub run_with_params {
   Bio::EnsEMBL::Compara::AlignUtils->pretty_print($input_cdna,{length => 200});
   my $action = $self->param('analysis_action');
 
+  $self->compara_dba->dbc->disconnect_when_inactive(1);
+  
   if ($action =~ m/slr/i) {
     $self->run_sitewise_dNdS($tree,$input_cdna,$self->params);
     sleep(2);
@@ -187,6 +188,7 @@ sub run_with_params {
     $self->run_indelign($tree,$input_cdna,$self->params);
   }
 
+  $self->compara_dba->dbc->disconnect_when_inactive(0);
 }
 
 sub run_hyphy {
@@ -540,10 +542,10 @@ sub run_sitewise_dNdS
   my $tmpdir = $self->worker_temp_directory;
 
   # CLEAN UP OLD RESULTS FILES.
-#  unlink "$tmpdir/slr.res";
-#  unlink "$tmpdir/tree";
-#  unlink "$tmpdir/aln";
-#  unlink "$tmpdir/slr.ctl";
+  unlink "$tmpdir/slr.res" if (-e "$tmpdir/slr.res");
+  unlink "$tmpdir/tree" if (-e "$tmpdir/tree");
+  unlink "$tmpdir/aln" if (-e "$tmpdir/aln");
+  unlink "$tmpdir/slr.ctl" if (-e "$tmpdir/slr.ctl");
 
   # OUTPUT THE ALIGNMENT.
   my $alnout = Bio::AlignIO->new

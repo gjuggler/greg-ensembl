@@ -25,7 +25,7 @@ sub run {
 
   $self->output_params_file;
   $self->dump_sql;
-  $self->dump_data;
+  #$self->dump_data;
   # Tricky Perl: Call the method corresponding to the current experiment.
   $self->$experiment_name();
 }
@@ -105,6 +105,75 @@ save(data,file="${filename}");
   }
   
 }
+
+sub slrsim_one {
+  my $self = shift;
+  $self->_slrsim_one_all();
+}
+sub slrsim_one_a {
+  my $self = shift;
+  $self->_slrsim_one_all();
+}
+sub slrsim_one_b {
+  my $self = shift;
+  $self->_slrsim_one_all();
+}
+sub slrsim_one_c {
+  my $self = shift;
+  $self->_slrsim_one_all();
+}
+sub slrsim_one_d {
+  my $self = shift;
+  $self->_slrsim_one_all();
+}
+
+sub _slrsim_one_all {
+  my $self = shift;
+
+  my $out_file = $self->param('output_folder') . '/all.data.Rdata';
+  my $folder = $self->param('output_folder');
+  my $script = $self->base . '/collect_slrsim.R';
+
+  my $rcmd = qq^
+dbname="slrsim_1"
+source("collect_slrsim.R")
+data = get.all.data(genes.cols=c('slrsim_tree_length','phylosim_insertrate','tree_mean_path'))
+save(data,file="$out_file")
+^;
+  print "$rcmd\n";
+  my $params = {};
+  Bio::Greg::EslrUtils->run_r($rcmd,$params);
+}
+
+sub slrsim_two {
+  my $self = shift;
+  $self->_slrsim_two_all();
+}
+
+sub slrsim_two_a {
+  my $self = shift;
+  $self->_slrsim_two_all();
+}
+
+sub _slrsim_two_all {
+  my $self = shift;
+
+  my $out_file = $self->param('output_folder') . '/all.data.Rdata';
+  my $folder = $self->param('output_folder');
+  my $script = $self->base . '/collect_slrsim.R';
+
+  my $rcmd = qq^
+dbname="slrsim_1"
+source("collect_slrsim.R")
+data = get.all.data(genes.cols=c('slrsim_tree_length','phylosim_insertrate','tree_mean_path'))
+save(data,file="$out_file")
+^;
+  print "$rcmd\n";
+  my $params = {};
+  Bio::Greg::EslrUtils->run_r($rcmd,$params);
+
+}
+
 
 sub mammals_indel_simulations {
   my $self = shift;
