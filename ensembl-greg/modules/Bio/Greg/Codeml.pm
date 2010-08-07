@@ -291,7 +291,7 @@ BEGIN {
 		     'fix_kappa'=> [0,1], # 0:estimate kappa, 1:fix kappa
 		     'kappa'    => '2',   # initial or fixed kappa
 		     'fix_omega'=> [0,1], # 0: estimate omega, 1: fix omega
-		     'omega'    => '.4', # initial or fixed omega for 
+		     'omega'    => '.3', # initial or fixed omega for 
 		                          # codons or codon-base AAs
 		     'fix_alpha'=> [1,0], # 0: estimate gamma shape param
 		                          # 1: fix it at alpha
@@ -861,8 +861,12 @@ sub get_tree {
       my $obj = $hash->{$node->id};
       my $parent_id = $obj->{'parent'};
       my $parent_node = $node->ancestor;
-      $parent_node->id($parent_id);
-      $node = $parent_node;
+      if (defined $parent_node) {
+	$parent_node->id($parent_id);
+	$node = $parent_node;
+      } else {
+	return $new_tree;
+      }
     }
   }
   return $new_tree;
@@ -951,6 +955,8 @@ sub get_leaf_number_map {
     }
   }
 
+  return unless (defined $tree_one);
+
   my $map;
   # Tree one contains the PAML-numbered names.
   my @one_nodes = $tree_one->get_nodes;
@@ -1032,15 +1038,15 @@ sub branch_model_likelihood {
   my $params = shift;
 
   my $default_params = {
-    NSsites => 0, # No sites categories.
     fix_blength => 1, # Use initial branch lengths as estimates.
-    model => 2
+    model => 2,
+    cleandata => 1
   };
 
   # If certain parameters are given, apply them to the parameter object
   # passed to the new Codeml instance.
   my $final_params = {%$default_params};
-  foreach my $param ('model','omega','Mgene','gene_codon_counts') {
+  foreach my $param ('model','omega','Mgene','gene_codon_counts','cleandata') {
     $final_params->{$param} = $params->{$param} if (defined $params->{$param});
   }
   $final_params->{verbose} = 1;

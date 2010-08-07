@@ -121,6 +121,8 @@ CREATE TABLE analysis_ctrl_rule (
 --                              Default=NULL means "I'm not blocking anything by default".
 
 CREATE TABLE analysis_job (
+-- 
+--   error									 - filled in if the job died with an exception
   analysis_job_id           int(10) NOT NULL auto_increment,
   prev_analysis_job_id      int(10) NOT NULL,  #analysis_job which created this from rules
   analysis_id               int(10) NOT NULL,
@@ -196,6 +198,37 @@ CREATE TABLE analysis_data (
 
 
 -- ---------------------------------------------------------------------------------
+--
+-- Table structure for table 'analysis_job_error'
+--
+-- overview:
+--   	Table which holds information about a job instance on the Hive. As aposed
+--		to the way analysis_job works this records how a job died. It is stored
+--		as a separate table so to reduce the pressure exerted on analysis_job.
+--
+-- semantics:
+--   	analysis_job_error_id -	primary id; created because InnoDB has no 
+--														overhead for this
+--		analysis_job_id				- ID of the analysis_job we are holding information
+--														about
+--		status								- status of the job when this was recorded
+--		worker_id							- worker which ran this job
+--		retry_count						- iteration of the job the error occured on
+--		error									-	text which holds the detected error message
+
+-- ----------------------------------------------------------------------------
+CREATE TABLE analysis_job_error (
+	analysis_job_error_id	int(10) NOT NULL AUTO_INCREMENT,
+	analysis_job_id				int(10) NOT NULL,
+	status                enum('READY','BLOCKED','CLAIMED','GET_INPUT','RUN','WRITE_OUTPUT','DONE','FAILED') DEFAULT 'READY' NOT NULL,
+	worker_id             int(10) NOT NULL,
+	retry_count						int(10) NOT NULL,
+	error									text,
+
+	PRIMARY KEY (analysis_job_error_id),	
+	INDEX aje_ajid_idx(analysis_job_id),
+	INDEX aje_wid_idx(worker_id)
+) ENGINE=InnoDB;
 --
 -- Table structure for table 'analysis_stats'
 --

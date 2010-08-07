@@ -154,7 +154,7 @@ sub insert_go_term {
 	ancestral_mapping => $is_ancestral
       };
       
-      $self->store_params_in_table( $self->db_handle, $self->param('go_table'), $values);
+      $self->store_params_in_table( $self->dbc, $self->param('go_table'), $values);
     }
   }
 }

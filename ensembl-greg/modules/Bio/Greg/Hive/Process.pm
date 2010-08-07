@@ -65,6 +65,8 @@ sub _get_aln {
 
   $params = $self->params unless (defined $params);
 
+  $params->{remove_blank_columns} = 1 unless (defined $params->{remove_blank_columns});
+
   my $tree;
   if (defined $params->{tree}) {
     $tree = $params->{tree};
@@ -77,12 +79,14 @@ sub _get_aln {
   my $aln = Bio::EnsEMBL::Compara::ComparaUtils->fetch_masked_alignment($aa_aln,$cdna_aln,$tree,$params,$cdna);
 
   # Remove blank columns here. Don't forget to store the 'full' alignment as a parameter.
-  if ($cdna) {
-    $self->param('full_aln_cdna',$aln);
-    ($aln) = Bio::EnsEMBL::Compara::AlignUtils->remove_blank_columns_in_threes($aln);
-  } else {
-    $self->param('full_aln_aa',$aln);
-    ($aln) = Bio::EnsEMBL::Compara::AlignUtils->remove_blank_columns($aln);
+  if ($params->{remove_blank_columns}) {
+    if ($cdna) {
+      $self->param('full_aln_cdna',$aln);
+      ($aln) = Bio::EnsEMBL::Compara::AlignUtils->remove_blank_columns_in_threes($aln);
+    } else {
+      $self->param('full_aln_aa',$aln);
+      ($aln) = Bio::EnsEMBL::Compara::AlignUtils->remove_blank_columns($aln);
+    }
   }
 
   # Here's where we'll split up alignments by slice.
@@ -167,11 +171,35 @@ sub compara_dba {
   my $self = shift;
 
   if (!defined $self->{_compara_dba}) {
-    print " >>>> Getting new DBA!!!!\n";
+    print " >> Getting new DBA!!!!\n";
     my $compara_dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new( -DBCONN => $self->db->dbc );
+    eval {
+      $compara_dba->do("select * from member limit 1;");
+    };
+    if ($@) {
+      print " >> No compara in hive DB -- falling back to ens-livemirror!!\n";
+      Bio::EnsEMBL::Registry->load_registry_from_multiple_dbs({
+                                                               -host => 'ens-livemirror',
+                                                               -user => 'ensro',
+#                                                               -verbose => 1
+                                                              });
+      $compara_dba = Bio::EnsEMBL::Registry->get_DBAdaptor('multi','compara');
+#      $compara_dba->disconnect_when_inactive(1);
+    }
     $self->{_compara_dba} = $compara_dba;
   }
   return $self->{_compara_dba};
+}
+
+sub hive_dba {
+  my $self = shift;
+
+  if (!defined $self->{_hive_dba}) {
+    print " >>>> Getting new Hive DBA!!!!\n";
+    my $hive_dba = Bio::EnsEMBL::Hive::DBSQL::DBAdaptor->new( -DBCONN => $self->db->dbc );
+    $self->{_hive_dba} = $hive_dba;
+  }
+  return $self->{_hive_dba};
 }
 
 sub pta {
@@ -218,6 +246,8 @@ sub db_handle {
 
 sub dbc {
   my $self = shift;
+
+  return $self->db->dbc;
 
   if (!defined $self->param('_compara_dbc')) {
     print " >>>> Getting new Compara DBC!!!!\n";
@@ -318,8 +348,8 @@ sub store_meta {
 
   foreach my $key (keys %$params) {
     my $value = $params->{$key};
-    $self->db_handle->do("DELETE from meta where meta_key='$key';");
-    $self->db_handle->do("REPLACE into meta (meta_key,meta_value) VALUES ('$key','$value');");
+    $self->dbc->do("DELETE from meta where meta_key='$key';");
+    $self->dbc->do("REPLACE into meta (meta_key,meta_value) VALUES ('$key','$value');");
   }
 }
 
@@ -327,7 +357,7 @@ sub get_parameter_sets {
   my $self = shift;
   my $dbname = shift || $self->dbc->dbname;
 
-  my $sth = $self->db_handle->prepare("SELECT * from ${dbname}.parameter_set;");
+  my $sth = $self->dbc->prepare("SELECT * from ${dbname}.parameter_set;");
   $sth->execute;
   
   my $hash;
@@ -355,10 +385,10 @@ sub new_data_id {
   my $uuid = $ug->create();
   
 
-  my $dbh = $self->db_handle;
-  $dbh->do("LOCK TABLES protein_tree_tag WRITE");
+  my $dbc = $self->dbc;
+  $dbc->do("LOCK TABLES protein_tree_tag WRITE");
 
-  my $sth = $self->db_handle->prepare("SELECT value from protein_tree_tag WHERE node_id=0 AND tag='data_id_counter';");
+  my $sth = $self->dbc->prepare("SELECT value from protein_tree_tag WHERE node_id=0 AND tag='data_id_counter';");
   $sth->execute;
   my @row = $sth->fetchrow_array;
   $sth->finish;
@@ -368,13 +398,13 @@ sub new_data_id {
   }
 
   $data_id++;
-  $self->db_handle->do("REPLACE into protein_tree_tag (node_id,tag,value) VALUES (0,'data_id_counter',$data_id);");
+  $self->dbc->do("REPLACE into protein_tree_tag (node_id,tag,value) VALUES (0,'data_id_counter',$data_id);");
   $self->add_breadcrumb($params,$data_id);
 
   $self->param('data_id',$data_id);
   $params->{data_id} = $data_id;
 
-  $dbh->do("UNLOCK TABLES");
+  $dbc->do("UNLOCK TABLES");
 
   return $data_id;
 }
@@ -561,15 +591,15 @@ sub get_params_from_param_set {
   my $self = shift;
   my $param_set_id = shift;
 
-  my $dba = $self->compara_dba;
-  my $dbh = $self->db_handle;
+  my $dba = $self->hive_dba;
+  my $dbc = $self->dbc;
 
   throw "Undefined parameter_set_id!" unless (defined $param_set_id);
 
   my $params;
 
   my $cmd = qq^SELECT parameter_value FROM parameter_set WHERE parameter_set_id=$param_set_id AND parameter_name="params";  ^;
-  my $sth = $dbh->prepare($cmd);
+  my $sth = $dbc->prepare($cmd);
   $sth->execute();
   my @row;
   while (@row = $sth->fetchrow_array) {
@@ -578,7 +608,7 @@ sub get_params_from_param_set {
   $sth->finish;
 
   my $cmd = qq^SELECT parameter_value FROM parameter_set WHERE parameter_set_id=$param_set_id AND parameter_name="name";  ^;
-  $sth = $dbh->prepare($cmd);
+  $sth = $dbc->prepare($cmd);
   $sth->execute();
   my @row;
   while (@row = $sth->fetchrow_array) {
@@ -595,11 +625,11 @@ sub create_table_from_params {
   my $table_name = shift;
   my $params     = shift;
 
-  my $dbh = $self->db_handle;
+  my $dbc = $self->dbc;
 
-  # First, create the table with node_id and parameter_set columns.
+  # First, create the table with data_id and parameter_set columns.
   eval {
-    $dbh->do(
+    $dbc->do(
       qq^
 	     CREATE TABLE $table_name (
 				       data_id INT(10) NOT NULL,
@@ -623,8 +653,15 @@ sub create_table_from_params {
       print "Creating column $key\n";
       my $type = $params->{$key};
 
+      my $not_null = 0;
+      if ($type =~ m/not null/gi) {
+	$type =~ s/\s*not null\s*//gi;
+	$not_null = 1;
+      }
+
       my $type_map = {
 	'uuid' => 'BINARY(16)',
+	'timestamp' => 'DATETIME',
         'tinyint' => 'TINYINT',
         'smallint'    => 'SMALLINT',
         'int'    => 'INT',
@@ -635,16 +672,18 @@ sub create_table_from_params {
         'float'  => 'FLOAT'
       };
       $type = $type_map->{$type};
+      
+      $type = $type .'NOT NULL ' if ($not_null == 1);
 
       my $create_cmd = qq^ALTER TABLE $table_name ADD COLUMN `$key` $type^;
-      $dbh->do($create_cmd);
+      $dbc->do($create_cmd);
     }
 
     my $unique_cmd = ""; #qq^ALTER TABLE $table_name ADD UNIQUE (data_id)^;
     if ($unique_keys) {
       print "Creating UNIQUE $unique_keys\n";
       $unique_cmd = qq^ALTER TABLE $table_name ADD UNIQUE ($unique_keys)^;
-      $dbh->do($unique_cmd);
+      $dbc->do($unique_cmd);
     }
 
     if ($extra_keys) {
@@ -652,7 +691,7 @@ sub create_table_from_params {
       foreach my $key (@keys) {
 	print "Creating KEY $key\n";
 	my $key_cmd = qq^ALTER TABLE $table_name ADD KEY (`$key`)^;
-	$dbh->do($key_cmd);
+	$dbc->do($key_cmd);
       }
     }
   };
@@ -661,14 +700,14 @@ sub create_table_from_params {
 
 sub store_params_in_table {
   my $self       = shift;
-  my $dbh        = shift;
+  my $dbc        = shift;
   my $table_name = shift;
   my $params     = shift;
 
   my @fields;
   my $cache_key = '_fields_arrayref_'.$table_name;
   if ( !defined $self->{$cache_key} ) {
-    my $sth = $dbh->prepare("SHOW FIELDS FROM $table_name");
+    my $sth = $dbc->prepare("SHOW FIELDS FROM $table_name");
     $sth->execute;
     my $hashref = $sth->fetchall_hashref( ['Field'] );
     $sth->finish;
@@ -682,7 +721,7 @@ sub store_params_in_table {
   my $fields_string = '(`' . join( '`,`', @fields ) . '`)';
   my $question_marks_string = '(' . join( ',', ('?') x @fields ) . ')';  # Don't ask. It just works.
   my $sth2 =
-    $dbh->prepare(qq^REPLACE INTO $table_name $fields_string VALUES $question_marks_string^);
+    $dbc->prepare(qq^REPLACE INTO $table_name $fields_string VALUES $question_marks_string^);
 
   # Prepare an array of values.
   my @values = map {
@@ -776,7 +815,7 @@ sub save_aln {
   my $output_base = $self->get_output_folder;
 
   my $lo = 0;
-  my $hi = 1;
+  my $hi = 0;
   my (@md5) = md5_hex($id) =~ /\G(..)/g;
   my $hash_subfolder = join('/',@md5[$lo .. $hi]);
 
@@ -794,6 +833,25 @@ sub save_aln {
   return $rel_file;
 }
 
+sub get_hashed_file {
+  my $self = shift;
+  my $subfolder = shift;
+  my $filename = shift;
+
+  my $output_base = $self->get_output_folder;
+
+  my $lo = 0;
+  my $hi = 1;
+  my (@md5) = md5_hex($filename) =~ /\G(..)/g;
+  my $hash_subfolder = join('/',@md5[$lo .. $hi]);
+  
+  my $full_dir = "$output_base/$subfolder/$hash_subfolder";
+  mkpath([$full_dir]);
+
+  my $full_file = "$full_dir/$filename";
+  print "$full_file\n";
+  return $full_file;
+}
 
 
 sub get_r_dbc_string {
@@ -821,6 +879,13 @@ sub cleanup_temp {
   $self->worker->cleanup_worker_process_temp_directory;
   delete $self->worker->{'_tmp_dir'};
   $self->worker_temp_directory;
+}
+
+sub get_taxon_ids_from_keepers_list {
+  my $self = shift;
+  my $list_string = shift;
+
+  return Bio::EnsEMBL::Compara::ComparaUtils->get_taxon_ids_from_keepers_list($self->compara_dba,$list_string);
 }
 
 sub DESTROY {

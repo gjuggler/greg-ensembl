@@ -10,6 +10,7 @@ use File::Path;
 use Bio::EnsEMBL::Hive::Process;
 
 use Bio::Greg::EslrUtils;
+use Bio::EnsEMBL::Compara::ComparaUtils;
 
 use base ('Bio::Greg::Hive::Process');
 
@@ -19,13 +20,15 @@ sub run {
   my $base = '/nfs/users/nfs_g/gj1/scratch/gorilla/output';
   $self->get_output_folder($base);
 
+  $self->genomic_align_test;
+
   #$self->export_likelihoods('stats_branch','stats_branch_human.Rdata','human');
   #$self->export_likelihoods('stats_chimp_branch','stats_branch_chimp.Rdata','chimp');
 
   #$self->branch_enrichments('stats_branch','stats_branch_human.Rdata','human');
   #$self->branch_enrichments('stats_chimp_branch','stats_branch_chimp.Rdata','chimp');
 
-  $self->bryndis_enrichments;
+  #$self->bryndis_enrichments;
   #$self->bryndis_dup_counts;
 
   #$self->export_counts;
@@ -33,6 +36,25 @@ sub run {
   #$self->get_enriched_genes;
 }
 
+sub genomic_align_test {
+  my $self = shift;
+  
+  my $node_id = 1686351;
+
+  my $tree = $self->pta->fetch_node_by_node_id($node_id);
+
+  my ($gen_cdna,$gen_aa) = Bio::EnsEMBL::Compara::ComparaUtils->genomic_align_for_tree($tree,9606);
+
+  my $params = $self->params;
+  $params->{tree} = $tree;
+  my $hom_cdna = $self->get_cdna_aln($params);
+  my $hom_aa = $self->get_aln($params);
+  ($hom_aa) = Bio::EnsEMBL::Compara::AlignUtils->remove_blank_columns($hom_aa);
+
+  Bio::EnsEMBL::Compara::AlignUtils->pretty_print($gen_aa);
+  Bio::EnsEMBL::Compara::AlignUtils->pretty_print($hom_aa);
+
+}
 
 sub bryndis_dup_counts {
   my $self = shift;
@@ -222,14 +244,20 @@ stats.dups <- get.vector(con,"SELECT * from stats_dups;")
 # a: (H, G, others)
 # b: (H#1, G, others)
 # c: (H, G#1, others)
-# d: (H#1, G#2, others)
+# d: (H#2, G#1, others)
 # e: (H#1, G#1, others)
+# f: (((H,C),G)#1, others)
+# g: (((H,C),G)$1, others)
+# h: (((H,C),G), others)
 # Which omegas are which for each test?
 # pval.1: fg=b_omega_1, bg=b_omega_0 # human
 # pval.2: fg=c_omega_1, bg=c_omega_0 # gorilla
 # pval.3: fg=d_omega_1, bg=d_omega_0 # gorilla
 # pval.4: fg=d_omega_2, bg=d_omega_0 # human
 # pval.5: fg=e_omega_1, bg=e_omega_0 # both
+# pval.6: fg=either, bg=e_omega_0 # diff. b/t hum&gor
+# pval.7: fg=f_omega_1, bg=f_omega_0 # great ape branch
+# pval.8: fg=g_omega_1, bg=g_omega_0 # great ape clade
 
 # Add the p-values
 stats.lnl[,'pval.1'] = with(stats.lnl,1 - pchisq(2*(b_lnL-a_lnL),df=1))
@@ -255,6 +283,8 @@ stats.lnl[,'pval.8.bh'] = with(stats.lnl,p.adjust(pval.8,method=method))
 save(stats.lnl,file="${data_file}")
 
 source("${lrt_script}",echo=T)
+
+q()
 source("${go_script}")
 
 t = 0.05 # pval / FDR threshold.

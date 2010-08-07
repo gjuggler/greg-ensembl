@@ -88,6 +88,7 @@ sub get_available_adaptors {
         'Analysis'            => 'Bio::EnsEMBL::DBSQL::AnalysisAdaptor',
         'Queen'               => 'Bio::EnsEMBL::Hive::Queen',
         'AnalysisJob'         => 'Bio::EnsEMBL::Hive::DBSQL::AnalysisJobAdaptor',
+        'AnalysisJobError'    => 'Bio::EnsEMBL::Hive::DBSQL::AnalysisJobErrorAdaptor',
         'AnalysisData'        => 'Bio::EnsEMBL::Hive::DBSQL::AnalysisDataAdaptor',
         'AnalysisStats'       => 'Bio::EnsEMBL::Hive::DBSQL::AnalysisStatsAdaptor',
         'AnalysisCtrlRule'    => 'Bio::EnsEMBL::Hive::DBSQL::AnalysisCtrlRuleAdaptor',

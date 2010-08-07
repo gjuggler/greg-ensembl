@@ -11,14 +11,16 @@ sub taxon_short {
     9598 => 'Ptro',
     9593 => 'Ggor',
     9600 => 'Ppyg',
-    9544 => 'Mmul'
+    9544 => 'Mmul',
+    9999 => 'Background'
   };
   my $short_to_taxon = {
     'Hsap' => 9606,
     'Ptro' => 9598,
     'Ggor' => 9593,
     'Ppyg' => 9600,
-    'Mmul' => 9544
+    'Mmul' => 9544,
+    'Background' => 9999
   };
   if (defined $taxon_to_short->{$taxon}) {
     return $taxon_to_short->{$taxon};

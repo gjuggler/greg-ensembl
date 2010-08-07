@@ -6,7 +6,7 @@ go.cmd = 'select data_id, protein_id AS stable_id, group_concat(DISTINCT go_term
   AND ancestral_mapping = 0
   GROUP BY protein_id';
 
-if (!exists('go.hs')) {
+if (!exists('go.hs.iea')) {
   go.hs = get.vector(con,sprintf(go.cmd,9606,'IEA','go','biological_process'),columns='all')
   go.hs.iea = get.vector(con,sprintf(go.cmd,9606,'','go','biological_process'),columns='all')
 
@@ -44,14 +44,14 @@ get.go.table = function(scores,symbols.to.go,ontology,nodeSize=5,description='',
 
   if (scoresAreBinary) {
     res.Fis <- runTest(GOdata,algorithm="classic",statistic="Fisher")
-    res.Fis.weight <- runTest(GOdata,algorithm="weight",statistic="Fisher")
-    res.Fis.elim <- runTest(GOdata,algorithm="elim",statistic="Fisher")
-    res.Fis.parentChild <- runTest(GOdata,algorithm="parentChild",statistic="Fisher")
+#    res.Fis.weight <- runTest(GOdata,algorithm="weight",statistic="Fisher")
+#    res.Fis.elim <- runTest(GOdata,algorithm="elim",statistic="Fisher")
+#    res.Fis.parentChild <- runTest(GOdata,algorithm="parentChild",statistic="Fisher")
     test.df = GenTable(GOdata, 
       pval.fis = res.Fis,
-      pval.fis.weight = res.Fis.weight,
-      pval.fis.elim = res.Fis.elim,
-      pval.fis.parentchild = res.Fis.parentChild,
+#      pval.fis.weight = res.Fis.weight,
+#      pval.fis.elim = res.Fis.elim,
+#      pval.fis.parentchild = res.Fis.parentChild,
       topNodes=length(go.terms)
     )
   } else {

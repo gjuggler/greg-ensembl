@@ -32,7 +32,9 @@ sub fetch_input {
   my $params = {
     flow_node_set => 'Primates',
     flow_parent_and_children => 0,
-    debug => 0
+    debug => 0,
+    keep_at_least_root => 0,
+    merge_by_gene_names => 0
   };
   ##########################
 
@@ -242,6 +244,8 @@ sub does_tree_have_clade_coverage {
   my $tree   = shift;
   my $params = shift;
 
+#  print join "\n",map {$_->stable_id} $tree->leaves;
+
   foreach my $key ( keys %$params ) {
     next unless ( $key =~ /cc_/ );
     my $value = $params->{$key};
@@ -273,8 +277,8 @@ sub generic_parent_has_good_children {
   my $inclusion_function = shift;
   my $params             = shift;
 
-  # 1. check that this tree has superfamily coverage.
-  # 2. check that our sister node has superfamily coverage.
+  # 1. check that this tree satisfies inclusion function
+  # 2. check that our sister node satisfies inclusion function.
   # 3. if (1) and (2) are met, return true.
 
   my $tree             = $node;
@@ -283,7 +287,11 @@ sub generic_parent_has_good_children {
   if ( $parent->node_id == 1 ) {
     my $value = $inclusion_function->($self, $node, $params );
     #print "Root node. Values is $value\n";
-    return $value;
+    if ($self->param('keep_at_least_root') == 1) {
+      return 1;
+    } else {
+      return $value;
+    }
   }
 
   my $sister;
@@ -291,11 +299,45 @@ sub generic_parent_has_good_children {
     $sister = $ch if ( $ch->node_id != $tree->node_id );
   }
 
-  if ( $inclusion_function->( $self, $node, $params )
-    && $inclusion_function->( $self, $sister, $params ) ) {
-    return 1;
+  if ( $inclusion_function->( $self, $node, $params ) == 1
+    && $inclusion_function->( $self, $sister, $params )  == 1) {
+    if ($self->param('merge_by_gene_names') == 1) {
+      return 1 if ($self->no_similar_gene_names($node,$sister) == 1);
+    } else {
+      return 1;
+    }
   }
   return 0;
+}
+
+sub no_similar_gene_names {
+  my $self = shift;
+  my $node_a = shift;
+  my $node_b = shift;
+
+  my $names_a;
+  map {
+    my $gene = $_->get_Gene;
+    if (defined $gene) {
+      $names_a->{lc($gene->external_name)} = 1;
+    }
+  } $node_a->leaves;
+
+  my $names_b;
+  map {
+    my $gene = $_->get_Gene;
+    if (defined $gene) {
+      $names_b->{lc($gene->external_name)} = 1;
+    }
+  } $node_b->leaves;
+
+  foreach my $key (keys %$names_a) {
+    #print "$key\n";
+    if ($names_b->{$key} == 1) {
+      return 0;
+    }
+  }
+  return 1;
 }
 
 sub DESTROY {

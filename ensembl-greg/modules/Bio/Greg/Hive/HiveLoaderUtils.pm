@@ -3,7 +3,11 @@ package Bio::Greg::Hive::HiveLoaderUtils;
 use warnings;
 use strict;
 
+use Bio::EnsEMBL::Compara::DBSQL::DBAdaptor;
+use Bio::EnsEMBL::Hive::DBSQL::DBAdaptor;
 use Bio::EnsEMBL::Hive::DBSQL::AnalysisJobAdaptor;
+
+use Bio::EnsEMBL::Compara::ComparaUtils;
 
 use Bio::EnsEMBL::Hive::Utils 'stringify';  # import 'stringify()'
 
