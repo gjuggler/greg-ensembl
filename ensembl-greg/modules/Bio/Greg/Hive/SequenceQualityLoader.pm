@@ -17,6 +17,7 @@ sub fetch_input {
 
   ### DEFAULT PARAMETERS ###
   my $params = {
+    get_chimp_quals => 0
   };
 
   $self->load_all_params($params);
@@ -40,6 +41,11 @@ sub run {
 
 # This is finicky: we need to call the "db_adaptor" method to get the Bio::EnsEMBL::DBSQL::DBAdaptor object, and then the meta container.
     my $gdb = $member->genome_db;
+    next unless (defined $gdb->db_adaptor);
+
+    # Right now we've got not quick way to get chimp quality scores... skip unless specifically told to get them.
+    next if ($member->taxon_id == 9598 && $self->param('get_chimp_quals') != 1);
+
     my $meta     = $gdb->db_adaptor->get_MetaContainer;
     my $coverage = @{ $meta->list_value_by_key('assembly.coverage_depth') }[0];
 

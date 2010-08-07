@@ -15,8 +15,7 @@ use File::Basename;
 use Bio::Greg::Hive::HiveLoaderUtils;
 use Bio::Greg::Hive::ComparaHiveLoaderUtils;
 
-my ($url) = undef;
-GetOptions('url=s' => \$url);
+my $url = 'mysql://ensadmin:ensembl@ens-research:3306/gj1_hiv_58';
 my $clean = 1;
 
 my $h = new Bio::Greg::Hive::ComparaHiveLoaderUtils;
@@ -35,11 +34,11 @@ parameter_sets();
 node_sets();
 align();
 sequence_quality();
-split_by_parameter_set();
-split_by_windows();
+split_params();
 gene_omegas();
 sitewise_omegas();
 mapping();
+collect_go();
 collect_stats();
 output_data();
 
@@ -47,17 +46,25 @@ output_data();
 $h->connect_analysis("NodeSets","Align");
 $h->connect_analysis("Align","SequenceQuality");
 $h->connect_analysis("SequenceQuality","SplitParams");
-$h->connect_analysis("SplitParams","SplitAlignments");
-$h->connect_analysis("SplitAlignments","GeneOmegas");
+$h->connect_analysis("SplitParams","GeneOmegas");
 $h->connect_analysis("GeneOmegas","SitewiseOmegas");
 $h->connect_analysis("SitewiseOmegas","CollectStats");
 
 $h->connect_analysis("Align","Mapping");
-$h->wait_for("CollectStats",["Mapping"]);
+$h->connect_analysis("Mapping","CollectGo");
+$h->wait_for("CollectStats",["Mapping","CollectGo"]);
 $h->wait_for("OutputTabularData",["GeneOmegas","SitewiseOmegas","CollectStats"]);
 
-my @genes = gene_list();
-$h->add_genes_to_analysis("NodeSets",\@genes);
+#my @genes = gene_list();
+#$h->add_genes_to_analysis("NodeSets",\@genes);
+my @nodes = all_nodes();
+_add_nodes_to_analysis("NodeSets",\@nodes);
+
+sub all_nodes {
+  my $cmd = "SELECT node_id FROM protein_tree_node WHERE parent_id=1;";
+  my @nodes = _select_node_ids($cmd);
+  return @nodes;
+}
 
 sub gene_list {
   open INPUT, "<candidate_genes.txt";
@@ -95,12 +102,12 @@ sub parameter_sets {
 
   my $non_primates = join(",",subtract(\@mammals_arr,\@primates_arr));
  
-  $params = {
-    parameter_set_name => "Homininae",
-    parameter_set_shortname => 'hmn',
-    keep_species => $homininae,
-    };
-  $h->add_parameter_set($params);
+#  $params = {
+#    parameter_set_name => "Homininae",
+#    parameter_set_shortname => 'hmn',
+#    keep_species => $homininae,
+#    };
+#  $h->add_parameter_set($params);
   
   $params = {
     parameter_set_name => "Hominidae",
@@ -149,7 +156,7 @@ sub node_sets {
   my $logic_name = "NodeSets";
   my $module = "Bio::Greg::Hive::NodeSets";
   my $params = {
-    flow_node_set => 'MammalPlusOutgroup'
+    flow_node_set => 'Primates'
   };
   $h->create_analysis($logic_name,$module,$params,50,1);
 }
@@ -174,25 +181,7 @@ sub sequence_quality {
   $h->create_analysis($logic_name,$module,$params,50,1);
 }
 
-sub split_by_domains {
-  my $logic_name = "SplitAlignments";
-  my $module = "Bio::Greg::Hive::SplitByProteinDomain";
-  my $params = {
-  };
-  $h->create_analysis($logic_name,$module,$params,50,1);
-}
-
-sub split_by_windows {
-  my $logic_name = "SplitAlignments";
-  my $module = "Bio::Greg::Hive::SplitBySlidingWindow";
-  my $params = {
-    window_width => 100,
-    window_step => 30
-  };
-  $h->create_analysis($logic_name,$module,$params,50,1);
-}
-
-sub split_by_parameter_set {
+sub split_params {
   my $logic_name = "SplitParams";
   my $module = "Bio::Greg::Hive::SplitByParameterSet";
   my $params = {
@@ -223,8 +212,18 @@ sub mapping {
   my $logic_name = "Mapping";
   my $module = "Bio::Greg::Hive::SitewiseMapper";
   my $params = {
+    collect_go => 0
   };
-  $h->create_analysis($logic_name,$module,$params,200,1);
+  $h->create_analysis($logic_name,$module,$params,50,1);
+}
+
+sub collect_go {
+  my $logic_name = "CollectGo";
+  my $module = "Bio::Greg::Hive::CollectGO";
+  my $params = {
+    go_taxon_ids => '9606,9593,9598',
+  };
+  $h->create_analysis($logic_name,$module,$params,50,1);
 }
 
 sub collect_stats {

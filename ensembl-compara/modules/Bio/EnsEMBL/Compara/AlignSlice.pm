@@ -292,11 +292,38 @@ sub new {
   if ($genomic_align_trees) {
     $self->_create_underlying_Slices($genomic_align_trees, $self->{expanded},
         $self->{solve_overlapping}, $preserve_blocks, $species_order);
+
+    #Awful hack to store the _alignslice_from and _alignslice_to on the 
+    #GenomicAlignBlock for use in get_all_ConservationScores which uses 
+    #GenomicAlignBlock and not GenomicAlignTree
+    foreach my $tree (@$genomic_align_trees) {
+        foreach my $block (@$genomic_align_blocks) {
+            my $gab_id = $tree->get_all_leaves->[0]->genomic_align_group->get_all_GenomicAligns->[0]->genomic_align_block_id;
+	    my $block_id = $block->dbID;
+
+	    #if the block has been restricted, need to look at original_dbID
+	    if (!defined $block_id) {
+		$block_id = $block->{original_dbID};
+	    }
+	    my $tree_ref_ga = $tree->{reference_genomic_align};
+	    my $block_ref_ga = $block->{reference_genomic_align};
+
+	    #Need to check the ref_ga details not just the block id because
+	    #the original_dbID is not unique for 2x genome blocks
+            if ($gab_id == $block_id && 
+		$tree_ref_ga->dnafrag_start == $block_ref_ga->dnafrag_start && 
+		$tree_ref_ga->dnafrag_end == $block_ref_ga->dnafrag_end && 
+		$tree_ref_ga->dnafrag_strand == $block_ref_ga->dnafrag_strand) {
+                $block->{_alignslice_from} = $tree->{_alignslice_from};
+                $block->{_alignslice_to} = $tree->{_alignslice_to};
+            }
+        }
+    }
+
   } else {
     $self->_create_underlying_Slices($genomic_align_blocks, $self->{expanded},
         $self->{solve_overlapping}, $preserve_blocks, $species_order);
   }
-
   return $self;
 }
 
@@ -386,7 +413,9 @@ sub adaptor {
                one.
                NB: You can use underscores instead of whitespaces for
                the name of the species, i.e. Homo_sapiens will be
-               understood as "Homo sapiens".
+               understood as "Homo sapiens". However if the GenomeDB is found
+               to already have _ defined in the name then this behaviour is
+               disabled.
   Returntype : listref of Bio::EnsEMBL::Compara::AlignSlice::Slice
                objects.
   Exceptions : 
@@ -395,17 +424,22 @@ sub adaptor {
 =cut
 
 sub get_all_Slices {
-  my ($self, @species_names) = @_;
+  my ( $self, @species_names ) = @_;
   my $slices = [];
 
   if (@species_names) {
-    foreach my $slice (@{$self->{_slices}}) {
+    foreach my $slice ( @{ $self->{_slices} } ) {
+      #Substitute _ for spaces & check if the current GenomeDB matches with 
+      #or without them
       foreach my $this_species_name (@species_names) {
-        $this_species_name =~ s/_/ /g; ## supports names containing underscores instead of whitespaces
-        push(@$slices, $slice) if ($this_species_name eq $slice->genome_db->name);
+        ( my $space_species_name = $this_species_name ) =~ s/_/ /g;
+        push( @$slices, $slice )
+          if ( ( $this_species_name eq $slice->genome_db->name )
+          || ( $space_species_name eq $slice->genome_db->name ) );
       }
     }
-  } else {
+  }
+  else {
     $slices = $self->{_slices};
   }
 
@@ -557,16 +591,15 @@ sub get_SimpleAlign {
   Arg  2     : (opt) string $display_type (one of "AVERAGE" or "MAX") (default "MAX")
   Arg  3     : (opt) integer $window_size
   Example    : my $conservation_scores =
-                    $align_slice->get_all_ConservationScores(1000, "MAX", 10);
+                    $align_slice->get_all_ConservationScores(1000, "AVERAGE", 10);
   Description: Retrieve the corresponding
                Bio::EnsEMBL::Compara::ConservationScore objects for the
-               Bio::EnsEMBL::Compara::GenomicAlignBlock objects underlying
-               this Bio::EnsEMBL::Compara::AlignSlice object. This method
-               calls the Bio::EnsEMBL::Compara::DBSQL::ConservationScoreAdaptor->
-               fetch_all_by_GenomicAlignBlock() method. It sets up the align_start,
-               align_end and slice_length and map the resulting objects onto
-               the AlignSlice. $diaplay_slize, $display_type and $window_size
-               are passed as it to the fetch_all_by_GenomicAlignBlock() method.
+               Bio::EnsEMBL::Compara::AlignSlice object. It calls either
+               _get_expanded_conservation_scores if the AlignSlice has 
+               "expanded" set or _get_condensed_conservation_scores for 
+               condensed mode.
+               It sets up the align_start, align_end and slice_length and map 
+               the resulting objects onto the AlignSlice. 
                Please refer to the documentation in
                Bio::EnsEMBL::Compara::DBSQL::ConservationScoreAdaptor
                for more details.
@@ -584,54 +617,134 @@ sub get_all_ConservationScores {
   my $y_axis_max;
 
   my $conservation_score_adaptor = $self->adaptor->db->get_ConservationScoreAdaptor();
-  foreach my $this_genomic_align_block (@{$self->get_all_GenomicAlignBlocks()}) {
-    my $all_these_conservation_scores = $conservation_score_adaptor->fetch_all_by_GenomicAlignBlock(
-        $this_genomic_align_block, $this_genomic_align_block->{_alignslice_from},
-        $this_genomic_align_block->{_alignslice_to}, $self->get_all_Slices()->[0]->length, 
-        $display_size, $display_type, $window_size);
-#     ## Debug
-#     print "PARAMETERS FOR fetch_all_by_GenomicAlignBlock(): ", join(", ", 
-#         $this_genomic_align_block->dbID, $this_genomic_align_block->{_alignslice_from},
-#         $this_genomic_align_block->{_alignslice_to}, $self->get_all_Slices()->[0]->length), "\n";
-
-    #initialise y axis min and max
-    if (!defined $y_axis_max) {
-	$y_axis_max = $all_these_conservation_scores->[0]->y_axis_max;
-	$y_axis_min = $all_these_conservation_scores->[0]->y_axis_min;
-    }
-    #find overall min and max 
-    if ($y_axis_min > $all_these_conservation_scores->[0]->y_axis_min) {
-	$y_axis_min = $all_these_conservation_scores->[0]->y_axis_min;
-    }
-    if ($y_axis_max < $all_these_conservation_scores->[0]->y_axis_max) {
-	$y_axis_max = $all_these_conservation_scores->[0]->y_axis_max;
-    }
-
-    foreach my $this_conservation_score (@$all_these_conservation_scores) {
-      $this_conservation_score->position($this_conservation_score->position +
-          $this_genomic_align_block->{_alignslice_from} - 1 +
-          $this_genomic_align_block->{_alignslice_start});
-      push (@$all_conservation_scores, $this_conservation_score);
-    }
+   
+  #Get scores in either expanded or condensed mode
+  if ($self->{expanded}) {
+      $all_conservation_scores = $self->_get_expanded_conservation_scores($conservation_score_adaptor, $display_size, $display_type, $window_size);
+  } else {
+      $all_conservation_scores = $self->_get_condensed_conservation_scores($conservation_score_adaptor, $display_size, $display_type, $window_size);
   }
 
-  #set overall min and max
-  $all_conservation_scores->[0]->y_axis_min($y_axis_min);
-  $all_conservation_scores->[0]->y_axis_max($y_axis_max);
-
-#   ## Debug
-#   foreach my $this_conservation_score (@$all_conservation_scores) {
-#     print "CONS_SCORE: ", join(" -- ",
-#         "gab_id=".$this_conservation_score->genomic_align_block_id,
-#         "pos=".$this_conservation_score->position,
-#         "win_size=".$this_conservation_score->window_size,
-#         "expect=".$this_conservation_score->expected_score,
-#         "observ=".$this_conservation_score->observed_score,
-#         "diff=".$this_conservation_score->diff_score,
-#         ), "\n";
-#   }
-
   return $all_conservation_scores;
+}
+
+=head2 get_expanded_conservation_scores
+
+  Arg  1     : Bio::EnsEMBL::Compara::DBSQL::ConservationScoreAdaptor
+  Arg  2     : (opt) integer $display_size (default 700)
+  Arg  3     : (opt) string $display_type (one of "AVERAGE" or "MAX") (default "MAX")
+  Arg  4     : (opt) integer $window_size
+  Example    : my $conservation_scores =
+                    $self->_get_expanded_conservation_scores($cs_adaptor, 1000, "AVERAGE", 10);
+  Description: Retrieve the corresponding
+               Bio::EnsEMBL::Compara::ConservationScore objects for the
+               Bio::EnsEMBL::Compara::GenomicAlignBlock objects underlying
+               this Bio::EnsEMBL::Compara::AlignSlice object. This method
+               calls the Bio::EnsEMBL::Compara::DBSQL::ConservationScoreAdaptor->
+               fetch_all_by_GenomicAlignBlock() method. It sets up the align_start,
+               align_end and slice_length and map the resulting objects onto
+               the AlignSlice. $diaplay_slize, $display_type and $window_size
+               are passed to the fetch_all_by_GenomicAlignBlock() method.
+               Please refer to the documentation in
+               Bio::EnsEMBL::Compara::DBSQL::ConservationScoreAdaptor
+               for more details.
+  Returntype : ref. to an array of Bio::EnsEMBL::Compara::ConservationScore 
+               objects.
+  Caller     : object::methodname
+  Status     : At risk
+
+=cut
+sub _get_expanded_conservation_scores {
+    my ($self, $conservation_score_adaptor, $display_size, $display_type, $window_size) = @_;
+    my $y_axis_min;
+    my $y_axis_max;
+
+    my $all_conservation_scores = [];
+    foreach my $this_genomic_align_block (@{$self->get_all_GenomicAlignBlocks()}) {
+	$this_genomic_align_block->{restricted_aln_start} = $this_genomic_align_block->{_alignslice_from};
+	$this_genomic_align_block->{restricted_aln_end} = $this_genomic_align_block->{_alignslice_to};
+
+	my $all_these_conservation_scores = $conservation_score_adaptor->fetch_all_by_GenomicAlignBlock(
+													$this_genomic_align_block, 1,$this_genomic_align_block->length, $self->get_all_Slices()->[0]->length, 
+													$display_size, $display_type, $window_size);
+	
+	#initialise y axis min and max
+	if (!defined $y_axis_max) {
+	    $y_axis_max = $all_these_conservation_scores->[0]->y_axis_max;
+	    $y_axis_min = $all_these_conservation_scores->[0]->y_axis_min;
+	}
+	#find overall min and max 
+	if ($y_axis_min > $all_these_conservation_scores->[0]->y_axis_min) {
+	    $y_axis_min = $all_these_conservation_scores->[0]->y_axis_min;
+	}
+	if ($y_axis_max < $all_these_conservation_scores->[0]->y_axis_max) {
+	    $y_axis_max = $all_these_conservation_scores->[0]->y_axis_max;
+	}
+	push (@$all_conservation_scores, @$all_these_conservation_scores);
+    }
+    #set overall min and max
+    $all_conservation_scores->[0]->y_axis_min($y_axis_min);
+    $all_conservation_scores->[0]->y_axis_max($y_axis_max);
+
+    return $all_conservation_scores;
+}
+
+=head2 get_condensed_conservation_scores
+
+  Arg  1     : Bio::EnsEMBL::Compara::DBSQL::ConservationScoreAdaptor
+  Arg  2     : (opt) integer $display_size (default 700)
+  Arg  3     : (opt) string $display_type (one of "AVERAGE" or "MAX") (default "MAX")
+  Arg  4     : (opt) integer $window_size
+  Example    : my $conservation_scores =
+                    $self->_get_expanded_conservation_scores($cs_adaptor, 1000, "AVERAGE", 10);
+  Description: Retrieve the corresponding
+               Bio::EnsEMBL::Compara::ConservationScore objects for the
+               reference Bio::EnsEMBL::Slice object of 
+               this Bio::EnsEMBL::Compara::AlignSlice object. This method
+               calls the Bio::EnsEMBL::Compara::DBSQL::ConservationScoreAdaptor->
+               fetch_all_by_MethodLinkSpeciesSet_Slice() method. It sets up 
+               the align_start, align_end and slice_length and map the 
+               resulting objects onto the AlignSlice. $display_slize, 
+               $display_type and $window_size are passed to the 
+               fetch_all_by_MethodLinkSpeciesSet_Slice() method.
+               Please refer to the documentation in
+               Bio::EnsEMBL::Compara::DBSQL::ConservationScoreAdaptor
+               for more details.
+  Returntype : ref. to an array of Bio::EnsEMBL::Compara::ConservationScore 
+               objects.
+  Caller     : object::methodname
+  Status     : At risk
+
+=cut
+sub _get_condensed_conservation_scores {
+    my ($self, $conservation_score_adaptor, $display_size, $display_type, $window_size) = @_;
+
+    my $all_conservation_scores = [];
+
+    throw ("Must have method_link_species_set defined to retrieve conservation scores for a condensed AlignSlice") if (!defined $self->{_method_link_species_set});
+    throw ("Must have reference slice defined to retrieve conservation scores for a condensed AlignSlice") if (!defined $self->{'reference_slice'});
+
+    #really hacky to get the mlss for the conservation score (which then uses 
+    #it to get the multiple alignment mlss, which is what I started with!
+    my $key = "gerp_%";
+    my $sql = "SELECT meta_key FROM meta WHERE meta_key like ? AND meta_value = ?";
+    my $sth = $conservation_score_adaptor->prepare($sql);
+    $sth->execute($key, $self->{_method_link_species_set}->dbID);
+    
+    my $cs_mlss_id;
+    while (my $arrRef = $sth->fetchrow_arrayref) {
+	($cs_mlss_id) = $arrRef->[0] =~ /gerp_(\d+)/;
+    }
+    $sth->finish;
+
+    throw ("Unable to find conservation score method_link_species_set for this multiple alignment " . $self->{_method_link_species_set}->dbID) if (!defined $cs_mlss_id);
+    my $mlss_adaptor = $self->adaptor->db->get_MethodLinkSpeciesSetAdaptor();
+
+    my $cs_mlss = $mlss_adaptor->fetch_by_dbID($cs_mlss_id);
+
+    $all_conservation_scores = $conservation_score_adaptor->fetch_all_by_MethodLinkSpeciesSet_Slice($cs_mlss, $self->{'reference_slice'}, $display_size, $display_type, $window_size);
+    
+    return $all_conservation_scores;
 }
 
 
@@ -745,10 +858,12 @@ sub _create_underlying_Slices {
   } else {
     $last_ref_pos = $self->reference_Slice->end;
   }
+
   my $ref_genome_db = $self->adaptor->db->get_GenomeDBAdaptor->fetch_by_Slice($self->reference_Slice);
   my $big_mapper = Bio::EnsEMBL::Mapper->new("sequence", "alignment");
 
   my $sorted_genomic_align_blocks;
+
   if ($solve_overlapping eq "restrict") {
     $sorted_genomic_align_blocks = _sort_and_restrict_GenomicAlignBlocks($genomic_align_blocks);
   } elsif ($solve_overlapping) {
@@ -768,17 +883,23 @@ sub _create_underlying_Slices {
     } else {
 	#need to check that the block is still overlapping the slice - it may
 	#have already been restricted by the options above.
-	if ($this_genomic_align_block->reference_genomic_align->dnafrag_start > $self->reference_Slice->end || $this_genomic_align_block->reference_genomic_align->dnafrag_end < $self->reference_Slice->start) {
-	    next;
-	}
-
+        if ($this_genomic_align_block->reference_genomic_align->dnafrag_start > $self->reference_Slice->end || $this_genomic_align_block->reference_genomic_align->dnafrag_end < $self->reference_Slice->start) {
+            next;
+        }
       ($this_genomic_align_block, $from, $to) = $this_genomic_align_block->restrict_between_reference_positions(
           $self->reference_Slice->start, $self->reference_Slice->end);
     }
+
     $original_genomic_align_block->{_alignslice_from} = $from;
     $original_genomic_align_block->{_alignslice_to} = $to;
 
     my $reference_genomic_align = $this_genomic_align_block->reference_genomic_align;
+
+    #If I haven't needed to restrict, I don't gain this link so add it here
+    if (!defined $reference_genomic_align->genomic_align_block->reference_genomic_align) {
+	$reference_genomic_align->genomic_align_block($this_genomic_align_block);
+    }
+
     my ($this_pos, $this_gap_between_genomic_align_blocks);
     if ($strand == 1) {
       $this_pos = $reference_genomic_align->dnafrag_start;
@@ -787,6 +908,7 @@ sub _create_underlying_Slices {
       $this_pos = $reference_genomic_align->dnafrag_end;
       $this_gap_between_genomic_align_blocks = $last_ref_pos - $this_pos;
     }
+
     if ($this_gap_between_genomic_align_blocks > 0) {
       ## Add mapper info for inter-genomic_align_block space
       if ($strand == 1) {
@@ -838,6 +960,7 @@ sub _create_underlying_Slices {
     $this_pos = $self->reference_Slice->start;
     $this_gap_between_genomic_align_blocks = $last_ref_pos + 1 - $this_pos;
   }
+
   ## $last_ref_pos is the next nucleotide position after the last mapped one.
   if ($this_gap_between_genomic_align_blocks > 0) {
     if ($strand == 1) {
@@ -912,6 +1035,9 @@ sub _create_underlying_Slices {
         # For composite segments (2X genomes), the node will link to several GenomicAligns.
         # Add each of them to one of the AS:Slice objects
         foreach my $this_genomic_align (@{$this_genomic_align_node->get_all_GenomicAligns}) {
+          # Link to genomic_align_block may have been lost during tree minimization
+          $this_genomic_align->genomic_align_block_id(0);
+          $this_genomic_align->genomic_align_block($this_genomic_align_block);
           $self->_add_GenomicAlign_to_a_Slice($this_genomic_align, $this_genomic_align_block,
               $species_order, $align_slice_length);
         }
@@ -985,16 +1111,18 @@ sub _add_GenomicAlign_to_a_Slice {
     }
   }
 
+  my $this_mapper = $this_genomic_align->get_Mapper(0, !$expanded);
   # Fix block start and block end for composite segments (2X genomes)
-  if ($this_genomic_align->cigar_line =~ /^(\d*)X/) {
-    my $length = $1;
-    $length = 1 if ($length eq "");
-    $this_block_start += $length;
-  }
-  if ($this_genomic_align->cigar_line =~ /(\d*)X$/) {
-    my $length = $1;
-    $length = 1 if (!defined($length));
-    $this_block_end -= $length;
+  if ($this_genomic_align->cigar_line =~ /^(\d*)X/ or $this_genomic_align->cigar_line =~ /(\d*)X$/) {
+    $this_block_start = undef;
+    $this_block_end = undef;
+    my @blocks = $this_mapper->map_coordinates("sequence", $this_genomic_align->dnafrag_start,
+          $this_genomic_align->dnafrag_end, $this_genomic_align->dnafrag_strand, "sequence");
+    foreach my $this_block (@blocks) {
+      next if ($this_block->isa("Bio::EnsEMBL::Mapper::Gap"));
+      $this_block_start = $this_block->start if (!defined($this_block_start) or $this_block->start < $this_block_start);
+      $this_block_end = $this_block->end if (!defined($this_block_end) or $this_block->end > $this_block_end);
+    }
   }
 
   # Choose the appropriate AS::Slice for adding this bit of the alignment
@@ -1004,7 +1132,7 @@ sub _add_GenomicAlign_to_a_Slice {
   # Add a Slice, Mapper, and start-end-strand coordinates to an underlying AS::Slice
   $this_underlying_slice->add_Slice_Mapper_pair(
           $this_core_slice,
-          $this_genomic_align->get_Mapper(0, !$expanded),
+          $this_mapper,
           $this_block_start,
           $this_block_end,
           $this_genomic_align->dnafrag_strand
@@ -1058,6 +1186,9 @@ sub _choose_underlying_Slice {
       foreach my $slice_mapper_pair (@$slice_mapper_pairs) {
         my $block_start = $slice_mapper_pair->{start};
         my $block_end = $slice_mapper_pair->{end};
+	#a block may not have a start and end if there is no sequence
+	#eg the cigar_line looks like 139D17186X
+	next if (!defined $this_block_start || !defined $this_block_end);
         if ($this_block_start <= $block_end and $this_block_end >= $block_start) {
           $overlap = 1;
           last;

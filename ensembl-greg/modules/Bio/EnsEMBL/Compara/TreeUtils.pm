@@ -16,6 +16,44 @@ my $TREEI = "Bio::Tree::TreeI";
 my $NSET = "Bio::EnsEMBL::Compara::NestedSet";
 my $PTREE = "Bio::EnsEMBL::Compara::ProteinTree";
 
+sub copy_tree {
+  my $self = shift;
+  my $tree = shift;
+
+  my $node_hash;
+  my $root;
+
+  foreach my $node ($tree->nodes) {
+    $node_hash->{$node->node_id} = new $node;
+  }
+  
+  foreach my $node ($tree->nodes) {
+    print "$node\n";
+    my $new_n = $node_hash->{$node->node_id};
+
+    # Add node ID, name, and distance.
+    $new_n->node_id($node->node_id);
+    $new_n->name($node->name);
+    $new_n->distance_to_parent($node->distance_to_parent);
+
+    my $parent = $node_hash->{$node->_parent_id};
+    if ($parent) {
+      $parent->add_child($new_n);
+    } else {
+      $root = $new_n;
+    }
+
+    # This is kind of important -- if we don't call no_autoload_children,
+    # then the NCBITaxonomy tree will try to load subspecies into the NestedSet
+    # object upon copying. Not nice!!!
+    $new_n->no_autoload_children;
+
+    $new_n->adaptor($node->adaptor);
+  }
+
+  return $root;
+}
+
 sub robinson_foulds_dist {
   # Setup steps:
   # 1) Download http://hashrf.googlecode.com/files/hashrf-6.0.1.tgz . Extract to directory.
@@ -500,6 +538,7 @@ sub to_newick {
 			       -format => "newick");
     $out->write_tree($tree);
     $out->close();
+    $string =~ s/\n//g; # Remove newlines.
     return $string;
   } elsif ($ref =~ /Bio::EnsEMBL/i) {
     return $tree->newick_format();
@@ -619,6 +658,7 @@ sub keep_members_by_method_call {
   # Take the complement of the "delete me" set and extract a subtree.
   my @keep_me;
   foreach my $leaf ($tree->leaves) {
+#    print $leaf->$method()."\n";
     if (exists $value_hash{$leaf->$method()}) {
       push @keep_me, $leaf;
     } else {

@@ -45,7 +45,7 @@ Bio::EnsEMBL::Compara::DBSQL::ConservationScoreAdaptor - Object adaptor to acces
 =head1 DESCRIPTION
 
 This module is used to access data in the conservation_score table.
-Each score is represented by a Bio::EnsEMBL::Compara::ConservationScore. The position and an observed, expected score and a difference score (expected-observed) is stored for each column in a multiple alignment. Not all bases in an alignment have a score (for example, if there is insufficient coverage) and termed here as 'uncalled'. 
+Each score is represented by a Bio::EnsEMBL::Compara::ConservationScore. The position and an observed, expected score and a difference score (expected-observed) is stored for each column in a multiple alignment. Not all columns in an alignment have a score (for example, if there is insufficient coverage) and termed here as 'uncalled'. 
 In order to speed up processing of the scores over large regions, the scores are stored in the database averaged over window_sizes of 1 (no averaging), 10, 100 and 500. When retrieving the scores, the most appropriate window_size is estimated from the length of the alignment or slice and the number of scores requested, given by the display_size. There is no need to specify the window_size directly. If the number of scores requested (display_size) is smaller than the alignment length or slice length, the scores will be either averaged if display_type = "AVERAGE" or the maximum value taken if display_type = "MAX". Scores in uncalled regions are not returned. If a score for each column in an alignment is required, the display_size should be set to be the same size as the alignment length or slice length. 
 
 =head1 AUTHOR - Kathryn Beal
@@ -98,6 +98,33 @@ my $PACKED = 1;
 @ISA = qw(Bio::EnsEMBL::DBSQL::BaseAdaptor);
 
 
+
+=head2 delete_by_genomic_align_block_id
+
+  Arg  1     : int $genomic_align_block_id
+  Example    : $conservation_score_adaptor->delete_by_genomic_align_block_id(123);
+  Description: Delete all the scores related to this GenomicAlignBlock object
+  Returntype : int (number of deleted rows, not scores)
+  Exceptions : throw if not $genomic_align_block_id
+  Status     : Stable
+
+=cut
+
+sub delete_by_genomic_align_block_id {
+  my ($self, $genomic_align_block_id) = @_;
+
+  unless (defined $genomic_align_block_id) {
+    throw("Must define a genomic_align_block_id");
+  }
+
+  my $sql = "DELETE FROM conservation_score WHERE genomic_align_block_id = ?";
+  my $sth = $self->prepare($sql);
+  my $rv = $sth->execute($genomic_align_block_id);
+  $sth->finish;
+
+  return $rv;
+}
+
 =head2 fetch_all_by_MethodLinkSpeciesSet_Slice
 
   Arg  1     : Bio::EnsEMBL::Compara::MethodLinkSpeciesSet $method_link_species_set 
@@ -141,6 +168,167 @@ my $PACKED = 1;
 =cut
 
 sub fetch_all_by_MethodLinkSpeciesSet_Slice {
+    my ($self, $method_link_species_set, $slice, $display_size, $display_type, $window_size) = @_;
+
+    my $scores = [];
+
+    #need to convert conservation score mlss to the corresponding multiple 
+    #alignment mlss
+    my $key = "gerp_" . $method_link_species_set->dbID;
+
+    my $ma_mlss_id = $self->db->get_MetaContainer->list_value_by_key($key);
+    my $ma_mlss;
+    if (@$ma_mlss_id) {
+	$ma_mlss = $self->db->get_MethodLinkSpeciesSet->fetch_by_dbID($ma_mlss_id->[0]);
+    } else {
+	return $scores;
+    }
+
+    my $light_genomic_aligns = $self->_get_all_ref_genomic_aligns($ma_mlss, $slice);
+
+    if (scalar(@$light_genomic_aligns == 0)) {
+	#print "no genomic_align_blocks found for this slice\n";
+	return $scores;
+    }
+
+    #default display_size is 700
+    if (!defined $display_size) {
+	$display_size = 700;
+    }
+
+     #default display_mode is AVERAGE
+    if (!defined $display_type) {
+	$display_type = "AVERAGE";
+    }
+
+    #set up bucket object for storing bucket_size number of scores 
+    my $bucket_size = ($slice->end-$slice->start+1)/$display_size;
+
+    #default window size is the largest bucket that gives at least 
+    #display_size values ie get speed but reasonable resolution
+    my @window_sizes = (1, 10, 100, 500);
+
+    #check if valid window_size
+    my $found = 0;
+    if (defined $window_size) {
+	foreach my $win_size (@window_sizes) {
+	    if ($win_size == $window_size) {
+		$found = 1;
+		last;
+	    }
+	}
+	if (!$found) {
+	    warning("Invalid window_size $window_size");
+	    return $scores;
+	}
+    }
+    
+    if (!defined $window_size) {
+	#set window_size to be the largest for when for loop fails
+	$window_size = $window_sizes[scalar(@window_sizes)-1];
+	for (my $i = 1; $i < scalar(@window_sizes); $i++) {
+	    if ($bucket_size < $window_sizes[$i]) {
+		$window_size = $window_sizes[$i-1];
+		last;
+	    }
+	}
+    }
+
+    #print "window_size $window_size bucket_size $bucket_size slice length " . ($slice->end - $slice->start + 1) . "\n";
+
+    $_bucket = {diff_score => 0,
+		start_pos => 0,
+		end_pos => 0,
+		start_seq_region_pos => $slice->start,
+		end_seq_region_pos => $slice->end,
+		called => 0,
+		cnt => 0,
+		size => $bucket_size,
+	       current => 0};
+
+    foreach my $light_genomic_align (@$light_genomic_aligns) { 
+	my $genomic_align_block_id = $light_genomic_align->{genomic_align_block_id};
+	my $cigar_line = $light_genomic_align->{cigar_line};
+	my $dnafrag_start = $light_genomic_align->{dnafrag_start};
+	my $dnafrag_end = $light_genomic_align->{dnafrag_end};
+	my $dnafrag_strand = $light_genomic_align->{dnafrag_strand};
+	my $gab_length = $light_genomic_align->{length};
+
+	my $conservation_scores = $self->_fetch_all_by_GenomicAlignBlockId_WindowSize($genomic_align_block_id, $window_size, $PACKED);
+	if (scalar(@$conservation_scores) == 0) {
+	    next;
+	}
+
+	#reset _score_index for new conservation_scores
+	$_score_index = 0;
+
+	#print "slice start " . $slice->start . " " . $slice->end . " " . $slice->strand . " strand $dnafrag_strand cigar " . substr($cigar_line,0, 10) . "\n";
+
+	#if dnafrag_strand is -1, reverse cigar_line, scores so that they 
+	#are always on the forward strand
+	if ($dnafrag_strand == -1) {
+
+	    $cigar_line = join("", reverse ($cigar_line=~(/(\d*[GDMIX])/g)));
+            $conservation_scores = _reverse($conservation_scores, $gab_length);
+            $dnafrag_strand = 1;
+	}
+
+	#print "after slice start " . $slice->start . " " . $slice->end . " " . $slice->strand . " strand $dnafrag_strand cigar " . substr($cigar_line,0, 10) . "\n";
+
+	#if want one score per base in the alignment, use faster method 
+	#doesn't bother with any binning
+	if ($display_size == ($slice->end - $slice->start + 1)) {
+	    $scores = _get_aligned_scores_from_cigar_line_fast($self, $cigar_line, $dnafrag_start, $dnafrag_end, $slice->start, $slice->end, $conservation_scores, $genomic_align_block_id, $gab_length, $display_type, $window_size, $scores);
+	} else {
+	    $scores = _get_aligned_scores_from_cigar_line($self, $cigar_line, $dnafrag_start, $dnafrag_end, $slice->start, $slice->end, $conservation_scores, $genomic_align_block_id, $gab_length, $display_type, $window_size, $scores);
+	    
+	} 
+    }
+    #need to reverse scores
+    if ($slice->strand == -1) {
+	#reverse scores array
+	@$scores = reverse(@$scores);
+	#reverse positions
+	my $max_pos = $scores->[0]->position;
+	foreach my $score (@$scores) {
+	    $score->position($max_pos - $score->position + 1);
+	}
+	#print "reverse scores\n";
+    }
+    
+
+    if (scalar(@$scores) == 0) {
+	return $scores;
+    }
+
+    #remove _no_score_values from aligned_scores array
+    my $i = 0;
+     while ($i < scalar(@$scores)) {
+ 	if (!defined($_no_score_value) && 
+ 	    !defined($scores->[$i]->diff_score)) {
+ 	    splice @$scores, $i, 1;
+ 	} elsif (defined($_no_score_value) && 
+ 		 $scores->[$i]->diff_score == $_no_score_value) {
+ 	    splice @$scores, $i, 1;
+ 	} else {
+ 	    $i++;
+ 	}
+     }
+
+    #Find the min and max scores for y axis scaling. Save in first
+    #conservation score object
+    my ($min_y_axis, $max_y_axis) =  _find_min_max_score($scores);
+
+    #add min and max scores to the first conservation score object
+    if ((scalar @$scores) > 0) {
+	$scores->[0]->y_axis_min($min_y_axis);
+	$scores->[0]->y_axis_max($max_y_axis);
+    }
+
+    return ($scores);
+}
+
+sub fetch_all_by_MethodLinkSpeciesSet_SliceOLD {
     my ($self, $method_link_species_set, $slice, $display_size, $display_type, $window_size) = @_;
 
     my $scores = [];
@@ -208,6 +396,8 @@ sub fetch_all_by_MethodLinkSpeciesSet_Slice {
 	    }
 	}
     }
+
+    #print "window_size $window_size bucket_size $bucket_size slice length " . ($slice->end - $slice->start + 1) . "\n";
 
     $_bucket = {diff_score => 0,
 		start_pos => 0,
@@ -320,9 +510,11 @@ sub fetch_all_by_MethodLinkSpeciesSet_Slice {
 
 =cut
 sub fetch_all_by_GenomicAlignBlock {
-    my ($self, $genomic_align_block, $align_start, $align_end, $slice_length,
+    my ($self, $genomic_align_block, $start, $end, $slice_length,
 	$display_size, $display_type, $window_size) = @_;
 
+
+    #print "fetch_all_by_GenomicAlignBlock start $start end $end\n";
     my $scores = [];
 
     #default display_size is 700
@@ -335,19 +527,35 @@ sub fetch_all_by_GenomicAlignBlock {
 	$display_type = "AVERAGE";
     }
 
-    #default align_start is 1
-    if (!defined $align_start) {
-	$align_start = 1;
+    #default start is 1
+    if (!defined $start) {
+	$start = 1;
     }
 
-    #default align_end is the genomic_align_block length    
-    if (!defined $align_end) {
-	$align_end = $genomic_align_block->length;
+    #default end is the genomic_align_block length    
+    if (!defined $end) {
+	$end = $genomic_align_block->length;
     }
 
     #default slice_length is the genomic_align_block length
     if (!defined $slice_length) {
 	$slice_length = $genomic_align_block->length;
+    }
+
+    #keep track of original start and end
+    my $align_start = $start;
+    my $align_end = $end;
+
+    #print "restricted start " . $genomic_align_block->{'restricted_aln_start'} . " end " . $genomic_align_block->{'restricted_aln_end'} . " gab length " . $genomic_align_block->length . "\n";
+
+    #If the GenomicAlignBlock has been restricted, use these values in 
+    #align_start and align_end
+    if (defined $genomic_align_block->{'restricted_aln_start'}) {
+	$align_start += $genomic_align_block->{'restricted_aln_start'} - 1;
+    }
+    if (defined $genomic_align_block->{'restricted_aln_end'}) {
+	
+	$align_end = $genomic_align_block->{'restricted_aln_end'} - ($genomic_align_block->length-$align_end);
     }
 
     #set up bucket object for storing bucket_size number of scores 
@@ -400,8 +608,17 @@ sub fetch_all_by_GenomicAlignBlock {
     if (!$reference_genomic_align) {
 	$genomic_align_block->reference_genomic_align($genomic_align_block->get_all_GenomicAligns->[0]);
     }
+    #need this in case the dbID is not set ie if the $genomic_align_block has
+    #been restricted
+    my $gab_id;
+    if (defined $genomic_align_block->{'dbID'}) {
+	$gab_id = $genomic_align_block->{'dbID'};
+    } else {
+	$gab_id = $genomic_align_block->{'original_dbID'};
+    }
 
-    my $conservation_scores = $self->_fetch_all_by_GenomicAlignBlockId_WindowSize($genomic_align_block->dbID, $window_size, $PACKED);
+    my $conservation_scores = $self->_fetch_all_by_GenomicAlignBlockId_WindowSize($gab_id, $window_size, $PACKED);
+
 
     if (scalar(@$conservation_scores) == 0) {
 	return $scores;
@@ -410,30 +627,37 @@ sub fetch_all_by_GenomicAlignBlock {
     #need to reverse conservation scores if reference species is complemented
     if ($genomic_align_block->get_original_strand == 0) {
 	$conservation_scores = _reverse($conservation_scores);
+
     }
     
     #reset _score_index for new conservation_scores
     $_score_index = 0;
 
+    #print "align_start $align_start align_end $align_end start $start end $end\n";
     $scores = $self->_get_alignment_scores($conservation_scores, $align_start, 
 					   $align_end, $display_type, $window_size, 
 					   $genomic_align_block);
-
 
     if (scalar(@$scores) == 0) {
 	return $scores;
     }
 
-    #Find the min and max scores for y axis scaling. Save in first
+    my $all_scores;
+    foreach my $this_conservation_score (@$scores) {
+	$this_conservation_score->position($this_conservation_score->position + $start - 1);
+	push (@$all_scores, $this_conservation_score);
+    }
+ 
+   #Find the min and max scores for y axis scaling. Save in first
     #conservation score object
-    my ($min_y_axis, $max_y_axis) =  _find_min_max_score($scores);
+    my ($min_y_axis, $max_y_axis) =  _find_min_max_score($all_scores);
 
     #add min and max scores to the first conservation score object
-    if ((scalar @$scores) > 0) {
-	$scores->[0]->y_axis_min($min_y_axis);
-	$scores->[0]->y_axis_max($max_y_axis);
+    if ((scalar @$all_scores) > 0) {
+	$all_scores->[0]->y_axis_min($min_y_axis);
+	$all_scores->[0]->y_axis_max($max_y_axis);
     }
-   return ($scores);
+   return ($all_scores);
 
 }
 
@@ -450,6 +674,7 @@ sub fetch_all_by_GenomicAlignBlock {
   Exceptions : thrown if the argument is not a Bio::EnsEMBL::Compara:ConservationScore
   Caller     : general
   Status     : At risk
+
 =cut
 
 sub store {
@@ -462,7 +687,7 @@ sub store {
 
   my $genomic_align_block = $cs->genomic_align_block;
   my $window_size = $cs->window_size;
-  my $position = $cs->position;
+  my $position = $cs->{position};
 
   #check to see if gab, window_size and position have been defined (should be unique)
   unless($genomic_align_block && $window_size && $position) {
@@ -504,16 +729,20 @@ sub store {
 
 #Internal methods
 
-#  Arg  1     : integer $genomic_align_block_id 
-#  Arg  2     : integer $window_size
-#  Arg  3     : (opt) boolean $packed (default 0)
-#  Example    : my $conservation_scores =
-#                    $conservation_score_adaptor->fetch_all_by_GenomicAlignBlockId(23134);
-#  Description: Retrieve the corresponding
-#               Bio::EnsEMBL::Compara::ConservationScore objects. 
-#  Returntype : ref. to an array of Bio::EnsEMBL::Compara::ConservationScore objects. If $packed is true, return the scores in a packed format given by $_pack_size and $_pack_type.
+=head2 _fetch_all_by_GenomicAlignBlockId_WindowSize
 
-#  Caller     : object::methodname
+  Arg  1     : integer $genomic_align_block_id 
+  Arg  2     : integer $window_size
+  Arg  3     : (opt) boolean $packed (default 0)
+  Example    : my $conservation_scores =
+                    $conservation_score_adaptor->_fetch_all_by_GenomicAlignBlockId(23134);
+  Description: Retrieve the corresponding
+               Bio::EnsEMBL::Compara::ConservationScore objects. 
+  Returntype : ref. to an array of Bio::EnsEMBL::Compara::ConservationScore objects. If $packed is true, return the scores in a packed format given by $_pack_size and $_pack_type.
+  Exceptions : none
+  Caller     : general
+
+=cut
 
 sub _fetch_all_by_GenomicAlignBlockId_WindowSize {
     my ($self, $genomic_align_block_id, $window_size, $packed) = @_;
@@ -572,7 +801,19 @@ sub _fetch_all_by_GenomicAlignBlockId_WindowSize {
   return \@sorted_scores;
 }
 
-#find the min and max scores for y axis scaling
+
+=head2 _find_min_max_score
+
+  Arg  1     : listref of Bio::EnsEMBL::Compara::ConservationScore objects $scores
+  Example    : my ($min, $max) =  _find_min_max_score($scores);
+  Description: find the min and max scores used for y axis scaling
+  Returntype : (float, float)
+  Exceptions :
+  Caller     : general
+  Status     : At risk
+
+=cut
+
 sub _find_min_max_score {
     my ($scores) = @_;
     my $min; 
@@ -598,7 +839,19 @@ sub _find_min_max_score {
     return ($min, $max);
 }
 
-#reverse the conservation scores for complemented sequences
+=head2 _reverse
+
+  Arg  1     : listref of Bio::EnsEMBL::Compara::ConservationScore objects $scores
+  Arg  2     : int $genomic_align_block_length (number of scores)
+  Example    : $conservation_scores = _reverse($conservation_scores);
+  Description: reverse the conservation scores for complemented sequences
+  Returntype : listref of Bio::EnsEMBL::Compara::ConservationScore objects
+  Exceptions : 
+  Caller     : general
+  Status     : At risk
+
+=cut
+
 sub _reverse {
     my ($scores, $genomic_align_block_length) = @_;
 
@@ -612,7 +865,18 @@ sub _reverse {
     return \@rev;
 }
 
-#unpack scores.
+=head2 _unpack_scores
+
+  Arg  1     : string $scores
+  Example    : $exp_scores = _unpack_scores($scores);
+  Description: unpack score values retrieved from a database
+  Returntype : space delimited string of floats
+  Exceptions : none
+  Caller     : general
+  Status     : At risk
+
+=cut
+
 sub _unpack_scores {
     my ($scores) = @_;
     if (!defined $scores) {
@@ -629,34 +893,47 @@ sub _unpack_scores {
 }
 
 
-#find the score index (row) that contains $pos in alignment coords
-#use global variable $_score_index to keep track of where I am in the scores 
-#array
-#$scores : array of conservation scores
-#$num_scores : number of scores in the array
-#$score_lengths : number of scores in each row of the array
-#$pos : position to find
-#$win_size : window size used from the database
+=head2 _find_score_index
+
+  Arg  1     : listref of Bio::EnsEMBL::Compara::ConservationScore objects $scores
+  Arg  2     : int $num_scores (number of scores in the array)
+  Arg  3     : int $score_lengths number of scores in each row of the array
+  Arg  4     : int $pos (position to find)
+  Arg  5     : int $win_size (window size)
+  Example    : $exp_scores = _unpack_scores($scores);
+  Description: find the score index (row) that contains $pos in alignment coords  Returntype : int 
+  Exceptions : none
+  Caller     : general
+  Status     : At risk
+
+=cut
+
 sub _find_score_index {
     my ($scores, $num_scores, $score_lengths, $pos, $win_size) = @_;
     my $i;
     my $length;
 
+    #find the score index (row) that contains $pos in alignment coords
+    #use global variable $_score_index to keep track of where I am in the scores 
+    #array
+
+
     #special case for first window size 
-    if ($pos < $scores->[0]->position && $pos > ($scores->[0]->position - $win_size)) {
+    if ($pos < $scores->[0]->{position} && $pos > ($scores->[0]->{position} - $win_size)) {
 	return 0;
     }
     
     for ($i = $_score_index; $i < $num_scores; $i++) {
+      my $this_position = $scores->[$i]->{position};
 	$length = ($score_lengths->[$i] - 1) * $win_size;
 
-	if ($pos >= $scores->[$i]->position && $pos <= $scores->[$i]->position + $length) {
+	if ($pos >= $this_position && $pos <= $this_position + $length) {
 	    $_score_index = $i;
 	    return ($i);
 	}
 
 	#smaller than end so there is no score for this position
-	if ($pos < ($scores->[$i]->position + $length)) {
+	if ($pos < ($this_position + $length)) {
 	    $_score_index = $i;
 	    return -1;
 	}
@@ -664,7 +941,20 @@ sub _find_score_index {
     return -1;
 }
 
-#print scores (unpack first if necessary)
+
+=head2 _print_scores
+
+  Arg  1     : listref of Bio::EnsEMBL::Compara::ConservationScore objects $scores
+  Arg  2     : boolean $packed (0 if not packed, 1 if packed)
+  Example    : $conservation_scores = _reverse($conservation_scores);
+  Description: print scores (unpack first if necessary)
+  Returntype : none
+  Exceptions : none
+  Caller     : general
+  Status     : At risk
+
+=cut
+
 sub _print_scores {
     my ($scores, $packed) = @_;
     my $num_scores = scalar(@$scores);
@@ -699,27 +989,36 @@ sub _print_scores {
 
 }
 
-#Convert conservation scores from alignment coordinates into species specific
-#chromosome coordinates for an alignment genomic_align_block
-#
-#cigar_line: cigar string from current alignment block
-#start_region: start of genomic_align_block (chr coords)
-#end_region: end of genomic_align_block (chr coords)
-#start_slice: start of slice (chr coords)
-#end_slice: end of slice (chr coords)
-#scores: array of conservation_score objects in alignment coords
-#genomic_align_block_id: genomic align block id of current alignment block
-#genomic_align_block_length: length of current alignment block
-#display_type: either AVERAGE or MAX (plot average or max value)
-#win_size: window size used from database
-#aligned_scores:array of new conservation_scores in chromosome coords
+=head2 _get_aligned_scores_from_cigar_line
+
+  Arg  1     : string $cigar_line (cigar string from current alignment block)
+  Arg  2     : int $start_region (start of genomic_align_block (chr coords))
+  Arg  3     : int $end_region (end of genomic_align_block (chr coords))
+  Arg  4     : int $start_slice (start of slice (chr coords)
+  Arg  5     : int $end_slice (end of slice (chr coords))
+  Arg  6     : listref of Bio::EnsEMBL::Compara::ConservationScore objects $scores
+  Arg  7     : int $genomic_align_block_id (genomic align block id of current alignment block)
+  Arg  8     : int $genomic_align_block_length (length of current alignment block)
+  Arg  9     : string $display_type (either AVERAGE or MAX (plot average or max value))
+  Arg 10     : int $win_size (window size used)
+  Arg 11     : listref of Bio::EnsEMBL::Compara::ConservationScore objects $scores in slice coords
+
+  Example    : $scores = $self->_get_aligned_scores_from_cigar_line($genomic_align->cigar_line, $genomic_align->dnafrag_start, $genomic_align->dnafrag_end, $slice->start, $slice->end, $conservation_scores, $genomic_align_block->dbID, $genomic_align_block->length, $display_type, $window_size, $scores);
+  Description: Convert conservation scores from alignment coordinates into species specific chromosome (slice) coordinates for an alignment genomic_align_block
+  Returntype : listref of Bio::EnsEMBL::Compara::ConservationScore objects $scores
+  Exceptions : none
+  Caller     : general
+  Status     : At risk
+
+=cut
+
 sub _get_aligned_scores_from_cigar_line {
     my ($self, $cigar_line, $start_region, $end_region, $start_slice, $end_slice, $scores, $genomic_align_block_id, $genomic_align_block_length, $display_type, $win_size, $aligned_scores) = @_;
 
     return undef if (!$cigar_line);
     
     my $num_aligned_scores = scalar(@$aligned_scores);
-    my @cig = ( $cigar_line =~ /(\d*[GMD])/g );
+    my @cig = ( $cigar_line =~ /(\d*[GMDIX])/g );
 
     #start and end of region in alignment coords
     my $align_start = 1;
@@ -806,7 +1105,7 @@ sub _get_aligned_scores_from_cigar_line {
 
 	$current_pos += $cigLength;
 	$total_pos += $cigLength;
-	if( $cigType eq "M" ) {
+	if( $cigType eq "M" || $cigType eq "I") {
 	    $total_chr_pos += $cigLength;
 	}
     }
@@ -835,7 +1134,7 @@ sub _get_aligned_scores_from_cigar_line {
 	#if a score has been found, find the score in the score string and 
 	#unpack it.
 	unless ($cs_index == -1) {
-	    $csBlockCnt = int(($current_pos - $scores->[$cs_index]->position)/$win_size);
+	    $csBlockCnt = int(($current_pos - $scores->[$cs_index]->{position})/$win_size);
 
 	    my $value;
 	    if ($PACKED) {
@@ -858,9 +1157,12 @@ sub _get_aligned_scores_from_cigar_line {
 	    $cigType = substr( $cigElem, -1, 1 );
 	    $cigLength = substr( $cigElem, 0 ,-1 );
 	    $cigLength = 1 unless ($cigLength =~ /^\d+$/);
-	    
-	    $total_pos += $cigLength;
-	    if( $cigType eq "M" ) {
+
+	    if ($cigType ne "I") {
+		$total_pos += $cigLength;
+	    }
+
+	    if( $cigType eq "M"  || $cigType eq "I") {
 		$total_chr_pos += $cigLength;
 	    }
 	}
@@ -883,6 +1185,7 @@ sub _get_aligned_scores_from_cigar_line {
 		}
 	    } else {
 		#in cigar match and have conservation score
+
 		$aligned_score = _add_to_bucket($self, $display_type, $exp_score, $diff_score, $chr_pos, $start_slice, scalar(@$aligned_scores), $genomic_align_block_id, $win_size);
 		if ($aligned_score) {
 		    push(@$aligned_scores, $aligned_score);
@@ -911,13 +1214,38 @@ sub _get_aligned_scores_from_cigar_line {
     return $aligned_scores;
 }
 
+=head2 _get_aligned_scores_from_cigar_line_fast
+
+  Arg  1     : string $cigar_line (cigar string from current alignment block)
+  Arg  2     : int $start_region (start of genomic_align_block (chr coords))
+  Arg  3     : int $end_region (end of genomic_align_block (chr coords))
+  Arg  4     : int $start_slice (start of slice (chr coords)
+  Arg  5     : int $end_slice (end of slice (chr coords))
+  Arg  6     : listref of Bio::EnsEMBL::Compara::ConservationScore objects $scores
+  Arg  7     : int $genomic_align_block_id (genomic align block id of current alignment block)
+  Arg  8     : int $genomic_align_block_length (length of current alignment block)
+  Arg  9     : string $display_type (either AVERAGE or MAX (plot average or max value))
+  Arg 10     : int $win_size (window size used)
+  Arg 11     : listref of Bio::EnsEMBL::Compara::ConservationScore objects $scores in slice coords
+
+  Example    : $scores = $self->_get_aligned_scores_from_cigar_line_fast($genomic_align->cigar_line, $genomic_align->dnafrag_start, $genomic_align->dnafrag_end, $slice->start, $slice->end, $conservation_scores, $genomic_align_block->dbID, $genomic_align_block->length, $display_type, $window_size, $scores);
+  Description: Faster method to than _get_aligned_scores_from_cigar_line. This
+               method does not bin the scores and can be used if only require
+               one score per base in the alignment
+  Returntype : listref of Bio::EnsEMBL::Compara::ConservationScore objects $scores
+  Exceptions : none
+  Caller     : general
+  Status     : At risk
+
+=cut
+
 sub _get_aligned_scores_from_cigar_line_fast {
     my ($self, $cigar_line, $start_region, $end_region, $start_slice, $end_slice, $scores, $genomic_align_block_id, $genomic_align_block_length, $display_type, $win_size, $aligned_scores) = @_;
 
     return undef if (!$cigar_line);
     
     my $num_aligned_scores = scalar(@$aligned_scores);
-    my @cig = ( $cigar_line =~ /(\d*[GMD])/g );
+    my @cig = ( $cigar_line =~ /(\d*[GMDIX])/g );
 
     #start and end of region in alignment coords
     my $align_start = 1;
@@ -984,8 +1312,12 @@ sub _get_aligned_scores_from_cigar_line_fast {
 	$cigLength = 1 unless ($cigLength =~ /^\d+$/);
 
 	$current_pos += $cigLength;
-	$total_pos += $cigLength;
-	if( $cigType eq "M" ) {
+
+	if ($cigType ne "I") {
+	    $total_pos += $cigLength;
+	}
+
+	if( $cigType eq "M" || $cigType eq "I") {
 	    $total_chr_pos += $cigLength;
 	}
     }
@@ -1014,7 +1346,7 @@ sub _get_aligned_scores_from_cigar_line_fast {
 	#if a score has been found, find the score in the score string and 
 	#unpack it.
 	unless ($cs_index == -1) {
-	    $csBlockCnt = int(($current_pos - $scores->[$cs_index]->position)/$win_size);
+	    $csBlockCnt = int(($current_pos - $scores->[$cs_index]->{position})/$win_size);
 
 	    my $value;
 	    if ($PACKED) {
@@ -1038,12 +1370,15 @@ sub _get_aligned_scores_from_cigar_line_fast {
 	    $cigLength = substr( $cigElem, 0 ,-1 );
 	    $cigLength = 1 unless ($cigLength =~ /^\d+$/);
 	    
-	    $total_pos += $cigLength;
-	    if( $cigType eq "M" ) {
+	    if ($cigType ne "I") {
+		$total_pos += $cigLength;
+	    }
+	    #if( $cigType eq "M" ) {
+	    if( $cigType eq "M" || $cigType eq "I") {
 		$total_chr_pos += $cigLength;
 	    }
 	}
-
+	
 	#total_pos is > than current_pos, so if in match, must delete this
 	#excess 
 	if ($cigType eq "M") {
@@ -1097,7 +1432,24 @@ sub _get_aligned_scores_from_cigar_line_fast {
     return $aligned_scores;
 }
 
-#get alignment scores within $genomic_align_block
+=head2 _get_alignment_scores
+
+  Arg  1     : listref of Bio::EnsEMBL::Compara::ConservationScore objects $scores
+  Arg  2     : int $align_start (start position in alignment coords)
+  Arg  3     : int $align_end (end position in alignment coords)
+  Arg  4     : string $display_type (either AVERAGE or MAX (plot average or max value))
+  Arg  5     : int $win_size (window size used)
+  Arg  6     : ref to Bio::EnsEMBL::Compara::GenomicAlignBlock object
+  Example    : $scores = $self->_get_alignment_scores($conservation_scores, 
+               1, 100000, "AVERAGE", 10, $genomic_align_block);
+  Description: get scores for an alignment in alignment coordinates
+  Returntype : listref of Bio::EnsEMBL::Compara::ConservationScore objects $scores in alignment coordinates
+  Exceptions : none
+  Caller     : general
+  Status     : At risk
+
+=cut
+
 sub _get_alignment_scores {
     my ($self, $conservation_scores, $align_start, $align_end, $display_type, $window_size, $genomic_align_block) = @_;
 
@@ -1139,34 +1491,34 @@ sub _get_alignment_scores {
 	
 	#special case for align_start before the first score position eg when
 	#have window sizes > 1
-	if ($start == -1 && $align_start < $conservation_scores->[0]->position) {
+	if ($start == -1 && $align_start < $conservation_scores->[0]->{position}) {
 	    $start = 0;
 	    $start_offset = 0;
 	}
 
 	#align_start within a called region
-	if ($start == -1 && $align_start >= $conservation_scores->[$j]->position && $align_start <= $conservation_scores->[$j]->position + $length) {
+	if ($start == -1 && $align_start >= $conservation_scores->[$j]->{position} && $align_start <= $conservation_scores->[$j]->{position} + $length) {
 	    $start= $j;
-	    $start_offset= ($align_start - $conservation_scores->[$j]->position)/$window_size;
+	    $start_offset= ($align_start - $conservation_scores->[$j]->{position})/$window_size;
 	}
 
 
 	#align_start in an uncalled region
-	if ($start == -1 && $align_start < ($conservation_scores->[$j]->position)) {
+	if ($start == -1 && $align_start < ($conservation_scores->[$j]->{position})) {
 	    $start= $j;
 	    $start_offset = 0;
 	    $start_uncalled_region = 1;
  	}
 
          #align_end within a called region. And can stop
-	if ($align_end >= $conservation_scores->[$j]->position && $align_end <= $conservation_scores->[$j]->position + $length) {
+	if ($align_end >= $conservation_scores->[$j]->{position} && $align_end <= $conservation_scores->[$j]->{position} + $length) {
 	    $end= $j;
-	    $end_offset= int(($align_end - $conservation_scores->[$j]->position)/$window_size);
+	    $end_offset= int(($align_end - $conservation_scores->[$j]->{position})/$window_size);
 	    last;
 	}
 
          #align_end within an uncalled region. And can stop
-	if ($align_end < ($conservation_scores->[$j]->position)) {
+	if ($align_end < ($conservation_scores->[$j]->{position})) {
 	    $end= $j-1;
 	    $end_offset = 0;
 	    $end_uncalled_region = 1;
@@ -1178,7 +1530,7 @@ sub _get_alignment_scores {
     #conservation_scores which can happen for window_sizes > 1
     if ($end == -1) {
 	$end = $num_rows-1;
-	$end_offset = int(($align_end - $conservation_scores->[$end]->position)/$window_size);
+	$end_offset = int(($align_end - $conservation_scores->[$end]->{position})/$window_size);
     }
 
     my $genomic_align_block_id = $genomic_align_block->dbID;
@@ -1205,7 +1557,7 @@ sub _get_alignment_scores {
 	    }
 	}
 	
-	$pos = $conservation_scores->[$i]->position;
+	$pos = $conservation_scores->[$i]->{position};
 
 	#first time round start at offset if align_start is within a called 
 	#region
@@ -1240,7 +1592,7 @@ sub _get_alignment_scores {
 	#add uncalled scores for regions between called blocks
 	my $next_pos;
 	if ($i < $end) {
-	    $next_pos = $conservation_scores->[$i+1]->position;
+	    $next_pos = $conservation_scores->[$i+1]->{position};
 	} else {
 	    $next_pos = $align_end+1;
 	}
@@ -1277,37 +1629,47 @@ sub _get_alignment_scores {
     #need to shift positions if align_start is in an uncalled region because
     #need to add the uncalled positions up to the start of the next called 
     #block
-    for (my $i = 0; $i < scalar(@$aligned_scores); $i++) {
-	$aligned_scores->[$i]->position($aligned_scores->[$i]->position-$align_start+1);  
-      }
+   # for (my $i = 0; $i < scalar(@$aligned_scores); $i++) {
+#	$aligned_scores->[$i]->{position} = $aligned_scores->[$i]->{position}-$align_start+1;  
+ #     }
 
     return $aligned_scores;
 }
 
-#Add scores to bucket until it is full (given by size) and then average the 
-#called scores or take the maximum (given by display_type). Once the bucket is
-#full, create a new conservation score object
-#Return the conservation score object if the bucket is full or 0 if it isn't
-#full yet
-#
-#display_type : either "AVERAGE" or "MAX"
-#exp_score : expected score to be added to bucket
-#diff_score : difference score to be added to bucket
-#chr_pos : position in slice reference species chromosome coords
-#start_slice : start position of slice in chromosome coords
-#num_buckets : number of buckets used so far
-#genomic_align_block_id : genomic_align_block_id of alignment block
-#win_size : window size used from database
-#
-#bucket structure:
-#cnt: keep track of number of scores been added
-#start_pos: position of first score in slice coords
-#start_seq_region_pos: position of first score in chr coords
-#exp_score: sum or max of expected scores
-#diff_score: sum or max of difference scores
-#called: number of called scores (used to average)
-#size: number of bases/bucket
+=head2 _
+
+  Arg  1     : string $display_type (either AVERAGE or MAX (plot average or max value))
+  Arg  2     : float $exp_score (expected score to be added to bucket)
+  Arg  3     : float $diff_score (difference score to be added to bucket)
+  Arg  4     : int $chr_pos (position in slice of reference species)
+  Arg  5     : int $start_slice (start position of slice)
+  Arg  6     : int $num_buckets (number of buckets used so far)
+  Arg  7     : int $genomic_align_block_id (genomic_align_block_id of 
+               alignment block)
+  Arg  8     : int $win_size window size used
+  Example    : $aligned_score = _add_to_bucket($self, "AVERAGE", $exp_score, $diff_score, $chr_pos, $start_slice, scalar(@$aligned_scores), $genomic_align_block_id, $win_size);
+  Description: Add scores to bucket until it is full (given by size) and then 
+               average the called scores or take the maximum (given by 
+               display_type). Once the bucket is full, create a new 
+               conservation score object
+  Returntype : ref to Bio::EnsEMBL::Compara::ConservationScore object if the
+               bucket if full or 0 if it isn't full yet
+  Exceptions : none
+  Caller     : general
+  Status     : At risk
+
+=cut
+
 sub _add_to_bucket {
+    #bucket structure:
+    #cnt: keep track of number of scores been added
+    #start_pos: position of first score in slice coords
+    #start_seq_region_pos: position of first score in chr coords
+    #exp_score: sum or max of expected scores
+    #diff_score: sum or max of difference scores
+    #called: number of called scores (used to average)
+    #size: number of bases/bucket
+
     my ($self, $display_type, $exp_score, $diff_score, $chr_pos, $start_slice, $num_buckets, $genomic_align_block_id, $win_size) = @_;
     my $p = 0;
     my $s;
@@ -1436,6 +1798,91 @@ sub _add_to_bucket {
     }
     #return 0 if not filled bucket
     return 0;
+}
+
+=head2 _get_all_ref_genomic_aligns
+
+  Arg  1     : ref to Bio::EnsEMBL::Compara::MethodLinkSpeciesSet object
+  Arg  2     : ref to Bio::EnsEMBL::Slice object
+  Example    :  my $light_genomic_aligns = $self->_get_all_ref_genomic_aligns($ma_mlss, $slice);
+  Description: Retrieve from the database some genomic_align information 
+               relating to only the slice species. 
+  Returntype : listref of hash containing a subset of genomic_align fields
+  Exceptions : none
+  Caller     : general
+  Status     : At risk
+
+=cut
+
+sub _get_all_ref_genomic_aligns {
+    my ($self, $mlss, $slice) = @_;
+
+    my $light_genomic_aligns = []; # Returned value
+
+    my $slice_adaptor = $slice->adaptor();
+    if(!$slice_adaptor) {
+	warning("Slice has no attached adaptor. Cannot get Compara alignments.");
+	return $light_genomic_aligns;
+    }
+
+    my $gdb_a = $self->db->get_GenomeDBAdaptor();
+    my $meta_container = $slice->adaptor->db->get_MetaContainer();
+    my $primary_species_name = $gdb_a->get_species_name_from_core_MetaContainer($meta_container);
+    my ($highest_cs) = @{$slice_adaptor->db->get_CoordSystemAdaptor->fetch_all()};
+    my $primary_species_assembly = $highest_cs->version();
+    my $genome_db_adaptor = $self->db->get_GenomeDBAdaptor;
+    my $genome_db = $genome_db_adaptor->fetch_by_name_assembly(
+		        $primary_species_name,
+                        $primary_species_assembly);
+    my $dnafrag_adaptor = $self->db->get_DnaFragAdaptor;
+    my $dnafrag = $dnafrag_adaptor->fetch_by_GenomeDB_and_name(
+			    $genome_db, $slice->seq_region_name);
+    next if (!$dnafrag);
+
+    my $max_alignment_length = $mlss->max_alignment_length;
+    my $lower_bound = $slice->start - $max_alignment_length;
+    
+    my $sql = qq{
+          SELECT 
+             genomic_align_block_id,
+             dnafrag_start,
+             dnafrag_end,
+             dnafrag_strand,
+             cigar_line,
+             length
+          FROM 
+             genomic_align 
+          LEFT JOIN
+             genomic_align_block
+          USING
+             (genomic_align_block_id)
+          WHERE 
+             genomic_align.method_link_species_set_id = ?
+             AND dnafrag_id = ?
+             AND dnafrag_start <= ?
+             AND dnafrag_end >= ?
+             AND dnafrag_start >= ?
+           };
+
+     my $sth = $self->prepare($sql);
+
+    $sth->execute($mlss->dbID,  $dnafrag->dbID, $slice->end, $slice->start, $lower_bound);
+
+    my ($genomic_align_block_id, $dnafrag_start, $dnafrag_end, $dnafrag_strand, $cigar_line, $length);
+    $sth->bind_columns(\$genomic_align_block_id, \$dnafrag_start, \$dnafrag_end, \$dnafrag_strand, \$cigar_line, \$length);
+
+    while ($sth->fetch) {
+	my $light_genomic_align = {
+	    genomic_align_block_id => $genomic_align_block_id,
+            dnafrag_start => $dnafrag_start,
+            dnafrag_end => $dnafrag_end,
+	    dnafrag_strand => $dnafrag_strand,
+            cigar_line => $cigar_line,
+            length => $length};
+
+	push @$light_genomic_aligns, $light_genomic_align;
+    }  
+    return $light_genomic_aligns;
 }
 
 

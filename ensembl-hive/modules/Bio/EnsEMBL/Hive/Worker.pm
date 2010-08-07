@@ -580,7 +580,8 @@ sub run_module_with_job {
   print("\nGET_INPUT\n") if($self->debug); 
 
   $start_time = time() * 1000;
-  $runObj->fetch_input;
+  eval {$runObj->fetch_input};
+  $self->_process_error($job, $@) if $@;
   $end_time = time() * 1000;
   $self->{fetch_time} += $end_time - $start_time;
 
@@ -589,7 +590,8 @@ sub run_module_with_job {
   print("\nRUN\n") if($self->debug); 
 
   $start_time = time() * 1000;
-  $runObj->run;
+  eval {$runObj->run};
+  $self->_process_error($job, $@) if $@;
   $end_time = time() * 1000;
   $self->{run_time} += $end_time - $start_time;
 
@@ -597,9 +599,10 @@ sub run_module_with_job {
     $self->enter_status("WRITE_OUTPUT");
     $job->update_status('WRITE_OUTPUT');
     print("\nWRITE_OUTPUT\n") if($self->debug); 
-
+    
     $start_time = time() * 1000;
-    $runObj->write_output;
+    eval {$runObj->write_output};
+    $self->_process_error($job, $@) if $@;
     $end_time = time() * 1000;
     $self->{write_time} += $end_time - $start_time;
   } else {
@@ -617,6 +620,21 @@ sub run_module_with_job {
   }
 
   return 1;
+}
+
+sub _process_error {
+  my ($self, $job, $error) = @_;
+  my $logic_name = $self->analysis()->logic_name();
+  warning "Detected an error whilst running ${logic_name}. Writing error to hive DB: ${error}";
+  eval {
+    $job->update_error($error);
+  };
+  warning "Error detected whilst trying to write error back to hive DB: $@" if $@;
+  
+  #Throws a new error to maintin the normal flow of error handling normally
+  #done using the hive.
+  my $db_id = $job->dbID();
+  throw("Error detected whilst running job ${db_id}; consult output or hive DB for more information");
 }
 
 sub enter_status {

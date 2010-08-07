@@ -52,6 +52,7 @@ independent.gor = subset(stats.lnl,pval.3.bh < t)
 independent.human.raw = subset(stats.lnl,pval.4 < t)
 independent.human = subset(stats.lnl,pval.4.bh < t)
 
+print("Gorilla COUNT!!!!")
 print.options(independent.gor.raw,'d_omega_1','d_omega_0')
 print.options(independent.gor,'d_omega_1','d_omega_0')
 print.options(independent.human.raw,'d_omega_2','d_omega_0')

@@ -1,5 +1,3 @@
-source("collect
-
 ## Gorilla-specific acceleration
 gor.male.aggression = c('GO:0001820','GO:0002118','GO:0002124','GO:0002121')
 gor.sex.dimorphism = c('GO:00030238','GO:0046661','GO:0008209','GO:00030521')

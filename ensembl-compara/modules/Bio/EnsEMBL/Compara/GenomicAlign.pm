@@ -64,6 +64,9 @@ GET VALUES
   $level_id = $genomic_align->level_id;
   $slice = $genomic_align->get_Slice();
 
+=head1 DESCRIPTION
+
+The GenomicAlign object stores information about a single sequence within an alignment.
 
 =head1 OBJECT ATTRIBUTES
 
@@ -163,10 +166,6 @@ use Bio::EnsEMBL::Compara::GenomicAlignBlock;
 use Bio::EnsEMBL::Compara::MethodLinkSpeciesSet;
 use Bio::EnsEMBL::Mapper;
 
-# Object preamble
-
-my $warn_message = "Deprecated use of GenomicAlign object. Consensus and Query DnaFrag are no longer used.\n";
-
 
 =head2 new (CONSTRUCTOR)
 
@@ -225,6 +224,7 @@ my $warn_message = "Deprecated use of GenomicAlign object. Consensus and Query D
   Returntype  : Bio::EnsEMBL::Compara::GenomicAlign object
   Exceptions  : none
   Caller      : general
+  Status      : Stable
 
 =cut
 
@@ -234,26 +234,14 @@ sub new {
     my $self = {};
     bless $self,$class;
 
-    ## First lines are for backward compatibility, middle one is for both versions and
-    ## last ones are for the new schema
-    my ($consensus_dnafrag, $consensus_start, $consensus_end,
-        $query_dnafrag, $query_start, $query_end, $query_strand, $alignment_type,
-        $score, $perc_id,
-
-        $cigar_line, $adaptor,
-
+    my ($cigar_line, $adaptor,
         $dbID, $genomic_align_block, $genomic_align_block_id, $method_link_species_set,
         $method_link_species_set_id, $dnafrag, $dnafrag_id,
         $dnafrag_start, $dnafrag_end, $dnafrag_strand,
         $aligned_sequence, $level_id ) = 
       
       rearrange([qw(
-          CONSENSUS_DNAFRAG CONSENSUS_START CONSENSUS_END
-          QUERY_DNAFRAG QUERY_START QUERY_END QUERY_STRAND ALIGNMENT_TYPE
-          SCORE PERC_ID
-                            
           CIGAR_LINE ADAPTOR
-                            
           DBID GENOMIC_ALIGN_BLOCK GENOMIC_ALIGN_BLOCK_ID METHOD_LINK_SPECIES_SET
           METHOD_LINK_SPECIES_SET_ID DNAFRAG DNAFRAG_ID
           DNAFRAG_START DNAFRAG_END DNAFRAG_STRAND
@@ -261,36 +249,6 @@ sub new {
 
     $self->adaptor( $adaptor ) if defined $adaptor;
     $self->cigar_line( $cigar_line ) if defined $cigar_line;
-    
-    ## Support for backward compatibility
-    if (defined($consensus_dnafrag) or defined($consensus_start) or defined($consensus_end)
-        or defined($query_dnafrag) or defined($query_start) or defined($query_end)
-        or defined($query_strand) or defined($alignment_type) or defined($score)
-        or defined($perc_id)) {
-      
-      if (defined($dbID) or defined($genomic_align_block) or defined($genomic_align_block_id)
-          or defined($method_link_species_set) or defined($method_link_species_set_id)
-          or defined($dnafrag) or defined($dnafrag_id) or defined($dnafrag_start)
-          or defined($dnafrag_end) or defined($dnafrag_strand) or defined($aligned_sequence)
-          or defined($level_id)) {
-        throw("Mixing new and old parameters.\n");
-      }
-      
-      deprecate($warn_message);
-
-      $self->consensus_dnafrag( $consensus_dnafrag ) if defined $consensus_dnafrag;
-      $self->consensus_start( $consensus_start ) if defined $consensus_start;
-      $self->consensus_end( $consensus_end ) if defined $consensus_end;
-      $self->query_dnafrag( $query_dnafrag ) if defined $query_dnafrag;
-      $self->query_start( $query_start ) if defined $query_start;
-      $self->query_end( $query_end ) if defined $query_end;
-      $self->query_strand( $query_strand ) if defined $query_strand;
-      $self->alignment_type( $alignment_type ) if defined $alignment_type;
-      $self->score( $score ) if defined $score;
-      $self->perc_id( $perc_id ) if defined $perc_id;
-
-      return $self;
-    }
     
     $self->dbID($dbID) if (defined($dbID));
     $self->genomic_align_block($genomic_align_block) if (defined($genomic_align_block));
@@ -308,6 +266,18 @@ sub new {
     return $self;
 }
 
+=head2 new_fast
+
+  Arg [1]    : hash reference $hashref
+  Example    : none
+  Description: This is an ultra fast constructor which requires knowledge of
+               the objects internals to be used.
+  Returntype :
+  Exceptions : none
+  Caller     :
+  Status     : Stable
+
+=cut
 
 sub new_fast {
   my $class = shift;
@@ -353,6 +323,7 @@ sub copy {
   Exceptions : thrown if $adaptor is not a
                Bio::EnsEMBL::Compara::DBSQL::GenomicAlignAdaptor object
   Caller     : object->methodname
+  Status     : Stable
 
 =cut
 
@@ -378,6 +349,7 @@ sub adaptor {
   Returntype : integer
   Exceptions : none
   Caller     : object->methodname
+  Status     : Stable
 
 =cut
 
@@ -408,6 +380,7 @@ sub dbID {
                genomic_align_block_id
   Warning    : warns if getting data from other sources fails.
   Caller     : object->methodname
+  Status     : Stable
 
 =cut
 
@@ -420,12 +393,12 @@ sub genomic_align_block {
     weaken($self->{'genomic_align_block'} = $genomic_align_block);
 
     ## Add adaptor to genomic_align_block object if possible and needed
-    if (!defined($genomic_align_block->adaptor) and defined($self->adaptor)) {
+    if (!defined($genomic_align_block->{'adaptor'}) and defined($self->{'adaptor'})) {
       $genomic_align_block->adaptor($self->adaptor->db->get_GenomicAlignBlockAdaptor);
     }
 
     if ($self->{'genomic_align_block_id'}) {
-      if (!$self->{'genomic_align_block'}->dbID) {
+      if (!$self->{'genomic_align_block'}->{'dbID'}) {
         $self->{'genomic_align_block'}->dbID($self->{'genomic_align_block_id'});
       }
 #       warning("Defining both genomic_align_block_id and genomic_align_block");
@@ -433,9 +406,9 @@ sub genomic_align_block {
             " genomic_align_block_id. If you want to override a".
             " Bio::EnsEMBL::Compara::GenomicAlign object, you can reset the ".
             "genomic_align_block_id using \$genomic_align->genomic_align_block_id(0)")
-          if ($self->{'genomic_align_block'}->dbID != $self->{'genomic_align_block_id'});
+          if ($self->{'genomic_align_block'}->{'dbID'} != $self->{'genomic_align_block_id'});
     } else {
-      $self->{'genomic_align_block_id'} = $genomic_align_block->dbID;
+      $self->{'genomic_align_block_id'} = $genomic_align_block->{'dbID'};
     }
 
   } elsif (!defined($self->{'genomic_align_block'})) {
@@ -474,6 +447,7 @@ sub genomic_align_block {
                genomic_align_block
   Warning    : warns if getting data from other sources fails.
   Caller     : object->methodname
+  Status     : Stable
 
 =cut
 
@@ -525,6 +499,7 @@ sub genomic_align_block_id {
                method_link_species_set_id
   Warning    : warns if getting data from other sources fails.
   Caller     : object->methodname
+  Status     : Stable
 
 =cut
 
@@ -586,6 +561,7 @@ sub method_link_species_set {
                method_link_species_set
   Warning    : warns if getting data from other sources fails.
   Caller     : object->methodname
+  Status     : Stable
 
 =cut
 
@@ -629,6 +605,7 @@ sub method_link_species_set_id {
                defined and cannot be fetched from other
                sources.
   Caller     : object->methodname
+  Status     : Stable
 
 =cut
 
@@ -664,6 +641,7 @@ sub genome_db {
                dnafrag_id
   Warning    : warns if getting data from other sources fails.
   Caller     : object->methodname
+  Status     : Stable
 
 =cut
 
@@ -719,6 +697,7 @@ sub dnafrag {
                dnafrag
   Warning    : warns if getting data from other sources fails.
   Caller     : object->methodname
+  Status     : Stable
 
 =cut
 
@@ -765,6 +744,7 @@ sub dnafrag_id {
   Exceptions : none
   Warning    : warns if getting data from other sources fails.
   Caller     : object->methodname
+  Status     : Stable
 
 =cut
 
@@ -802,6 +782,7 @@ sub dnafrag_start {
   Exceptions : none
   Warning    : warns if getting data from other sources fails.
   Caller     : object->methodname
+  Status     : Stable
 
 =cut
 
@@ -839,6 +820,7 @@ sub dnafrag_end {
   Exceptions : none
   Warning    : warns if getting data from other sources fails.
   Caller     : object->methodname
+  Status     : Stable
 
 =cut
 
@@ -880,6 +862,7 @@ sub dnafrag_strand {
   Exceptions : thrown if sequence contains unknown symbols
   Warning    : warns if getting data from other sources fails.
   Caller     : object->methodname
+  Status     : Stable
 
 =cut
 
@@ -956,6 +939,7 @@ sub aligned_sequence {
   Exceptions : none
   Warning    : 
   Caller     : object->methodname
+  Status     : Stable
 
 =cut
 
@@ -967,12 +951,12 @@ sub length {
   } elsif ($self->{cigar_line}) {
     my $length = 0;
     my $cigar_line = $self->{cigar_line};
-    my @cig = ( $cigar_line =~ /(\d*[GMDX])/g );
+    my @cig = ( $cigar_line =~ /(\d*[GMDXI])/g );
     for my $cigElem ( @cig ) {
       my $cigType = substr( $cigElem, -1, 1 );
       my $cigCount = substr( $cigElem, 0 ,-1 );
       $cigCount = 1 unless ($cigCount =~ /^\d+$/);
-      $length += $cigCount;
+      $length += $cigCount unless ($cigType eq "I");
     }
     return $length;
   }
@@ -1000,6 +984,7 @@ sub length {
   Exceptions : none
   Warning    : warns if getting data from other sources fails.
   Caller     : object->methodname
+  Status     : Stable
 
 =cut
 
@@ -1037,7 +1022,7 @@ sub cigar_line {
 
 
 =head2 level_id
- 
+
   Arg [1]    : int $level_id
   Example    : $level_id = $genomic_align->level_id;
   Example    : $genomic_align->level_id(1);
@@ -1049,6 +1034,7 @@ sub cigar_line {
   Exceptions : none
   Warning    : warns if getting data from other sources fails.
   Caller     : object->methodname
+  Status     : Stable
 
 =cut
 
@@ -1072,123 +1058,67 @@ sub level_id {
   return $self->{'level_id'};
 }
 
+=head2 genomic_align_group
 
-=head2 genomic_align_groups
- 
-  Arg [1]    : a ref. to an array of Bio::EnsEMBL::Compara::GenomicAlignGroup $genomic_align_groups
-  Example    : $genomic_align_groups = $genomic_align->genomic_align_groups;
-  Example    : $genomic_align->genomic_align_groups($genomic_align_groups);
-  Description: get/set for attribute genomic_align_groups. If no argument is given, the
-               genomic_align_groups are not defined but both the dbID and the adaptor are,
-               it tries to fetch and set teh data from the database using the
-               dbID of the Bio::EnsEMBL::Compara::GenomicAlign object.
+  Arg [2]    : [optional] Bio::EnsEMBL::Compara::GenomicAlignGroup $genomic_align_group
+  Example    : $genomic_align_group = $genomic_align->genomic_align_group();
+  Example    : $genomic_align->genomic_align_group($genomic_align_group);
+  Description: get/set for the Bio::EnsEMBL::Compara::GenomicAlginGroup object
+               corresponding to this Bio::EnsEMBL::Compara::GenomicAlign object 
   Returntype : int
   Exceptions : none
   Warning    : warns if getting data from other sources fails.
   Caller     : object->methodname
+  Status     : Stable
 
 =cut
 
-sub genomic_align_groups {
-  my ($self, $genomic_align_groups) = @_;
+sub genomic_align_group {
+  my ($self, $genomic_align_group) = @_;
 
-  if (defined($genomic_align_groups)) {
-    foreach my $this_genomic_align_group (@$genomic_align_groups) {
-      my $type = $this_genomic_align_group->type;
-      $self->{'genomic_align_group'}->{$type} = $this_genomic_align_group;
-    }
-
+  if (defined($genomic_align_group)) {
+    $self->{'genomic_align_group'} = $genomic_align_group;
   } elsif (!defined($self->{'genomic_align_group'})) {
     if (defined($self->{'dbID'}) and defined($self->{'adaptor'})) {
       # Try to get the values from the database using the dbID of the Bio::EnsEMBL::Compara::GenomicAlign object
-      $genomic_align_groups = $self->adaptor->db->get_GenomicAlignGroupAdaptor->fetch_all_by_GenomicAlign($self);
-      foreach my $this_genomic_align_group (@$genomic_align_groups) {
-        my $type = $this_genomic_align_group->type;
-        $self->{'genomic_align_group'}->{$type} = $this_genomic_align_group;
-        $self->{'genomic_align_group_id'}->{$type} = $this_genomic_align_group->dbID;
-      }
-    } else {
-      warning("Fail to get data from other sources in Bio::EnsEMBL::Compara::GenomicAlign->genomic_align_groups".
-          " You either have to specify more information (see perldoc for".
-          " Bio::EnsEMBL::Compara::GenomicAlign) or to set it up directly");
-    }
-  }
-
-  $genomic_align_groups = [values %{$self->{'genomic_align_group'}}];
-  return $genomic_align_groups;
-}
-
-
-=head2 genomic_align_group_by_type
- 
-  Arg [1]    : [mandatory] string $type (genomic_align_group.type)
-  Arg [2]    : [optional] Bio::EnsEMBL::Compara::GenomicAlignGroup $genomic_align_group
-  Example    : $genomic_align_group = $genomic_align->genomic_align_group_by_type("default");
-  Example    : $genomic_align->genomic_align_group_by_type("default", $genomic_align_group);
-  Description: get/set for the Bio::EnsEMBL::Compara::GenomicAlginGroup object
-               corresponding to this Bio::EnsEMBL::Compara::GenomicAlign object and the
-               given type.
-  Returntype : int
-  Exceptions : none
-  Warning    : warns if getting data from other sources fails.
-  Caller     : object->methodname
-
-=cut
-
-sub genomic_align_group_by_type {
-  my ($self, $type, $genomic_align_group) = @_;
-
-  $type = "default" if (!$type);
-
-  if (defined($genomic_align_group)) {
-    $self->{'genomic_align_group'}->{$type} = $genomic_align_group;
-  } elsif (!defined($self->{'genomic_align_group'}->{$type})) {
-    if (defined($self->{'dbID'}) and defined($self->{'adaptor'})) {
-      # Try to get the values from the database using the dbID of the Bio::EnsEMBL::Compara::GenomicAlign object
       my $genomic_align_group_adaptor = $self->adaptor->db->get_GenomicAlignGroupAdaptor;
-      my $genomic_align_groups = $genomic_align_group_adaptor->fetch_all_by_GenomicAlign($self);
-      foreach my $this_genomic_align_group (@$genomic_align_groups) {
-        $self->{'genomic_align_group'}->{$this_genomic_align_group->{'type'}} = $this_genomic_align_group;
-        $self->{'genomic_align_group_id'}->{$this_genomic_align_group->{'type'}} = $this_genomic_align_group->dbID;
+      my $genomic_align_group = $genomic_align_group_adaptor->fetch_by_GenomicAlign($self);
+      $self->{'genomic_align_group'} = $genomic_align_group;
+      $self->{'genomic_align_group_id'} = $genomic_align_group->dbID;
 
-      }
     }
   }
-  return $self->{'genomic_align_group'}->{$type};
+  return $self->{'genomic_align_group'};
 }
 
 
-=head2 genomic_align_group_id_by_type
- 
-  Arg [1]    : [mandatory] string $type (genomic_align_group.type)
+=head2 genomic_align_group_id
+
   Arg [2]    : [optional] int $genomic_align_group_id
-  Example    : $genomic_align_group_id = $genomic_align->genomic_align_group_by_type("default");
-  Example    : $genomic_align->genomic_align_group_by_type("default", 18);
+  Example    : $genomic_align_group_id = $genomic_align->genomic_align_group_id();
+  Example    : $genomic_align->genomic_align_group_id(18);
   Description: get/set for the genomic_align_group_id corresponding to this
-               Bio::EnsEMBL::Compara::GenomicAlign object and the given type.
+               Bio::EnsEMBL::Compara::GenomicAlign object
   Returntype : int
   Exceptions : none
   Warning    : warns if getting data from other sources fails.
   Caller     : object->methodname
+  Status     : Stable
 
 =cut
 
-sub genomic_align_group_id_by_type {
-  my ($self, $type, $genomic_align_group_id) = @_;
-
-  $type = "default" if (!$type);
+sub genomic_align_group_id {
+  my ($self, $genomic_align_group_id) = @_;
 
   if (defined($genomic_align_group_id)) {
-    $self->{'genomic_align_group_id'}->{$type} = $genomic_align_group_id;
-  } elsif (!defined($self->{'genomic_align_group_id'}->{$type})) {
+    $self->{'genomic_align_group_id'} = $genomic_align_group_id;
+  } elsif (!defined($self->{'genomic_align_group_id'})) {
     if (defined($self->{'dbID'}) and defined($self->{'adaptor'})) {
       # Try to get the values from the database using the dbID of the Bio::EnsEMBL::Compara::GenomicAlign object
       my $genomic_align_group_adaptor = $self->adaptor->db->get_GenomicAlignGroupAdaptor;
-      my $genomic_align_groups = $genomic_align_group_adaptor->fetch_all_by_GenomicAlign($self);
-      foreach my $this_genomic_align_group (@$genomic_align_groups) {
-        $self->{'genomic_align_group'}->{$this_genomic_align_group->{'type'}} = $this_genomic_align_group;
-        $self->{'genomic_align_group_id'}->{$this_genomic_align_group->{'type'}} = $this_genomic_align_group->dbID;
-      }
+      my $genomic_align_group = $genomic_align_group_adaptor->fetch_by_GenomicAlign($self);
+      $self->{'genomic_align_group'} = $genomic_align_group;
+      $self->{'genomic_align_group_id'} = $genomic_align_group->dbID;
     } else {
       warning("Fail to get data from other sources in Bio::EnsEMBL::Compara::GenomicAlign->genomic_align_group_id_by_type".
           " You either have to specify more information (see perldoc for".
@@ -1196,7 +1126,7 @@ sub genomic_align_group_id_by_type {
     }
   }
 
-  return $self->{'genomic_align_group_id'}->{$type};
+  return $self->{'genomic_align_group_id'};
 }
 
 
@@ -1212,6 +1142,7 @@ sub genomic_align_group_id_by_type {
   Returntype : string $original_sequence
   Exceptions : 
   Caller     : object->methodname
+  Status     : Stable
 
 =cut
 
@@ -1228,7 +1159,7 @@ sub original_sequence {
   } elsif (!defined($self->{'original_sequence'})) {
     # Try to get the data from other sources...
     
-    if ($self->{'aligned_sequence'}) {
+    if ($self->{'aligned_sequence'} and $self->{'cigar_line'} !~ /I/) {
       # ...from the aligned sequence
       $self->{'original_sequence'} = $self->{'aligned_sequence'};
       $self->{'original_sequence'} =~ s/\-//g;
@@ -1262,6 +1193,7 @@ sub original_sequence {
   Returntype : string $cigar_line
   Exceptions : 
   Caller     : methodname
+  Status     : Stable
 
 =cut
 
@@ -1300,6 +1232,7 @@ sub _get_cigar_line_from_aligned_sequence {
   Returntype : string $aligned_sequence
   Exceptions : thrown if cigar_line does not match sequence length
   Caller     : methodname
+  Status     : Stable
 
 =cut
 
@@ -1310,8 +1243,8 @@ sub _get_aligned_sequence_from_original_sequence_and_cigar_line {
   return undef if (!defined($original_sequence) or !$cigar_line);
 
   my $seq_pos = 0;
-  
-  my @cig = ( $cigar_line =~ /(\d*[GMDX])/g );
+  my @cig = ( $cigar_line =~ /(\d*[GMDXI])/g );
+
   for my $cigElem ( @cig ) {
     my $cigType = substr( $cigElem, -1, 1 );
     my $cigCount = substr( $cigElem, 0 ,-1 );
@@ -1320,8 +1253,10 @@ sub _get_aligned_sequence_from_original_sequence_and_cigar_line {
     if( $cigType eq "M" ) {
       $aligned_sequence .= substr($original_sequence, $seq_pos, $cigCount);
       $seq_pos += $cigCount;
+    } elsif( $cigType eq "I") {
+      $seq_pos += $cigCount;
     } elsif( $cigType eq "X") {
-        $aligned_sequence .=  "." x $cigCount;
+      $aligned_sequence .=  "." x $cigCount;
     } elsif( $cigType eq "G" || $cigType eq "D") {
       if ($fix_seq) {
         $seq_pos += $cigCount;
@@ -1343,9 +1278,10 @@ sub _get_aligned_sequence_from_original_sequence_and_cigar_line {
   Example    : $aligned_sequence = _get_fake_aligned_sequence_from_cigar_line(
                    "3MD8M2D3M")
   Description: get gapped sequence of N\'s from the cigar line
-  Returntype : string $fake_aligned_sequence
+  Returntype : string $fake_aligned_sequence or undef if no $cigar_line
   Exceptions : 
   Caller     : methodname
+  Status     : Stable
 
 =cut
 
@@ -1357,7 +1293,7 @@ sub _get_fake_aligned_sequence_from_cigar_line {
 
   my $seq_pos = 0;
 
-  my @cig = ( $cigar_line =~ /(\d*[GMDX])/g );
+  my @cig = ( $cigar_line =~ /(\d*[GMDXI])/g );
   for my $cigElem ( @cig ) {
     my $cigType = substr( $cigElem, -1, 1 );
     my $cigCount = substr( $cigElem, 0 ,-1 );
@@ -1366,8 +1302,10 @@ sub _get_fake_aligned_sequence_from_cigar_line {
     if( $cigType eq "M" ) {
       $fake_aligned_sequence .= "N" x $cigCount;
       $seq_pos += $cigCount;
+    } elsif( $cigType eq "I") {
+      $seq_pos += $cigCount;
     } elsif( $cigType eq "X") {
-        $fake_aligned_sequence .=  "." x $cigCount;
+      $fake_aligned_sequence .=  "." x $cigCount;
     } elsif( $cigType eq "G" || $cigType eq "D") {
       if ($fix_seq) {
         $seq_pos += $cigCount;
@@ -1390,6 +1328,7 @@ sub _get_fake_aligned_sequence_from_cigar_line {
   Returntype : none
   Exceptions : 
   Caller     : object->methodname
+  Status     : At risk
 
 =cut
 
@@ -1425,7 +1364,7 @@ sub _print {
 }
 
 =head2 display_id
-  
+
   Args       : none
   Example    : my $id = $genomic_align->display_id;
   Description: returns string describing this genomic_align which can be used
@@ -1438,6 +1377,7 @@ sub _print {
   Returntype : string
   Exceptions : none
   Caller     : general
+  Status     : Stable
 
 =cut
 
@@ -1465,6 +1405,7 @@ sub display_id {
   Returntype : none
   Exceptions : none
   Caller     : general
+  Status     : Stable
 
 =cut
 
@@ -1472,7 +1413,8 @@ sub reverse_complement {
   my ($self) = @_;
 
   # reverse strand
-  $self->dnafrag_strand($self->dnafrag_strand * -1);
+  #$self->dnafrag_strand($self->dnafrag_strand * -1);
+  $self->dnafrag_strand($self->{'dnafrag_strand'} * -1);
 
   # reverse original and aligned sequences if cached
   my $original_sequence = $self->{'original_sequence'};
@@ -1489,9 +1431,10 @@ sub reverse_complement {
   }
   
   # reverse cigar_string as consequence
-  my $cigar_line = $self->cigar_line;
-  $cigar_line = join("", reverse grep {$_} split(/(\d*[GDMI])/, $cigar_line));
-
+  my $cigar_line = $self->{'cigar_line'};
+  
+  #$cigar_line = join("", reverse grep {$_} split(/(\d*[GDMIX])/, $cigar_line));
+  $cigar_line = join("", reverse ($cigar_line=~(/(\d*[GDMIX])/g)));
   $self->cigar_line($cigar_line);
 }
 
@@ -1513,15 +1456,159 @@ sub reverse_complement {
                the other Bio::EnsEMBL::Compara::GenomicAlign coordinates using the
                corresponding Bio::EnsEMBL::Mapper.
                The coordinates of the "alignment" starts with the reference_slice_start
-               position of the GenomicAlingBlock if available or 1 otherwise.
+               position of the GenomicAlignBlock if available or 1 otherwise.
                With the $cache argument you can decide whether you want to cache the
                result or not. Result is *not* cached by default.
   Returntype : Bio::EnsEMBL::Mapper object
   Exceptions : throw if no cigar_line can be found
+  Status     : Stable
 
 =cut
 
 sub get_Mapper {
+  my ($self, $cache, $condensed) = @_;
+  my $mapper;
+  $cache = 0 if (!defined($cache));
+  my $mode = "expanded";
+  if (defined($condensed) and $condensed) {
+    $mode = "condensed";
+  }
+
+  if (!defined($self->{$mode.'_mapper'})) {
+    if ($mode eq "condensed") {
+
+      $mapper = Bio::EnsEMBL::Mapper->new("sequence", "alignment");
+
+      my $rel_strand = $self->dnafrag_strand;
+      my $ref_cigar_line = $self->genomic_align_block->reference_genomic_align->cigar_line;
+
+      my $aln_pos = (eval{$self->genomic_align_block->reference_slice_start} or 1);
+
+      #if the reference genomic_align, I only need a simple 1 to 1 mapping
+      if ($self eq $self->genomic_align_block->reference_genomic_align) {
+	  $mapper->add_map_coordinates(
+              'sequence',
+              $self->dnafrag_start,
+              $self->dnafrag_end,
+              $self->dnafrag_strand,
+              'alignment',
+	      $self->genomic_align_block->reference_slice_start,
+	      $self->genomic_align_block->reference_slice_end,
+          );
+	  return $mapper if (!$cache);
+
+	  $self->{$mode.'_mapper'} = $mapper;
+	  return $self->{$mode.'_mapper'};
+      }
+
+      my $aln_seq_pos = 0;
+      my $seq_pos = 0;
+
+      my $insertions = 0;
+      my $target_cigar_pieces;
+      @$target_cigar_pieces = $self->cigar_line =~ /(\d*[GMDXI])/g;
+      my $ref_cigar_pieces;
+      @$ref_cigar_pieces = $ref_cigar_line =~ /(\d*[GMDXI])/g;
+      my $i = 0;
+      my $j = 0;
+      my ($ref_num, $ref_type) = $ref_cigar_pieces->[$i] =~ /(\d*)([GMDXI])/;
+      $ref_num = 1 if (!defined($ref_num) or $ref_num eq "");
+      my ($target_num, $target_type) = $target_cigar_pieces->[$j] =~ /(\d*)([GMDXI])/;
+      $target_num = 1 if (!defined($target_num) or $target_num eq "");
+
+      while ($i < @$ref_cigar_pieces and $j<@$target_cigar_pieces) {
+	  while ($ref_type eq "I") {
+	      $aln_pos += $ref_num;
+	      $i++;
+	      last if ($i >= @$ref_cigar_pieces);
+	      ($ref_num, $ref_type) = $ref_cigar_pieces->[$i] =~ /(\d*)([GMDXI])/;
+	      $ref_num = 1 if (!defined($ref_num) or $ref_num eq "");
+	  }
+	  while ($target_type eq "I") {
+	      $seq_pos += $target_num;
+	      $j++;
+	      last if ($j >= @$target_cigar_pieces);
+	      ($target_num, $target_type) = $target_cigar_pieces->[$j] =~ /(\d*)([GMDXI])/;
+	      $target_num = 1 if (!defined($target_num) or $target_num eq "");
+	  }
+
+        my $length;
+
+	if ($ref_num == $target_num) {
+	  $length = $ref_num;
+	} elsif ($ref_num > $target_num) {
+	  $length = $target_num;
+	} elsif ($ref_num < $target_num) {
+	  $length = $ref_num;
+        }
+	my $this_piece_of_cigar_line = $length.$target_type;
+
+	if ($ref_type eq "M") {
+          my $this_mapper;
+          if ($rel_strand == 1) {
+            _add_cigar_line_to_Mapper($this_piece_of_cigar_line, $aln_pos,
+                $seq_pos + $self->dnafrag_start, 1, $mapper);
+          } else {
+            _add_cigar_line_to_Mapper($this_piece_of_cigar_line, $aln_pos, $self->dnafrag_end - $seq_pos, -1, $mapper);
+          }
+	  $aln_pos += $length;
+        }
+	my $gaps = 0;
+	if ($target_type eq "D" || $target_type eq "X") {
+	    $gaps += $length;
+	}
+
+        $seq_pos -= $gaps;
+	$seq_pos += $length;
+
+	if ($ref_num == $target_num) {
+	  $i++;
+	  $j++;
+	  last if ($i >= @$ref_cigar_pieces);
+	  last if ($j >= @$target_cigar_pieces);
+	  ($ref_num, $ref_type) = $ref_cigar_pieces->[$i] =~ /(\d*)([GMDXI])/;
+	  $ref_num = 1 if (!defined($ref_num) or $ref_num eq "");
+	  ($target_num, $target_type) = $target_cigar_pieces->[$j] =~ /(\d*)([GMDXI])/;
+	  $target_num = 1 if (!defined($target_num) or $target_num eq "");
+	} elsif ($ref_num > $target_num) {
+	  $j++;
+	  $ref_num -= $target_num;
+	  last if ($j >= @$target_cigar_pieces);
+	  ($target_num, $target_type) = $target_cigar_pieces->[$j] =~ /(\d*)([GMDXI])/;
+	  $target_num = 1 if (!defined($target_num) or $target_num eq "");
+	} elsif ($ref_num < $target_num) {
+	  $i++;
+	  $target_num -= $ref_num;
+	  last if ($i >= @$ref_cigar_pieces);
+	  ($ref_num, $ref_type) = $ref_cigar_pieces->[$i] =~ /(\d*)([GMDXI])/;
+	  $ref_num = 1 if (!defined($ref_num) or $ref_num eq "");
+        }
+      }
+    } else {
+      my $cigar_line = $self->cigar_line;
+      if (!$cigar_line) {
+        throw("[$self] has no cigar_line and cannot be retrieved by any means");
+      }
+      my $alignment_position = (eval{$self->genomic_align_block->reference_slice_start} or 1);
+      my $sequence_position = $self->dnafrag_start;
+      my $rel_strand = $self->dnafrag_strand;
+      if ($rel_strand == 1) {
+        $sequence_position = $self->dnafrag_start;
+      } else {
+        $sequence_position = $self->dnafrag_end;
+      }
+      $mapper = _get_Mapper_from_cigar_line($cigar_line, $alignment_position, $sequence_position, $rel_strand);
+    }
+
+    return $mapper if (!$cache);
+
+    $self->{$mode.'_mapper'} = $mapper;
+  }
+
+  return $self->{$mode.'_mapper'};
+}
+
+sub get_MapperOLD {
   my ($self, $cache, $condensed) = @_;
   my $mapper;
   $cache = 0 if (!defined($cache));
@@ -1540,13 +1627,30 @@ sub get_Mapper {
       my $aln_pos = (eval{$self->genomic_align_block->reference_slice_start} or 1);
       my $aln_seq_pos = 0;
       my $seq_pos = 0;
+
+      my $target_cigar_pieces;
+      @$target_cigar_pieces = $self->cigar_line =~ /(\d*[GMDXI])/g;
+
+      my $insertions = 0;
+      my $array_index = 0;
+      my $this_target_pos = 0;
       foreach my $cigar_piece ($ref_cigar_line =~ /(\d*[GMDX])/g) {
         my ($cig_count, $cig_mode) = $cigar_piece =~ /(\d*)([GMDX])/;
         $cig_count = 1 if (!defined($cig_count) or $cig_count eq "");
 
-        my $this_piece_of_seq = substr($this_aligned_seq, $aln_seq_pos, $cig_count);
+	#because of 2X genomes, need different method for extracting the
+	#cigar_line
+	#my $this_piece_of_cigar_line = _get_sub_cigar_line_slow($target_cigar_pieces, $aln_seq_pos, $cig_count);
+
+	#quicker method which keeps track of how far through the 
+	#target_cigar_pieces array we are
+	my $this_piece_of_cigar_line;
+	($this_piece_of_cigar_line,$array_index, $this_target_pos) = _get_sub_cigar_line($target_cigar_pieces, $aln_seq_pos, $cig_count, $array_index, $this_target_pos);
+
+	#find number of each cigar_line mode in cigar_line
+	my $num_cigar_elements = _count_cigar_elements($this_piece_of_cigar_line);
         if ($cig_mode eq "M") {
-          my $this_piece_of_cigar_line = _get_cigar_line_from_aligned_sequence($this_piece_of_seq);
+
           my $this_mapper;
           if ($rel_strand == 1) {
             $this_mapper = _get_Mapper_from_cigar_line($this_piece_of_cigar_line, $aln_pos,
@@ -1557,8 +1661,14 @@ sub get_Mapper {
           }
           $mapper->add_Mapper($this_mapper);
           $aln_pos += $cig_count;
+
+	  $insertions = $num_cigar_elements->{"I"};
+
+	  $seq_pos += $insertions;
         }
-        my $gaps = $this_piece_of_seq =~ tr/\-/\-/;
+	my $gaps = $num_cigar_elements->{"D"};
+	$gaps += $num_cigar_elements->{"X"};
+
         $seq_pos -= $gaps;
         $seq_pos += $cig_count;
         $aln_seq_pos += $cig_count;
@@ -1588,12 +1698,236 @@ sub get_Mapper {
   return $self->{$mode.'_mapper'};
 }
 
+=head2 _count_cigar_elements
+
+  Arg[1]     : string $cigar_line 
+  Example    : $num_elements = _count_cigar_elements("5M3D2M5D")
+  Description: Counts the number of each cigar_line mode in a cigar_line
+               and stores them in a hash reference. In the above example
+               $num_elements->{"M"} is 7, $num_elements->{"D"} is 8
+  Returntype : hash reference
+  Exceptions : None
+  Status     : At risk
+
+=cut
+sub _count_cigar_elements {
+    my ($cigar_line) = @_;
+
+    my $this_count = 0;
+    my $num_elements;
+
+    #initialise each element to 0
+    foreach my $mode (qw(G M D X I)) {
+	$num_elements->{$mode} = 0;
+    }
+
+    foreach my $cigar_piece ($cigar_line =~ /(\d*[GMDXI])/g) {
+        my ($cig_count, $cig_mode) = $cigar_piece =~ /(\d*)([GMDXI])/;
+        $cig_count = 1 if (!defined($cig_count) or $cig_count eq "");
+	$num_elements->{$cig_mode} += $cig_count;
+    }
+    return $num_elements;
+}
+
+=head2 _get_sub_cigar_line
+
+  Arg[1]     : ref to array of target cigar_line elements
+  Arg[2]     : int $offset start position
+  Arg[3]     : int $length amount to extract
+  Arg[4]     : int $start_array_index current element in target array
+  Arg[5]     : int $start_target_pos current position in target coords
+  Example    : my $new_cigar_line = _get_sub_cigar_line($target_cigar_pieces, $pos, $count);
+  Description: Extracts a cigar_line of size $length starting at $offset
+  Returntype : string
+  Exceptions : None
+  Status     : At risk
+
+=cut
+sub _get_sub_cigar_line {
+    my ($target_cigar_pieces, $offset, $length, $start_array_index, $start_target_pos) = @_;
+    my $ref_pos = $offset + $length;
+
+    my $i = $start_array_index;
+    my $target_pos = $start_target_pos;
+
+    #current target element
+    my ($target_cig_count, $target_cig_mode) = $target_cigar_pieces->[$i] =~ /(\d*)([GMDXI])/;
+    $target_cig_count = 1 if (!defined($target_cig_count) or $target_cig_count eq "");
+
+    my $new_cigar_line = "";
+    #check to see if previous target overlaps this ref_pos
+    if ($offset) {
+	if ($target_pos > $offset) {
+
+	    #need to only add on cig_count amount
+	    my $new_count;
+	    if ($target_pos - $offset < $length) {
+		$new_count = ($target_pos - $offset);
+	    } else {
+		$new_count = $length;
+	    }
+	    #$new_cigar_line .= $new_count . $target_cig_mode;
+	    $new_cigar_line .= _cigar_element($target_cig_mode,$new_count);
+	    #print "here1 $target_cig_mode $new_count\n";
+	}
+	#increment to next target element
+	$i++;
+    }
+    while ($target_pos < $ref_pos && $i < @$target_cigar_pieces) {
+	($target_cig_count, $target_cig_mode) = $target_cigar_pieces->[$i++] =~ /(\d*)([GMDXI])/;
+	$target_cig_count = 1 if (!defined($target_cig_count) or $target_cig_count eq "");
+
+	#first piece
+	if (!$target_pos) {
+	    if ($target_cig_count >= $length) {
+		$new_cigar_line .= _cigar_element($target_cig_mode,$length);
+	    } else {
+		$new_cigar_line .= _cigar_element($target_cig_mode,$target_cig_count);
+	    }
+	} else {
+	    if ($target_cig_mode ne "I" && 
+		$target_cig_count + $target_pos > $ref_pos) {
+		#if new target piece extends beyond ref_piece but is not I 
+		#(since this doesn't count to target_pos) need to shorten it
+		my $count = $ref_pos - $target_pos;
+		$new_cigar_line .= _cigar_element($target_cig_mode,$count);
+	    } else {
+		$new_cigar_line .= _cigar_element($target_cig_mode,$target_cig_count);
+	    }
+	}
+	$target_pos += $target_cig_count unless $target_cig_mode eq "I";
+    }
+    #need to check if the next element is an I which doesn't count to 
+    #target_pos but need to add it to cigar_line
+    if ($i < @$target_cigar_pieces) {
+	($target_cig_count, $target_cig_mode) = $target_cigar_pieces->[$i] =~ /(\d*)([GMDXI])/;
+	$target_cig_count = 1 if (!defined($target_cig_count) or $target_cig_count eq "");
+	if ($target_cig_mode eq "I") {
+	    $new_cigar_line .= _cigar_element($target_cig_mode,$target_cig_count);
+	}
+    }
+
+    #decrement to return current target element 
+    if ( $i > 0) {
+	$i--;
+    }
+    return ($new_cigar_line, $i, $target_pos);
+}
+
+sub _get_sub_cigar_line_slow {
+    my ($target_cigar_pieces, $offset, $length) = @_;
+    my $i = 0;
+    my $ref_pos = $offset + $length;
+    my ($target_cig_count, $target_cig_mode);
+    my $target_pos = 0;
+
+    #skip through target_cigar_line until get to correct position
+    while ($target_pos < $offset && $i < @$target_cigar_pieces) {
+	($target_cig_count, $target_cig_mode) = $target_cigar_pieces->[$i++] =~ /(\d*)([GMDXI])/;
+	$target_cig_count = 1 if (!defined($target_cig_count) or $target_cig_count eq "");
+
+	$target_pos += $target_cig_count unless $target_cig_mode eq "I";
+    }
+
+    my $new_cigar_line = "";
+    #check to see if previous target overlaps this ref_pos
+    if ($offset) {
+	if ($target_pos > $offset) {
+
+	    #need to only add on cig_count amount
+	    my $new_count;
+	    if ($target_pos - $offset < $length) {
+		$new_count = ($target_pos - $offset);
+	    } else {
+		$new_count = $length;
+	    }
+	    #$new_cigar_line .= $new_count . $target_cig_mode;
+	    $new_cigar_line .= _cigar_element($target_cig_mode,$new_count);
+	}
+    }
+
+    while ($target_pos < $ref_pos && $i < @$target_cigar_pieces) {
+	($target_cig_count, $target_cig_mode) = $target_cigar_pieces->[$i++] =~ /(\d*)([GMDXI])/;
+	$target_cig_count = 1 if (!defined($target_cig_count) or $target_cig_count eq "");
+
+	#first piece
+	if (!$target_pos) {
+	    if ($target_cig_count >= $length) {
+		$new_cigar_line .= _cigar_element($target_cig_mode,$length);
+	    } else {
+		$new_cigar_line .= _cigar_element($target_cig_mode,$target_cig_count);
+	    }
+	} else {
+	    if ($target_cig_mode ne "I" && 
+		$target_cig_count + $target_pos > $ref_pos) {
+		#if new target piece extends beyond ref_piece but is not I 
+		#(since this doesn't count to target_pos) need to shorten it
+		my $count = $ref_pos - $target_pos;
+		$new_cigar_line .= _cigar_element($target_cig_mode,$count);
+	    } else {
+		$new_cigar_line .= _cigar_element($target_cig_mode,$target_cig_count);
+	    }
+	}
+	$target_pos += $target_cig_count unless $target_cig_mode eq "I";
+    }
+    #need to check if the next element is an I which doesn't count to 
+    #target_pos but need to add it to cigar_line
+    if ($i < @$target_cigar_pieces) {
+	($target_cig_count, $target_cig_mode) = $target_cigar_pieces->[$i++] =~ /(\d*)([GMDXI])/;
+	$target_cig_count = 1 if (!defined($target_cig_count) or $target_cig_count eq "");
+	if ($target_cig_mode eq "I") {
+	    $new_cigar_line .= _cigar_element($target_cig_mode,$target_cig_count);
+	}
+    }
+    return $new_cigar_line;
+}
+
+=head2 _cigar_element
+
+  Arg[1]     : char $mode valid cigar_line mode
+  Arg[2]     : int $length size of element
+  Example    : $elem = _cigar_element("M", 5);
+  Description: Creates a valid cigar element
+  Returntype : integer
+  Exceptions : None
+  Status     : At risk
+
+=cut
+sub _cigar_element {
+    my ($mode, $len) = @_;
+    my $elem;
+    if ($len == 1) {
+	$elem = $mode;
+    #} elsif ($len > 1) { #length can be 0 if the sequence starts with a gap
+    } else { #length can be 0 if the sequence starts with a gap
+	$elem = $len.$mode;
+    }
+    return $elem;
+}
+
+=head2 _get_Mapper_from_cigar_line
+
+  Arg[1]     : $cigar_line
+  Arg[2]     : $alignment_position
+  Arg[3]     : $sequence_position
+  Arg[4]     : $relative_strand
+  Example    : $this_mapper = _get_Mapper_from_cigar_line($cigar_line, 
+                $aln_pos, $seq_pos, 1);
+  Description: creates a new Bio::EnsEMBL::Mapper object for mapping between
+               sequence and alignment coordinate systems using the cigar_line
+               and starting from the $alignment_position and sequence_position.
+  Returntype : Bio::EnsEMBL::Mapper object
+  Exceptions : None
+  Status     : Stable
+
+=cut
+
 sub _get_Mapper_from_cigar_line {
   my ($cigar_line, $alignment_position, $sequence_position, $rel_strand) = @_;
 
   my $mapper = Bio::EnsEMBL::Mapper->new("sequence", "alignment");
 
-  my @cigar_pieces = ($cigar_line =~ /(\d*[GMDX])/g);
+  my @cigar_pieces = ($cigar_line =~ /(\d*[GMDXI])/g);
   if ($rel_strand == 1) {
     foreach my $cigar_piece (@cigar_pieces) {
       my $cigar_type = substr($cigar_piece, -1, 1 );
@@ -1602,7 +1936,7 @@ sub _get_Mapper_from_cigar_line {
       next if ($cigar_count < 1);
   
       if( $cigar_type eq "M" ) {
-        $mapper->add_map_coordinates(
+         $mapper->add_map_coordinates(
                 "sequence", #$self->dbID,
                 $sequence_position,
                 $sequence_position + $cigar_count - 1,
@@ -1613,6 +1947,9 @@ sub _get_Mapper_from_cigar_line {
             );
         $sequence_position += $cigar_count;
         $alignment_position += $cigar_count;
+      } elsif( $cigar_type eq "I") {
+	#add to sequence_position but not alignment_position
+	$sequence_position += $cigar_count;
       } elsif( $cigar_type eq "G" || $cigar_type eq "D" || $cigar_type eq "X") {
         $alignment_position += $cigar_count;
       }
@@ -1636,6 +1973,70 @@ sub _get_Mapper_from_cigar_line {
             );
         $sequence_position -= $cigar_count;
         $alignment_position += $cigar_count;
+      } elsif( $cigar_type eq "I") {
+	#add to sequence_position but not alignment_position
+	$sequence_position -= $cigar_count;
+      } elsif( $cigar_type eq "G" || $cigar_type eq "D" || $cigar_type eq "X") {
+        $alignment_position += $cigar_count;
+      }
+    }
+  }
+
+  return $mapper;
+}
+
+sub _add_cigar_line_to_Mapper {
+  my ($cigar_line, $alignment_position, $sequence_position, $rel_strand, $mapper) = @_;
+
+  my @cigar_pieces = ($cigar_line =~ /(\d*[GMDXI])/g);
+  if ($rel_strand == 1) {
+    foreach my $cigar_piece (@cigar_pieces) {
+      my $cigar_type = substr($cigar_piece, -1, 1 );
+      my $cigar_count = substr($cigar_piece, 0 ,-1 );
+      $cigar_count = 1 unless ($cigar_count =~ /^\d+$/);
+      next if ($cigar_count < 1);
+  
+      if( $cigar_type eq "M" ) {
+        $mapper->add_map_coordinates(
+                "sequence", #$self->dbID,
+                $sequence_position,
+                $sequence_position + $cigar_count - 1,
+                $rel_strand,
+                "alignment", #$self->genomic_align_block->dbID,
+                $alignment_position,
+                $alignment_position + $cigar_count - 1
+            );
+        $sequence_position += $cigar_count;
+        $alignment_position += $cigar_count;
+      } elsif( $cigar_type eq "I") {
+	#add to sequence_position but not alignment_position
+	$sequence_position += $cigar_count;
+      } elsif( $cigar_type eq "G" || $cigar_type eq "D" || $cigar_type eq "X") {
+        $alignment_position += $cigar_count;
+      }
+    }
+  } else {
+    foreach my $cigar_piece (@cigar_pieces) {
+      my $cigar_type = substr($cigar_piece, -1, 1 );
+      my $cigar_count = substr($cigar_piece, 0 ,-1 );
+      $cigar_count = 1 unless ($cigar_count =~ /^\d+$/);
+      next if ($cigar_count < 1);
+  
+      if( $cigar_type eq "M" ) {
+        $mapper->add_map_coordinates(
+                "sequence", #$self->dbID,
+                $sequence_position - $cigar_count + 1,
+                $sequence_position,
+                $rel_strand,
+                "alignment", #$self->genomic_align_block->dbID,
+                $alignment_position,
+                $alignment_position + $cigar_count - 1
+            );
+        $sequence_position -= $cigar_count;
+        $alignment_position += $cigar_count;
+      } elsif( $cigar_type eq "I") {
+	#add to sequence_position but not alignment_position
+	$sequence_position -= $cigar_count;
       } elsif( $cigar_type eq "G" || $cigar_type eq "D" || $cigar_type eq "X") {
         $alignment_position += $cigar_count;
       }
@@ -1655,6 +2056,7 @@ sub _get_Mapper_from_cigar_line {
   Returntype : Bio::EnsEMBL::Slice object
   Exceptions : return -undef- if slice cannot be created (this is likely to
                happen if the Registry is misconfigured)
+  Status     : Stable
 
 =cut
 
@@ -1689,7 +2091,7 @@ sub get_Slice {
 =cut
 
 sub restrict {
-  my ($self, $start, $end) = @_;
+  my ($self, $start, $end, $aligned_seq_length) = @_;
   throw("Wrong arguments") if (!$start or !$end);
 
   my $restricted_genomic_align = $self->copy();
@@ -1700,37 +2102,48 @@ sub restrict {
   delete($restricted_genomic_align->{cigar_line});
   $restricted_genomic_align->{original_dbID} = $self->dbID if ($self->dbID);
 
-  my $aligned_seq_length = 0;
-
-  #unable to retrieve $self->genomic_align_block->length 
-  if ((!$self->{'genomic_align_block_id'}) or (!$self->genomic_align_block->length)) {
-      my @cigar = grep {$_} split(/(\d*[GDMX])/, $self->cigar_line);
-      while (my $cigar = shift(@cigar)) {
-	  my ($num, $type) = ($cigar =~ /^(\d*)([GDMX])/);
-	  $num = 1 if ($num eq "");
-	  $aligned_seq_length += $num;
-      }
-  } else {
-    $aligned_seq_length = $self->genomic_align_block->length;
+  # Need to calculate the original aligned sequence length myself
+  if (!$aligned_seq_length) {
+    my @cigar = grep {$_} split(/(\d*[GDMXI])/, $self->cigar_line);
+    foreach my $num_type (@cigar) {
+      my $type = substr($num_type, -1, 1, "");
+      $num_type = 1 if ($num_type eq "");
+      $aligned_seq_length += $num_type unless ($type eq "I");
+    }
   }
 
   my $final_aligned_length = $end - $start + 1;
-  my $length_of_truncated_seq_at_the_start = $start - 1;
-  my $length_of_truncated_seq_at_the_end = $aligned_seq_length - $end;
-  
-  my @cigar = grep {$_} split(/(\d*[GDMX])/, $self->cigar_line);  
+  my $number_of_columns_to_trim_from_the_start = $start - 1;
+  my $number_of_columns_to_trim_from_the_end = $aligned_seq_length - $end;
+
+  my @cigar = grep {$_} split(/(\d*[GDMXI])/, $self->cigar_line);
 
   ## Trim start of cigar_line if needed
-  if ($length_of_truncated_seq_at_the_start >= 0) {
-    $aligned_seq_length = 0;
-    my $original_seq_length = 0;
-    my $new_cigar_piece = "";
+  if ($number_of_columns_to_trim_from_the_start >= 0) {
+    my $counter_of_trimmed_columns_from_the_start = 0;
+    my $counter_of_trimmed_base_pairs = 0; # num of bp we trim (from the start)
+    ## Loop through the cigar pieces
     while (my $cigar = shift(@cigar)) {
-      my ($num, $type) = ($cigar =~ /^(\d*)([GDMX])/);
+      # Parse each cigar piece
+      my ($num, $type) = ($cigar =~ /^(\d*)([GDMXI])/);
       $num = 1 if ($num eq "");
-      $aligned_seq_length += $num;
-      if ($aligned_seq_length >= $length_of_truncated_seq_at_the_start) {
-        my $length = $aligned_seq_length - $length_of_truncated_seq_at_the_start;
+
+      # Insertions are not part of the alignment, don't count them
+      if ($type ne "I") {
+        $counter_of_trimmed_columns_from_the_start += $num;
+      }
+
+      # Matches and insertions are actual base pairs in the sequence
+      if ($type eq "M" || $type eq "I") {
+        $counter_of_trimmed_base_pairs += $num;
+      }
+
+      # If this cigar piece is too long and we overshoot the number of columns we want to trim,
+      # we substitute this cigar piece by a shorter one
+      if ($counter_of_trimmed_columns_from_the_start >= $number_of_columns_to_trim_from_the_start) {
+        my $new_cigar_piece;
+        # length of the new cigar piece
+        my $length = $counter_of_trimmed_columns_from_the_start - $number_of_columns_to_trim_from_the_start;
         if ($length > 1) {
           $new_cigar_piece = $length.$type;
         } elsif ($length == 1) {
@@ -1738,523 +2151,83 @@ sub restrict {
         }
         unshift(@cigar, $new_cigar_piece) if ($new_cigar_piece);
         if ($type eq "M") {
-          $original_seq_length += $length_of_truncated_seq_at_the_start - ($aligned_seq_length - $num);
+          $counter_of_trimmed_base_pairs -= $length;
+        }
+
+        ## We don't want to start with an insertion. Trim it!
+        while (@cigar and $cigar[0] =~ /[I]/) {
+          my ($num, $type) = ($cigar[0] =~ /^(\d*)([DIGMX])/);
+          $num = 1 if ($num eq "");
+          $counter_of_trimmed_base_pairs += $num;
+          shift(@cigar);
         }
         last;
       }
-      $original_seq_length += $num if ($type eq "M");
     }
     if ($self->dnafrag_strand == 1) {
-      $restricted_genomic_align->dnafrag_start($self->dnafrag_start + $original_seq_length);
+      $restricted_genomic_align->dnafrag_start($self->dnafrag_start + $counter_of_trimmed_base_pairs);
     } else {
-      $restricted_genomic_align->dnafrag_end($self->dnafrag_end - $original_seq_length);
+      $restricted_genomic_align->dnafrag_end($self->dnafrag_end - $counter_of_trimmed_base_pairs);
     }
   }
 
-  my @final_cigar = ();
-
   ## Trim end of cigar_line if needed
-  if ($length_of_truncated_seq_at_the_end >= 0) {
-    ## Truncate all the GenomicAligns
-    $aligned_seq_length = 0;
-    my $original_seq_length = 0;
-    my $new_cigar_piece = "";
-    while (my $cigar = shift(@cigar)) {
-      my ($num, $type) = ($cigar =~ /^(\d*)([GDMX])/);
+  if ($number_of_columns_to_trim_from_the_end >= 0) {
+    my $counter_of_trimmed_columns_from_the_end = 0;
+    my $counter_of_trimmed_base_pairs = 0; # num of bp we trim (from the start)
+    ## Loop through the cigar pieces
+    while (my $cigar = pop(@cigar)) {
+      # Parse each cigar piece
+      my ($num, $type) = ($cigar =~ /^(\d*)([GDMIX])/);
       $num = 1 if ($num eq "");
-      $aligned_seq_length += $num;
-      if ($aligned_seq_length >= $final_aligned_length) {
-        my $length = $num - $aligned_seq_length + $final_aligned_length;
+
+      # Insertions are not part of the alignment, don't count them
+      if ($type ne "I") {
+        $counter_of_trimmed_columns_from_the_end += $num;
+      }
+
+      # Matches and insertions are actual base pairs in the sequence
+      if ($type eq "M" || $type eq "I") {
+        $counter_of_trimmed_base_pairs += $num;
+      }
+      # If this cigar piece is too long and we overshoot the number of columns we want to trim,
+      # we substitute this cigar piece by a shorter one
+      if ($counter_of_trimmed_columns_from_the_end >= $number_of_columns_to_trim_from_the_end) {
+        my $new_cigar_piece;
+        # length of the new cigar piece
+        my $length = $counter_of_trimmed_columns_from_the_end - $number_of_columns_to_trim_from_the_end;
         if ($length > 1) {
           $new_cigar_piece = $length.$type;
         } elsif ($length == 1) {
           $new_cigar_piece = $type;
         }
-        push(@final_cigar, $new_cigar_piece) if ($new_cigar_piece);
+        push(@cigar, $new_cigar_piece) if ($new_cigar_piece);
         if ($type eq "M") {
-          $original_seq_length += $length;
+          $counter_of_trimmed_base_pairs -= $length;
+        }
+
+        ## We don't want to end with an insertion. Trim it!
+        while (@cigar and $cigar[-1] =~ /[I]/) {
+          my ($num, $type) = ($cigar[-1] =~ /^(\d*)([DIGMX])/);
+          $num = 1 if ($num eq "");
+          $counter_of_trimmed_base_pairs += $num;
+          pop(@cigar);
         }
         last;
-      } else {
-        push(@final_cigar, $cigar);
       }
-      $original_seq_length += $num if ($type eq "M");
     }
     if ($self->dnafrag_strand == 1) {
-      $restricted_genomic_align->dnafrag_end($restricted_genomic_align->dnafrag_start + $original_seq_length - 1);
+      $restricted_genomic_align->dnafrag_end($restricted_genomic_align->dnafrag_end - $counter_of_trimmed_base_pairs);
     } else {
-      $restricted_genomic_align->dnafrag_start($restricted_genomic_align->dnafrag_end - $original_seq_length + 1);
+      $restricted_genomic_align->dnafrag_start($restricted_genomic_align->dnafrag_start + $counter_of_trimmed_base_pairs);
     }
-  } else {
-    @final_cigar = @cigar;
   }
 
   ## Save genomic_align's cigar_line
   $restricted_genomic_align->aligned_sequence(0);
-  $restricted_genomic_align->cigar_line(join("", @final_cigar));
+  $restricted_genomic_align->cigar_line(join("", @cigar));
 
   return $restricted_genomic_align;
-}
-
-#####################################################################
-#####################################################################
-
-=head1 DEPRECATED METHODS
-
-Consensus and Query DnaFrag are no longer used. Please refer to
-Bio::EnsEMBL::Compara::GenomicAlignBlock for further details.
-
-For backwards compatibility, consensus_dnafrag correponds to the lower genome_db_id by convention.
-This convention works for pairwise alignment only! Trying to use the old API methods for multiple
-alignments will throw an exception.
-
-=cut
-
-#####################################################################
-#####################################################################
-
-=head2 consensus_dnafrag (DEPRECATED)
- 
-  Arg [1]    : Bio::EnsEMBL::Compara::DnaFrag $consensus_dnafrag
-  Example    : none
-  Description: get/set for attribute consensus_dnafrag_id
-  Returntype : Bio::EnsEMBL::Compara::DnaFrag $dnafrag
-  Exceptions : trying to get the consensus_dnafrag attribute for a multiple alignment throws
-  Caller     : general
-
-=cut
-
-sub consensus_dnafrag {
-  my ($self, $consensus_dnafrag) = @_;
-
-  deprecate($warn_message);
-  $self->_start_object_from_old_attributes();
-
-  return $self->{'_consensus_genomic_align'}->dnafrag($consensus_dnafrag);
-}
-
-
-=head2 consensus_start (DEPRECATED)
- 
-  Arg [1]    : int $consensus_start
-  Example    : none
-  Description: get/set for attribute consensus_start
-  Returntype : int
-  Exceptions : none
-  Caller     : general
-
-=cut
-
-sub consensus_start {
-  my ($self, $consensus_dnafrag_start) = @_;
-
-  deprecate($warn_message);
-  $self->_start_object_from_old_attributes();
-
-  return $self->{'_consensus_genomic_align'}->dnafrag_start($consensus_dnafrag_start);
-}
-
-
-=head2 consensus_end (DEPRECATED)
- 
-  Arg [1]    : int $consensus_end
-  Example    : none
-  Description: get/set for attribute consensus_end
-  Returntype : int
-  Exceptions : none
-  Caller     : general
-
-=cut
-
-sub consensus_end {
-  my ($self, $consensus_dnafrag_end) = @_;
-
-  deprecate($warn_message);
-  $self->_start_object_from_old_attributes();
-
-  return $self->{'_consensus_genomic_align'}->dnafrag_end($consensus_dnafrag_end);
-}
-
-
-=head2 query_dnafrag (DEPRECATED)
- 
-  Arg [1]    : Bio::EnsEMBL::Compara::DnaFrag $query_dnafrag
-  Example    : none
-  Description: get/set for attribute query_dnafrag
-  Returntype : Bio::EnsEMBL::Compara::DnaFrag $dnafrag
-  Exceptions : none
-  Caller     : general
-
-=cut
-
-sub query_dnafrag {
-  my ($self, $query_dnafrag) = @_;
-
-  deprecate($warn_message);
-  $self->_start_object_from_old_attributes();
-
-  return $self->{'_query_genomic_align'}->dnafrag($query_dnafrag);
-}
-
-
-=head2 query_start (DEPRECATED)
- 
-  Arg [1]    : int $query_start
-  Example    : none
-  Description: get/set for attribute query_start
-  Returntype : int
-  Exceptions : none
-  Caller     : general
-
-=cut
-
-sub query_start {
-  my ($self, $query_dnafrag_start) = @_;
-
-  deprecate($warn_message);
-  $self->_start_object_from_old_attributes();
-
-  return $self->{'_query_genomic_align'}->dnafrag_start($query_dnafrag_start);
-}
-
-
-=head2 query_end (DEPRECATED)
- 
-  Arg [1]    : int $query_end
-  Example    : none
-  Description: get/set for attribute query_end
-  Returntype : int
-  Exceptions : none
-  Caller     : general
-
-=cut
-
-sub query_end {
-  my ($self, $query_dnafrag_end) = @_;
-
-  deprecate($warn_message);
-  $self->_start_object_from_old_attributes();
-
-  return $self->{'_query_genomic_align'}->dnafrag_end($query_dnafrag_end);
-}
-
-
-=head2 query_strand (DEPRECATED)
- 
-  Arg [1]    : int $query_strand
-  Example    : none
-  Description: get/set for attribute query_strand
-  Returntype : int
-  Exceptions : none
-  Caller     : general
-
-=cut
-
-sub query_strand {
-  my ($self, $query_dnafrag_strand) = @_;
-
-  deprecate($warn_message);
-  $self->_start_object_from_old_attributes();
-
-  if (defined($query_dnafrag_strand) and defined($self->{'_strands_reversed'})) {
-    ## strands_reversed has been defined before query_strand...
-    if ($self->{'_strands_reversed'}) {
-      $self->{'_consensus_genomic_align'}->dnafrag_strand(-$query_dnafrag_strand)
-    } else {
-      $self->{'_consensus_genomic_align'}->dnafrag_strand($query_dnafrag_strand)
-    }
-    $self->{'_strands_reversed'} = undef;
-  }
-
-  return $self->{'_query_genomic_align'}->dnafrag_strand($query_dnafrag_strand);
-}
-
-
-=head2 alignment_type (DEPRECATED)
- 
-  Arg [1]    : string $alignment_type
-  Example    : 'WGA' or 'WGA_HCR'
-  Description: get/set for attribute alignment_type
-  Returntype : int
-  Exceptions : none
-  Caller     : general
-
-=cut
-
-sub alignment_type {
-  my ($self, $alignment_type) = @_;
-
-  deprecate($warn_message);
-  $self->_start_object_from_old_attributes();
-
-  return $self->genomic_align_block->method_link_species_set->method_link_type($alignment_type);
-}
-
-
-=head2 score (DEPRECATED)
-
-  Arg [1]    : double $score
-  Example    : none
-  Description: get/set for attribute score  
-  Returntype : double
-  Exceptions : none
-  Caller     : general
-
-=cut
-
-sub score {
-  my ($self, $score) = @_;
-
-  deprecate($warn_message);
-  $self->_start_object_from_old_attributes();
-
-  return $self->genomic_align_block->score($score);
-}
-
-
-=head2 perc_id (DEPRECATED)
- 
-  Arg [1]    : int $perc_id
-  Example    : none
-  Description: get/set for attribute perc_id  
-  Returntype : int
-  Exceptions : none
-  Caller     : general
-
-=cut
-
-sub perc_id {
-  my ($self, $perc_id) = @_;
-
-  deprecate($warn_message);
-  $self->_start_object_from_old_attributes();
-
-  return $self->genomic_align_block->perc_id($perc_id);
-}
-
-
-=head2 group_id (DEPRECATED)
- 
-  Arg [1]    : int $perc_id
-  Example    : none
-  Description: get/set for attribute group_id
-  Returntype : int
-  Exceptions : none
-  Caller     : general
-
-=cut
-
-sub group_id {
-  my ($self, $group_id) = @_;
-
-  deprecate($warn_message);
-  $self->_start_object_from_old_attributes();
-
-  $self->{'_consensus_genomic_align'}->genomic_align_group_id_by_type("default", $group_id);
-  return $self->{'_query_genomic_align'}->genomic_align_group_id_by_type("default", $group_id);
-}
-
-
-=head2 strands_reversed (DEPRECATED)
- 
-  Arg [1]    : int $strands_reversed
-  Example    : none
-  Description: get/set for attribute strands_reversed
-               0 means that strand and hstrand are the original strands obtained
-                 from the alignment program used
-               1 means that strand and hstrand have been flipped as compared to
-                 the original result provided by the alignment program used.
-  Returntype : int
-  Exceptions : none
-  Caller     : general
-
-=cut
-
-sub strands_reversed {
-  my ($self, $strands_reversed) = @_;
-
-  deprecate($warn_message);
-  $self->_start_object_from_old_attributes();
-
-  my $query_strand = $self->{'_query_genomic_align'}->{'dnafrag_strand'};
-  if (!defined($query_strand)) {
-    ## No comparison is possible. Save result in an internal variable
-    $self->{'_strands_reversed'} = $strands_reversed if (defined($strands_reversed));
-    return $self->{'_strands_reversed'};
-  }
-  
-  if (defined($strands_reversed)) {
-    ## Set $self->{'_consensus_genomic_align'}->dnafrag_strand according to strands_reversed
-    $self->{'_consensus_genomic_align'}->dnafrag_strand(
-          (($strands_reversed)?-$query_strand:$query_strand)
-        );
-  } elsif (!defined($self->{'_strands_reversed'})) {
-    $strands_reversed = ($self->{'_consensus_genomic_align'}->dnafrag_strand ==
-        $self->{'_query_genomic_align'}->dnafrag_strand)?0:1;
-  } else {
-    $strands_reversed = $self->{'_strands_reversed'};
-  }
-  
-  return $strands_reversed;
-}
-
-
-=head2 alignment_strings (DEPRECATED)
-
-NEW API: Use Bio::EnsEMBL::Compara::GenomicAlignBlock to retrieve sequences. For
-backwards compatibility, we will assume that the genome with a smaller genome_db_id is
-the consensus genome. We will also assume that there are only two sequences in this
-alignment. Please, use the new API for multiple alignments.
-  
-  Arg [1]    : list of string $flags
-               FIX_SEQ = does not introduce gaps (dashes) in seq (consensus) aligned sequence
-                         and delete the corresponding insertions in hseq aligned sequence
-               FIX_HSEQ = does not introduce gaps (dashes) in hseq (query) aligned sequence
-                         and delete the corresponding insertions in seq aligned sequence
-               NO_SEQ = return the seq (consensus) aligned sequence as an empty string
-               NO_HSEQ = return the hseq (query) aligned sequence as an empty string
-               This 2 last flags would save a bit of time as doing so no querying to the core
-               database in done to get the sequence.
-  Example    : $ga->alignment_strings or
-               $ga->alignment_strings("FIX_HSEQ") or
-               $ga->alignment_strings("NO_SEQ","FIX_SEQ")
-  Description: Allows to rebuild the alignment string of both the seq (consensus) and 
-               hseq (query) sequence using the cigar_string information and the slice 
-               and hslice objects
-  Returntype : array reference containing 2 strings
-               the first corresponds to seq (consensus)
-               the second corresponds to hseq (query)
-  Exceptions : 
-  Caller     : 
-
-=cut
-
-sub alignment_strings {
-  my ( $self, @flags ) = @_;
-
-  deprecate($warn_message);
-  
-  throw("NOT IMPLEMENTED!");
-  # set the flags
-  my $seq_flag = 1;
-  my $hseq_flag = 1;
-  my $fix_seq_flag = 0;
-  my $fix_hseq_flag = 0;
-
-  for my $flag ( @flags ) {
-    $seq_flag = 0 if ($flag eq "NO_SEQ");
-    $hseq_flag = 0 if ($flag eq "NO_HSEQ");
-    $fix_seq_flag = 1 if ($flag eq "FIX_SEQ");
-    $fix_hseq_flag = 1 if ($flag eq "FIX_HSEQ");
-  } 
-
-  deprecate($warn_message);
-   
-  my ($seq, $hseq);
-  $seq = $self->consensus_dnafrag->slice->subseq($self->consensus_start, $self->consensus_end) if ($seq_flag || $fix_seq_flag);
-  $hseq = $self->query_dnafrag->slice->subseq($self->query_start, $self->query_end, $self->query_strand) if ($hseq_flag || $fix_hseq_flag);
-
-  my $rseq= "";
-  # rseq - result sequence
-  my $rhseq= "";
-  # rhseq - result hsequence
-
-  my $seq_pos = 0;
-  my $hseq_pos = 0;
-
-  my @cig = ( $self->cigar_line =~ /(\d*[DIM])/g );
-
-  for my $cigElem ( @cig ) {
-    my $cigType = substr( $cigElem, -1, 1 );
-    my $cigCount = substr( $cigElem, 0 ,-1 );
-    $cigCount = 1 unless ($cigCount =~ /^\d+$/);
-
-    if( $cigType eq "M" ) {
-        $rseq .= substr( $seq, $seq_pos, $cigCount ) if ($seq_flag);
-        $rhseq .= substr( $hseq, $hseq_pos, $cigCount ) if ($hseq_flag);
-      $seq_pos += $cigCount;
-      $hseq_pos += $cigCount;
-    } elsif( $cigType eq "D" ) {
-      if( ! $fix_seq_flag ) {
-        $rseq .=  "-" x $cigCount if ($seq_flag);
-        $rhseq .= substr( $hseq, $hseq_pos, $cigCount ) if ($hseq_flag);
-      }
-      $hseq_pos += $cigCount;
-    } elsif( $cigType eq "I" ) {
-      if( ! $fix_hseq_flag ) {
-        $rseq .= substr( $seq, $seq_pos, $cigCount ) if ($seq_flag);
-        $rhseq .= "-" x $cigCount if ($hseq_flag);
-      }
-      $seq_pos += $cigCount;
-    }
-  }
-  return [ $rseq,$rhseq ];
-}
-
-sub _select_genomic_aligns_index {
-  my ($genomic_align_block, $which) = @_;
-  my $index;
-
-  throw "ayayay" if (!$genomic_align_block);
-  my $genomic_aligns = $genomic_align_block->get_all_GenomicAligns;
-  throw "Using old API (query_danfrag method) for multiple alignments" if (scalar(@{$genomic_aligns}) != 2);
-
-  if ($genomic_aligns->[0]->dnafrag->genomedb->dbID > $genomic_aligns->[1]->dnafrag->genomedb->dbID) {
-    $index = ($which eq "consensus")?1:0;
-
-  } elsif ($genomic_aligns->[0]->dnafrag->genomedb->dbID < $genomic_aligns->[1]->dnafrag->genomedb->dbID) {
-    $index = ($which eq "consensus")?0:1;
-
-  ## If they belongs to the same genome_db, use the dnafrag_id instead
-  } elsif ($genomic_aligns->[0]->dnafrag->dbID > $genomic_aligns->[1]->dnafrag->dbID) {
-    $index = ($which eq "consensus")?1:0;
-
-  } elsif ($genomic_aligns->[0]->dnafrag->dbID < $genomic_aligns->[1]->dnafrag->dbID) {
-    $index = ($which eq "consensus")?0:1;
-
-  ## If they belongs to the same genome_db and dnafrag, use the dnafrag_start instead
-  } elsif ($genomic_aligns->[0]->dnafrag_start > $genomic_aligns->[1]->dnafrag_start) {
-    $index = ($which eq "consensus")?1:0;
-
-  } elsif ($genomic_aligns->[0]->dnafrag_start < $genomic_aligns->[1]->dnafrag_start) {
-    $index = ($which eq "consensus")?0:1;
-
-  ## If they belongs to the same genome_db and dnafrag and have the same danfrag_start, use the dnafrag_end instead
-  } elsif ($genomic_aligns->[0]->dnafrag_end > $genomic_aligns->[1]->dnafrag_end) {
-    $index = ($which eq "consensus")?1:0;
-
-  } elsif ($genomic_aligns->[0]->dnafrag_end < $genomic_aligns->[1]->dnafrag_end) {
-    $index = ($which eq "consensus")?0:1;
-
-  ## If everithing else fails, use the dnafrag_strand
-  } elsif ($genomic_aligns->[0]->dnafrag_strand > $genomic_aligns->[1]->dnafrag_strand) {
-    $index = ($which eq "consensus")?1:0;
-
-  } elsif ($genomic_aligns->[0]->dnafrag_strand < $genomic_aligns->[1]->dnafrag_strand) {
-    $index = ($which eq "consensus")?0:1;
-
-  } else {
-    # Whatever, they are the same. Use 0 for consensus and 1 for query
-    $index = ($which eq "consensus")?0:1;
-  }
-
-  return $index;  
-}
-
-sub _start_object_from_old_attributes {
-  my ($self) = @_;
-
-  if (!defined($self->{'genomic_align_block'})) {
-    $self->{'_consensus_genomic_align'} = new Bio::EnsEMBL::Compara::GenomicAlign();
-    $self->{'_query_genomic_align'} = new Bio::EnsEMBL::Compara::GenomicAlign();
-    $self->{'genomic_align_block'} = new Bio::EnsEMBL::Compara::GenomicAlignBlock(
-            -genomic_align_array => [
-                    $self->{'_consensus_genomic_align'},
-                    $self->{'_query_genomic_align'}
-                ],
-            -method_link_species_set => new Bio::EnsEMBL::Compara::MethodLinkSpeciesSet()
-        );
-  }
 }
 
 1;

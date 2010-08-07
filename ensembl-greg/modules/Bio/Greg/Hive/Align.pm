@@ -207,12 +207,14 @@ sub align_with_prank {
   my $params = shift;
 
   my $tmp = $self->worker_temp_directory;
-  
+
   # Output alignment.
   my $aln_file = $tmp . "aln.fasta";
+  rmtree([$aln_file]) if (-e $aln_file);
   Bio::EnsEMBL::Compara::AlignUtils->dump_ungapped_seqs($aln,$aln_file); # Write the alignment out to file.
   
   my $tree_file = $tmp . "tree.nh";
+  rmtree([$tree_file]) if (-e $tree_file);
   my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
   Bio::EnsEMBL::Compara::TreeUtils->to_file($treeI,$tree_file);
 
@@ -228,9 +230,9 @@ sub align_with_prank {
   $output_file .= '.1.fas';
 
   # Run the command.
-  $self->compara_dba->dbc->disconnect_when_inactive(1);
+  $self->dbc->disconnect_when_inactive(1);
   my $rc = system($cmd);
-  $self->compara_dba->dbc->disconnect_when_inactive(0);
+  $self->dbc->disconnect_when_inactive(0);
 
   unless($rc == 0) {
     print "Prank error!\n";

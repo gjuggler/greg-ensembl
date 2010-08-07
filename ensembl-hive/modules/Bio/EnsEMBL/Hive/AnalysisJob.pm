@@ -127,6 +127,13 @@ sub semaphored_job_id {
   return $self->{'_semaphored_job_id'};
 }
 
+sub update_error {
+  my ($self, $error ) = @_;
+  return unless($self->adaptor);
+  $self->adaptor()->db()->get_AnalysisJobErrorAdaptor()->store($self, $error);
+  return;
+}
+
 sub stdout_file {
   my $self = shift;
   $self->{'_stdout_file'} = shift if(@_);

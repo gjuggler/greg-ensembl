@@ -45,6 +45,49 @@ sub mysqlArgsFromConnection {
   return $args;
 }
 
+sub url_to_mysql_args {
+  my $class = shift;
+  my $url = shift;
+
+  $url =~ m!mysql://(.*?):(.*?)@(.*?)/(.*)!;
+  
+  # Something like mysql -uensadmin -pensembl -hensdb-2-12 -P5106 -A gj1_compara_53
+  # $1 = user, $2 = pw, $3 = server+port, $4 = db
+  my ($u,$p,$h,$P,$db) = undef;
+  $u = $1;
+  $p = $2;
+  $h = $3;
+  $P = 3306;
+  $db = $4;
+  if ($h =~ m/(.*?):(.*)/) {
+    $h = $1;
+    $P = $2;
+  }
+
+  my $mysqlargs = sprintf("-u%s -p%s -h%s -P%s -A %s",
+			  $u,
+			  $p,
+			  $h,
+			  $P,
+			  $db);
+  return $mysqlargs;
+}
+
+sub url_to_hashref {
+  my $class = shift;
+  my $url = shift;
+
+  my $args = $class->url_to_mysql_args($url);
+
+  $args =~ m/-u(.*) -p(.*) -h(.*) -P(.*) -A (.*)/;
+  my $data = {user => $1,
+	      password => $2,
+	      host => $3,
+	      port => $4,
+	      database => $5};
+  return $data;
+}
+
 sub loadConfiguration {
   my $class  = shift;
   my $params = shift;

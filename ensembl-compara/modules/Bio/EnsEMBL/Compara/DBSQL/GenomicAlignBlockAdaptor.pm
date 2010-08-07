@@ -1,3 +1,4 @@
+
 # Copyright EnsEMBL 2004
 #
 # Ensembl module for Bio::EnsEMBL::DBSQL::GenomicAlignBlockAdaptor
@@ -120,6 +121,21 @@ use Bio::EnsEMBL::Utils::Exception;
 
 @ISA = qw(Bio::EnsEMBL::DBSQL::BaseAdaptor);
 
+=head2 new
+
+  Arg [1]    : list of args to super class constructor
+  Example    : $ga_a = new Bio::EnsEMBL::Compara::GenomicAlignBlockAdaptor($dbobj);
+  Description: Creates a new GenomicAlignBlockAdaptor.  The superclass 
+               constructor is extended to initialise an internal cache.  This
+               class should be instantiated through the get method on the 
+               DBAdaptor rather than calling this method directly.
+  Returntype : none
+  Exceptions : none
+  Caller     : Bio::EnsEMBL::DBSQL::DBConnection
+  Status     : Stable
+
+=cut
+
 sub new {
   my $class = shift;
 
@@ -139,14 +155,15 @@ sub new {
   Description: It stores the given GenomicAlginBlock in the database as well
                as the GenomicAlign objects it contains
   Returntype : Bio::EnsEMBL::Compara::GenomicAlignBlock object
-  Exceptions : - method_link_species_set_id not stored in the DB
+  Exceptions : - no Bio::EnsEMBL::Compara::MethodLinkSpeciesSet is linked
                - no Bio::EnsEMBL::Compara::GenomicAlign object is linked
-               - not stored linked dnafrag objects throw.
+               - no Bio::EnsEMBL::Compara::DnaFrag object is linked 
                - unknown method link
                - cannot lock tables
                - cannot store GenomicAlignBlock object
                - cannot store corresponding GenomicAlign objects
   Caller     : general
+  Status     : Stable
 
 =cut
 
@@ -251,6 +268,7 @@ sub store {
   Returntype : none
   Exceptions : 
   Caller     : general
+  Status     : Stable
 
 =cut
 
@@ -263,6 +281,7 @@ sub delete_by_dbID {
   ## Deletes genomic_align_block entry 
   my $sth = $self->prepare($genomic_align_block_sql);
   $sth->execute($genomic_align_block_id);
+  $sth->finish();
   
   ## Deletes corresponding genomic_align entries
   my $genomic_align_adaptor = $self->db->get_GenomicAlignAdaptor;
@@ -280,6 +299,7 @@ sub delete_by_dbID {
   Exceptions : Returns undef if no matching
                Bio::EnsEMBL::Compara::GenomicAlignBlock object can be retrieved
   Caller     : none
+  Status     : Stable
 
 =cut
 
@@ -303,6 +323,8 @@ sub fetch_by_dbID {
   my $sth = $self->prepare($sql);
   $sth->execute($dbID);
   my $array_ref = $sth->fetchrow_arrayref();
+  $sth->finish();
+  
   if ($array_ref) {
     my ($method_link_species_set_id, $score, $perc_id, $length, $group_id) = @$array_ref;
   
@@ -333,15 +355,16 @@ sub fetch_by_dbID {
   Arg  3     : integer $limit_index_start [optional]
   Example    : my $genomic_align_blocks =
                   $genomic_align_block_adaptor->
-                      fetch_all_by_MethodLinkSpeciesSet_DnaFrag($mlss);
+                      fetch_all_by_MethodLinkSpeciesSet($mlss);
   Description: Retrieve the corresponding
                Bio::EnsEMBL::Compara::GenomicAlignBlock objects. Objects 
   Returntype : ref. to an array of Bio::EnsEMBL::Compara::GenomicAlignBlock objects.
                Corresponding Bio::EnsEMBL::Compara::GenomicAlign are only retrieved
-               when requiered.
+               when required.
   Exceptions : Returns ref. to an empty array if no matching
                Bio::EnsEMBL::Compara::GenomicAlignBlock object can be retrieved
   Caller     : none
+  Status     : Stable
 
 =cut
 
@@ -392,6 +415,8 @@ sub fetch_all_by_MethodLinkSpeciesSet {
     push(@$genomic_align_blocks, $this_genomic_align_block);
   }
   
+  $sth->finish();
+  
   return $genomic_align_blocks;
 }
 
@@ -415,6 +440,7 @@ sub fetch_all_by_MethodLinkSpeciesSet {
   Exceptions : Returns ref. to an empty array if no matching
                Bio::EnsEMBL::Compara::GenomicAlignBlock object can be retrieved
   Caller     : $object->method_name
+  Status     : Stable
 
 =cut
 
@@ -445,13 +471,15 @@ sub fetch_all_by_MethodLinkSpeciesSet_Slice {
     warning("Slice has no attached adaptor. Cannot get Compara alignments.");
     return $all_genomic_align_blocks;
   }
-  my $primary_species_binomial_name = 
-      $slice_adaptor->db->get_MetaContainer->get_Species->binomial;
+
+  my $gdb_a = $self->db->get_GenomeDBAdaptor();
+	my $meta_container = $reference_slice->adaptor->db->get_MetaContainer();
+	my $primary_species_name = $gdb_a->get_species_name_from_core_MetaContainer($meta_container);
   my ($highest_cs) = @{$slice_adaptor->db->get_CoordSystemAdaptor->fetch_all()};
   my $primary_species_assembly = $highest_cs->version();
   my $genome_db_adaptor = $self->db->get_GenomeDBAdaptor;
   my $genome_db = $genome_db_adaptor->fetch_by_name_assembly(
-          $primary_species_binomial_name,
+          $primary_species_name,
           $primary_species_assembly
       );
 
@@ -503,6 +531,29 @@ sub fetch_all_by_MethodLinkSpeciesSet_Slice {
             $limit_index_start,
             $restrict
         );
+
+    #If the GenomicAlignBlock has been restricted, set up the correct values 
+    #for restricted_aln_start and restricted_aln_end
+    foreach my $this_genomic_align_block (@$these_genomic_align_blocks) {
+
+	#print "GAB restricted start " . $this_genomic_align_block->{'restricted_aln_start'} . " end " . $this_genomic_align_block->{'restricted_aln_end'} . " length " . $this_genomic_align_block->{'original_length'} . "\n";
+    
+    
+	if (defined $this_genomic_align_block->{'restricted_aln_start'}) {
+	    my $tmp_start = $this_genomic_align_block->{'restricted_aln_start'};
+	    #if ($reference_slice->strand != $this_genomic_align_block->reference_genomic_align->dnafrag_strand) {
+
+	    #the start and end are always calculated for the forward strand
+	    if ($reference_slice->strand == 1) {
+		$this_genomic_align_block->{'restricted_aln_start'}++;
+		$this_genomic_align_block->{'restricted_aln_end'} = $this_genomic_align_block->{'original_length'} - $this_genomic_align_block->{'restricted_aln_end'};
+	    } else {
+		$this_genomic_align_block->{'restricted_aln_start'} = $this_genomic_align_block->{'restricted_aln_end'} + 1;
+		$this_genomic_align_block->{'restricted_aln_end'} = $this_genomic_align_block->{'original_length'} - $tmp_start;
+	    }
+	    #print "GAB after restricted start " . $this_genomic_align_block->{'restricted_aln_start'} . " end " . $this_genomic_align_block->{'restricted_aln_end'} . " length " . $this_genomic_align_block->{'original_length'} . "\n";
+	}
+    }
 
     my $top_slice = $slice_adaptor->fetch_by_region($dnafrag_type, 
                                                     $this_slice->seq_region_name);
@@ -560,13 +611,14 @@ sub fetch_all_by_MethodLinkSpeciesSet_Slice {
                   $genomic_align_block_adaptor->fetch_all_by_MethodLinkSpeciesSet_DnaFrag(
                       $mlss, $dnafrag, 50000000, 50250000);
   Description: Retrieve the corresponding
-               Bio::EnsEMBL::Compara::GenomicAlignBlock objects. Objects 
+               Bio::EnsEMBL::Compara::GenomicAlignBlock objects.
   Returntype : ref. to an array of Bio::EnsEMBL::Compara::GenomicAlignBlock objects. Only dbID,
                adaptor and method_link_species_set are actually stored in the objects. The remaining
                attributes are only retrieved when requiered.
   Exceptions : Returns ref. to an empty array if no matching
                Bio::EnsEMBL::Compara::GenomicAlignBlock object can be retrieved
   Caller     : none
+  Status     : Stable
 
 =cut
 
@@ -591,6 +643,9 @@ sub fetch_all_by_MethodLinkSpeciesSet_DnaFrag {
         $dnafrag, $start, $end, $limit_number, $limit_index_start, $restrict);
   }
 
+  #Create this here to pass into _create_GenomicAlign module
+  my $genomic_align_adaptor = $self->db->get_GenomicAlignAdaptor;
+
   my $sql = qq{
           SELECT
               ga1.genomic_align_id,
@@ -602,11 +657,16 @@ sub fetch_all_by_MethodLinkSpeciesSet_DnaFrag {
               ga1.dnafrag_strand,
               ga1.cigar_line,
               ga1.level_id,
-              ga2.genomic_align_id
+              ga2.genomic_align_id,
+              gab.score,
+              gab.perc_id,
+              gab.length,
+              gab.group_id
           FROM
-              genomic_align ga1, genomic_align ga2
+              genomic_align ga1, genomic_align_block gab, genomic_align ga2
           WHERE 
               ga1.genomic_align_block_id = ga2.genomic_align_block_id
+              AND gab.genomic_align_block_id = ga1.genomic_align_block_id
               AND ga2.method_link_species_set_id = $query_method_link_species_set_id
               AND ga2.dnafrag_id = $query_dnafrag_id
       };
@@ -627,11 +687,11 @@ sub fetch_all_by_MethodLinkSpeciesSet_DnaFrag {
   my $genomic_align_groups = {};
   my ($genomic_align_id, $genomic_align_block_id, $method_link_species_set_id,
       $dnafrag_id, $dnafrag_start, $dnafrag_end, $dnafrag_strand, $cigar_line, $level_id,
-      $query_genomic_align_id);
+      $query_genomic_align_id, $score, $perc_id, $length, $group_id);
   $sth->bind_columns(\$genomic_align_id, \$genomic_align_block_id, \$method_link_species_set_id,
       \$dnafrag_id, \$dnafrag_start, \$dnafrag_end, \$dnafrag_strand, \$cigar_line, \$level_id,
-      \$query_genomic_align_id);
-  while ($sth->fetchrow_array) {
+      \$query_genomic_align_id, \$score, \$perc_id, \$length, \$group_id);
+  while ($sth->fetch) {
 
     ## Index GenomicAlign by ga2.genomic_align_id ($query_genomic_align). All the GenomicAlign
     ##   with the same ga2.genomic_align_id correspond to the same GenomicAlignBlock.
@@ -641,6 +701,10 @@ sub fetch_all_by_MethodLinkSpeciesSet_DnaFrag {
               -adaptor => $self,
               -dbID => $genomic_align_block_id,
               -method_link_species_set_id => $method_link_species_set_id,
+              -score => $score,
+              -perc_id => $perc_id,
+              -length => $length,
+              -group_id => $group_id,
               -reference_genomic_align_id => $query_genomic_align_id,
           );
       push(@$genomic_align_blocks, $all_genomic_align_blocks->{$query_genomic_align_id});
@@ -650,7 +714,8 @@ sub fetch_all_by_MethodLinkSpeciesSet_DnaFrag {
 # # #     next if ($genomic_align_groups->{$query_genomic_align_id}->{$genomic_align_id});
     my $this_genomic_align = $self->_create_GenomicAlign($genomic_align_id,
         $genomic_align_block_id, $method_link_species_set_id, $dnafrag_id,
-        $dnafrag_start, $dnafrag_end, $dnafrag_strand, $cigar_line, $level_id);
+        $dnafrag_start, $dnafrag_end, $dnafrag_strand, $cigar_line, $level_id,
+	$genomic_align_adaptor);
 # # #     ## Set the flag to avoid creating 1 GenomicAlignGroup object per composite segment
 # # #     if ($this_genomic_align->isa("Bio::EnsEMBL::Compara::GenomicAlignGroup")) {
 # # #       foreach my $this_genomic_align (@{$this_genomic_align->genomic_align_array}) {
@@ -658,6 +723,16 @@ sub fetch_all_by_MethodLinkSpeciesSet_DnaFrag {
 # # #       }
 # # #     }
     $all_genomic_align_blocks->{$query_genomic_align_id}->add_GenomicAlign($this_genomic_align);
+  }
+
+  foreach my $this_genomic_align_block (@$genomic_align_blocks) {
+    my $ref_genomic_align = $this_genomic_align_block->reference_genomic_align;
+    if ($ref_genomic_align->cigar_line =~ /X/) {
+      # The reference GenomicAlign is part of a composite segment. We have to restrict it
+      $this_genomic_align_block = $this_genomic_align_block->restrict_between_reference_positions(
+          $ref_genomic_align->dnafrag_start, $ref_genomic_align->dnafrag_end, undef,
+          "skip_empty_genomic_aligns");
+    }
   }
 
   if (defined($start) and defined($end) and $restrict) {
@@ -671,7 +746,11 @@ sub fetch_all_by_MethodLinkSpeciesSet_DnaFrag {
     }
     $genomic_align_blocks = $restricted_genomic_align_blocks;
   }
-  
+
+  if (!$self->lazy_loading) {
+    $self->_load_DnaFrags($genomic_align_blocks);
+  }
+
   return $genomic_align_blocks;
 }
 
@@ -698,6 +777,7 @@ sub fetch_all_by_MethodLinkSpeciesSet_DnaFrag {
   Exceptions : Returns ref. to an empty array if no matching
                Bio::EnsEMBL::Compara::GenomicAlignBlock object can be retrieved
   Caller     : fetch_all_by_MethodLinkSpeciesSet_DnaFrag
+  Status     : Stable
 
 =cut
 
@@ -778,6 +858,7 @@ sub _fetch_all_by_MethodLinkSpeciesSet_DnaFrag_with_limit {
   Exceptions : Returns ref. to an empty array if no matching
                Bio::EnsEMBL::Compara::GenomicAlignBlock object can be retrieved
   Caller     : none
+  Status     : Stable
 
 =cut
 
@@ -801,6 +882,9 @@ sub fetch_all_by_MethodLinkSpeciesSet_DnaFrag_DnaFrag {
           $method_link_species_set->isa("Bio::EnsEMBL::Compara::MethodLinkSpeciesSet"));
   my $method_link_species_set_id = $method_link_species_set->dbID;
   throw("[$method_link_species_set_id] has no dbID") if (!$method_link_species_set_id);
+
+  #Create this here to pass into _create_GenomicAlign module
+  my $genomic_align_adaptor = $self->db->get_GenomicAlignAdaptor;
 
   my $sql = qq{
           SELECT
@@ -867,14 +951,14 @@ sub fetch_all_by_MethodLinkSpeciesSet_DnaFrag_DnaFrag {
       ## Create a Bio::EnsEMBL::Compara::GenomicAlign corresponding to ga1.*
       my $this_genomic_align1 = $self->_create_GenomicAlign($genomic_align_id1,
           $genomic_align_block_id1, $method_link_species_set_id1, $dnafrag_id1,
-          $dnafrag_start1, $dnafrag_end1, $dnafrag_strand1, $cigar_line1, $level_id1);
+          $dnafrag_start1, $dnafrag_end1, $dnafrag_strand1, $cigar_line1, $level_id1, $genomic_align_adaptor);
       ## ... attach it to the corresponding Bio::EnsEMBL::Compara::GenomicAlignBlock
       $gab->add_GenomicAlign($this_genomic_align1);
 
       ## Create a Bio::EnsEMBL::Compara::GenomicAlign correponding to ga2.*
       my $this_genomic_align2 = $self->_create_GenomicAlign($genomic_align_id2,
           $genomic_align_block_id2, $method_link_species_set_id2, $dnafrag_id2,
-          $dnafrag_start2, $dnafrag_end2, $dnafrag_strand2, $cigar_line2, $level_id2);
+          $dnafrag_start2, $dnafrag_end2, $dnafrag_strand2, $cigar_line2, $level_id2, $genomic_align_adaptor);
       ## ... attach it to the corresponding Bio::EnsEMBL::Compara::GenomicAlignBlock
       $gab->add_GenomicAlign($this_genomic_align2);
     }
@@ -901,6 +985,7 @@ sub fetch_all_by_MethodLinkSpeciesSet_DnaFrag_DnaFrag {
   Exceptions : Returns ref. to an empty array if no matching
                Bio::EnsEMBL::Compara::GenomicAlignBlock object can be retrieved
   Caller     : none
+  Status     : Stable
 
 =cut
 
@@ -1009,6 +1094,7 @@ sub fetch_all_by_MethodLinkSpeciesSet_DnaFrag_GroupType {
   Exceptions : Returns ref. to an empty array if no matching
                Bio::EnsEMBL::Compara::GenomicAlignBlock object can be retrieved
   Caller     : none
+  Status     : Stable
 
 =cut
 
@@ -1072,6 +1158,7 @@ sub fetch_all_by_MethodLinkSpeciesSet_GroupID {
   Returntype : Bio::EnsEMBL::Compara::GenomicAlignBlock object
   Exceptions : 
   Caller     : none
+  Status     : Stable
 
 =cut
 
@@ -1094,6 +1181,7 @@ sub retrieve_all_direct_attributes {
   my $sth = $self->prepare($sql);
   $sth->execute($genomic_align_block->dbID);
   my ($method_link_species_set_id, $score, $perc_id, $length, $group_id) = $sth->fetchrow_array();
+  $sth->finish();
   
   ## Populate the object
   $genomic_align_block->adaptor($self);
@@ -1118,6 +1206,7 @@ sub retrieve_all_direct_attributes {
   Exceptions : - cannot lock tables
                - cannot update GenomicAlignBlock object
   Caller     : none
+  Status     : Stable
 
 =cut
 
@@ -1153,6 +1242,7 @@ sub store_group_id {
   Returntype : integer
   Exceptions :
   Caller     : none
+  Status     : Stable
 
 =cut
 
@@ -1181,6 +1271,7 @@ sub lazy_loading {
   Returntype : integer
   Exceptions : 
   Caller     : none
+  Status     : Stable
 
 =cut
 
@@ -1219,11 +1310,32 @@ sub use_autoincrement {
                Bio::EnsEMBL::Compara::GenomicAlignGroup object
   Exceptions : 
   Caller     : internal
-  Status     : at risk
+  Status     : stable
 
 =cut
 
 sub _create_GenomicAlign {
+  my ($self, $genomic_align_id, $genomic_align_block_id, $method_link_species_set_id,
+      $dnafrag_id, $dnafrag_start, $dnafrag_end, $dnafrag_strand, $cigar_line,
+      $level_id, $adaptor) = @_;
+
+  my $new_genomic_align = Bio::EnsEMBL::Compara::GenomicAlign->new_fast
+    ({'dbID' => $genomic_align_id,
+      'adaptor' => $adaptor,
+     'genomic_align_block_id' => $genomic_align_block_id,
+     'method_link_species_set_id' => $method_link_species_set_id,
+     'dnafrag_id' => $dnafrag_id,
+     'dnafrag_start' => $dnafrag_start,
+     'dnafrag_end' => $dnafrag_end,
+     'dnafrag_strand' => $dnafrag_strand,
+     'cigar_line' => $cigar_line,
+     'level_id' => $level_id}
+    );
+
+  return $new_genomic_align;
+}
+
+sub _create_GenomicAlignORIG {
   my ($self, $genomic_align_id, $genomic_align_block_id, $method_link_species_set_id,
       $dnafrag_id, $dnafrag_start, $dnafrag_end, $dnafrag_strand, $cigar_line,
       $level_id) = @_;
@@ -1243,5 +1355,44 @@ sub _create_GenomicAlign {
   return $new_genomic_align;
 }
 
+
+=head2 _load_DnaFrags
+
+  [Arg  1]   : listref Bio::EnsEMBL::Compara::GenomicAlignBlock objects
+  Example    : $self->_load_DnaFrags($genomic_align_blocks);
+  Description: Load the DnaFrags for all the GenomicAligns in these
+               GenomicAlignBlock objects. This is much faster, especially
+               for a large number of objects, as we fetch all the DnaFrags
+               at once. Note: These DnaFrags are not cached by the
+               DnaFragAdaptor at the moment
+  Returntype : -none-
+  Exceptions : 
+  Caller     : fetch_all_* methods
+  Status     : at risk
+
+=cut
+
+sub _load_DnaFrags {
+  my ($self, $genomic_align_blocks) = @_;
+
+  # 1. Collect all the dnafrag_ids
+  my $dnafrag_ids = {};
+  foreach my $this_genomic_align_block (@$genomic_align_blocks) {
+    foreach my $this_genomic_align (@{$this_genomic_align_block->get_all_GenomicAligns}) {
+      $dnafrag_ids->{$this_genomic_align->{dnafrag_id}} = 1;
+    }
+  }
+
+  # 2. Fetch all the DnaFrags
+  my %dnafrags = map {$_->{dbID}, $_}
+      @{$self->db->get_DnaFragAdaptor->fetch_all_by_dbID_list([keys %$dnafrag_ids])};
+
+  # 3. Assign the DnaFrags to the GenomicAligns
+  foreach my $this_genomic_align_block (@$genomic_align_blocks) {
+    foreach my $this_genomic_align (@{$this_genomic_align_block->get_all_GenomicAligns}) {
+      $this_genomic_align->{'dnafrag'} = $dnafrags{$this_genomic_align->{dnafrag_id}};
+    }
+  }
+}
 
 1;

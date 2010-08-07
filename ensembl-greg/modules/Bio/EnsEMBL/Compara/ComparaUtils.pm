@@ -24,6 +24,11 @@ my $COMPARA = "Bio::EnsEMBL::Compara::ComparaUtils";
 
 if ($ENV{'USER'} =~ /gj1/) {
   Bio::EnsEMBL::Registry->load_registry_from_multiple_dbs(
+#							  {
+#							    -host => 'ens-livemirror',
+#							    -user => 'ensro',
+##							    -verbose => 1
+#							  },
 							  {
 							    -host => 'ens-staging',
 							    -user => 'ensro',
@@ -39,17 +44,12 @@ if ($ENV{'USER'} =~ /gj1/) {
 							    -user => 'ensro',
 #							    -verbose => 1
 							    },
-#							  {
-#							    -host => 'ens-livemirror',
-#							    -user => 'ensro',
-#							    -verbose => 1
-#							  },
-    {
-      -host => 'ensdb-archive',
-      -port => 5304,
-      -user => 'ensro',
+#    {
+#      -host => 'ensdb-archive',
+#      -port => 5304,
+#      -user => 'ensro',
 #      -verbose => 1
-    }
+#    }
 							  );
   Bio::EnsEMBL::Registry->set_disconnect_when_inactive(1);
   } else {
@@ -64,7 +64,7 @@ sub protein_tree_taxonomy_distance {
 
   # First, we need to create a newick string with the protein tree IDs normalized into taxon_id_[n]
   my %taxon_hash;
-  foreach my $member ($tree->leaves) {
+  foreach my $member (@{$tree->get_all_leaves}) {
     my $taxon_id = $member->taxon_id;    
     $taxon_hash{$taxon_id} = 0 if (!defined $taxon_hash{$taxon_id});
     $taxon_hash{$taxon_id} = $taxon_hash{$taxon_id} + 1;
@@ -77,7 +77,7 @@ sub protein_tree_taxonomy_distance {
 
   # Remove taxa where we have no genes.
   my @remove_me = ();
-  foreach my $member ($ncbi_tree->leaves) {
+  foreach my $member (@{$ncbi_tree->get_all_leaves}) {
     my $taxon_id = $member->taxon_id;
     push @remove_me, $member if (!defined $taxon_hash{$taxon_id});
   }
@@ -88,7 +88,7 @@ sub protein_tree_taxonomy_distance {
   $tree->minimize_tree;
   
   # Duplicate nodes where we have more than one gene per taxon.
-  foreach my $member ($ncbi_tree->leaves) {
+  foreach my $member (@{$ncbi_tree->get_all_leaves}) {
     my $taxon_id = $member->taxon_id;
     my $gene_count_for_taxon = $taxon_hash{$taxon_id};
     $member->name("'".$taxon_id."X1'");
@@ -103,7 +103,7 @@ sub protein_tree_taxonomy_distance {
   }
   
   # Format names a bit.
-  foreach my $member ($ncbi_tree->nodes) {
+  foreach my $member (@{$ncbi_tree->get_all_nodes}) {
     if (!$member->is_leaf) {
       $member->name('');
     }
@@ -491,7 +491,7 @@ sub mask_aln_by_sequence_quality {
 
   my $qual_hash_ref;
   my $sequence_quality;
-  foreach my $leaf ($tree->leaves) {
+  foreach my $leaf (@{$tree->get_all_leaves}) {
     my $id = $leaf->stable_id;
     my $member_id = $leaf->member_id;
     my $sequence_id = $leaf->sequence_id;
@@ -572,7 +572,7 @@ sub get_human_gene_subtrees {
 
   sub does_tree_have_human_genes {
     my $node = shift;
-    my @leaves = $node->leaves;
+    my @leaves = @{$node->get_all_leaves};
     my @hum_genes = grep {$_->taxon_id == 9606} @leaves;
     return 1 if (scalar(@hum_genes) > 0);
     return 0;
@@ -582,7 +582,7 @@ sub get_human_gene_subtrees {
     my $node = shift;
     my $node_id = $node->node_id;
     
-    return (scalar($node->leaves) > 4);
+    return (scalar(@{$node->get_all_leaves}) > 4);
     
     #my $cmd = "SELECT leaf_count($node_id);";
     #my @arr = $dbh->selectrow_array($cmd);
@@ -609,13 +609,13 @@ sub get_human_gene_subtrees {
 	# If (1) other child has human genes, (2) other child is big enough, and (3) cur node is big enough, then we're done!
 	#if (is_tree_big_enough($node) && is_tree_big_enough($other_child)) {
 	if (does_tree_have_human_genes($other_child) && is_tree_big_enough($other_child) && is_tree_big_enough($node)) {
-	  my @tmp = grep {$_->taxon_id == 9606} $node->leaves;
+	  my @tmp = grep {$_->taxon_id == 9606} @{$node->get_all_leaves};
 	  my $human_genes_subroot = scalar(@tmp);
 	  printf("Root for human gene %s is %s [%s leaves out of %s for the full tree, contains %s human gene(s)]\n",
 		 $leaf->stable_id,
 		 $node->node_id,
-		 scalar($node->leaves),
-		 scalar($root->leaves),
+		 scalar(@{$node->get_all_leaves}),
+		 scalar(@{$root->get_all_leaves}),
 		 $human_genes_subroot
 		 );
 	  push @root_nodes,$node;
@@ -735,7 +735,7 @@ sub get_tree_and_alignment {
   # Now, mask out non-subtree residues if appropriate.
   if ($params->{'mask_outside_subtree'}) {
     my %leaf_ids;
-    foreach my $leaf ($subtree_only->leaves) {
+    foreach my $leaf (@{$subtree_only->get_all_leaves}) {
       next unless ($leaf->isa("Bio::EnsEMBL::Compara::Member"));
       $leaf_ids{$leaf->stable_id} = 1;
     }
@@ -768,6 +768,40 @@ sub tree_aln_cdna {
   return ($tree,$filtered_aa,$filtered_cdna);
 }
 
+sub get_taxon_ids_from_keepers_list {
+  my $self = shift;
+  my $dba = shift;
+  my $list_string = shift;
+
+  # Get all genome_dbs, and map common names to taxon_ids.
+  my $name_to_taxon_id;
+  my @gdbs = Bio::EnsEMBL::Compara::ComparaUtils->get_all_genomes($dba);
+  foreach my $gdb (@gdbs) {
+    my $taxon_id = $gdb->taxon_id;
+    my $taxon = $gdb->taxon;
+
+    $name_to_taxon_id->{lc $gdb->short_name} = $taxon_id;
+    $name_to_taxon_id->{lc $gdb->name} = $taxon_id;
+    $name_to_taxon_id->{lc $taxon->binomial} = $taxon_id;
+    $name_to_taxon_id->{lc $taxon->common_name} = $taxon_id;
+    $name_to_taxon_id->{lc $taxon->ensembl_alias} = $taxon_id;
+    #$name_to_taxon_id->{lc $taxon->ensembl_alias_name} = $taxon_id;
+    $name_to_taxon_id->{lc $taxon->species} = $taxon_id;
+
+  }
+
+  my @tokens = split(",",$list_string);
+  my @results;
+  foreach my $token (@tokens) {
+    if (defined $name_to_taxon_id->{lc $token}) {
+      push @results, $name_to_taxon_id->{lc $token};
+    } else {    
+      push @results, $token;
+    }
+  }
+  return @results;
+}
+
 sub get_species_subtree {
   my $class = shift;
   my $dba = shift;
@@ -780,7 +814,7 @@ sub get_species_subtree {
 
   my %keep_hash; 
   my %remove_hash;
-  my @keep_species = split(",",$params->{keep_species});
+  my @keep_species = $class->get_taxon_ids_from_keepers_list($dba,$params->{keep_species});
   my @keep_names = map {
     my $taxon = $taxon_a->fetch_node_by_taxon_id($_);
     my $binomial = $taxon->binomial;
@@ -789,7 +823,7 @@ sub get_species_subtree {
   } @keep_species;
   map {$keep_hash{$_}=1} @keep_names;
   
-  foreach my $leaf ($species_tree->leaves) {
+  foreach my $leaf (@{$species_tree->get_all_leaves}) {
     #print "label: ".$leaf->name."\n";
     my $name = $leaf->name;
     if (!exists $keep_hash{$name}) {
@@ -800,7 +834,7 @@ sub get_species_subtree {
 
   # Add fake node_ids for use by the TreeUtils methods.
   my $count=1;
-  map {$_->node_id($count++)} $species_tree->nodes;
+  map {$_->node_id($count++)} @{$species_tree->get_all_nodes};
   if (scalar @remove_names > 0) {
     $species_tree = $TREE->remove_members_by_method_call($species_tree,\@remove_names,'name');
   }
@@ -824,20 +858,24 @@ sub get_tree_for_comparative_analysis {
   #$params = $class->replace_params($params,$ps_params);
 
   # Fetch the tree.
-  my $node_id = $params->{'node_id'};
-  $node_id = $params->{'protein_tree_id'} unless (defined $node_id);
-  die ("Need a node ID for fetching a tree!") unless ($node_id);
-  my $pta = $dba->get_ProteinTreeAdaptor;
-
-  # GJ 2009-09-18
-  if ($params->{'alignment_table'}) {
-    $pta->protein_tree_member($params->{'alignment_table'});
+  my $tree;
+  if (!defined $params->{tree}) {
+    my $node_id = $params->{'node_id'};
+    $node_id = $params->{'protein_tree_id'} unless (defined $node_id);
+    die ("Need a node ID for fetching a tree!") unless ($node_id);
+    my $pta = $dba->get_ProteinTreeAdaptor;
+    
+    # GJ 2009-09-18
+    if ($params->{'alignment_table'}) {
+      $pta->protein_tree_member($params->{'alignment_table'});
+    }
+    if ($params->{'alignment_score_table'}) {
+      $pta->protein_tree_score($params->{'alignment_score_table'});
+    }
+    $tree = $pta->fetch_node_by_node_id($node_id);
+  } else {
+    $tree = $params->{tree};
   }
-  if ($params->{'alignment_score_table'}) {
-    $pta->protein_tree_score($params->{'alignment_score_table'});
-  }
-
-  my $tree = $pta->fetch_node_by_node_id($node_id);
 
   my $keep_species = $params->{'keep_species'};
   my $remove_species = $params->{'remove_species'};
@@ -851,7 +889,7 @@ sub get_tree_for_comparative_analysis {
   # Remove nodes not within our desired taxonomic subtree.
   if ($keep_species ne '') {
     # Find a list of all species in the tree, and add any species NOT in the keepers list to the remove list.
-    my @ks = split(",",$keep_species);
+    my @ks = $class->get_taxon_ids_from_keepers_list($dba,$keep_species);
     map {$keep_hash{$_}=1} @ks;
     foreach my $tax_id (@all_ids) {
       if (!exists $keep_hash{$tax_id}) {
@@ -1085,7 +1123,7 @@ sub get_genome_taxonomy_below_level {
     my $node = $tx;
     while (defined $node) {
       last if (!$TREE->has_ancestor_node_id($node,$root));
-      print $node->name." " if ($verbose);
+      print "[".$node->name."] " if ($verbose);
       $keepers{$node->node_id} = $node;
       $node = $node->parent;
     }
@@ -1095,10 +1133,9 @@ sub get_genome_taxonomy_below_level {
   my @nodes = values %keepers;
   print "Size: ".scalar(@nodes)."\n" if ($verbose);
 
-  #$taxon_a->clear_cache;
+  $taxon_a->clear_cache;
   my $new_tree = $taxon_a->_build_tree_from_nodes(\@nodes);
-  # The call to "copy" seems to be important here...
-  $new_tree = $new_tree->copy->minimize_tree;
+  $new_tree = $new_tree->minimize_tree;
   return $new_tree;
 }
 
@@ -1119,6 +1156,58 @@ sub get_genomes_within_clade {
   return @genomes;
 }
 
+sub fix_genome_polytomies {
+  my $class = shift;
+  my $tree = shift;
+
+  # Fix up any multifurcations in the tree. For now we'll follow:
+  # http://mbe.oxfordjournals.org/cgi/content/full/26/6/1259/FIG6
+
+  # Fix homo/pan/gor.
+  my $hom = $tree->find_node_by_name('Homininae');
+  if (defined $hom && $hom->is_polytomy) {
+    $class->_fix_multifurcation($hom,['Homo sapiens','Pan troglodytes']);
+  }
+
+  # Fix pig/cow, dog/cat, horse.
+  my $laura = $tree->find_node_by_name('Laurasiatheria');
+  if (defined $laura && $laura->is_polytomy) {
+    $class->_fix_multifurcation($laura,['Equus caballus','Bos taurus']);
+  }
+
+  # Fix Euarchontoglires, Laurasiatheria, Afrotheria.
+  my $eutheria = $tree->find_node_by_name('Eutheria');
+  if (defined $eutheria && $eutheria->is_polytomy) {
+    $class->_fix_multifurcation($eutheria,['Laurasiatheria','Euarchontoglires'])
+  }
+
+  #TODO[greg]:
+
+  return $tree;
+}
+
+sub _fix_multifurcation {
+  my $class = shift;
+  my $polytomy = shift;
+  my $new_group_name_arrayref = shift;
+
+  print "Fixing multifurcation: ".$polytomy->newick_format."\n";
+
+  my @new_group_names = @$new_group_name_arrayref;
+
+  my $new_group = new $polytomy;
+  $new_group->distance_to_parent(1);
+  $polytomy->add_child($new_group);
+
+  my @children = @{$polytomy->sorted_children};
+
+  foreach my $name (@new_group_names) {
+    my ($node) = grep {$_->find_node_by_name($name)} @children;
+    warn("No node found for $name!") unless ($node);
+    $new_group->add_child($node);
+  }
+}
+
 
 # Returns the NCBI taxonomy tree of Ensembl genomes in NHX format.
 sub get_genome_tree_nhx {
@@ -1137,6 +1226,19 @@ sub get_genome_tree_nhx {
     my $tx = $gdb->taxon;
     my $tx_id = $tx->taxon_id;
 
+    print $gdb->name."\n";
+    my $gdb_dba     = $gdb->db_adaptor;
+    my $coverage = 'high';
+    if ($gdb_dba) {
+      my $meta = $gdb_dba->get_MetaContainer;
+      $coverage = @{ $meta->list_value_by_key('assembly.coverage_depth') }[0];
+    }
+
+    if ($coverage eq 'low') {
+    } else {
+    }
+    print "Coverage: $coverage\n";
+
     my $sql = "select stable_id from member where taxon_id=$tx_id and source_name='ENSEMBLPEP' limit 1;";
     my $sh = $dba->dbc->prepare($sql);
     $sh->execute();
@@ -1146,6 +1248,7 @@ sub get_genome_tree_nhx {
     my $leaf = $species_tree->find_node_by_node_id($tx_id);
     next unless $leaf;
 
+    $leaf->add_tag("ncol","red") if ($coverage eq 'low');
     $leaf->add_tag("bcol","gray");
     if ($include_imgs) {
       my $underbar_species = $tx->binomial;
@@ -1261,10 +1364,10 @@ sub remove_2x_offlimits_from_tree {
 			    9600  # Orangutan
 			    );
   # Early exit if it's a single-leaf tree:
-  return $tree if (scalar $tree->leaves == 1);
+  return $tree if (scalar @{$tree->get_all_leaves} == 1);
 
   my @remove_nodes = ();
-  foreach my $leaf ($tree->leaves) {
+  foreach my $leaf (@{$tree->get_all_leaves}) {
     if (grep {$leaf->taxon_id == $_} @off_limits_tax_ids) {
       printf("  -> Removing off-limits leaf %s, taxon %s\n",
 	     $leaf->stable_id,
@@ -1411,10 +1514,14 @@ sub load_params_from_param_set {
   return {} unless (defined $param_set_id);
 
   my $params;
-
   my $cmd = qq^SELECT parameter_value FROM parameter_set WHERE parameter_set_id=$param_set_id AND parameter_name="params";  ^;
   my $sth = $dbc->prepare($cmd);
-  $sth->execute();
+  eval {
+    $sth->execute();
+  };
+  if ($@) {
+    return {};
+  }
   my @row;
   while (@row = $sth->fetchrow_array) {
     $params = eval($row[0]);
@@ -1482,7 +1589,7 @@ sub load_ProteinTree_from_files {
   # Re-dress the NestedSet as a ProteinTree.
   bless($tree,'Bio::EnsEMBL::Compara::ProteinTree');
 
-  foreach my $leaf ($tree->leaves) {
+  foreach my $leaf (@{$tree->get_all_leaves}) {
     my $id = $leaf->name;
     my $seq = $ALN->get_seq_with_id($sa,$id);
     my $cdna_seq = $ALN->get_seq_with_id($cdna_sa,$id) if (defined $cdna_sa);
@@ -1509,5 +1616,109 @@ sub load_ProteinTree_from_files {
   }
   return $tree;
 }
+
+sub genomic_aln_for_tree {
+  my $class = shift;
+  my $tree = shift;
+  my $ref_taxon_id = shift;
+
+  my (@ref_members) = grep {$_->taxon_id == $ref_taxon_id} @{$tree->get_all_leaves};
+  die "No member for taxon_id $ref_taxon_id found!" unless (scalar @ref_members > 0);
+  my $ref_member = $ref_members[0];
+
+  print $ref_member->stable_id."\n";
+  return $class->genomic__for_member($ref_member);
+}
+
+sub genomic_aln_for_member {
+  my $class = shift;
+  my $compara_dba = shift;
+  my $ref_member = shift;
+
+  my $url = 'mysql://ensro@ens-livemirror:3306/ensembl_compara_58';
+#  my $mirror_dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new(-url => $url);
+  my $mirror_dba = $compara_dba;
+  my $mba = $mirror_dba->get_MemberAdaptor;
+  my $gat_a = $mirror_dba->get_GenomicAlignTreeAdaptor;
+  my $gab_a = $mirror_dba->get_GenomicAlignBlockAdaptor;
+  my $as_a = $mirror_dba->get_AlignSliceAdaptor;
+  my $mlss_a = $mirror_dba->get_MethodLinkSpeciesSetAdaptor;
+
+  # Get the EPO low coverage MLSS object.
+  #my ($mlss) = @{$mlss_a->fetch_all_by_method_link_type('EPO_LOW_COVERAGE')};
+  my $mlss_list = $mlss_a->fetch_all_by_method_link_type('EPO');
+  my $mlss = @{$mlss_list}[1];
+  my $type = $mlss->method_link_type;
+  my $mlss_name = $mlss->name;
+  print "Fetching genomic alignments [$mlss_name]...\n";
+
+  $ref_member = $mba->fetch_by_source_stable_id(undef,$ref_member->stable_id);
+
+  $ref_member = $ref_member->get_canonical_peptide_Member;
+  my $tx = $ref_member->get_Transcript;
+  my $slice_a = $tx->adaptor->db->get_SliceAdaptor;
+
+  my @exons = @{$tx->get_all_translateable_Exons};
+
+  my @alns;
+  my @aa_alns;
+
+  foreach my $exon (@exons) {
+    my $slice = $exon->slice;
+
+    my $start = $exon->coding_region_start($tx);
+    my $end = $exon->coding_region_end($tx);
+    my $strand = $exon->strand;
+    my $frame = $exon->frame;
+    my $phase = $exon->phase;
+    my $end_phase = $exon->end_phase;
+
+    if ($phase > 0) {
+#      $start -= $phase if ($strand == 1);
+#      $end += $phase if ($strand == -1);
+    }
+
+    #printf "%s %d-%d %s %s\n", $slice->seq_region_name,$start,$end,$strand,$phase;
+    my $sub_slice = $slice->sub_Slice($start,$end,$strand); 
+    my $align_slice = $as_a->fetch_by_Slice_MethodLinkSpeciesSet(
+      $sub_slice,$mlss,1
+      );
+    
+    foreach my $slice (@{$align_slice->get_all_Slices}) {
+      my $name = $slice->genome_db->name;
+      if ($name eq 'Ancestral sequences') {
+	# Try to get the tree which this ancestral sequence represents...
+	# See ensembl-webcode/modules/EnsEMBL/Web/Component/Compara_Alignments.pm
+	# and documentation for AlignSlice.pm
+	my @slice_mapper_objs = @{$slice->get_all_Slice_Mapper_pairs};
+	foreach my $obj (@slice_mapper_objs) {
+	  my $tree_newick = $obj->{slice}->{_tree};
+	  my $ancestral_tree = Bio::EnsEMBL::Compara::TreeUtils->from_newick($tree_newick);
+	  my $num_leaves = scalar($ancestral_tree->leaves);
+
+	  # Generate a unique name string from the subtree covered by this ancestral seq.
+	  my @leaf_initials = sort map {substr($_->name,0,1)} $ancestral_tree->leaves;
+
+	  # Gotta create a dummy copy of the genome db object too.
+	  my $gdb = $slice->genome_db;
+	  $gdb = new $gdb;
+	  $gdb->name('Anc.'.join('',@leaf_initials));
+	  $slice->genome_db($gdb);
+        }
+      }
+    }
+
+    my $sa = $align_slice->get_SimpleAlign();
+#    my $sa_aa = Bio::EnsEMBL::Compara::AlignUtils->translate($sa);
+    push @alns, $sa;
+#    push @aa_alns, $sa_aa;
+  }
+
+  my $cdna_aln = Bio::EnsEMBL::Compara::AlignUtils->combine_alns(@alns);
+  my $aa_aln = Bio::EnsEMBL::Compara::AlignUtils->translate($cdna_aln);
+
+  return ($cdna_aln,$aa_aln);
+}
+
 
 1;
