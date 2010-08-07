@@ -47,6 +47,8 @@ sub run {
 
   my $tree_dir = $self->param('tree_root_dir') || '.';
 
+  $self->disconnect_when_inactive(0);
+
   foreach my $params (@simsets) {
     $self->verify_params($params);
 
@@ -54,19 +56,13 @@ sub run {
     $self->hash_print($params);
 
     my $replicates = $params->{slrsim_replicates};
+    $replicates = 1 if ($replicates < 1);
 
     my $base_node;
     if (defined $params->{slrsim_tree}) {
       $base_node = $params->{slrsim_tree};
     } elsif (defined $params->{slrsim_tree_file}) {
-      my $file = $tree_dir . '/' . $params->{'slrsim_tree_file'};
-      print " -> Tree file: $file\n";
-      open( IN, "$file" );
-      my $newick_str = join( "", <IN> );
-      $newick_str =~ s/\n//g;
-      close(IN);
-      print " -> Tree string: $newick_str\n";
-      $base_node = Bio::EnsEMBL::Compara::TreeUtils->from_newick($newick_str);
+      $base_node = $self->_get_tree_from_file($params->{'slrsim_tree_file'});
     } elsif (defined $params->{slrsim_tree_newick}) {
       print "Loading from newick...\n";
       $base_node = Bio::EnsEMBL::Compara::TreeUtils->from_newick($params->{slrsim_tree_newick});
@@ -89,14 +85,30 @@ sub run {
     }
   }
 
-  my $pta = $self->pta;
-  foreach my $node ( @{ $pta->fetch_all_roots } ) {
-    print $node->get_tagvalue("input_file") . "\t"
-      . $node->node_id . "\t"
-      . scalar( @{ $node->get_all_leaves } ) . "\n";
-    printf "  > %.50s\n", $node->newick_format;
-  }
+#  my $pta = $self->pta;
+#  foreach my $node ( @{ $pta->fetch_all_roots } ) {
+#    print $node->get_tagvalue("input_file") . "\t"
+#      . $node->node_id . "\t"
+#      . scalar( @{ $node->get_all_leaves } ) . "\n";
+#    printf "  > %.50s\n", $node->newick_format;
+#  }
 
+}
+
+sub _get_tree_from_file {
+  my $self = shift;
+  my $filename = shift;
+
+  my $tree_dir = $self->param('tree_root_dir') || '.';
+  my $file = $tree_dir . '/' . $filename;
+  print " -> Tree file: $file\n";
+  open( IN, "$file" );
+  my $newick_str = join( "", <IN> );
+  $newick_str =~ s/\n//g;
+  close(IN);
+  print " -> Tree string: $newick_str\n";
+  my $tree = Bio::EnsEMBL::Compara::TreeUtils->from_newick($newick_str);
+  return $tree;
 }
 
 sub load_tree_into_database {
@@ -125,10 +137,18 @@ sub load_tree_into_database {
   }
   my $tree_max_path = $params->{'slrsim_tree_max_path'};
   if ($tree_max_path) {
+    print "Tree max path: $tree_max_path\n";
     $node = Bio::EnsEMBL::Compara::TreeUtils->scale_max_to( $node, $tree_max_path );
+  }
+  my $tree_mean_path = $params->{'slrsim_tree_mean_path'};
+  if ($tree_mean_path) {
+    print "Tree mean path: $tree_mean_path\n";
+    $node = Bio::EnsEMBL::Compara::TreeUtils->scale_mean_to( $node, $tree_mean_path );
   }
 
   my $final_length = Bio::EnsEMBL::Compara::TreeUtils->total_distance($node);
+
+  print "Final lenth: $final_length\n";
 
   # Go through each leaf and store the member objects.
   foreach my $leaf ( $node->leaves ) {
@@ -183,7 +203,7 @@ sub load_simulation_params {
     '2x_primates'          => '2x_p.nh',
     '2x_glires'            => '2x_g.nh',
     '44mammals'            => '44mammals.nh',
-    '2xmammals'  => '2xmammals.nh',
+    '2xmammals'            => '2xmammals.nh',
     'ensembl_a'            => 'ensembl.nh',
     'ensembl_b'            => 'ensembl_2.nh',
     'mammals_test'         => 'mammals_test.nh'
@@ -248,18 +268,25 @@ sub load_simulation_params {
       phylosim_meanlog            => -1.864,
       phylosim_sdlog              => 1.8
     },
-    lognormal_extreme => {
-      omega_distribution_name     => "2xmammals Lognormal (wide)",
+    lognormal_very_wide => {
+      omega_distribution_name     => "2xmammals Lognormal (very wide)",
       phylosim_omega_distribution => 'lognormal',
-      phylosim_meanlog            => -1.5,
+      phylosim_meanlog            => -1.864,
       phylosim_sdlog              => 2.5
     },
     lognormal_narrow => {
-      omega_distribution_name     => "2xmammals Lognormal (wide)",
+      omega_distribution_name     => "2xmammals Lognormal (narrow)",
       phylosim_omega_distribution => 'lognormal',
-      phylosim_meanlog            => -2,
+      phylosim_meanlog            => -1.864,
       phylosim_sdlog              => 1
+    },
+    lognormal_very_narrow => {
+      omega_distribution_name     => "2xmammals Lognormal (very narrow)",
+      phylosim_omega_distribution => 'lognormal',
+      phylosim_meanlog            => -1.864,
+      phylosim_sdlog              => 0.5
     }
+
 
   };
   $self->param( 'omega_distributions', $omega_distributions );
@@ -730,6 +757,158 @@ sub filter_sweep {
   return \@sets;
 }
 
+####
+####
+####
+
+sub slrsim_one {
+  my $self = shift;
+
+  return $self->_generic_tree_indel_sweep('44mammals',1);
+}
+
+sub _generic_tree_indel_sweep {
+  my $self = shift;
+  my $tree = shift;
+  my $base_path_length = shift;
+
+  my $reps = $self->reps(20);
+  my $length = $self->length(500);
+  my $tree = $self->tree_param($tree);
+  my $aln = $self->aln_param('prank');
+  my $omegas = $self->omega_param('lognormal_wide');
+  my $analysis = $self->analysis_param('slr');
+
+  my $base_params = $self->replace($reps,$tree,$aln,$omegas,$analysis);
+
+  my $tree_obj = $self->_get_tree_from_file($base_params->{slrsim_tree_file});
+
+  my @sets;
+  my $params;
+  my @lengths = map {$_ * $base_path_length/5} 1 .. 30;
+  my @indels = map {$_ * .025} 0 .. 20;
+  foreach my $tree_length (@lengths) {
+    $params = $self->replace($base_params,{
+      slrsim_tree_max_path => $tree_length
+                             });
+    foreach my $indel (@indels) {
+      $tree_obj = Bio::EnsEMBL::Compara::TreeUtils->scale_mean_to($tree_obj,$tree_length);
+      my $total_length = Bio::EnsEMBL::Compara::TreeUtils->total_distance($tree_obj);
+
+      if ($indel * $total_length > 3 || $tree_length == 0) {
+        print "Too much: $total_length $indel\n";
+        next;
+      }
+      $params = $self->replace($params,{
+        phylosim_insertrate => $indel,
+        phylosim_deleterate => $indel,
+        slrsim_label => $tree_length.'|'.$indel
+                               });
+      push @sets, $params;
+    }
+  }
+  my $n = scalar(@sets);
+  print "Tree count: $n\n";
+
+  $self->store_meta($base_params);
+  return \@sets;
+}
+
+sub slrsim_two {
+  my $self = shift;
+
+  my $reps = $self->reps(5);
+  my $length = $self->length(500);
+  my $aln = $self->aln_param('prank');
+  my $analysis = $self->analysis_param('slr');
+  my $indel = $self->indel(0.1);
+  my $omega_dist = $self->omega_param('lognormal_wide');
+
+  my $base_params = $self->replace($reps,$aln,$analysis,$indel,$omega_dist);
+
+  my $tree_param = $self->tree_param('44mammals');
+  my $tree_obj = $self->_get_tree_from_file($tree_param->{slrsim_tree_file});
+  print $tree_obj->newick_format()."\n";
+
+  my @subsets;
+
+  # Ingroup addition.
+  map {push @subsets, ['Human',$_]} ('Chimp','Gorilla','Orangutan','Rhesus');
+  # Outgroup addition.
+  map {push @subsets, ['Human',$_]} ('Lamprey','Zebrafish','Medaka','Tetraodon','Zebrafinch','Platypus','Opossum','Tenrec','Hedgehog','Microbat','Dog');
+
+  my @sets;
+  foreach my $subset (@subsets) {
+    $tree_obj = $tree_obj->copy;
+    my $subtree = Bio::EnsEMBL::Compara::TreeUtils->subtree($tree_obj,$subset);
+    print "sub: ". $subtree->newick_format()."\n";
+    push @sets, $self->replace($base_params, {
+      slrsim_tree_newick => $subtree->newick_format(),
+      slrsim_label => join(',',@$subset)
+                               });
+  }
+  
+  return \@sets;
+}
+
+sub slrsim_three {
+  my $self = shift;
+
+  my $reps = $self->reps(20);
+  my $length = $self->length(500);
+  my $tree = $self->tree_param('44mammals');
+  my $aln = $self->aln_param('prank');
+  my $analysis = $self->analysis_param('slr');
+  my $indel = $self->indel(0.1);
+
+  my $base_params = $self->replace($reps,$tree,$aln,$analysis,$indel);
+
+  my @sets;
+  my $params;
+  foreach my $omega_dist ('lognormal_very_narrow','lognormal_narrow','lognormal','lognormal_wide','lognormal_very_wide') {
+    my $omega_params = $self->omega_param($omega_dist);
+
+    $params = $self->replace($params,$omega_params,{
+      slrsim_label => $omega_dist
+                             });
+    push @sets, $params;
+  }
+  
+  $self->store_meta($base_params);
+  return \@sets;
+}
+
+sub slrsim_four {
+  my $self = shift;
+
+  my $reps = $self->reps(20);
+  my $length = $self->length(500);
+  my $tree = $self->tree_param('44mammals');
+  my $aln = $self->aln_param('prank');
+  my $analysis = $self->analysis_param('slr');
+  my $indel = $self->indel(0.1);
+  my $omega_dist = $self->omega_param('lognormal');
+
+  my $base_params = $self->replace($reps,$tree,$aln,$analysis,$indel,$omega_dist);
+
+  my @sets;
+  my $params;
+  foreach my $ref ('human','Bushbaby','Mouse','Tenrec','Lizard','Xtropicalis','Fugu') {
+    my $ref_params = $self->ref_param($ref);
+
+    $params = $self->replace($params,$ref_params,{
+      slrsim_label => $ref
+                             });
+    push @sets, $params;
+  }
+  
+  $self->store_meta($base_params);
+  return \@sets;
+}
+
+####
+####
+####
 sub tree_param {
   my $self = shift;
   my $tree_name = shift;
@@ -737,6 +916,24 @@ sub tree_param {
   my $tree = $self->param('trees')->{$tree_name};
   
   return {slrsim_tree_file => $tree};
+}
+
+sub omega_param {
+  my $self = shift;
+  my $omega_name = shift;
+
+  my $distr_params = $self->param('omega_distributions')->{$omega_name};
+  
+  return $distr_params;
+}
+
+sub analysis_param {
+  my $self = shift;
+  my $analysis_name = shift;
+
+  my $analysis_params = $self->param('phylo_analyses')->{$analysis_name};
+  
+  return $analysis_params;
 }
 
 sub aln_param {
@@ -755,6 +952,31 @@ sub aln_param {
   }
   return $aln_params;
 }
+
+sub reps {
+  my $self = shift;
+  my $reps = shift;
+
+  return {slrsim_replicates => $reps};
+}
+
+sub length {
+  my $self = shift;
+  my $length = shift;
+
+  return {phylosim_seq_length => $length};
+}
+
+sub indel {
+  my $self = shift;
+  my $indel_rate = shift;
+
+  return {
+    phylosim_insertrate => $indel_rate/2,
+    phylosim_deleterate => $indel_rate/2
+  };
+}
+
 
 sub filter_order {
   my $self = shift;
@@ -794,6 +1016,15 @@ sub filter_param {
     $f->{sitewise_filter_order} = 'before';
   }
   return $f;
+}
+
+sub ref_param {
+  my $self    = shift;
+  my $species = shift;
+  my $p       = {
+    slrsim_ref   => $species
+  };
+  return $p;
 }
 
 sub species_param {

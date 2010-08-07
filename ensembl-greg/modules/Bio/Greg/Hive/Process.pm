@@ -234,6 +234,8 @@ sub db_handle {
   my $self = shift;
   my $force = shift;
 
+  warn('Shouldn\'t be accessing db_handle directly -- use $dbc->do and $dbc->prepare');
+
   if (!defined $self->param('_compara_dbh') || $force == 1) {
     print " >>>> Getting new Compara DBH!!!!\n";
     my $dbc = $self->dbc;
@@ -241,7 +243,23 @@ sub db_handle {
     $self->param('_compara_dbh',$dbh);
     print $dbh."\n";
   }
-  return $self->param('_compara_dbh');
+
+  my $dbh = $self->param('_compara_dbh');
+
+  my $ping = $dbh->ping;
+  print "PING: $ping\n";
+#  if (!$ping) {
+#    $dbh = $dbh->clone;
+#    $self->param('_compara_dbh',$dbh);
+#  }
+  return $dbh;
+}
+
+sub disconnect_when_inactive {
+  my $self = shift;
+  my $discon = shift;
+
+  $self->dbc->disconnect_when_inactive($discon);
 }
 
 sub dbc {
@@ -253,7 +271,6 @@ sub dbc {
     print " >>>> Getting new Compara DBC!!!!\n";
     my $compara_dba = $self->compara_dba;
     my $dbc = $compara_dba->dbc;
-    print $dbc."\n";
     # It's apparently important to turn off the inactive disconnect here, since we'll
     # be sharing this DBC throughout the lifetime of this Process.
     # TODO: Think of how to handle the case when a Process wants to let a connection

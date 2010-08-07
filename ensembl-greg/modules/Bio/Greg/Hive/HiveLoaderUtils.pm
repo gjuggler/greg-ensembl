@@ -51,6 +51,12 @@ sub init {
   my $hive_dba = Bio::EnsEMBL::Hive::DBSQL::DBAdaptor->new(-url => $url);
   $self->dba($dba);
   $self->hive_dba($hive_dba);
+
+  # Init hive and compara tables if necessary.
+  my $base_folder = Bio::Greg::EslrUtils->baseDirectory;
+  my $compara_sql = "$base_folder/ensembl-greg/sql/compara-basic-tables.sql";
+  my $hive_sql = "$base_folder/ensembl-greg/sql/hive-basic-tables.sql";
+
 }
 
 

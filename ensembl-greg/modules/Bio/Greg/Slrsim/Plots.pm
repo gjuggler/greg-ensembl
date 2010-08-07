@@ -89,8 +89,12 @@ sub dump_data {
   my $filename = $self->param('output_folder') . '/slrsim_sites.Rdata';
   my $script = $self->script;
 
+  my $dbname = $self->dbc->dbname;
+ 
+
   if (!-e $filename) {
     my $rcmd = qq^
+dbname="$dbname"
 source("$script")
 data = get.all.data()
 save(data,file="${filename}");
