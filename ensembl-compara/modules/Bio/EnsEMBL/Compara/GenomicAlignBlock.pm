@@ -1110,8 +1110,8 @@ sub get_SimpleAlign {
     my $alignSeq = $genomic_align->aligned_sequence;
     
     my $loc_seq = Bio::LocatableSeq->new(-SEQ    => $uc ? uc $alignSeq : lc $alignSeq,
-                                         -START  => $genomic_align->dnafrag_start,
-                                         -END    => $genomic_align->dnafrag_end,
+                                         #-START  => $genomic_align->dnafrag_start,
+                                         #-END    => $genomic_align->dnafrag_end,
                                          -ID     => $display_id ? $genomic_align->display_id : $genomic_align->dnafrag->name,
                                          -STRAND => $genomic_align->dnafrag_strand);
 

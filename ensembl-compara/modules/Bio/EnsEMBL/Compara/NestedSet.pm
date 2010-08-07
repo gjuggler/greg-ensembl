@@ -279,15 +279,33 @@ sub has_ancestor {
 sub root {
   my $self = shift;
 
-  if (!defined($self->{'_parent_link'}) and $self->adaptor and $self->left_index) {
-      my $root_tree = $self->adaptor->fetch_root_by_node($self);
-      return $root_tree if ($root_tree);
+  # Only if we don't have it cached
+  # Only if we have left and right and it's not a leaf
+  # Only if it's for release clusterset (1 genetrees - 0 genomic align trees)
+  if (!defined($self->{'_parent_link'}) and $self->adaptor 
+      and ($self->right_index-$self->left_index)>1
+      and (1==$self->{'_parent_id'})
+     ) {
+    return $self->adaptor->fetch_root_by_node($self);
   }
 
+  # Otherwise, go through the step-by-step method
   return $self unless(defined($self->parent));
  #  return $self if($self->node_id eq $self->parent->node_id);
   return $self->parent->root;
 }
+#sub root {
+#  my $self = shift;
+#
+#  if (!defined($self->{'_parent_link'}) and $self->adaptor and $self->left_index) {
+#      my $root_tree = $self->adaptor->fetch_root_by_node($self);
+#      return $root_tree if ($root_tree);
+#  }
+#
+#  return $self unless(defined($self->parent));
+# #  return $self if($self->node_id eq $self->parent->node_id);
+#  return $self->parent->root;
+#}
 
 sub subroot {
   my $self = shift;
@@ -395,22 +413,21 @@ sub sorted_children {
 
 sub get_all_nodes {
   my $self = shift;
-  my $node_arrayref = shift;
+  my $node_hash = shift;
 
   my $toplevel = 0;
-  unless($node_arrayref) {
-   $node_arrayref = [];
+  unless($node_hash) {
+   $node_hash = {};
    $toplevel =1;
   }
 
-  #$node_hash->{$self->obja_id} = $self; 
-  push @{$node_arrayref}, $self;
-  foreach my $child (@{$self->sorted_children}) {
-    $child->get_all_nodes($node_arrayref);
+  $node_hash->{$self->obj_id} = $self; 
+  foreach my $child (@{$self->children}) {
+    $child->get_all_nodes($node_hash);
   }
 
   if ($toplevel) {
-    return $node_arrayref;
+    return [values(%$node_hash)];
   }
   return undef;
 }
@@ -977,6 +994,11 @@ sub _internal_nhx_format {
 	  $nhx .= ":IMG=".$self->get_tagvalue("img");
       }
 
+      foreach my $tag ($self->get_all_tags) {
+        next if ($tag =~ /name/gi);
+        $nhx .= ":".$tag."=".$self->get_tagvalue($tag);
+      }
+
     $nhx .= "]";
   }
   if($format_mode eq 'simple') { 
@@ -1281,6 +1303,12 @@ sub is_subset_of {
 sub is_leaf {
   my $self = shift;
   return 1 unless($self->get_child_count);
+  return 0;
+}
+
+sub is_polytomy {
+  my $self = shift;
+  return 1 if ($self->get_child_count > 2);
   return 0;
 }
 
@@ -1649,7 +1677,7 @@ sub _recursive_get_all_leaves {
     
   $leaves->{$self->obj_id} = $self if($self->is_leaf);
 
-  foreach my $child (@{$self->sorted_children}) {
+  foreach my $child (@{$self->children}) {
     $child->_recursive_get_all_leaves($leaves);
   }
   return undef;

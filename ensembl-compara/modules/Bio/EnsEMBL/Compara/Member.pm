@@ -913,7 +913,10 @@ sub get_Gene {
          $self->genome_db->db_adaptor and
          $self->genome_db->db_adaptor->isa('Bio::EnsEMBL::DBSQL::DBAdaptor')) 
   {
-    throw("unable to connect to core ensembl database: missing registry and genome_db.locator");
+    print $self->stable_id."\n";
+    my $name = $self->genome_db->name;
+    warn("unable to connect to core ensembl database for $name: missing registry and genome_db.locator");
+    return undef;
   }
 
   my $coreDBA = $self->genome_db->db_adaptor;

@@ -135,6 +135,7 @@ sub right_node {
   Returntype : none
   Exceptions : none
   Caller     : general
+  Status     : At risk
 
 =cut
 
@@ -305,58 +306,65 @@ sub aligned_sequence {
 }
 
 
-# # =head2 group_id
-# # 
-# #   Arg [1]    : integer $group_id
-# #   Example    : my $group_id = $genomic_align_tree->group_id;
-# #   Example    : $genomic_align_tree->group_id(1234);
-# #   Description: get/set for attribute group_id of the underlying
-# #                GenomicAlignBlock objects
-# #   Returntype : integer
-# #   Exceptions : A GenomicAlignTree is made of two GenomicAlignBlock
-# #                object. The method fail when gettign the value if the
-# #                two group_ids don't match
-# #   Caller     : general
-# # 
-# # =cut
-# # 
-# # sub group_id {
-# #     my ($self, $group_id) = @_;
-# # 
-# #     if (defined($group_id)) {
-# #       $self->{'group_id'} = $group_id;
-# #       # Set the group_id on the genomic_align_blocks...
-# #       my %genomic_align_blocks;
-# #       foreach my $this_genomic_align_node (@{$self->get_all_sorted_genomic_align_nodes()}) {
-# #         my $this_genomic_align_block = $this_genomic_align_node->genomic_align->genomic_align_block;
-# #         if ($this_genomic_align_block and !defined($genomic_align_blocks{$this_genomic_align_block})) {
-# #           $this_genomic_align_block->group_id($group_id);
-# #           $genomic_align_blocks{$this_genomic_align_block} = 1;
-# #         }
-# #       }
-# #     } elsif (!defined($self->{'group_id'}) and defined($self->{adaptor})) {
-# #       # Try to get the ID from other sources...
-# #       my %group_ids;
-# #       my $genomic_align_block_adaptor = $self->adaptor->dba->get_GenomicAlignBlockAdaptor;
-# #       foreach my $this_genomic_align_node (@{$self->get_all_sorted_genomic_align_nodes()}) {
-# #         my $this_genomic_align_block_id = $this_genomic_align_node->genomic_align->genomic_align_block_id;
-# #         my $this_genomic_align_block = $genomic_align_block_adaptor->fetch_by_dbID($this_genomic_align_block_id);
-# #         if ($this_genomic_align_block->group_id) {
-# #           $group_ids{$this_genomic_align_block->group_id} = 1;
-# #         } else {
-# #           $group_ids{"undef"} = 1;
-# #         }
-# #       }
-# #       if (keys %group_ids == 1) {
-# #         if (!defined($group_ids{"undef"})) {
-# #           $self->{'group_id'} = (keys %group_ids)[0];
-# #         }
-# #       } else {
-# #         warning("Different group_ids found for this GenomicAlignTree\n");
-# #       }
-# #     }
-# #     return $self->{'group_id'};
-# # }
+=head2 group_id
+
+  Arg [1]    : integer $group_id
+  Example    : my $group_id = $genomic_align_tree->group_id;
+  Example    : $genomic_align_tree->group_id(1234);
+  Description: get/set for attribute group_id of the underlying
+               GenomicAlignBlock objects
+  Returntype : integer
+  Exceptions : A GenomicAlignTree is made of two GenomicAlignBlock
+               object. The method fail when gettign the value if the
+               two group_ids do not match
+  Caller     : general
+
+=cut
+
+sub group_id {
+    my ($self, $group_id) = @_;
+    
+    if (defined($group_id)) {
+        $self->{'group_id'} = $group_id;
+        # Set the group_id on the genomic_align_blocks...
+        my %genomic_align_blocks;
+        #foreach my $this_genomic_align_node (@{$self->get_all_sorted_genomic_align_nodes()}) {
+        foreach my $this_genomic_align_node (@{$self->get_all_nodes()}) {
+	    next if (!defined $this_genomic_align_node->genomic_align_group);
+	    foreach my $genomic_align (@{$this_genomic_align_node->genomic_align_group->get_all_GenomicAligns}) {
+		my $this_genomic_align_block = $genomic_align->genomic_align_block;
+		if ($this_genomic_align_block and !defined($genomic_align_blocks{$this_genomic_align_block})) {
+		    $this_genomic_align_block->group_id($group_id);
+		    $genomic_align_blocks{$this_genomic_align_block} = 1;
+		}
+	    }
+	}
+    } elsif (!defined($self->{'group_id'}) and defined($self->{adaptor})) {
+        # Try to get the ID from other sources...
+        my %group_ids;
+        my $genomic_align_block_adaptor = $self->adaptor->dba->get_GenomicAlignBlockAdaptor;
+        foreach my $this_genomic_align_node (@{$self->get_all_nodes()}) {
+	    next if (!defined $this_genomic_align_node->genomic_align_group);
+	    foreach my $genomic_align (@{$this_genomic_align_node->genomic_align_group->get_all_GenomicAligns}) {
+		my $this_genomic_align_block_id = $genomic_align->genomic_align_block_id;
+		my $this_genomic_align_block = $genomic_align_block_adaptor->fetch_by_dbID($this_genomic_align_block_id);
+		if ($this_genomic_align_block->group_id) {
+		    $group_ids{$this_genomic_align_block->group_id} = 1;
+		} else {
+		    $group_ids{"undef"} = 1;
+		}
+	    }
+        }
+        if (keys %group_ids == 1) {
+	    if (!defined($group_ids{"undef"})) {
+		$self->{'group_id'} = (keys %group_ids)[0];
+	    }
+        } else {
+	    warning("Different group_ids found for this GenomicAlignTree\n");
+        }
+    }
+    return $self->{'group_id'};
+}
 
 
 =head2 name
@@ -384,13 +392,28 @@ sub name {
       ## Bio::EnsEMBL::Compara::GenomicAlignTree in the Ortheus pipeline
       $self->{_name} = $self->SUPER::name();
     } elsif ($self->is_leaf) {
-      $genomic_align_group->genome_db->name =~ /(.)[^ ]+ (.{3})/;
-      $self->{_name} = "${1}${2}_".$genomic_align_group->dnafrag->name."_".
+    	my $gdb_name;
+      if($genomic_align_group->genome_db->name =~ /(.)[^ ]+ (.{3})/) {
+      	$gdb_name = "${1}${2}";
+      }
+      else {
+      	$gdb_name = $genomic_align_group->genome_db->name();
+      	$gdb_name =~ tr/_//;
+      }
+      $self->{_name} = $gdb_name.'_'.$genomic_align_group->dnafrag->name."_".
           $genomic_align_group->dnafrag_start."_".$genomic_align_group->dnafrag_end."[".
           (($genomic_align_group->dnafrag_strand eq "-1")?"-":"+")."]";
     } else {
-      $self->{_name} = join("-", map {$_->genomic_align_group->genome_db->name =~ /(.)[^ ]+ (.{3})/; $_ = "$1$2"}
-          @{$self->get_all_leaves})."[".scalar(@{$self->get_all_leaves})."]";
+      $self->{_name} = join("-", map {
+      	my $name = $_->genomic_align_group->genome_db->name;
+      	if($name =~ /(.)[^ ]+ (.{3})/) {
+      		$name = "$1$2";
+      	}
+      	else {
+      		$name =~ tr/_//; 	
+      	} 
+      	$name;
+      } @{$self->get_all_leaves})."[".scalar(@{$self->get_all_leaves})."]";
     }
   }
 
@@ -399,6 +422,18 @@ sub name {
 
 
 =head2 get_all_sorted_genomic_align_nodes
+
+  Arg [1]     : (optional) Bio::EnsEMBL::Compara::GenomicAlignTree $reference_genomic_align_node
+  Example     : $object->get_all_sorted_genomic_align_nodes($ref_genomic_align_node);
+  Example     : $nodes = $object->get_all_sorted_genomic_align_nodes();
+  Description : If ref_genomic_align_node is set, sorts the tree based on the
+                reference_genomic_align_node
+                If ref_genomic_align_node is not set, sorts the tree based on
+                the species name
+  Returntype  : Bio::EnsEMBL::Compara::GenomicAlignTree
+  Exceptions  : none
+  Caller      : general
+  Status      : At risk
 
 =cut
 
@@ -462,7 +497,7 @@ sub get_all_sorted_genomic_align_nodes {
   Returntype : Bio::EnsEMBL::Compara::GenomicAlignBlock object
   Exceptions : none
   Caller     : general
-
+  Status     : At risk
 
 =cut
 
@@ -470,13 +505,15 @@ sub restrict_between_alignment_positions {
   my ($self, $start, $end, $skip_empty_GenomicAligns, $reference_genomic_align) = @_;
   my $genomic_align_tree;
   $genomic_align_tree = $self->copy();
+  $genomic_align_tree->adaptor($self->adaptor);
 
   foreach my $this_node (@{$genomic_align_tree->get_all_nodes}) {
     my $genomic_align_group = $this_node->genomic_align_group;
     next if (!$genomic_align_group);
     my $new_genomic_aligns = [];
+    my $length = $this_node->length;
     foreach my $this_genomic_align (@{$genomic_align_group->get_all_GenomicAligns}) {
-      my $restricted_genomic_align = $this_genomic_align->restrict($start, $end);
+      my $restricted_genomic_align = $this_genomic_align->restrict($start, $end, $length);
       if ($genomic_align_tree->reference_genomic_align eq $this_genomic_align) {
         ## Update the reference_genomic_align
         $genomic_align_tree->reference_genomic_align($restricted_genomic_align);
@@ -500,7 +537,15 @@ sub restrict_between_alignment_positions {
       }
     } else {
       $this_node->disavow_parent();
-      $genomic_align_tree = $genomic_align_tree->minimize_tree();
+      my $reference_genomic_align = $genomic_align_tree->reference_genomic_align;
+      if ($reference_genomic_align) {
+	  my $reference_genomic_align_node = $genomic_align_tree->reference_genomic_align_node;
+	  $genomic_align_tree = $genomic_align_tree->minimize_tree();
+	  ## Make sure links are not broken after tree minimization
+	  $genomic_align_tree->reference_genomic_align($reference_genomic_align);
+	  $genomic_align_tree->reference_genomic_align->genomic_align_block($genomic_align_tree);
+	  $genomic_align_tree->reference_genomic_align_node($reference_genomic_align_node);
+      }
     }
   }
 
@@ -532,7 +577,7 @@ sub restrict_between_alignment_positions {
                alignment_length)
   Exceptions : return undef if reference positions lie outside of the alignment
   Caller     : general
-  Status      : At risk
+  Status     : At risk
 
 =cut
 
@@ -555,6 +600,13 @@ sub restrict_between_reference_positions {
 
 =head2 copy
 
+  Arg         : none
+  Example     : my $new_tree = $this_tree->copy()
+  Description : Create a copy of this Bio::EnsEMBL::Compara::GenomicAlignTree
+                object
+  Returntype  : Bio::EnsEMBL::Compara::GenomicAlignTree
+  Exceptions  : none
+  Caller      : general
   Status      : At risk
 
 =cut
@@ -572,6 +624,12 @@ sub copy {
 
 =head2 print
 
+  Arg         : none
+  Example     : print()
+  Description : Print the fields in a Bio::EnsEMBL::Compara::GenomicAlignTree 
+  Returntype  : none
+  Exceptions  : none
+  Caller      : general
   Status      : At risk
 
 =cut
@@ -614,6 +672,12 @@ sub print {
 
 =head2 get_all_nodes_from_leaves_to_this
 
+  Arg[1]      : Bio::EnsEMBL::Compara::GenomicAlignTree $all_nodes
+  Example     : my $all_nodes = get_all_nodes_from_leaves_to_this()
+  Description : 
+  Returntype  : Bio::EnsEMBL::Compara::GenomicAlignTree object
+  Exceptions  : none
+  Caller      : general
   Status      : At risk
 
 =cut
@@ -644,6 +708,7 @@ sub get_all_nodes_from_leaves_to_this {
  Example :
  Returns : reference to list of NestedSet objects (all leaves)
  Args    : none
+ Status  : At risk
 
 =cut
 
@@ -659,21 +724,28 @@ sub get_all_leaves {
 
 =head2 _sort_children
 
+  Arg         : none
+  Example     : sort _sort_children @$children
+  Description : sort function for sorting the nodes of a Bio::EnsEMBL::Compara::GenomicAlignTree object
+  Returntype  : int (-1,0,1)
+  Exceptions  : none
+  Caller      : general
+  Status      : At risk
+
 =cut
 
 sub _sort_children {
-  my $reference_genomic_align;
-  if ($a->root eq $b->root and $a->root->reference_genomic_align) {
-    $reference_genomic_align = $a->root->reference_genomic_align;
+  my $reference_genomic_align_node;
+
+  if (defined ($a->root) && defined($b->root) && $a->root eq $b->root and $a->root->reference_genomic_align_node) {
+    $reference_genomic_align_node = $a->root->reference_genomic_align_node;
   }
 
   ## Reference GenomicAlign based sorting
-  if ($reference_genomic_align) {
-    if (grep {$_ eq $reference_genomic_align} map {@{$_->get_all_GenomicAligns}}
-        @{$a->get_all_nodes}) {
+  if ($reference_genomic_align_node) {
+    if (grep {$_ eq $reference_genomic_align_node} @{$a->get_all_leaves}) {
       return -1;
-    } elsif (grep {$_ eq $reference_genomic_align} map {@{$_->get_all_GenomicAligns}}
-        @{$b->get_all_nodes}) {
+    } elsif (grep {$_ eq $reference_genomic_align_node} @{$b->get_all_leaves}) {
       return 1;
     }
   }
@@ -684,6 +756,21 @@ sub _sort_children {
 
   return $species_a cmp $species_b;
 }
+
+=head2 _name_for_sorting
+
+  Arg         : none
+  Example     : my $species_a = $a->_name_for_sorting;
+  Description : if the node is a leaf, create a name based on the species
+                name, dnafrag name, group_id and the start position. If the 
+                node is an internal node, create a name based on the species 
+                name, dnafrag name and the start position
+  Returntype  : string 
+  Exceptions  : none
+  Caller      : _sort_children
+  Status      : At risk
+
+=cut
 
 sub _name_for_sorting {
   my ($self) = @_;
@@ -715,6 +802,7 @@ sub _name_for_sorting {
   Returntype : none
   Exceptions : none
   Caller     : general
+  Status     : At risk
 
 =cut
 
@@ -735,6 +823,30 @@ sub reverse_complement {
 	    $ga->reverse_complement;
 	}
     }
+}
+
+sub length {
+  my ($self, $length) = @_;
+ 
+  if (defined($length)) {
+      $self->{'length'} = $length;
+  } elsif (!defined($self->{'length'})) {
+      # Try to get the ID from other sources...
+      if (defined($self->{'adaptor'}) and defined($self->dbID)) {
+	  # ...from the database, using the dbID of the Bio::Ensembl::Compara::GenomicAlignBlock object
+	  $self->adaptor->retrieve_all_direct_attributes($self);
+      } elsif (@{$self->get_all_GenomicAligns} and $self->get_all_GenomicAligns->[0]->aligned_sequence("+FAKE_SEQ")) {
+	  $self->{'length'} = CORE::length($self->get_all_GenomicAligns->[0]->aligned_sequence("+FAKE_SEQ"));
+      } else {
+	  foreach my $this_node (@{$self->get_all_nodes}) {
+	      my $genomic_align_group = $this_node->genomic_align_group;
+	      next if (!$genomic_align_group);
+	      $self->{'length'} = CORE::length($genomic_align_group->get_all_GenomicAligns->[0]->aligned_sequence("+FAKE_SEQ"));
+	      last;
+	  }
+      }
+  }
+  return $self->{'length'};
 }
 
 
