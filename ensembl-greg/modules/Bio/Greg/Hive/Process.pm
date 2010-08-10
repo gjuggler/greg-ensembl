@@ -174,9 +174,10 @@ sub compara_dba {
     print " >> Getting new DBA!!!!\n";
     my $compara_dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new( -DBCONN => $self->db->dbc );
     eval {
-      $compara_dba->do("select * from member limit 1;");
-    };
-    if ($@) {
+      $compara_dba->dbc->do("select * from member limit 1;");
+      1;
+    } or do {
+      print "ERROR: $@\n";
       print " >> No compara in hive DB -- falling back to ens-livemirror!!\n";
       Bio::EnsEMBL::Registry->load_registry_from_multiple_dbs({
                                                                -host => 'ens-livemirror',
@@ -185,7 +186,7 @@ sub compara_dba {
                                                               });
       $compara_dba = Bio::EnsEMBL::Registry->get_DBAdaptor('multi','compara');
 #      $compara_dba->disconnect_when_inactive(1);
-    }
+    };
     $self->{_compara_dba} = $compara_dba;
   }
   return $self->{_compara_dba};

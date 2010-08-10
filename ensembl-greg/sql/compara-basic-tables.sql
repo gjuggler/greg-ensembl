@@ -195,7 +195,7 @@ CREATE TABLE IF NOT EXISTS subset_member (
 );
 
 
-------------------------------------------------------------------------------------
+--
 --
 -- Table structure for table 'protein_tree_node'
 --
@@ -227,7 +227,6 @@ CREATE TABLE IF NOT EXISTS protein_tree_node (
 ) ENGINE=InnoDB COLLATE=latin1_swedish_ci;
 
 
-------------------------------------------------------------------------------------
 --
 -- Table structure for table 'protein_tree_member'
 --
@@ -257,7 +256,7 @@ CREATE TABLE IF NOT EXISTS protein_tree_member (
 
 CREATE TABLE IF NOT EXISTS protein_tree_member_score LIKE protein_tree_member;
 
-------------------------------------------------------------------------------------
+
 --
 -- Table structure for table 'protein_tree_tag'
 --

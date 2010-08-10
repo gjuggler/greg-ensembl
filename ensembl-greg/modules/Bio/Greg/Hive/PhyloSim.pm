@@ -178,7 +178,7 @@ $models_trees_partitions
   use Cwd;
   my $cwd = getcwd;
   chdir($tmp_dir);
-  my $output = `indelible $ctrl_f\r\n`;
+  my @output = `indelible $ctrl_f\r\n`;
 
   my $aln_f = $output_f . "_TRUE.fas";
 
@@ -191,9 +191,10 @@ $models_trees_partitions
   #    close(LOG);
   #  }
 
-  my $aln = Bio::EnsEMBL::Compara::AlignUtils->from_file($aln_f);
+print "HEY HEY\n";
+  print "output:\n<<<<@output>>>>\n";
 
-  print "output:\n<<<<$output>>>>\n";
+  my $aln = Bio::EnsEMBL::Compara::AlignUtils->from_file($aln_f);
 
 my @sitewise_omegas;
 my $class_to_omega = $self->param('class_to_omega');
@@ -237,6 +238,7 @@ sub get_submodel_string {
   my @final_probs;
   for ( my $i = 0 ; $i < scalar(@probs) ; $i++ ) {
     my $prob = $probs[$i];
+    next unless ($prob > 0); # I think this works...
     push @final_bins,  $bins[$i];
     push @final_probs, $prob;
   }

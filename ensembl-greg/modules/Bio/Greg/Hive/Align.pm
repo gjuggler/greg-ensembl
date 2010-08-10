@@ -142,8 +142,14 @@ sub run
       }
     } elsif ($method =~ m/papaya/i) {
       $sa_aligned = $self->align_with_papaya($sa,$tree,$params);
+    } elsif ($method =~ m/probcons/i) {
+      $sa_aligned = $self->align_with_probcons($sa,$tree,$params);
+    } elsif ($method =~ m/mafft/i) {
+      $sa_aligned = $self->align_with_mafft($sa,$tree,$params);
     } elsif ($method =~ m/none/i) {
       $sa_aligned = $self->no_align($sa,$tree,$params);
+    } else {
+      $self->throw("Alignment method [$method] not implemented!");
     }
 
     Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $sa_aligned, { length => 200 } );
@@ -168,7 +174,7 @@ sub write_output {
 sub DESTROY {
     my $self = shift;
     
-    $self->SUPER::DESTROY if $self->can("SUPER::DESTROY");
+#    $self->SUPER::DESTROY if $self->can("SUPER::DESTROY");
 }
 
 
@@ -318,12 +324,95 @@ sub align_with_muscle {
   # Run the command.
   $self->compara_dba->dbc->disconnect_when_inactive(1);
   print "$cmd\n";
-  my $rc = system($cmd);
+  my @stdout = `$cmd 2>&1 1>/dev/null`;
   $self->compara_dba->dbc->disconnect_when_inactive(0);
 
+  print "OUTPUT!!!\n";
+  print join('\n',@stdout);
+
+#  unless($rc == 0) {
+#    die("Muscle error: $?\n");
+#  }
+  
+  use Bio::AlignIO;
+  my $alignio = Bio::AlignIO->new(-file => $output_file,
+                                  -format => "fasta");
+  my $aln = $alignio->next_aln();
+  return $aln;
+}
+
+
+sub align_with_probcons {
+  my $self = shift;
+  my $aln = shift;
+  my $tree = shift;
+  my $params = shift;
+
+  my $tmp = $self->worker_temp_directory;
+
+  # Output alignment.
+  my $aln_file = $tmp . "aln.fasta";
+  rmtree([$aln_file]) if (-e $aln_file);
+  Bio::EnsEMBL::Compara::AlignUtils->dump_ungapped_seqs($aln,$aln_file); # Write the alignment out to file.
+  
+  my $tree_file = $tmp . "tree.nh";
+  rmtree([$tree_file]) if (-e $tree_file);
+  my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
+  Bio::EnsEMBL::Compara::TreeUtils->to_file($treeI,$tree_file);
+
+  my $output_file = "$tmp/output.fasta";
+
+  my $executable = $params->{'alignment_executable'} || 'probcons';
+  my $extra_params = '';
+  my $cmd = qq^$executable $extra_params $aln_file > "$output_file"^;
+  
+  # Run the command.
+  $self->dbc->disconnect_when_inactive(1);
+  my $rc = system($cmd);
+  $self->dbc->disconnect_when_inactive(0);
+
   unless($rc == 0) {
-    print "Muscle error!\n";
-    die;
+    $self->throw("Alignment error!");
+  }
+  
+  use Bio::AlignIO;
+  my $alignio = Bio::AlignIO->new(-file => $output_file,
+                                  -format => "fasta");
+  my $aln = $alignio->next_aln();
+  return $aln;
+}
+
+sub align_with_mafft {
+  my $self = shift;
+  my $aln = shift;
+  my $tree = shift;
+  my $params = shift;
+
+  my $tmp = $self->worker_temp_directory;
+
+  # Output alignment.
+  my $aln_file = $tmp . "aln.fasta";
+  rmtree([$aln_file]) if (-e $aln_file);
+  Bio::EnsEMBL::Compara::AlignUtils->dump_ungapped_seqs($aln,$aln_file); # Write the alignment out to file.
+  
+  my $tree_file = $tmp . "tree.nh";
+  rmtree([$tree_file]) if (-e $tree_file);
+  my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
+  Bio::EnsEMBL::Compara::TreeUtils->to_file($treeI,$tree_file);
+
+  my $output_file = "$tmp/output.fasta";
+
+  my $executable = $params->{'alignment_executable'} || 'mafft';
+  my $extra_params = '';
+  my $cmd = qq^$executable $extra_params $aln_file > "$output_file"^;
+  
+  # Run the command.
+  $self->dbc->disconnect_when_inactive(1);
+  my $rc = system($cmd);
+  $self->dbc->disconnect_when_inactive(0);
+
+  unless($rc == 0) {
+    $self->throw("Alignment error!");
   }
   
   use Bio::AlignIO;
@@ -410,10 +499,10 @@ sub align_with_mcoffee
     $mcoffee_executable = $params->{'t_coffee_executable'} if (!defined $mcoffee_executable);
     unless (-e $mcoffee_executable) {
 	print "Using default T-Coffee executable!\n";
-        $mcoffee_executable = "/homes/greg/src/T-COFFEE_distribution_Version_8.69/bin/binaries/linux/t_coffee";
-	unless (-e $mcoffee_executable) {
+        #$mcoffee_executable = "/homes/greg/src/T-COFFEE_distribution_Version_8.69/bin/binaries/linux/t_coffee";
+	#unless (-e $mcoffee_executable) {
 	  $mcoffee_executable = "t_coffee";
-        }
+        #}
     }
     #throw("can't find a M-Coffee executable to run\n") unless(-e $mcoffee_executable);
     
@@ -475,14 +564,16 @@ sub align_with_mcoffee
     print "TEMP:$tmp\n";
     $tmp = substr($tmp,0,-1);
     my $prefix = "export HOME_4_TCOFFEE=\"$tmp\";";
-    $prefix .= "export DIR_4_TCOFFEE=\"$tmp\";";
-    $prefix .= "export METHODS_4_TCOFFEE=\"$tmp\";";
-    $prefix .= "export MCOFFEE_4_TCOFFEE=\"$tmp\";";
-    $prefix .= "export TMP_4_TCOFFEE=\"$tmp\";";
-    $prefix .= "export CACHE_4_TCOFFEE=\"$tmp\";";
+    $prefix .= "export UNIQUE_DIR_4_TCOFFEE=\"$tmp\";";
+#    $prefix .= "export DIR_4_TCOFFEE=\"$tmp\";";
+#    $prefix .= "export CACHE_4_TCOFFEE=\"$tmp\";";
+#    $prefix .= "export TMP_4_TCOFFEE=\"$tmp\";";
+#    $prefix .= "export PLUGINS_4_TCOFFEE=\"$tmp\";";
+#    $prefix .= "export METHODS_4_TCOFFEE=\"$tmp\";";
+#    $prefix .= "export MCOFFEE_4_TCOFFEE=\"$tmp\";";
     $prefix .= "export NO_ERROR_REPORT_4_TCOFFEE=1;";
     $prefix .= "export NUMBER_OF_PROCESSORS_4_TCOFFEE=1;";
-    $prefix .= "export MAFFT_BINARIES=/ebi/research/software/Linux_x86_64/bin/mafft;";
+#    $prefix .= "export MAFFT_BINARIES=/ebi/research/software/Linux_x86_64/bin/mafft;";
     #$prefix .= "export MAFFT_BINARIES=/nfs/users/nfs_g/gj1/bin/mafft-bins/binaries;";  # GJ 2008-11-04. What a hack!
     
     # Run the command.
@@ -492,8 +583,7 @@ sub align_with_mcoffee
     
     unless($rc == 0) {
 #	$self->DESTROY;
-	print "MCoffee error!\n";
-	die("MCoffee job, error running executable!\n");
+	$self->throw("MCoffee error!! $method_string");
     }
 
     use Bio::AlignIO;

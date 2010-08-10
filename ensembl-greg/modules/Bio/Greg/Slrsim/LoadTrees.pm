@@ -190,7 +190,7 @@ sub load_tree_into_database {
   my $output_params = {
     node_id          => $node_id,
     parameter_set_id => $self->parameter_set_id,
-    experiment_name  => $self->param('experiment_name')
+    experiment_name  => $params->{'experiment_name'}
   };
   my $data_id = $self->new_data_id($output_params);
   $output_params->{data_id} = $data_id;
@@ -257,45 +257,78 @@ sub load_simulation_params {
       phylosim_w1                 => 1.5
     },
     neutral => {
-      omega_distribution_name     => "Neutral evolution",
       phylosim_omega_distribution => 'constant',
       phylosim_w                  => 1
     },
     purifying => {
-      omega_distribution_name     => "Purifying evolution",
       phylosim_omega_distribution => 'constant',
       phylosim_w                  => 0.2
     },
+    lognormal_wide_2 => {
+      phylosim_omega_distribution => 'lognormal',
+      phylosim_meanlog            => -1.25,
+      phylosim_sdlog              => 0.45
+    },
+    lognormal_wide => {
+      phylosim_omega_distribution => 'lognormal',
+      phylosim_meanlog            => -1.5,
+      phylosim_sdlog              => 0.84
+    },
     lognormal => {
-      omega_distribution_name     => "2xmammals Lognormal",
       phylosim_omega_distribution => 'lognormal',
       phylosim_meanlog            => -1.864,
       phylosim_sdlog              => 1.2007
     },
-    lognormal_wide => {
-      omega_distribution_name     => "2xmammals Lognormal (wide)",
-      phylosim_omega_distribution => 'lognormal',
-      phylosim_meanlog            => -1.864,
-      phylosim_sdlog              => 1.8
-    },
-    lognormal_very_wide => {
-      omega_distribution_name     => "2xmammals Lognormal (very wide)",
-      phylosim_omega_distribution => 'lognormal',
-      phylosim_meanlog            => -1.864,
-      phylosim_sdlog              => 2.5
-    },
     lognormal_narrow => {
-      omega_distribution_name     => "2xmammals Lognormal (narrow)",
       phylosim_omega_distribution => 'lognormal',
-      phylosim_meanlog            => -1.864,
-      phylosim_sdlog              => 1
+      phylosim_meanlog            => -2.25,
+      phylosim_sdlog              => 1.49
     },
-    lognormal_very_narrow => {
-      omega_distribution_name     => "2xmammals Lognormal (very narrow)",
+    lognormal_narrow_2 => {
       phylosim_omega_distribution => 'lognormal',
-      phylosim_meanlog            => -1.864,
-      phylosim_sdlog              => 0.5
-      }
+      phylosim_meanlog            => -3,
+      phylosim_sdlog              => 1.925
+    },
+    lognormal_low => {
+      phylosim_omega_distribution => 'lognormal',
+      phylosim_meanlog            => -2.803,
+      phylosim_sdlog              => 1.0
+    },
+    lognormal_low_2 => {
+      phylosim_omega_distribution => 'lognormal',
+      phylosim_meanlog            => -4,
+      phylosim_sdlog              => 1.84
+    },
+    lognormal_high => {
+      phylosim_omega_distribution => 'lognormal',
+      phylosim_meanlog            => -1.819,
+      phylosim_sdlog              => 1.5
+    },
+    lognormal_high_2 => {
+      phylosim_omega_distribution => 'lognormal',
+      phylosim_meanlog            => -1.0,
+      phylosim_sdlog              => 0.784
+    },
+    uniform_neutral => {
+      phylosim_omega_distribution => 'constant',
+      phylosim_w                  => 1
+    },
+    uniform_low => {
+      phylosim_omega_distribution => 'constant',
+      phylosim_w                  => 0.3
+    },
+    uniform_low2 => {
+      phylosim_omega_distribution => 'constant',
+      phylosim_w                  => 0.1
+    },
+    uniform_pos => {
+      phylosim_omega_distribution => 'constant',
+      phylosim_w                  => 1.5
+    },
+    uniform_pos2 => {
+      phylosim_omega_distribution => 'constant',
+      phylosim_w                  => 2
+    },
 
   };
   $self->param( 'omega_distributions', $omega_distributions );
@@ -326,17 +359,13 @@ sub load_simulation_params {
   $self->param( 'phylo_analyses', $phylo_analyses );
 
   my $indel_models = {
-    power_law => {
-      phylosim_insertmodel => 'POW 2 50',
-      phylosim_deletemodel => 'POW 2 50',
-      phylosim_insertrate  => 0.05,
-      phylosim_deleterate  => 0.05,
+    pow => {
+      phylosim_insertmodel => 'POW 1.7 50',
+      phylosim_deletemodel => 'POW 1.7 50'
     },
-    negative_binomial => {
+    nb => {
       phylosim_insertmodel => 'NB 0.35 2',
-      phylosim_deletemodel => 'NB 0.35 2',
-      phylosim_insertrate  => 0.05,
-      phylosim_deleterate  => 0.05,
+      phylosim_deletemodel => 'NB 0.35 2'
     },
     none => {
       phylosim_insertmodel => 'NB 0.35 2',
@@ -442,7 +471,7 @@ sub mammals_simulations {
     $narrow_params->{slrsim_label} = "$shortname noindel lnorm narrow";
     push @sets, $narrow_params;
 
-    my $indel = $self->param('indel_models')->{'power_law'};
+    my $indel = $self->param('indel_models')->{'pow'};
     my $aln   = $self->aln_param('prank_f');
 
     # Low indels.
@@ -582,7 +611,7 @@ sub reference_comparison {
     slrsim_ref          => 'human'
   };
 
-  my $indel       = $self->param('indel_models')->{'power_law'};
+  my $indel       = $self->param('indel_models')->{'pow'};
   my $distr       = $self->param('omega_distributions')->{'massingham_05_A2'};
   my $analysis    = $self->param('phylo_analyses')->{'slr'};
   my $filter      = $self->filter_param('none');
@@ -621,7 +650,7 @@ sub generic_sim_params {
     slrsim_ref          => 'human'
   };
 
-  my $indel    = $self->param('indel_models')->{'power_law'};
+  my $indel    = $self->param('indel_models')->{'pow'};
   my $distr    = $self->param('omega_distributions')->{'massingham_05_A2'};
   my $analysis = $self->param('phylo_analyses')->{'slr'};
 
@@ -680,7 +709,7 @@ sub filter_order_test {
     phylosim_seq_length => 400,
     slrsim_ref          => 'human'
   };
-  my $indel    = $self->param('indel_models')->{'power_law'};
+  my $indel    = $self->param('indel_models')->{'pow'};
   my $distr    = $self->param('omega_distributions')->{'massingham_05_A2'};
   my $analysis = $self->param('phylo_analyses')->{'slr'};
   $params = $self->replace_params( $params, $indel, $distr, $analysis );
@@ -726,7 +755,7 @@ sub filter_sweep {
     slrsim_ref           => 'human'
   };
 
-  my $indel       = $self->param('indel_models')->{'power_law'};
+  my $indel       = $self->param('indel_models')->{'pow'};
   my $distr       = $self->param('omega_distributions')->{'lognormal'};
   my $analysis    = $self->param('phylo_analyses')->{'slr'};
   my $base_params = $self->replace_params( $indel, $distr, $analysis );
@@ -767,25 +796,65 @@ sub filter_sweep {
 ####
 ####
 
-sub slrsim_one {
+### SLRSIM DEFAULT PARAMS
+sub slrsim_defaults {
+  my $self = shift;
+
+  my $tree = $self->tree_param('anisimova_bglobin');
+  $tree->{slrsim_tree_mean_path} = 1;
+
+  my $indel_rate  = $self->indel_rate_param(0.1);
+  my $indel_shape = $self->indel_shape_param('pow');
+
+  my $reps   = $self->reps_param(20);
+  my $length = $self->length_param(500);
+
+  my $aln      = $self->aln_param('muscle');
+  my $omegas   = $self->omega_param('lognormal_high');
+  my $analysis = $self->analysis_param('slr');
+
+  my $filter = $self->filter_param('none');
+  my $filter_thresh = $self->filter_thresh_param(0);
+
+    return $self->replace( $tree, $indel_rate, $indel_shape, $reps, $length, $aln, $omegas,
+    $analysis, $filter, $filter_thresh );
+}
+
+sub slrsim_all {
+  my $self = shift;
+
+  my @all_sets;
+  my @cur_set;
+
+  foreach my $sub_experiment ('slrsim_one_c') {
+    @cur_set = @{$self->$sub_experiment()};
+    $self->apply_experiment_name_to_sets(\@cur_set,$sub_experiment);
+    push @all_sets, @cur_set;
+  }
+  
+  return \@all_sets;
+}
+
+# SLRsim one: indel rate and tree length sweep.
+sub slrsim_one_a {
   my $self = shift;
 
   return $self->_generic_tree_indel_sweep( '44mammals', 1 );
 }
 
-sub slrsim_one_a {
+sub slrsim_one_b {
   my $self = shift;
 
   return $self->_generic_tree_indel_sweep( 'anisimova_artificial', 1 );
 }
 
-sub slrsim_one_b {
+sub slrsim_one_c {
   my $self = shift;
 
   return $self->_generic_tree_indel_sweep( 'anisimova_bglobin', 1 );
 }
 
-sub slrsim_one_c {
+sub slrsim_one_d {
   my $self = shift;
 
   my $subset = [
@@ -805,15 +874,11 @@ sub _generic_tree_indel_sweep {
   my $tree             = shift;    # Either a tree filename OR a NestedSet object.
   my $base_path_length = shift;
 
-  my $reps        = $self->reps(20);
-  my $length      = $self->length(500);
+  my $reps        = $self->reps_param(20);
   my $tree_params = $self->tree_param($tree) if ( !ref $tree );
-  my $aln         = $self->aln_param('prank');
-  my $omegas      = $self->omega_param('lognormal_wide');
-  my $indels      = $self->indel_param('power_law');
-  my $analysis    = $self->analysis_param('slr');
+  my $defaults    = $self->slrsim_defaults;
 
-  my $base_params = $self->replace( $reps, $tree_params, $aln, $omegas, $indels, $analysis );
+  my $base_params = $self->replace( $defaults, $reps, $tree_params );
 
   my $tree_obj;
   if ( ref $tree && $tree->isa('Bio::EnsEMBL::Compara::NestedSet') ) {
@@ -855,17 +920,14 @@ sub _generic_tree_indel_sweep {
   return \@sets;
 }
 
+# SLRsim two: Adding mammalian species to the tree.
 sub slrsim_two {
   my $self = shift;
 
-  my $reps       = $self->reps(10);
-  my $length     = $self->length(500);
-  my $indel      = $self->indel(0.1);
-  my $aln        = $self->aln_param('muscle');
-  my $analysis   = $self->analysis_param('slr');
-  my $omega_dist = $self->omega_param('lognormal_wide');
+  my $reps     = $self->reps_param(10);
+  my $defaults = $self->slrsim_defaults;
 
-  my $base_params = $self->replace( $reps, $length, $aln, $analysis, $indel, $omega_dist );
+  my $base_params = $self->replace( $defaults, $reps );
 
   my $tree_param = $self->tree_param('44mammals');
   my $tree_obj   = $self->_get_tree_from_file( $tree_param->{slrsim_tree_file} );
@@ -881,8 +943,8 @@ sub slrsim_two {
     'TreeShrew',
 
     # Outgroups.
-    'Lamprey', 'Zebrafish', 'Medaka', 'Tetraodon', 'Zebrafinch', 'Platypus', 'Opossum', 'Tenrec',
-    'Hedgehog', 'Microbat', 'Dog', 'Mouse', 'Rabbit'
+    'Lamprey',  'Zebrafish', 'Medaka', 'Tetraodon', 'Zebrafinch', 'Platypus', 'Opossum', 'Tenrec',
+    'Hedgehog', 'Microbat',  'Dog',    'Mouse',     'Rabbit'
   );
 
   my @sets;
@@ -891,11 +953,11 @@ sub slrsim_two {
     my $subtree = Bio::EnsEMBL::Compara::TreeUtils->subtree( $tree_obj, $subset );
     print "sub: " . $subtree->newick_format() . "\n";
     foreach my $indel_var ( 0, 0.05, 0.1, 0.2 ) {
-      $indel = $self->indel($indel_var);
+      my $indel_p = $self->indel_rate_param($indel_var);
       push @sets,
         $self->replace(
         $base_params,
-        $indel, {
+        $indel_p, {
           slrsim_tree_newick => $subtree->newick_format(),
           slrsim_label       => join( ',', @$subset, $indel_var )
         }
@@ -921,14 +983,10 @@ sub slrsim_two_ab {
   my $self    = shift;
   my $reverse = shift;
 
-  my $reps       = $self->reps(10);
-  my $length     = $self->length(500);
-  my $indel      = $self->indel(0.1);
-  my $aln        = $self->aln_param('muscle');
-  my $analysis   = $self->analysis_param('slr');
-  my $omega_dist = $self->omega_param('lognormal_wide');
+  my $defaults = $self->slrsim_defaults;
+  my $reps     = $self->reps(50);
 
-  my $base_params = $self->replace( $reps, $length, $aln, $analysis, $indel, $omega_dist );
+  my $base_params = $self->replace( $defaults, $reps );
 
   my $tree_param = $self->tree_param('44mammals');
   my $tree_obj   = $self->_get_tree_from_file( $tree_param->{slrsim_tree_file} );
@@ -938,10 +996,10 @@ sub slrsim_two_ab {
 
   # Ingroup addition.
   my @add_me_in_order = (
-    'Chimp',      'Gorilla',    'Orangutan', 'Rhesus',  'Marmoset',  'Tarsier',
-    'Mouselemur', 'Bushbaby',   'TreeShrew', 'Lamprey', 'Zebrafish', 'Medaka',
-    'Tetraodon',  'Zebrafinch', 'Platypus',  'Opossum', 'Tenrec',    'Hedgehog',
-    'Microbat',   'Dog',        'Mouse',     'Rabbit'
+    'Chimp',      'Gorilla',  'Orangutan',   'Rhesus',    'Marmoset',  'Tarsier',
+    'Mouselemur', 'Bushbaby', 'TreeShrew',   'Mouse',     'Squirrel',  'Rabbit',
+    'Cow',        'Dog',      'Shrew',       'Tenrec',    'Opossum',   'Platypus',
+    'Chicken',    'Lizard',   'Xtropicalis', 'Tetraodon', 'Zebrafish', 'Lamprey'
   );
 
   @add_me_in_order = reverse @add_me_in_order if ( $reverse == 1 );
@@ -954,14 +1012,14 @@ sub slrsim_two_ab {
     $tree_obj = $tree_obj->copy;
     my $subtree = Bio::EnsEMBL::Compara::TreeUtils->subtree( $tree_obj, \@subset_collector );
     print "sub: " . $subtree->newick_format() . "\n";
-    foreach my $indel_var (0.1) {
-      $indel = $self->indel($indel_var);
+    foreach my $indel_var ( 0, 0.1 ) {
+      my $indel_p = $self->indel_rate_param($indel_var);
       push @sets,
         $self->replace(
         $base_params,
-        $indel, {
+        $indel_p, {
           slrsim_tree_newick => $subtree->newick_format(),
-          slrsim_label       => join( ',', $indel_var, scalar( $subtree->leaves ) )
+          slrsim_label       => join( ',', $indel_var, scalar( $subtree->leaves ), $addition )
         }
         );
     }
@@ -969,54 +1027,68 @@ sub slrsim_two_ab {
   return \@sets;
 }
 
-sub slrsim_three_a {
+# SLRsim 3: indel length distributions.
+sub slrsim_three {
   my $self = shift;
 
-  return $self->slrsim_three_generic;
+  my $defaults = $self->slrsim_defaults;
+  my $tree     = $self->tree_param('anisimova_bglobin');
+  $tree->{slrsim_tree_mean_path} = 2;
+  my $reps = {}; #$self->reps_param(3);
+
+  my $base_params = $self->replace( $defaults, $tree, $reps );
+
+  my @indel_params = (
+    'NB .5 3',
+    'NB .5 2',
+    'NB .5 1',
+    'NB .4 1',
+    'NB .3 1',
+    'NB .2 1',
+    'POW 3 40',
+    'POW 2 40',
+    'POW 1.8 40',
+    'POW 1.6 40',
+    'POW 1.4 40',
+    'POW 1.2 40',
+    'POW 1.2 10',
+    'POW 1.2 5'
+  );
+
+  my @sim_sets;
+  foreach my $indel_shape (@indel_params) {
+    my $indel_param = {
+      phylosim_insertmodel => $indel_shape,
+      phylosim_deletemodel => $indel_shape,
+      slrsim_label         => $indel_shape
+    };
+    my $final = $self->replace( $base_params, $indel_param );
+    push @sim_sets, $final;
+  }
+  return \@sim_sets;
 }
 
-sub slrsim_three_generic {
-  my $self = shift;
-
-  my $tree             = shift;    # Either a tree filename OR a NestedSet object.
-  my $base_path_length = shift;
-
-  my $reps       = $self->reps(20);
-  my $length     = $self->length(500);
-  my $indel      = $self->indel(0.1);
-  my $aln        = $self->aln_param('prank');
-  my $analysis   = $self->analysis_param('slr');
-  my $omega_dist = $self->omega_param('lognormal_wide');
-
-  my $base_params = $self->replace( $reps, $length, $aln, $analysis, $indel, $omega_dist );
-
-  my $tree_param = $self->tree_param('44mammals');
-  my $tree_obj   = $self->_get_tree_from_file( $tree_param->{slrsim_tree_file} );
-  print $tree_obj->newick_format() . "\n";
-
-}
-
+# SLRsim four: different omega distributions.
 sub slrsim_four {
   my $self = shift;
 
-  my $reps     = $self->reps(20);
-  my $length   = $self->length(500);
-  my $tree     = $self->tree_param('44mammals');
-  my $aln      = $self->aln_param('prank');
-  my $analysis = $self->analysis_param('slr');
-  my $indel    = $self->indel(0.1);
+  my $defaults = $self->slrsim_defaults;
+  my $reps     = {}; #$self->reps_param(20);
+  my $tree     = $self->tree_param('anisimova_bglobin');
 
-  my $base_params = $self->replace( $reps, $tree, $aln, $analysis, $indel );
+  my $base_params = $self->replace( $defaults, $reps, $tree );
+
+  my @omega_dists = (
+    'lognormal_narrow_2', 'lognormal_narrow', 'lognormal', 'lognormal_wide',
+    'lognormal_wide_2',   'lognormal_low',    'lognormal_low_2','lognormal_high','lognormal_high_2',
+    'uniform_neutral', 'uniform_low', 'uniform_low2', 'uniform_pos', 'uniform_pos2'
+  );
 
   my @sets;
-  my $params;
-  foreach my $omega_dist (
-    'lognormal_very_narrow', 'lognormal_narrow', 'lognormal', 'lognormal_wide',
-    'lognormal_very_wide'
-    ) {
+  foreach my $omega_dist (@omega_dists) {
     my $omega_params = $self->omega_param($omega_dist);
 
-    $params = $self->replace( $params, $omega_params, { slrsim_label => $omega_dist } );
+    my $params = $self->replace( $base_params, $omega_params, { slrsim_label => $omega_dist } );
     push @sets, $params;
   }
 
@@ -1024,26 +1096,23 @@ sub slrsim_four {
   return \@sets;
 }
 
-## Please see file perltidy.ERR
-sub slrsim_four {
+# SLRsim five: different reference sequences.
+sub slrsim_five {
   my $self = shift;
 
-  my $reps       = $self->reps(20);
-  my $length     = $self->length(500);
-  my $tree       = $self->tree_param('44mammals');
-  my $aln        = $self->aln_param('prank');
-  my $analysis   = $self->analysis_param('slr');
-  my $indel      = $self->indel(0.1);
-  my $omega_dist = $self->omega_param('lognormal');
+  my $defaults = $self->slrsim_defaults;
 
-  my $base_params = $self->replace( $reps, $tree, $aln, $analysis, $indel, $omega_dist );
+  my $reps = {}; #$self->reps(30);
+  my $tree = $self->tree_param('anisimova_bglobin');
+
+  my $base_params = $self->replace( $defaults, $reps, $tree );
 
   my @sets;
-  my $params;
-  foreach my $ref ( 'human', 'Bushbaby', 'Mouse', 'Tenrec', 'Lizard', 'Xtropicalis', 'Fugu' ) {
+  foreach my $ref ('xenlaev','duck','rat','bushbaby','human') {
+#  foreach my $ref ( 'Human', 'Bushbaby', 'Mouse', 'Tenrec', 'Lizard', 'Xtropicalis', 'Fugu' ) {
     my $ref_params = $self->ref_param($ref);
 
-    $params = $self->replace( $params, $ref_params, { slrsim_label => $ref } );
+    my $params = $self->replace( $base_params, $ref_params, { slrsim_label => $ref } );
     push @sets, $params;
   }
 
@@ -1051,9 +1120,69 @@ sub slrsim_four {
   return \@sets;
 }
 
+# SLRsim six: different alignment programs.
+sub slrsim_six {
+  my $self = shift;
+
+  my $defaults = $self->slrsim_defaults;
+  my $reps     = {}; #$self->reps(20);
+
+  my $base_params = $self->replace( $defaults, $reps );
+
+  # In order from bad to worse.
+  my @aligners =
+    ( 'true', 'prank_f', 'prank', 'probcons', 'mcoffee', 'mafft', 'muscle', 'clustalw' );
+
+  my @sets;
+  foreach my $aligner (@aligners) {
+    my $aln_params = $self->aln_param($aligner);
+    my $params = $self->replace( $base_params, $aln_params, { slrsim_label => $aligner } );
+    push @sets, $params;
+  }
+  return \@sets;
+}
+
+# SLRsim seven: filters.
+sub slrsim_seven {
+  my $self = shift;
+
+  my $defaults = $self->slrsim_defaults;
+  my $reps     = {}; #$self->reps(20);
+
+  my $base_params = $self->replace( $defaults, $reps );
+
+  my @filters =
+    ( 'none', 'indelign', 'prank_mean', 'tcoffee', 'trimal', 'gblocks', 'oracle' );
+
+  my @sets;
+  foreach my $filter (@filters) {
+    my $filter_params = $self->filter_param($filter);
+    my $filter_thresh = $self->filter_thresh_param(7);
+    my $params = $self->replace( $base_params, $filter_params, $filter_thresh, { slrsim_label => $filter } );
+    push @sets, $params;
+  }
+
+  # Add one item for the true alignment / no filtering.
+  my $true_aln = $self->aln_param('true');
+  my $true_params = $self->replace($base_params,$true_aln,{slrsim_label => 'True Alignment'});
+  push @sets, $true_params;
+
+  return \@sets;
+}
+
 ####
 ####
 ####
+
+sub apply_experiment_name_to_sets {
+  my $selft           = shift;
+  my $sets_arrayref   = shift;
+  my $experiment_name = shift;
+
+  my @new_sets = map { $_->{experiment_name} = $experiment_name } @$sets_arrayref;
+  return \@new_sets;
+}
+
 sub tree_param {
   my $self      = shift;
   my $tree_name = shift;
@@ -1068,16 +1197,7 @@ sub omega_param {
   my $omega_name = shift;
 
   my $distr_params = $self->param('omega_distributions')->{$omega_name};
-
-  return $distr_params;
-}
-
-sub indel_param {
-  my $self       = shift;
-  my $indel_name = shift;
-
-  my $distr_params = $self->param('indel_models')->{$indel_name};
-
+  $self->hash_print($distr_params);
   return $distr_params;
 }
 
@@ -1107,21 +1227,21 @@ sub aln_param {
   return $aln_params;
 }
 
-sub reps {
+sub reps_param {
   my $self = shift;
   my $reps = shift;
 
   return { slrsim_replicates => $reps };
 }
 
-sub length {
+sub length_param {
   my $self   = shift;
   my $length = shift;
 
   return { phylosim_seq_length => $length };
 }
 
-sub indel {
+sub indel_rate_param {
   my $self       = shift;
   my $indel_rate = shift;
 
@@ -1131,14 +1251,29 @@ sub indel {
   };
 }
 
-sub filter_order {
+sub indel_shape_param {
+  my $self       = shift;
+  my $indel_name = shift;
+
+  my $distr_params = $self->param('indel_models')->{$indel_name};
+
+  if ( !defined $distr_params ) {
+    $distr_params = {
+      phylosim_insertmodel => $indel_name,
+      phylosim_deletemodel => $indel_name
+    };
+  }
+  return $distr_params;
+}
+
+sub filter_order_param {
   my $self  = shift;
   my $order = shift;
 
   return { sitewise_filter_order => $order };
 }
 
-sub filter_thresh {
+sub filter_thresh_param {
   my $self   = shift;
   my $thresh = shift;
 
@@ -1159,7 +1294,8 @@ sub filter_param {
     $f = {
       filtering_name            => 'None',
       alignment_scores_action   => 'none',
-      alignment_score_filtering => 0
+      alignment_score_filtering => 0,
+      alignment_score_threshold => 0
     };
   }
 
@@ -1172,13 +1308,6 @@ sub filter_param {
 }
 
 sub ref_param {
-  my $self    = shift;
-  my $species = shift;
-  my $p       = { slrsim_ref => $species };
-  return $p;
-}
-
-sub species_param {
   my $self    = shift;
   my $species = shift;
   my $p       = { slrsim_ref => $species };

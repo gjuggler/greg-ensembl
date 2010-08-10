@@ -43,7 +43,7 @@ get.vector = function(con,query,columns=1) {
 }
 
 # Grabs from the database the true and inferred omegas for the given reference sequence.
-get.all.data = function(sites.cols=NULL,genes.cols=NULL) {
+get.all.data = function(sites.cols=NULL,genes.cols=NULL,where=NULL) {
   if (is.null(sites.cols)) {
     sites.cols = "s.aln_dnds,s.aln_lrt,s.seq_position,s.true_dnds,s.true_ncod,s.true_type";
   }
@@ -57,17 +57,53 @@ get.all.data = function(sites.cols=NULL,genes.cols=NULL) {
     genes.cols = paste(genes.cols,collapse=",")
   }
 
-  for (necessary in c('g.slrsim_label','g.data_id')) {
+  if (is.null(where)) {
+    where.statement = ''
+  } else {
+    where.statement = where
+  }
+
+  for (necessary in c(
+    'g.experiment_name','g.slrsim_label',
+    'g.data_id','g.node_id',
+    'g.phylosim_insertrate','g.phylosim_insertmodel'
+    )) {
     if (!necessary %in% genes.cols) {
       genes.cols = paste(genes.cols,necessary,sep=',')
     }
   }
 
+  for (necessary in c(
+    's.aln_dnds','s.aln_type','s.aln_note','s.aln_lrt',
+    's.true_dnds','s.true_type','s.seq_position'
+    )) {
+    if (!necessary %in% sites.cols) {
+      sites.cols = paste(sites.cols,necessary,sep=',')
+    }
+  }
+
   print(genes.cols)
-  query = sprintf("select %s,%s from stats_genes g JOIN stats_sites s ON g.data_id=s.data_id",genes.cols,sites.cols)
+  print(sites.cols)
+  query = sprintf("select %s,%s from stats_genes g JOIN stats_sites s ON g.data_id=s.data_id %s",genes.cols,sites.cols,where.statement)
   all = get.vector(con,query,columns='all')
  
   return(all)
+}
+
+get.all.by.experiment = function() {
+  query = "SELECT distinct(experiment_name) FROM stats_genes"
+  experiments = get.vector(con,query)
+
+  data.list = list()
+  i=1
+  for (experiment in experiments) {
+    print(experiment)
+    cur.data = get.all.data(where=paste('WHERE experiment_name="',experiment,'"',sep=''))
+    data.list[[i]] = cur.data
+    i = i + 1
+  }
+
+  return(data.list)
 }
 
 get.all.nodes = function() {

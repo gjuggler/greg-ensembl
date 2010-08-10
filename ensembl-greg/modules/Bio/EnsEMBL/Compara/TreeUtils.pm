@@ -214,10 +214,13 @@ sub to_treeI {
   } elsif ($tree->isa($TREEI)) {
     return $tree;
   } elsif ($tree->isa($NSET)) {
-    $newick = $tree->newick_format($format).";";
+    $newick = $tree->newick_format($format);
+    $newick .= ';' unless ($newick =~ m/;/);
 #    print $newick."\n";
   }
   
+  print "CONVERING TO TREEI: $newick\n";
+
   open(my $fake_fh, "+<", \$newick);
   my $treein = new Bio::TreeIO
     (-fh => $fake_fh,
@@ -869,6 +872,7 @@ sub extract_subtree_from_leaves {
   my %keepers_node_id_hash;
   foreach my $keep_id (@keepers) {
     my $node = $tree->find_node_by_node_id($keep_id);
+    $node = $tree->find_leaf_by_name($keep_id) unless (defined $node);
     if (!defined $node) {
       printf "Node [%s] not found in tree [%s]!\n", $keep_id, $tree->newick_format;
       return undef;
@@ -893,9 +897,13 @@ sub extract_subtree_from_leaves {
     }
   }
   
-  $tree = $tree->remove_nodes(\@remove_me);
-  #$tree = $tree->minimize_tree;
-  return $tree;
+  my $copy = $tree->copy;
+
+  my @copy_remove_me = map {$copy->find_node_by_node_id($_->node_id)} @remove_me;
+
+  $copy = $copy->remove_nodes(\@copy_remove_me);
+  $copy = $copy->minimize_tree;
+  return $copy;
 }
 
 sub get_minimum_ancestor_from_leaves {

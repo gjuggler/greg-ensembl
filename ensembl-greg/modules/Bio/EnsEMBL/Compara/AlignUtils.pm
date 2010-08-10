@@ -362,15 +362,19 @@ sub store_pairs {
   my $pair_string;
   foreach my $i (1..$aln->length) {
     foreach my $key_a (keys %$obj) {
-      my $resnum_a = $obj->{$key_a}->[$i+1];
-      next if ($resnum_a =~ /-X/i); # Ignore pairs with gaps or filtered sites.
+      
+      my $resnum_a = $obj->{$key_a}->[$i];
+      next if ($resnum_a =~ /[-X]/i); # Ignore pairs with gaps or filtered sites.
 
       foreach my $key_b (keys %$obj) {
         next if ($key_a eq $key_b);
-        my $resnum_b = $obj->{$key_b}->[$i+1];
-        next if ($resnum_b =~ /-X/i); # Ignore pairs with gaps for filtered sites.
+        my $resnum_b = $obj->{$key_b}->[$i];
+        next if ($resnum_b =~ /[-X]/i); # Ignore pairs with gaps for filtered sites.
 
-        $pair_string = join('.',$key_a,$resnum_a,$key_b,$resnum_b);
+        $pair_string = join('_',$key_a,$resnum_a,$key_b,$resnum_b);
+        #print "$pair_string\n";
+        $pairs{$pair_string} = 1;
+        $pair_string = join('_',$key_b,$resnum_b,$key_a,$resnum_a);
         $pairs{$pair_string} = 1;
       }
     }
@@ -392,7 +396,7 @@ sub to_arrayrefs {
 
   my $seq_objs;
   foreach my $seq ($aln->each_seq) {
-    my @sites;
+    my @sites = ('-');
     foreach my $i (1..$aln->length) {
       my $range = $seq->location_from_column($i);
       my $aa = $seq->subseq($i,$i);

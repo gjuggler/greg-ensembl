@@ -24,10 +24,10 @@ sub fetch_input {
     alignment_scores_action => 'prank'    # Options: 'gblocks', 'prank', 'trimal', 'indelign'
   };
 
-  $self->load_all_params($params);
-  
+  $self->load_all_params($params);  
 
   my $no_filter_param = $self->replace_params( $self->params, { alignment_score_filtering => 0 } );
+
   my ( $tree, $aln ) =
     Bio::EnsEMBL::Compara::ComparaUtils->get_tree_and_alignment( $self->compara_dba, $no_filter_param );
   
@@ -35,7 +35,6 @@ sub fetch_input {
   $self->param('aln',$aln);
 
   Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $aln, { length => 200 } );
-
 }
 
 sub run {
@@ -52,44 +51,38 @@ sub run {
   my $action      = $params->{'alignment_scores_action'};
   my $table       = $params->{'alignment_score_table'};
 
-  $action = 'prank_column';
-
+  my $score_hash;
   if ( $action =~ m/gblocks/i ) {
-    print " -> RUN GBLOCKS\n";
-    my $score_hash = $self->run_gblocks( $tree, $aln, $params );
-    $self->store_scores( $tree, $score_hash, $table );
-  }
-
-  if ( $action =~ 'prank' ) {
-    print " -> RUN PRANK\n";
+    print " -> RUN GBLOCKS [$action]\n";
+    $score_hash = $self->run_gblocks( $tree, $aln, $params );
+  } elsif ( $action =~ 'prank' ) {
+    print " -> RUN PRANK [$action]\n";
     $params->{prank_filtering_scheme} = $action;
-    my $score_hash = $self->run_prank( $tree, $aln, $params );
-    $self->store_scores( $tree, $score_hash, $table );
-  }
-
-  if ( $action =~ m/trimal/i ) {
-    print " -> RUN TRIMAL\n";
-    my $score_hash = $self->run_trimal( $tree, $aln, $params );
-    $self->store_scores( $tree, $score_hash, $table );
-  }
-
-  if ( $action =~ m/indelign/i ) {
-    print " -> RUN INDELIGN\n";
+    $score_hash = $self->run_prank( $tree, $aln, $params );
+  } elsif ( $action =~ m/trimal/i ) {
+    print " -> RUN TRIMAL [$action]\n";
+    $score_hash = $self->run_trimal( $tree, $aln, $params );
+  } elsif ( $action =~ m/indelign/i ) {
+    print " -> RUN INDELIGN [$action]\n";
     eval {
-      my $score_hash = $self->run_indelign( $tree, $aln, $params );
-      $self->store_scores( $tree, $score_hash, $table );
+      $score_hash = $self->run_indelign( $tree, $aln, $params );
     };
     if ($@) {
-      print "Indelign error: $@\n";
+      print "Indelign error for action [$action]: $@\n";
     }
+  } elsif ( $action =~ m/(coffee|score)/i ) {
+    print " -> RUN TCOFFEE [$action]\n";
+    $score_hash = $self->run_tcoffee( $tree, $aln, $params );
+  } elsif ( $action =~ m/oracle/i) {
+    $score_hash = $self->run_oracle($tree,$aln,$params);
+  } elsif ($action =~ m/none/i) {
+    return;
+  } else {
+    $self->throw("Alignment score action not recognized: [$action]!");
   }
 
-  if ( $action =~ m/(coffee|score)/i ) {
-    print " -> RUN TCOFFEE\n";
-    my $score_hash = $self->run_tcoffee( $tree, $aln, $params );
-    $self->store_scores( $tree, $score_hash, $table );
-  }
 
+  $self->store_scores( $tree, $score_hash, $table );
 }
 
 sub store_scores {
@@ -110,6 +103,125 @@ sub store_scores {
     sleep(0.1);
   }
   $sth->finish;
+}
+
+sub run_oracle {
+  my $self = shift;
+  my $tree = shift;
+  my $aln = shift;
+  my $params = shift;
+
+  # Get the true and inferred alignment.
+  my ($sa_true,$cdna_true,$sa_aln,$cdna_aln);
+  my $cur_params = $self->params;
+  # Important!! Remove the tree from params object so it's re-fetched by ComparaUtils.
+  # Annoying, I know...
+  delete $cur_params->{tree};
+  my $true_aln_params =
+    $self->replace_params( $cur_params,
+                           { alignment_table => 'protein_tree_member', alignment_score_filtering => 0 } );
+  $self->hash_print($true_aln_params);
+  print "Getting TRUE alignment...\n";
+  ( $tree, $sa_true, $cdna_true ) =
+    Bio::EnsEMBL::Compara::ComparaUtils->tree_aln_cdna( $self->compara_dba, $true_aln_params );
+  
+  $self->hash_print($cur_params);
+
+  print "Getting INFERRED alignment...\n";
+  ( $tree, $sa_aln, $cdna_aln ) =
+    Bio::EnsEMBL::Compara::ComparaUtils->tree_aln_cdna( $self->compara_dba, $cur_params );
+
+#  $sa_true = $sa_true->slice(50,100);
+#  $sa_aln = $sa_aln->slice(50,100);
+  Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $sa_true, { length => 100 } );
+  Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $sa_aln,  { length => 100} );
+
+  $aln = $sa_aln;
+
+  
+  # Goal: score each site by the fraction of the tree against which
+  #   it is correctly aligned.
+  
+  # Plan:
+  # 1) For each site, calculate the size of the subtree comprised of all
+  #    sequences against which it's correctly aligned. Score as the fraction
+  #    compared to the tree's total branch length.
+
+  # Set-up:
+  # Index the alignments by sequence residue #.
+  print "Indexing pairs...\n";
+  my $ALNU = 'Bio::EnsEMBL::Compara::AlignUtils';
+  my $true_obj = $ALNU->to_arrayrefs($sa_true);
+  my $test_obj = $ALNU->to_arrayrefs($sa_aln);
+  # Add all aligned pairs to the index hashtable.
+  my $true_pairs = $ALNU->store_pairs($sa_true,$true_obj);
+  my $test_pairs = $ALNU->store_pairs($sa_aln,$test_obj);
+  print "Done!\n";
+
+  my @id_list = map {$_->id} $aln->each_seq;
+  
+  my $tree_bl_hash = {};
+  my $scores_hash;
+  map {$scores_hash->{$_} = ''} @id_list;
+  foreach my $i (1..$aln->length) {
+    my @nongap_ids_at_pos = grep {$test_obj->{$_}->[$i] ne '-'} @id_list;
+    my $total_nongap_bl = $self->get_subtree_bl($tree,\@nongap_ids_at_pos,$tree_bl_hash);
+
+    print $ALNU->get_column_string($aln,$i)."\n";
+    my $column_score_string = '';
+    foreach my $this_seq_id (@id_list) {
+      # Get a list of all other IDs to which this seq-residue is correctly aligned.
+      my $this_res_num = $test_obj->{$this_seq_id}->[$i];
+
+      if ($this_res_num eq '-') {
+        $scores_hash->{$this_seq_id} .= '-';
+        $column_score_string .= '-';
+        next;
+      }
+
+      my @correctly_aligned_ids = ($this_seq_id);
+      foreach my $other_seq_id (@id_list) {
+        next if ($this_seq_id eq $other_seq_id);
+        my $other_res_num = $test_obj->{$other_seq_id}->[$i];
+#        next if ($other_res_num eq '-');
+
+        my $pair_string = join('_',$this_seq_id,$this_res_num,$other_seq_id,$other_res_num);
+        if ($true_pairs->{$pair_string} == 1) {
+          #print "$pair_string yes!!\n";
+          push @correctly_aligned_ids,$other_seq_id;
+        }
+      }
+      my $correct_bl = $self->get_subtree_bl($tree,\@correctly_aligned_ids,$tree_bl_hash);
+
+      my $score = $correct_bl/$total_nongap_bl * 10.0;
+      $score = 9 if ($score > 9);
+      $score = 0 if ($score < 0);
+      $score = sprintf("%1d",$score);
+      $scores_hash->{$this_seq_id} .= $score;
+      $column_score_string .= $score;
+      #printf "%d %-20s:%.3f\n",$i,$this_seq_id,$score;
+    }
+    print $column_score_string."\n";
+  }
+  return $scores_hash;
+}
+
+sub get_subtree_bl {
+  my $self = shift;
+  my $tree = shift;
+  my $seq_ids = shift;
+  my $bl_hash = shift;
+
+  my @id_array = @$seq_ids;
+#    @id_array = sort {$a <=> $b} @id_array;
+  my $key = join('_',@id_array);
+  my $existing_value = $bl_hash->{$key};
+  return $existing_value if (defined $existing_value);
+    
+  my $subtree = Bio::EnsEMBL::Compara::TreeUtils->extract_subtree_from_leaves($tree,\@id_array);
+  my $total = Bio::EnsEMBL::Compara::TreeUtils->total_distance($subtree);
+  $bl_hash->{$key} = $total;
+  return $total;
 }
 
 sub run_indelign {
@@ -355,7 +467,7 @@ sub run_trimal {
   my $trim_params = '';
   $trim_params = $params->{'trimal_filtering_params'}
     if ( $params->{'trimal_filtering_params'} );    # Custom parameters if desired.
-  my $cmd = "trimal -gt 0.5 -cons 30 -in $aln_f -out $aln_f -colnumbering $trim_params";
+  my $cmd = "trimal -gt 0.3 -cons 20 -in $aln_f -out $aln_f -colnumbering $trim_params";
   print "CMD: $cmd\n";
   my $output = `$cmd`;
 

@@ -25,7 +25,6 @@ sub run {
 
   $self->output_params_file;
   $self->dump_sql;
-  #$self->dump_data;
   # Tricky Perl: Call the method corresponding to the current experiment.
   $self->$experiment_name();
 }
@@ -106,6 +105,33 @@ save(data,file="${filename}");
   
 }
 
+sub slrsim_all {
+  my $self = shift;
+
+  my $all_file = $self->param('output_folder') . '/df.list.Rdata';
+  my $folder = $self->get_output_folder;
+  my $script = $self->script;
+  my $dbname = $self->dbc->dbname;
+  my $rcmd = qq^
+dbname="$dbname"
+source("$script")
+
+df.list = get.all.by.experiment()
+save(df.list,file="$all_file")
+
+for (df in df.list) {
+  name = df[1,'experiment_name']
+  print(name)
+  data = df
+  save(data,file=paste("$folder",'/',name,'.Rdata',sep=''))
+}
+^;
+  print "$rcmd\n";
+  my $params = {};
+  Bio::Greg::EslrUtils->run_r($rcmd,$params);
+  
+}
+
 sub slrsim_one {
   my $self = shift;
   $self->_slrsim_one_all();
@@ -131,12 +157,11 @@ sub _slrsim_one_all {
   my $self = shift;
 
   my $out_file = $self->param('output_folder') . '/all.data.Rdata';
-  my $folder = $self->param('output_folder');
-  my $script = $self->base . '/collect_slrsim.R';
-
+  my $script = $self->script;
+  my $dbname = $self->dbc->dbname;
   my $rcmd = qq^
-dbname="slrsim_1"
-source("collect_slrsim.R")
+dbname="$dbname"
+source("$script")
 data = get.all.data(genes.cols=c('slrsim_tree_length','phylosim_insertrate','tree_mean_path'))
 save(data,file="$out_file")
 ^;
@@ -155,16 +180,20 @@ sub slrsim_two_a {
   $self->_slrsim_two_all();
 }
 
+sub slrsim_two_b {
+  my $self = shift;
+  $self->_slrsim_two_all();
+}
+
 sub _slrsim_two_all {
   my $self = shift;
 
   my $out_file = $self->param('output_folder') . '/all.data.Rdata';
-  my $folder = $self->param('output_folder');
-  my $script = $self->base . '/collect_slrsim.R';
-
+  my $script = $self->script;
+  my $dbname = $self->dbc->dbname;
   my $rcmd = qq^
-dbname="slrsim_1"
-source("collect_slrsim.R")
+dbname="$dbname"
+source("$script")
 data = get.all.data(genes.cols=c('slrsim_tree_length','phylosim_insertrate','tree_mean_path'))
 save(data,file="$out_file")
 ^;
@@ -174,6 +203,61 @@ save(data,file="$out_file")
 
 }
 
+# Indel length distributions.
+sub slrsim_three {
+  my $self = shift;
+
+  my $out_file = $self->param('output_folder') . '/all.data.Rdata';
+  my $script = $self->script;
+  my $dbname = $self->dbc->dbname;
+  my $rcmd = qq^
+dbname="$dbname"
+source("$script")
+data = get.all.data(
+  genes.cols=c(
+    'slrsim_tree_length',
+    'phylosim_insertrate',
+    'tree_mean_path',
+    'phylosim_insertmodel',
+    'phylosim_deletemodel'
+  )
+)
+save(data,file="$out_file")
+^;
+  print "$rcmd\n";
+  my $params = {};
+  Bio::Greg::EslrUtils->run_r($rcmd,$params);
+}
+
+# Omega distributions.
+sub slrsim_four {
+  my $self = shift;
+
+  my $out_file = $self->param('output_folder') . '/all.data.Rdata';
+  my $script = $self->script;
+  my $dbname = $self->dbc->dbname;
+  my $rcmd = qq^
+dbname="$dbname"
+source("$script")
+data = get.all.data(
+  genes.cols=c(
+    'slrsim_tree_length',
+    'phylosim_insertrate',
+    'phylosim_insertmodel',
+    'phylosim_omega_distribution',
+    'tree_mean_path'
+  ),
+  sites.cols=c(
+    'aln_dnds_lower',
+    'aln_dnds_upper'
+  )
+)
+save(data,file="$out_file")
+^;
+  print "$rcmd\n";
+  my $params = {};
+  Bio::Greg::EslrUtils->run_r($rcmd,$params);
+}
 
 sub mammals_indel_simulations {
   my $self = shift;

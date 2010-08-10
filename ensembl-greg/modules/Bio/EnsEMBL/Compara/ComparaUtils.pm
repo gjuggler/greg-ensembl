@@ -867,6 +867,7 @@ sub get_tree_for_comparative_analysis {
     
     # GJ 2009-09-18
     if ($params->{'alignment_table'}) {
+      print "ALIGNMENT TABLE:". $params->{alignment_table}."\n";
       $pta->protein_tree_member($params->{'alignment_table'});
     }
     if ($params->{'alignment_score_table'}) {
