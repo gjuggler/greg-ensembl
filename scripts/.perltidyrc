@@ -1,0 +1,7 @@
+-i=2
+-l=100
+--cuddled-else
+--opening-brace-always-on-right
+-nolq
+--opening-token-right
+--stack-opening-tokens
