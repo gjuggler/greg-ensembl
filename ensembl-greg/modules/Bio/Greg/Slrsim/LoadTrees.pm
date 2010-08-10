@@ -813,11 +813,13 @@ sub slrsim_defaults {
   my $omegas   = $self->omega_param('lognormal_high');
   my $analysis = $self->analysis_param('slr');
 
-  my $filter = $self->filter_param('none');
+  my $filter        = $self->filter_param('none');
   my $filter_thresh = $self->filter_thresh_param(0);
 
-    return $self->replace( $tree, $indel_rate, $indel_shape, $reps, $length, $aln, $omegas,
-    $analysis, $filter, $filter_thresh );
+  return $self->replace(
+    $tree, $indel_rate, $indel_shape, $reps,   $length,
+    $aln,  $omegas,     $analysis,    $filter, $filter_thresh
+  );
 }
 
 sub slrsim_all {
@@ -827,11 +829,11 @@ sub slrsim_all {
   my @cur_set;
 
   foreach my $sub_experiment ('slrsim_one_c') {
-    @cur_set = @{$self->$sub_experiment()};
-    $self->apply_experiment_name_to_sets(\@cur_set,$sub_experiment);
+    @cur_set = @{ $self->$sub_experiment() };
+    $self->apply_experiment_name_to_sets( \@cur_set, $sub_experiment );
     push @all_sets, @cur_set;
   }
-  
+
   return \@all_sets;
 }
 
@@ -1034,7 +1036,7 @@ sub slrsim_three {
   my $defaults = $self->slrsim_defaults;
   my $tree     = $self->tree_param('anisimova_bglobin');
   $tree->{slrsim_tree_mean_path} = 2;
-  my $reps = {}; #$self->reps_param(3);
+  my $reps = {};    #$self->reps_param(3);
 
   my $base_params = $self->replace( $defaults, $tree, $reps );
 
@@ -1073,15 +1075,16 @@ sub slrsim_four {
   my $self = shift;
 
   my $defaults = $self->slrsim_defaults;
-  my $reps     = {}; #$self->reps_param(20);
+  my $reps     = {};                                       #$self->reps_param(20);
   my $tree     = $self->tree_param('anisimova_bglobin');
 
   my $base_params = $self->replace( $defaults, $reps, $tree );
 
   my @omega_dists = (
-    'lognormal_narrow_2', 'lognormal_narrow', 'lognormal', 'lognormal_wide',
-    'lognormal_wide_2',   'lognormal_low',    'lognormal_low_2','lognormal_high','lognormal_high_2',
-    'uniform_neutral', 'uniform_low', 'uniform_low2', 'uniform_pos', 'uniform_pos2'
+    'lognormal_narrow_2', 'lognormal_narrow', 'lognormal',       'lognormal_wide',
+    'lognormal_wide_2',   'lognormal_low',    'lognormal_low_2', 'lognormal_high',
+    'lognormal_high_2',   'uniform_neutral',  'uniform_low',     'uniform_low2',
+    'uniform_pos',        'uniform_pos2'
   );
 
   my @sets;
@@ -1102,14 +1105,15 @@ sub slrsim_five {
 
   my $defaults = $self->slrsim_defaults;
 
-  my $reps = {}; #$self->reps(30);
+  my $reps = {};                                       #$self->reps(30);
   my $tree = $self->tree_param('anisimova_bglobin');
 
   my $base_params = $self->replace( $defaults, $reps, $tree );
 
   my @sets;
-  foreach my $ref ('xenlaev','duck','rat','bushbaby','human') {
-#  foreach my $ref ( 'Human', 'Bushbaby', 'Mouse', 'Tenrec', 'Lizard', 'Xtropicalis', 'Fugu' ) {
+  foreach my $ref ( 'xenlaev', 'duck', 'rat', 'bushbaby', 'human' ) {
+
+    #  foreach my $ref ( 'Human', 'Bushbaby', 'Mouse', 'Tenrec', 'Lizard', 'Xtropicalis', 'Fugu' ) {
     my $ref_params = $self->ref_param($ref);
 
     my $params = $self->replace( $base_params, $ref_params, { slrsim_label => $ref } );
@@ -1125,7 +1129,7 @@ sub slrsim_six {
   my $self = shift;
 
   my $defaults = $self->slrsim_defaults;
-  my $reps     = {}; #$self->reps(20);
+  my $reps     = {};                       #$self->reps(20);
 
   my $base_params = $self->replace( $defaults, $reps );
 
@@ -1147,24 +1151,24 @@ sub slrsim_seven {
   my $self = shift;
 
   my $defaults = $self->slrsim_defaults;
-  my $reps     = {}; #$self->reps(20);
+  my $reps     = {};                       #$self->reps(20);
 
   my $base_params = $self->replace( $defaults, $reps );
 
-  my @filters =
-    ( 'none', 'indelign', 'prank_mean', 'tcoffee', 'trimal', 'gblocks', 'oracle' );
+  my @filters = ( 'none', 'indelign', 'prank_mean', 'tcoffee', 'trimal', 'gblocks', 'oracle' );
 
   my @sets;
   foreach my $filter (@filters) {
     my $filter_params = $self->filter_param($filter);
     my $filter_thresh = $self->filter_thresh_param(7);
-    my $params = $self->replace( $base_params, $filter_params, $filter_thresh, { slrsim_label => $filter } );
+    my $params =
+      $self->replace( $base_params, $filter_params, $filter_thresh, { slrsim_label => $filter } );
     push @sets, $params;
   }
 
   # Add one item for the true alignment / no filtering.
   my $true_aln = $self->aln_param('true');
-  my $true_params = $self->replace($base_params,$true_aln,{slrsim_label => 'True Alignment'});
+  my $true_params = $self->replace( $base_params, $true_aln, { slrsim_label => 'True Alignment' } );
   push @sets, $true_params;
 
   return \@sets;

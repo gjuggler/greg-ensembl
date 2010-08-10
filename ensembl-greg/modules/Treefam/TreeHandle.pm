@@ -27,16 +27,13 @@
 
 =cut
 
-
 package Treefam::TreeHandle;
-
 
 use strict;
 use Carp;
 use Treefam::Tree;
 use Treefam::DBConnection;
 use Scalar::Util qw(weaken);
-
 
 =head2 new
 
@@ -49,10 +46,10 @@ use Scalar::Util qw(weaken);
 sub new {
 
   my $class = shift;
-  my $self = {};
+  my $self  = {};
   $self->{'DBConnection'} = shift;
-  weaken($self->{'DBConnection'});
-  bless ($self, $class);
+  weaken( $self->{'DBConnection'} );
+  bless( $self, $class );
 
   return $self;
 
@@ -69,16 +66,16 @@ sub new {
 
 sub get_by_id {
 
-  my ($self,$familyID,$type) = @_;
-  my $dbc = $self->{'DBConnection'};
-  my $dbh = $dbc->{'database_handle'};
+  my ( $self, $familyID, $type ) = @_;
+  my $dbc   = $self->{'DBConnection'};
+  my $dbh   = $dbc->{'database_handle'};
   my $query = qq( SELECT tree FROM trees WHERE AC= ? AND type= ?);
-  my $sth= $dbh->prepare ($query);
-  $sth->execute($familyID,$type);
+  my $sth   = $dbh->prepare($query);
+  $sth->execute( $familyID, $type );
   my ($nhx) = $sth->fetchrow_array();
 
   if ($nhx) {
-    return new Treefam::Tree($dbc,$familyID,$type,$nhx);
+    return new Treefam::Tree( $dbc, $familyID, $type, $nhx );
   }
   return undef;
 
@@ -95,8 +92,8 @@ sub get_by_id {
 
 sub get_by_ac {
 
-  my ($self,$familyID,$type) = @_;
-  return $self->get_by_id($familyID,$type);
+  my ( $self, $familyID, $type ) = @_;
+  return $self->get_by_id( $familyID, $type );
 
 }
 
@@ -111,9 +108,9 @@ sub get_by_ac {
 
 sub get_by_family {
 
-  my ($self,$family,$type) = @_;
+  my ( $self, $family, $type ) = @_;
   my $familyID = ref($family) ? $family->ID() : $family;
-  return $self->get_by_id($familyID,$type);
+  return $self->get_by_id( $familyID, $type );
 
 }
 
@@ -130,17 +127,17 @@ sub get_by_family {
 
 sub get_by_gene {
 
-  my ($self,$gene,$type) = @_;
-  my $dbc = $self->{'DBConnection'};
-  my $famh = $dbc->get_FamilyHandle();
-  my $geneID = ref $gene ? $gene->ID(): $gene;
+  my ( $self, $gene, $type ) = @_;
+  my $dbc    = $self->{'DBConnection'};
+  my $famh   = $dbc->get_FamilyHandle();
+  my $geneID = ref $gene ? $gene->ID() : $gene;
   my $family = $famh->get_by_gene($geneID);
   unless ($family) {
     return undef;
   }
   my $familyID = $family->ID();
-  my $tree = $self->get_by_id($familyID,$type);
-  my ($node) = $tree->get_nodes_by_tag_value(-G=>$geneID) if $tree;
+  my $tree = $self->get_by_id( $familyID, $type );
+  my ($node) = $tree->get_nodes_by_tag_value( -G => $geneID ) if $tree;
   if ($node) {
     return $tree;
   }
@@ -165,13 +162,13 @@ sub new_tree {
   my $dbc = $self->{'DBConnection'};
   my $dbh = $dbc->{'database_handle'};
   my $tree;
-  unless ($tree{'-tree'}) {
+  unless ( $tree{'-tree'} ) {
     croak "Tree required";
   }
-  $tree{'-acc'} ||= '';
+  $tree{'-acc'}  ||= '';
   $tree{'-type'} ||= '';
 
-  return Treefam::Tree->new($dbc,$tree{'-acc'},$tree{'-type'},$tree{'-tree'});
+  return Treefam::Tree->new( $dbc, $tree{'-acc'}, $tree{'-type'}, $tree{'-tree'} );
 
 }
 

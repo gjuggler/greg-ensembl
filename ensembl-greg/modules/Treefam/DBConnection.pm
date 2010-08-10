@@ -38,7 +38,6 @@
 
 =cut
 
-
 package Treefam::DBConnection;
 
 use strict;
@@ -55,13 +54,14 @@ sub new {
 
   my %dbc = @_;
 
-  if (!defined($dbc{'-database'})) {
-    if (defined($dbc{'-file'}) && -e $dbc{'-file'}) {
+  if ( !defined( $dbc{'-database'} ) ) {
+    if ( defined( $dbc{'-file'} ) && -e $dbc{'-file'} ) {
+
       # use configuration file if provided
-      unless (my $return = do $dbc{'-file'}) {
-	croak "couldn't parse $dbc{'-file'}: $@" if $@;
-	croak "couldn't do $dbc{'-file'}: $!"    unless defined $return;
-	croak "couldn't run $dbc{'-file'}"       unless $return;
+      unless ( my $return = do $dbc{'-file'} ) {
+        croak "couldn't parse $dbc{'-file'}: $@" if $@;
+        croak "couldn't do $dbc{'-file'}: $!" unless defined $return;
+        croak "couldn't run $dbc{'-file'}" unless $return;
       }
     }
     $dbc{'-database'} = $TFDBNAME;
@@ -73,33 +73,33 @@ sub new {
 
   my $db = $dbc{'-database'};
   die "ERROR: No database selected\n" unless ($db);
+
   # check that database and API versions match
-  unless ($dbc{'-database'}=~/\w_$APIVERSION/) {
-    warn "\nWARNING: API version doesn't match database version for $dbc{'-database'}. Some things won't work.\n\n";
-    sleep(1); # give time to read message
+  unless ( $dbc{'-database'} =~ /\w_$APIVERSION/ ) {
+    warn
+      "\nWARNING: API version doesn't match database version for $dbc{'-database'}. Some things won't work.\n\n";
+    sleep(1);    # give time to read message
   }
-  my $host = $dbc{'-host'};
-  my $port = $dbc{'-port'} if defined($dbc{'-port'});
+  my $host      = $dbc{'-host'};
+  my $port      = $dbc{'-port'} if defined( $dbc{'-port'} );
   my $user_name = $dbc{'-user'};
-  my $password = $dbc{'-password'} || "";
-  my $dsn="DBI:mysql:$db:$host:$port";
+  my $password  = $dbc{'-password'} || "";
+  my $dsn       = "DBI:mysql:$db:$host:$port";
 
   my $self = {};
-  bless ($self, $class);
+  bless( $self, $class );
 
   my $dbh;
 
   $SIG{ALRM} = sub { die "timeout"; };
-  alarm(10); # time in seconds to wait
-  eval {
-    $dbh= DBI->connect ($dsn, $user_name, $password, {RaiseError=> 1, PrintError=> 0});
-  };
-    if (!$dbh || $@) {
-      croak "Could not connect to database $db on host $host: $DBI::errstr\n";
-    }
+  alarm(10);    # time in seconds to wait
+  eval { $dbh = DBI->connect( $dsn, $user_name, $password, { RaiseError => 1, PrintError => 0 } ); };
+  if ( !$dbh || $@ ) {
+    croak "Could not connect to database $db on host $host: $DBI::errstr\n";
+  }
   alarm(0);
 
-  $self->{'database'} = $dbc{'-database'};
+  $self->{'database'}        = $dbc{'-database'};
   $self->{'database_handle'} = $dbh;
 
   return $self;
@@ -146,7 +146,5 @@ sub get_GeneHandle {
   return Treefam::GeneHandle->new($self);
 
 }
-
-
 
 1;

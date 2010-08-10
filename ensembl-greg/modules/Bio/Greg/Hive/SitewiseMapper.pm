@@ -18,7 +18,7 @@ sub fetch_input {
   ### DEFAULT PARAMETERS ###
   my $params = {};
   $params->{'do_mapping'}      = 1;
-  $params->{'do_filter'}      = 1;
+  $params->{'do_filter'}       = 1;
   $params->{'collect_pfam'}    = 1;
   $params->{'collect_uniprot'} = 1;
   $params->{'collect_exons'}   = 1;
@@ -33,16 +33,16 @@ sub fetch_input {
 
 sub run {
   my $self = shift;
-  
+
   $self->{'start_time'} = time() * 1000;
   $self->compara_dba->dbc->disconnect_when_inactive(1);
 
-  if ($self->param('do_filter')) {
+  if ( $self->param('do_filter') ) {
     print "Doing site-wise filter calculations...\n";
     $self->do_filter();
     print "  -> Finished doing site-wise filtering!\n";
   }
-  
+
   if ( $self->param('do_mapping') ) {
     print "Mapping sitewise to genome...\n";
     $self->do_mapping();
@@ -61,11 +61,11 @@ sub run {
     print "  -> Finished collecting UniProt!\n";
   }
 
-#  if ( $self->param('collect_exons') ) {
-#    print "Collecting Exon annotations...\n";
-#    $self->collect_exons();
-#    print "  -> Finished collecting Exons!\n";
-#  }
+  #  if ( $self->param('collect_exons') ) {
+  #    print "Collecting Exon annotations...\n";
+  #    $self->collect_exons();
+  #    print "  -> Finished collecting Exons!\n";
+  #  }
 
   if ( $self->param('collect_go') ) {
     print "Collecting GO annotations...\n";
@@ -85,7 +85,7 @@ sub get_id {
 sub do_mapping {
   my $self = shift;
 
-  my $node_id = $self->node_id;
+  my $node_id          = $self->node_id;
   my $parameter_set_id = $self->parameter_set_id;
   print "Mapping sitewise $node_id to genome...\n";
 
@@ -94,15 +94,12 @@ sub do_mapping {
 
   my @array_of_strings;
   foreach my $map ( @{$mapped_sites} ) {
-    my @values =
-      ( $node_id,
-	$parameter_set_id,
-	$map->{aln_position},
-	$map->{member_id},
-	'"'.$map->{chr}.'"',
-	$map->{start},
-	$map->{end});
+    my @values = (
+      $node_id, $parameter_set_id, $map->{aln_position}, $map->{member_id}, '"' . $map->{chr} . '"',
+      $map->{start}, $map->{end}
+    );
     my $string = '(' . join( ',', @values ) . ')';
+
     #print $string."\n";
     push @array_of_strings, $string;
   }
@@ -120,7 +117,7 @@ sub do_mapping {
 sub collect_go {
   my $self = shift;
 
-  my $tree = $self->get_tree;
+  my $tree   = $self->get_tree;
   my @leaves = @{ $tree->get_all_leaves };
 
   my @taxon_ids;
@@ -185,7 +182,7 @@ sub collect_uniprot {
   my $self = shift;
 
   my $tree = $self->get_tree;
-  my $sa = $tree->get_SimpleAlign;
+  my $sa   = $tree->get_SimpleAlign;
   my $pos_id_hash;
 
   my $orig_cwd = cwd();
@@ -267,7 +264,7 @@ sub collect_exons {
   my $self = shift;
 
   my $tree = $self->get_tree;
-  my $sa = $tree->get_SimpleAlign;
+  my $sa   = $tree->get_SimpleAlign;
 
   print $sa->length . "\n";
 
@@ -306,11 +303,11 @@ sub collect_exons {
         my $aln_end   = $sa->column_from_residue_number( $leaf->stable_id, $pep_end );
 
         foreach my $pos ( $aln_start .. $aln_end ) {
-	  my $node_id = $self->get_id;
-	  my $parameter_set_id = $self->parameter_set_id;
+          my $node_id          = $self->get_id;
+          my $parameter_set_id = $self->parameter_set_id;
+
           # Store whether we're in a first, middle, or last exon.
-          $sth->execute( $node_id, $pos, $parameter_set_id,
-            'EXON', $exon_position, "EnsEMBL" );
+          $sth->execute( $node_id, $pos, $parameter_set_id, 'EXON', $exon_position, "EnsEMBL" );
 
           # Store the smallest distance to an exon junction.
           my $dist_left  = $aln_start - $pos;
@@ -321,8 +318,7 @@ sub collect_exons {
             $dist = $dist_right;
           }
 
-          $sth->execute( $node_id, $pos, $parameter_set_id,
-            'SPLICE_DISTANCE', $dist, "EnsEMBL" );
+          $sth->execute( $node_id, $pos, $parameter_set_id, 'SPLICE_DISTANCE', $dist, "EnsEMBL" );
         }
 
       } else {
@@ -344,7 +340,7 @@ sub collect_pfam {
   }
 
   my $tree = $self->get_tree;
-  my $sa = $tree->get_SimpleAlign;
+  my $sa   = $tree->get_SimpleAlign;
   my $pos_id_hash;
   foreach my $leaf ( $tree->leaves ) {
     next unless ( grep { $leaf->taxon_id == $_ } @taxon_ids );
@@ -401,86 +397,87 @@ sub collect_pfam {
   }
 }
 
-
 sub do_filter {
   my $self = shift;
 
   # Create a local params object to temporarly remove the subtree settings.
   my $params = $self->params;
-  $params->{keep_species} = '';
+  $params->{keep_species}   = '';
   $params->{remove_species} = '';
 
   my $tree = $self->get_tree($params);
-  my $sa = $tree->get_SimpleAlign;
+  my $sa   = $tree->get_SimpleAlign;
 
-  Bio::EnsEMBL::Compara::AlignUtils->pretty_print($sa,{length=>400});
+  Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $sa, { length => 400 } );
 
   my $dba = $self->compara_dba;
 
   # Subroutines to return a list of taxon IDs with specific features.
   sub clade_taxon_ids {
     my $clade = shift || 1;
-    my @genomes = Bio::EnsEMBL::Compara::ComparaUtils->get_genomes_within_clade($dba,$clade);
-    my @taxon_ids = map {$_->taxon_id} @genomes;
+    my @genomes = Bio::EnsEMBL::Compara::ComparaUtils->get_genomes_within_clade( $dba, $clade );
+    my @taxon_ids = map { $_->taxon_id } @genomes;
     return @taxon_ids;
   }
+
   sub subtract {
-    my $list_a = shift;
+    my $list_a    = shift;
     my @remove_us = @_;
     my $hash;
-    map {$hash->{$_}=1} @$list_a;
+    map { $hash->{$_} = 1 } @$list_a;
     foreach my $list_b (@remove_us) {
-      map {delete $hash->{$_}} @$list_b;
+      map { delete $hash->{$_} } @$list_b;
     }
     return keys %$hash;
   }
 
-  my @mammals_arr = clade_taxon_ids("Eutheria");
+  my @mammals_arr  = clade_taxon_ids("Eutheria");
   my @primates_arr = clade_taxon_ids("Primates");
-  my @glires_arr = clade_taxon_ids("Glires");
-  my @laur_arr = clade_taxon_ids("Laurasiatheria");
+  my @glires_arr   = clade_taxon_ids("Glires");
+  my @laur_arr     = clade_taxon_ids("Laurasiatheria");
 
-  my @outgroup_arr = subtract(\@mammals_arr,\@primates_arr,\@glires_arr,\@laur_arr);
+  my @outgroup_arr = subtract( \@mammals_arr, \@primates_arr, \@glires_arr, \@laur_arr );
 
   print "primates: @primates_arr\n";
 
   my @array_of_strings;
-  foreach my $aln_position (1 .. $sa->length) {
-    my $primate_count = 0;
-    my $glires_count = 0;
-    my $laur_count = 0;
+  foreach my $aln_position ( 1 .. $sa->length ) {
+    my $primate_count  = 0;
+    my $glires_count   = 0;
+    my $laur_count     = 0;
     my $outgroup_count = 0;
-    my $total_count = 0;
+    my $total_count    = 0;
 
     my $taxon_id_hash = {};
     my $slice;
-    eval {
-      $slice = $sa->slice($aln_position,$aln_position,1);
-    };
+    eval { $slice = $sa->slice( $aln_position, $aln_position, 1 ); };
     next if ($@);
-    
-    foreach my $leaf ($tree->leaves) {
-      my $seq = Bio::EnsEMBL::Compara::AlignUtils->get_seq_with_id($slice,$leaf->stable_id);
-      if (!defined $seq || $seq->seq =~ m/[-Xx]/) {
-	#print "It's crap!";
-	next;
+
+    foreach my $leaf ( $tree->leaves ) {
+      my $seq = Bio::EnsEMBL::Compara::AlignUtils->get_seq_with_id( $slice, $leaf->stable_id );
+      if ( !defined $seq || $seq->seq =~ m/[-Xx]/ ) {
+
+        #print "It's crap!";
+        next;
       }
+
       #next if ($seq->seq =~ m/[-Xx]/);
       #print $seq->seq;
-      $taxon_id_hash->{$leaf->taxon_id} = 1;
+      $taxon_id_hash->{ $leaf->taxon_id } = 1;
     }
 
-    $primate_count = scalar(grep {$taxon_id_hash->{$_}==1} @primates_arr);
-    $glires_count = scalar(grep {$taxon_id_hash->{$_}==1} @glires_arr);
-    $laur_count = scalar(grep {$taxon_id_hash->{$_}==1} @laur_arr);
-    $outgroup_count = scalar(grep {$taxon_id_hash->{$_}==1} @outgroup_arr);
-    $total_count = scalar(keys %$taxon_id_hash);
+    $primate_count  = scalar( grep { $taxon_id_hash->{$_} == 1 } @primates_arr );
+    $glires_count   = scalar( grep { $taxon_id_hash->{$_} == 1 } @glires_arr );
+    $laur_count     = scalar( grep { $taxon_id_hash->{$_} == 1 } @laur_arr );
+    $outgroup_count = scalar( grep { $taxon_id_hash->{$_} == 1 } @outgroup_arr );
+    $total_count    = scalar( keys %$taxon_id_hash );
 
     my $filter_val = 0;
-    $filter_val = 1 if ($total_count >= 3);
-    $filter_val = 2 if ($total_count >= 6);
+    $filter_val = 1 if ( $total_count >= 3 );
+    $filter_val = 2 if ( $total_count >= 6 );
+
     # This corresponds to the filtering criteria used by Pollard et al. Gen Res 2010:
-    $filter_val = 3 if ($primate_count >= 3 && $glires_count >= 2 && $outgroup_count >= 1);
+    $filter_val = 3 if ( $primate_count >= 3 && $glires_count >= 2 && $outgroup_count >= 1 );
 
     print "$aln_position $filter_val\n";
 
@@ -494,6 +491,7 @@ sub do_filter {
     my $values_string = join( ",", @array_of_strings );
     my $cmd =
       "REPLACE INTO sitewise_tag (node_id,aln_position,parameter_set_id,tag,value,source) VALUES $values_string";
+
     #print $cmd."\n";
     my $sth = $tree->adaptor->prepare($cmd);
     $sth->execute;

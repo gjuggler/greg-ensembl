@@ -30,17 +30,17 @@ sub fetch_input {
 
   ### DEFAULT PARAMETERS ###
   my $params = {
-    flow_node_set => 'Primates',
+    flow_node_set            => 'Primates',
     flow_parent_and_children => 0,
-    debug => 0,
-    keep_at_least_root => 0,
-    merge_by_gene_names => 0
+    debug                    => 0,
+    keep_at_least_root       => 0,
+    merge_by_gene_names      => 0
   };
   ##########################
 
   $self->load_all_params($params);
 
-  $self->param('tree',$self->get_tree);
+  $self->param( 'tree', $self->get_tree );
 }
 
 sub run {
@@ -73,15 +73,15 @@ sub write_output {
 
   my $tree = $self->param('tree');
 
-  if (defined $self->param('flow_node_set')) {
+  if ( defined $self->param('flow_node_set') ) {
     $self->autoflow_inputjob(0);
     my $flow_set = $self->param('flow_node_set');
 
-    foreach my $node ($tree->nodes) {
-      next if ($node->is_leaf);
+    foreach my $node ( $tree->nodes ) {
+      next if ( $node->is_leaf );
 
       my $id = $node->node_id;
-      if ($node->has_tag("cc_root_".$flow_set)) {
+      if ( $node->has_tag( "cc_root_" . $flow_set ) ) {
 
         my $output_id = { node_id => $id, orig_node_id => $self->param('node_id') };
         my ($output_job_id) = @{ $self->dataflow_output_id( $output_id, 1 ) };
@@ -90,10 +90,11 @@ sub write_output {
           my $i = 0;
           foreach my $child ( @{ $node->children } ) {
             my $output_id = {
-              node_id => $child->node_id,
-              orig_node_id => $self->param('node_id'),
-              node_set_parent_id => $id, node_set_child_number => $i++
-              };
+              node_id               => $child->node_id,
+              orig_node_id          => $self->param('node_id'),
+              node_set_parent_id    => $id,
+              node_set_child_number => $i++
+            };
             my ($output_job_id) = @{ $self->dataflow_output_id( $output_id, 1 ) };
             print "  --> Flowed child $output_job_id\n";
           }
@@ -244,7 +245,7 @@ sub does_tree_have_clade_coverage {
   my $tree   = shift;
   my $params = shift;
 
-#  print join "\n",map {$_->stable_id} $tree->leaves;
+  #  print join "\n",map {$_->stable_id} $tree->leaves;
 
   foreach my $key ( keys %$params ) {
     next unless ( $key =~ /cc_/ );
@@ -267,7 +268,7 @@ sub does_tree_have_clade_coverage {
       return 0 unless ( $coverage >= $value );
     }
   }
-  
+
   return 1;
 }
 
@@ -285,9 +286,10 @@ sub generic_parent_has_good_children {
   my $parent           = $node->parent;
   my @parents_children = @{ $parent->children };
   if ( $parent->node_id == 1 ) {
-    my $value = $inclusion_function->($self, $node, $params );
+    my $value = $inclusion_function->( $self, $node, $params );
+
     #print "Root node. Values is $value\n";
-    if ($self->param('keep_at_least_root') == 1) {
+    if ( $self->param('keep_at_least_root') == 1 ) {
       return 1;
     } else {
       return $value;
@@ -300,9 +302,9 @@ sub generic_parent_has_good_children {
   }
 
   if ( $inclusion_function->( $self, $node, $params ) == 1
-    && $inclusion_function->( $self, $sister, $params )  == 1) {
-    if ($self->param('merge_by_gene_names') == 1) {
-      return 1 if ($self->no_similar_gene_names($node,$sister) == 1);
+    && $inclusion_function->( $self, $sister, $params ) == 1 ) {
+    if ( $self->param('merge_by_gene_names') == 1 ) {
+      return 1 if ( $self->no_similar_gene_names( $node, $sister ) == 1 );
     } else {
       return 1;
     }
@@ -311,29 +313,30 @@ sub generic_parent_has_good_children {
 }
 
 sub no_similar_gene_names {
-  my $self = shift;
+  my $self   = shift;
   my $node_a = shift;
   my $node_b = shift;
 
   my $names_a;
   map {
     my $gene = $_->get_Gene;
-    if (defined $gene) {
-      $names_a->{lc($gene->external_name)} = 1;
+    if ( defined $gene ) {
+      $names_a->{ lc( $gene->external_name ) } = 1;
     }
   } $node_a->leaves;
 
   my $names_b;
   map {
     my $gene = $_->get_Gene;
-    if (defined $gene) {
-      $names_b->{lc($gene->external_name)} = 1;
+    if ( defined $gene ) {
+      $names_b->{ lc( $gene->external_name ) } = 1;
     }
   } $node_b->leaves;
 
-  foreach my $key (keys %$names_a) {
+  foreach my $key ( keys %$names_a ) {
+
     #print "$key\n";
-    if ($names_b->{$key} == 1) {
+    if ( $names_b->{$key} == 1 ) {
       return 0;
     }
   }

@@ -19,60 +19,62 @@ use base ('Bio::Greg::Hive::Process');
 #
 
 sub fetch_input {
-  my($self) = @_;
-  
+  my ($self) = @_;
+
   ### DEFAULT PARAMETERS ###
   my $params = {
-    output_folder => '',
-    output_aln_aa => 1,
+    output_folder   => '',
+    output_aln_aa   => 1,
     output_aln_cdna => 1,
-    output_tree => 1,
+    output_tree     => 1,
     hash_subfolders => 1,
   };
-  
+
   #########################
-  
+
   $self->load_all_params($params);
-  
+
 }
 
 sub run {
   my $self = shift;
-  
+
   my $tree = $self->get_tree();
-  my $aln = $self->get_aln();
+  my $aln  = $self->get_aln();
   ($aln) = Bio::EnsEMBL::Compara::AlignUtils->remove_blank_columns($aln);
   my $cdna_aln = $self->get_cdna_aln();
   ($cdna_aln) = Bio::EnsEMBL::Compara::AlignUtils->remove_blank_columns_in_threes($cdna_aln);
-  
+
   my $output_folder = $self->param('output_folder') . '/' . $self->get_subfolder;
-  mkpath([$output_folder]);
-  die("No output folder set!") unless ($output_folder ne '');
-  
-  my $stable_id = $self->get_stable_id($tree);
-  my $output_tree = "${output_folder}/${stable_id}.nh"; 
-  my $output_aln_aa = "${output_folder}/${stable_id}_aa.fasta"; 
-  my $output_aln_cdna = "${output_folder}/${stable_id}_cdna.fasta"; 
+  mkpath( [$output_folder] );
+  die("No output folder set!") unless ( $output_folder ne '' );
+
+  my $stable_id       = $self->get_stable_id($tree);
+  my $output_tree     = "${output_folder}/${stable_id}.nh";
+  my $output_aln_aa   = "${output_folder}/${stable_id}_aa.fasta";
+  my $output_aln_cdna = "${output_folder}/${stable_id}_cdna.fasta";
 
   # Output alignment.
   print "Outputting files ...\n";
 
-  if ($self->param('output_aln_aa')) {
+  if ( $self->param('output_aln_aa') ) {
     print " -> $output_aln_aa\n";
-    Bio::EnsEMBL::Compara::AlignUtils->pretty_print($aln, { length => 200 } );
-    Bio::EnsEMBL::Compara::AlignUtils->to_file($aln,$output_aln_aa); # Write the alignment out to file.
+    Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $aln, { length => 200 } );
+    Bio::EnsEMBL::Compara::AlignUtils->to_file( $aln, $output_aln_aa )
+      ;    # Write the alignment out to file.
   }
 
-  if ($self->param('output_aln_cdna')) {
+  if ( $self->param('output_aln_cdna') ) {
     print " -> $output_aln_cdna\n";
-    Bio::EnsEMBL::Compara::AlignUtils->pretty_print($cdna_aln, { length => 200 } );
-    Bio::EnsEMBL::Compara::AlignUtils->to_file($cdna_aln,$output_aln_cdna); # Write the alignment out to file.
+    Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $cdna_aln, { length => 200 } );
+    Bio::EnsEMBL::Compara::AlignUtils->to_file( $cdna_aln, $output_aln_cdna )
+      ;    # Write the alignment out to file.
   }
-  
-  if ($self->param('output_tree')) {
-    print " -> $output_tree\n";    
+
+  if ( $self->param('output_tree') ) {
+    print " -> $output_tree\n";
     my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
-    Bio::EnsEMBL::Compara::TreeUtils->to_file($treeI,$output_tree);
+    Bio::EnsEMBL::Compara::TreeUtils->to_file( $treeI, $output_tree );
   }
 }
 
@@ -98,14 +100,14 @@ sub get_subfolder {
   my $self = shift;
 
   my $id = $self->data_id;
-  
-  if ($self->param('hash_subfolders')) {
-    my $n = $self->param('hash_subfolders');
+
+  if ( $self->param('hash_subfolders') ) {
+    my $n  = $self->param('hash_subfolders');
     my $lo = 0;
-    my $hi = $n-1;
+    my $hi = $n - 1;
 
     my (@md5) = md5_hex($id) =~ /\G(..)/g;
-    return join('/',@md5[$lo .. $hi]);
+    return join( '/', @md5[ $lo .. $hi ] );
   } else {
     return '';
   }

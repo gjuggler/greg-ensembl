@@ -93,10 +93,10 @@ sub get_sequence {
 }
 
 sub get_sequence_region {
-  my $self  = shift;
-  my $key   = shift;
-  my $start = shift;
-  my $end   = shift;
+  my $self   = shift;
+  my $key    = shift;
+  my $start  = shift;
+  my $end    = shift;
   my $params = shift || {};
 
   my $sep = $params->{residue_separator} || '';
@@ -119,7 +119,8 @@ sub get_sequence_region {
   }
 
   my $current_position = 0;
-#  my $numbers          = 0;
+
+  #  my $numbers          = 0;
 
   seek( $filehandle, $position, 0 );
   my $line;
@@ -130,25 +131,27 @@ sub get_sequence_region {
       next if ( $seq eq "" );
       return $seq;
     }
-#    $line =~ s/^\s+//;
-#    $line =~ s/\s+$//;
-    
-    if ($sep eq ' ') {
-      @toks = split(' ', $line );
+
+    #    $line =~ s/^\s+//;
+    #    $line =~ s/\s+$//;
+
+    if ( $sep eq ' ' ) {
+      @toks = split( ' ', $line );
     } else {
-      @toks = split('', $line );
+      @toks = split( '', $line );
     }
 
     for ( my $i = 0 ; $i < scalar(@toks) ; $i++ ) {
-      next if ($toks[$i] eq ' ' || $toks[$i] eq '');
+      next if ( $toks[$i] eq ' ' || $toks[$i] eq '' );
       $current_position++;
- 
+
       if ( $current_position == $end ) {
         return $seq;
       }
       if ( $current_position >= $start ) {
         $seq .= $toks[$i] . $sep;
-	#print $current_position .' '. $toks[$i].' '. scalar(split($sep,$seq))."\n";
+
+        #print $current_position .' '. $toks[$i].' '. scalar(split($sep,$seq))."\n";
       }
     }
   }

@@ -25,6 +25,7 @@ sub run {
 
   $self->output_params_file;
   $self->dump_sql;
+
   # Tricky Perl: Call the method corresponding to the current experiment.
   $self->$experiment_name();
 }
@@ -32,45 +33,45 @@ sub run {
 sub get_output_folder {
   my $self = shift;
 
-  if (defined $self->param('output_folder')) {
+  if ( defined $self->param('output_folder') ) {
     return $self->param('output_folder');
   }
 
-  my $date_string = strftime("%Y-%m-%d",localtime);
-  my $i=0;
-  
+  my $date_string = strftime( "%Y-%m-%d", localtime );
+  my $i = 0;
+
   my $filename;
   do {
     $i++;
-    $filename = sprintf("NO.backup/output/%s/%s_%.2d",$date_string,$date_string,$i);
-  } while (-e $filename);
+    $filename = sprintf( "NO.backup/output/%s/%s_%.2d", $date_string, $date_string, $i );
+  } while ( -e $filename );
 
   print "Output folder: $filename\n";
-  $self->param('output_folder',$filename);
+  $self->param( 'output_folder', $filename );
 
-  # We'll store this output folder in the meta table, so it will be re-used if this module is run again w/ the same database.
-  $self->store_meta({output_folder => $filename});
-  mkpath([$filename]);
+# We'll store this output folder in the meta table, so it will be re-used if this module is run again w/ the same database.
+  $self->store_meta( { output_folder => $filename } );
+  mkpath( [$filename] );
 }
 
 sub dump_sql {
-  my $self = shift;
+  my $self     = shift;
   my $filename = $self->param('output_folder') . '/slrsim.sqldata';
-  my $gzip = $self->param('output_folder') . '/slrsim.sqldata.gz';
+  my $gzip     = $self->param('output_folder') . '/slrsim.sqldata.gz';
 
-  my $dbc = $self->compara_dba->dbc;
-  my $u = $dbc->username;
-  my $p = $dbc->password;
-  my $h = $dbc->host;
+  my $dbc  = $self->compara_dba->dbc;
+  my $u    = $dbc->username;
+  my $p    = $dbc->password;
+  my $h    = $dbc->host;
   my $port = $dbc->port;
-  my $db = $dbc->dbname;
+  my $db   = $dbc->dbname;
 
-  if (!-e $filename && !-e $gzip) {
+  if ( !-e $filename && !-e $gzip ) {
     my $cmd = qq^mysqldump -P$port -h$h -u$u -p$p $db > $filename;^;
     system($cmd);
   }
 
-  if (!-e $gzip) {
+  if ( !-e $gzip ) {
     my $cmd = qq^gzip $filename;^;
     system($cmd);
     unlink($filename);
@@ -86,12 +87,11 @@ sub dump_data {
   my $self = shift;
 
   my $filename = $self->param('output_folder') . '/slrsim_sites.Rdata';
-  my $script = $self->script;
+  my $script   = $self->script;
 
   my $dbname = $self->dbc->dbname;
- 
 
-  if (!-e $filename) {
+  if ( !-e $filename ) {
     my $rcmd = qq^
 dbname="$dbname"
 source("$script")
@@ -100,19 +100,19 @@ save(data,file="${filename}");
 ^;
     print "$rcmd\n";
     my $params = {};
-    Bio::Greg::EslrUtils->run_r($rcmd,$params);
+    Bio::Greg::EslrUtils->run_r( $rcmd, $params );
   }
-  
+
 }
 
 sub slrsim_all {
   my $self = shift;
 
   my $all_file = $self->param('output_folder') . '/df.list.Rdata';
-  my $folder = $self->get_output_folder;
-  my $script = $self->script;
-  my $dbname = $self->dbc->dbname;
-  my $rcmd = qq^
+  my $folder   = $self->get_output_folder;
+  my $script   = $self->script;
+  my $dbname   = $self->dbc->dbname;
+  my $rcmd     = qq^
 dbname="$dbname"
 source("$script")
 
@@ -128,26 +128,30 @@ for (df in df.list) {
 ^;
   print "$rcmd\n";
   my $params = {};
-  Bio::Greg::EslrUtils->run_r($rcmd,$params);
-  
+  Bio::Greg::EslrUtils->run_r( $rcmd, $params );
+
 }
 
 sub slrsim_one {
   my $self = shift;
   $self->_slrsim_one_all();
 }
+
 sub slrsim_one_a {
   my $self = shift;
   $self->_slrsim_one_all();
 }
+
 sub slrsim_one_b {
   my $self = shift;
   $self->_slrsim_one_all();
 }
+
 sub slrsim_one_c {
   my $self = shift;
   $self->_slrsim_one_all();
 }
+
 sub slrsim_one_d {
   my $self = shift;
   $self->_slrsim_one_all();
@@ -157,9 +161,9 @@ sub _slrsim_one_all {
   my $self = shift;
 
   my $out_file = $self->param('output_folder') . '/all.data.Rdata';
-  my $script = $self->script;
-  my $dbname = $self->dbc->dbname;
-  my $rcmd = qq^
+  my $script   = $self->script;
+  my $dbname   = $self->dbc->dbname;
+  my $rcmd     = qq^
 dbname="$dbname"
 source("$script")
 data = get.all.data(genes.cols=c('slrsim_tree_length','phylosim_insertrate','tree_mean_path'))
@@ -167,7 +171,7 @@ save(data,file="$out_file")
 ^;
   print "$rcmd\n";
   my $params = {};
-  Bio::Greg::EslrUtils->run_r($rcmd,$params);
+  Bio::Greg::EslrUtils->run_r( $rcmd, $params );
 }
 
 sub slrsim_two {
@@ -189,9 +193,9 @@ sub _slrsim_two_all {
   my $self = shift;
 
   my $out_file = $self->param('output_folder') . '/all.data.Rdata';
-  my $script = $self->script;
-  my $dbname = $self->dbc->dbname;
-  my $rcmd = qq^
+  my $script   = $self->script;
+  my $dbname   = $self->dbc->dbname;
+  my $rcmd     = qq^
 dbname="$dbname"
 source("$script")
 data = get.all.data(genes.cols=c('slrsim_tree_length','phylosim_insertrate','tree_mean_path'))
@@ -199,7 +203,7 @@ save(data,file="$out_file")
 ^;
   print "$rcmd\n";
   my $params = {};
-  Bio::Greg::EslrUtils->run_r($rcmd,$params);
+  Bio::Greg::EslrUtils->run_r( $rcmd, $params );
 
 }
 
@@ -208,9 +212,9 @@ sub slrsim_three {
   my $self = shift;
 
   my $out_file = $self->param('output_folder') . '/all.data.Rdata';
-  my $script = $self->script;
-  my $dbname = $self->dbc->dbname;
-  my $rcmd = qq^
+  my $script   = $self->script;
+  my $dbname   = $self->dbc->dbname;
+  my $rcmd     = qq^
 dbname="$dbname"
 source("$script")
 data = get.all.data(
@@ -226,7 +230,7 @@ save(data,file="$out_file")
 ^;
   print "$rcmd\n";
   my $params = {};
-  Bio::Greg::EslrUtils->run_r($rcmd,$params);
+  Bio::Greg::EslrUtils->run_r( $rcmd, $params );
 }
 
 # Omega distributions.
@@ -234,9 +238,9 @@ sub slrsim_four {
   my $self = shift;
 
   my $out_file = $self->param('output_folder') . '/all.data.Rdata';
-  my $script = $self->script;
-  my $dbname = $self->dbc->dbname;
-  my $rcmd = qq^
+  my $script   = $self->script;
+  my $dbname   = $self->dbc->dbname;
+  my $rcmd     = qq^
 dbname="$dbname"
 source("$script")
 data = get.all.data(
@@ -256,7 +260,7 @@ save(data,file="$out_file")
 ^;
   print "$rcmd\n";
   my $params = {};
-  Bio::Greg::EslrUtils->run_r($rcmd,$params);
+  Bio::Greg::EslrUtils->run_r( $rcmd, $params );
 }
 
 sub mammals_indel_simulations {
@@ -269,9 +273,9 @@ sub mammals_simulations {
   my $self = shift;
 
   my $filename = $self->param('output_folder') . '/reference_comparison_roc.png';
-  my $folder = $self->param('output_folder');
-  my $script = $self->base . "/collect_slrsim.R";
-  my $rcmd = qq^
+  my $folder   = $self->param('output_folder');
+  my $script   = $self->base . "/collect_slrsim.R";
+  my $rcmd     = qq^
 dbname="gj1_slrsim"
 host = 'ens-research'
 port = 3306
@@ -300,15 +304,15 @@ q()
 ^;
   print "$rcmd\n";
   my $params = {};
-  Bio::Greg::EslrUtils->run_r($rcmd,$params);
+  Bio::Greg::EslrUtils->run_r( $rcmd, $params );
 }
 
 sub reference_comparison {
   my $self = shift;
-  
+
   my $filename = $self->param('output_folder') . '/reference_comparison_roc.png';
-  my $script = $self->script;
-  my $rcmd = qq^
+  my $script   = $self->script;
+  my $rcmd     = qq^
 source("$script")
 data = get.all.data()
 png(file="${filename}",width=600,height=600)
@@ -318,15 +322,15 @@ q()
 ^;
   print "$rcmd\n";
   my $params = {};
-  Bio::Greg::EslrUtils->run_r($rcmd,$params);
-  
+  Bio::Greg::EslrUtils->run_r( $rcmd, $params );
+
 }
 
 sub alignment_comparison {
   my $self = shift;
 
   my $filename = $self->param('output_folder') . '/alignment_roc.png';
-  my $script = $self->script;
+  my $script   = $self->script;
 
   my $rcmd = qq^
 source("$script")
@@ -338,13 +342,13 @@ q()
 ^;
   print "$rcmd\n";
   my $params = {};
-  Bio::Greg::EslrUtils->run_r($rcmd,$params);
+  Bio::Greg::EslrUtils->run_r( $rcmd, $params );
 
 }
 
 sub filter_order_test {
   my $self = shift;
-  
+
   $self->_plot_proteins;
 }
 
@@ -362,11 +366,11 @@ sub filter_sweeps {
 sub filter_sweep {
   my $self = shift;
 
-  my $folder = $self->param('output_folder');
+  my $folder   = $self->param('output_folder');
   my $filename = $self->param('output_folder') . '/filter_sweep_roc.png';
 
   my $dbname = $self->compara_dba->dbc->dbname;
-  
+
   $self->_plot_scatter;
   $self->_plot_scores;
   $self->_fdr_sweep;
@@ -408,14 +412,14 @@ q()
 ^;
   print "$rcmd\n";
   my $params = {};
-  Bio::Greg::EslrUtils->run_r($rcmd,$params);
+  Bio::Greg::EslrUtils->run_r( $rcmd, $params );
 }
 
 sub _plot_scores {
-  my $self = shift;
+  my $self   = shift;
   my $folder = $self->get_output_folder;
   my $script = $self->script;
-  my $rcmd = qq^
+  my $rcmd   = qq^
 source("$script")
 data = get.all.data(dir="$folder")
 col.names=c('filtering_name','alignment_score_threshold')
@@ -426,15 +430,15 @@ dev.off()
 ^;
   print "$rcmd\n";
   my $params = {};
-  Bio::Greg::EslrUtils->run_r($rcmd,$params);
-  
+  Bio::Greg::EslrUtils->run_r( $rcmd, $params );
+
 }
 
 sub _plot_scatter {
-  my $self = shift;
+  my $self   = shift;
   my $folder = $self->get_output_folder;
   my $script = $self->script;
-  my $rcmd = qq^
+  my $rcmd   = qq^
 source("$script")
 data = get.all.data(dir="$folder")
 col.names=c('alignment_name','filtering_name','alignment_score_threshold')
@@ -445,15 +449,15 @@ dev.off()
 ^;
   print "$rcmd\n";
   my $params = {};
-  Bio::Greg::EslrUtils->run_r($rcmd,$params);
+  Bio::Greg::EslrUtils->run_r( $rcmd, $params );
 
 }
 
 sub _plot_proteins {
-  my $self = shift;
+  my $self   = shift;
   my $folder = $self->get_output_folder;
   my $script = $self->script;
-  my $rcmd = qq^
+  my $rcmd   = qq^
 source("$script")
 data = get.all.data(dir="$folder")
 col.names=c('alignment_name','filtering_name','alignment_score_threshold','sitewise_filter_order','alignment_score_mask_character_cdna')
@@ -461,15 +465,15 @@ plot.by.columns(data,base.dir="${folder}",col.names=col.names)
 ^;
   print "$rcmd\n";
   my $params = {};
-  Bio::Greg::EslrUtils->run_r($rcmd,$params);
+  Bio::Greg::EslrUtils->run_r( $rcmd, $params );
 }
 
 sub _fdr_sweep {
-  my $self = shift;
+  my $self   = shift;
   my $folder = $self->get_output_folder;
   my $script = $self->script;
 
-my $rcmd = qq^
+  my $rcmd = qq^
 source("$script")
 png(file="${folder}/fdr_sweep.png",width=1200,height=1200)
 data = get.all.data(dir="$folder")
@@ -487,7 +491,7 @@ dev.off()
 ^;
   print "$rcmd\n";
   my $params = {};
-  Bio::Greg::EslrUtils->run_r($rcmd,$params);
+  Bio::Greg::EslrUtils->run_r( $rcmd, $params );
 
 }
 
@@ -496,11 +500,11 @@ sub output_params_file {
 
   my $filename = $self->param('output_folder') . '/params.txt';
 
-  if (!-e $filename) {
+  if ( !-e $filename ) {
     print "$filename\n";
     my $out;
-    open($out,">$filename");
-    $self->hash_print($self->params,$out);
+    open( $out, ">$filename" );
+    $self->hash_print( $self->params, $out );
     close($out);
   }
 }

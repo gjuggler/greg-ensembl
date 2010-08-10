@@ -12,53 +12,49 @@ BEGIN {
 
   @ISA = qw(Exporter);
 
-    %EXPORT_TAGS = (
-                    NDEBUG => [qw(assert affirm should shouldnt DEBUG)],
-		    );
+  %EXPORT_TAGS = ( NDEBUG => [qw(assert affirm should shouldnt DEBUG)], );
   $EXPORT_TAGS{DEBUG} = $EXPORT_TAGS{NDEBUG};
   Exporter::export_tags(qw(NDEBUG DEBUG));
 }
 
 # constant.pm, alas, adds too much load time (yes, I benchmarked it)
-sub REAL_DEBUG  ()  { 1 }       # CONSTANT
-sub NDEBUG      ()  { 0 }       # CONSTANT
+sub REAL_DEBUG () { 1 }    # CONSTANT
+sub NDEBUG ()     { 0 }    # CONSTANT
 
 # Export the proper DEBUG flag according to if :NDEBUG is set.
 # Also export noop versions of our routines if NDEBUG
-sub noop { undef }
-sub noop_affirm (&;$) { undef };
+sub noop              { undef }
+sub noop_affirm (&;$) { undef }
 
 sub import {
-  my $env_ndebug = exists $ENV{PERL_NDEBUG} ? $ENV{PERL_NDEBUG}
-  : $ENV{'NDEBUG'};
-  if( grep(/^:NDEBUG$/, @_) or $env_ndebug ) {
+  my $env_ndebug =
+    exists $ENV{PERL_NDEBUG}
+    ? $ENV{PERL_NDEBUG}
+    : $ENV{'NDEBUG'};
+  if ( grep( /^:NDEBUG$/, @_ ) or $env_ndebug ) {
     my $caller = caller;
-    foreach my $func (grep !/^DEBUG$/, @{$EXPORT_TAGS{'NDEBUG'}}) {
-      if( $func eq 'affirm' ) {
-	*{$caller.'::'.$func} = \&noop_affirm;
+    foreach my $func ( grep !/^DEBUG$/, @{ $EXPORT_TAGS{'NDEBUG'} } ) {
+      if ( $func eq 'affirm' ) {
+        *{ $caller . '::' . $func } = \&noop_affirm;
       } else {
-	*{$caller.'::'.$func} = \&noop;
+        *{ $caller . '::' . $func } = \&noop;
       }
     }
-    *{$caller.'::DEBUG'} = \&NDEBUG;
-  }
-  else {
+    *{ $caller . '::DEBUG' } = \&NDEBUG;
+  } else {
     *DEBUG = *REAL_DEBUG;
-    Carp::Assert->_export_to_level(1, @_);
+    Carp::Assert->_export_to_level( 1, @_ );
   }
 }
-
 
 # 5.004's Exporter doesn't have export_to_level.
-sub _export_to_level
-{
-  my $pkg = shift;
+sub _export_to_level {
+  my $pkg   = shift;
   my $level = shift;
-  (undef) = shift;                  # XXX redundant arg
+  (undef) = shift;    # XXX redundant arg
   my $callpkg = caller($level);
-  $pkg->export($callpkg, @_);
+  $pkg->export( $callpkg, @_ );
 }
-
 
 sub unimport {
   *DEBUG = *NDEBUG;
@@ -66,16 +62,14 @@ sub unimport {
   goto &import;
 }
 
-
 # Can't call confess() here or the stack trace will be wrong.
 sub _fail_msg {
-  my($name) = shift;
+  my ($name) = shift;
   my $msg = 'Assertion';
-  $msg   .= " ($name)" if defined $name;
-  $msg   .= " failed!\n";
+  $msg .= " ($name)" if defined $name;
+  $msg .= " failed!\n";
   return $msg;
 }
-
 
 =head1 NAME
 
@@ -275,13 +269,12 @@ like( $@, '/^Assertion \(Dogs are people, too!\) failed!/', 'names' );
 =cut
 
 sub assert ($;$) {
-    unless($_[0]) {
-        require Carp;
-        Carp::confess( _fail_msg($_[1]) );
-    }
-    return undef;
+  unless ( $_[0] ) {
+    require Carp;
+    Carp::confess( _fail_msg( $_[1] ) );
+  }
+  return undef;
 }
-
 
 =item B<affirm>
 
@@ -322,23 +315,22 @@ affirm() diagnostics will include the code begin affirmed.
 =cut
 
 sub affirm (&;$) {
-    unless( eval { &{$_[0]}; } ) {
-        my $name = $_[1];
+  unless ( eval { &{ $_[0] }; } ) {
+    my $name = $_[1];
 
-        if( !defined $name ) {
-            eval {
-                require B::Deparse;
-                $name = B::Deparse->new->coderef2text($_[0]);
-            };
-            $name = 
-              'code display non-functional on this version of Perl, sorry'
-                if $@;
-        }
-
-        require Carp;
-        Carp::confess( _fail_msg($name) );
+    if ( !defined $name ) {
+      eval {
+        require B::Deparse;
+        $name = B::Deparse->new->coderef2text( $_[0] );
+      };
+      $name = 'code display non-functional on this version of Perl, sorry'
+        if $@;
     }
-    return undef;
+
+    require Carp;
+    Carp::confess( _fail_msg($name) );
+  }
+  return undef;
 }
 
 =item B<should>
@@ -375,31 +367,32 @@ Currently, should() and shouldnt() can only do simple eq and ne tests
 =cut
 
 sub should ($$) {
-    unless($_[0] eq $_[1]) {
-        require Carp;
-        &Carp::confess( _fail_msg("'$_[0]' should be '$_[1]'!") );
-    }
-    return undef;
+  unless ( $_[0] eq $_[1] ) {
+    require Carp;
+    &Carp::confess( _fail_msg("'$_[0]' should be '$_[1]'!") );
+  }
+  return undef;
 }
 
 sub shouldnt ($$) {
-    unless($_[0] ne $_[1]) {
-        require Carp;
-        &Carp::confess( _fail_msg("'$_[0]' shouldn't be that!") );
-    }
-    return undef;
+  unless ( $_[0] ne $_[1] ) {
+    require Carp;
+    &Carp::confess( _fail_msg("'$_[0]' shouldn't be that!") );
+  }
+  return undef;
 }
 
 # Sorry, I couldn't resist.
-sub shouldn't ($$) {     # emacs cperl-mode madness #' sub {
-    my $env_ndebug = exists $ENV{PERL_NDEBUG} ? $ENV{PERL_NDEBUG}
-                                              : $ENV{'NDEBUG'};
-    if( $env_ndebug ) {
-        return undef;
-    }
-    else {
-        shouldnt($_[0], $_[1]);
-    }
+sub shouldn't ($$) {    # emacs cperl-mode madness #' sub {
+  my $env_ndebug =
+    exists $ENV{PERL_NDEBUG}
+    ? $ENV{PERL_NDEBUG}
+    : $ENV{'NDEBUG'};
+  if ($env_ndebug) {
+    return undef;
+  } else {
+    shouldnt( $_[0], $_[1] );
+  }
 }
 
 =back
@@ -549,4 +542,4 @@ Michael G Schwern <schwern@pobox.com>
 =cut
 
 return q|You don't just EAT the largest turnip in the world!|;
-        my($num) = shift;
+my ($num) = shift;

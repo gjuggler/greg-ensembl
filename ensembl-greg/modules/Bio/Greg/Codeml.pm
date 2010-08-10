@@ -77,9 +77,7 @@ Internal methods are usually preceded with a _
 
 =cut
 
-
 # Let the code begin...
-
 
 package Bio::Greg::Codeml;
 use vars qw(@ISA %VALIDVALUES $MINNAMELEN $PROGRAMNAME $PROGRAM);
@@ -220,118 +218,124 @@ INCOMPLETE DOCUMENTATION OF ALL METHODS
 
 =cut
 
-BEGIN { 
+BEGIN {
 
-    $MINNAMELEN = 25;
-    $PROGRAMNAME = 'codeml' . ($^O =~ /mswin/i ?'.exe':'');
-    if( defined $ENV{'PAMLDIR'} ) {
-	$PROGRAM = Bio::Root::IO->catfile($ENV{'PAMLDIR'},$PROGRAMNAME). ($^O =~ /mswin/i ?'.exe':'');;
-    }
-   
-    # valid values for parameters, the default one is always
-    # the first one in the array
-    # much of the documentation here is lifted directly from the codeml.ctl
-    # example file provided with the package
-    %VALIDVALUES = ( 
-		     'outfile' => 'mlc',
-		     'noisy'   => [ 0..3,9],
-		     'verbose' => [ 1,0,2], # 0:concise, 1:detailed, 2:too much
+  $MINNAMELEN = 25;
+  $PROGRAMNAME = 'codeml' . ( $^O =~ /mswin/i ? '.exe' : '' );
+  if ( defined $ENV{'PAMLDIR'} ) {
+    $PROGRAM =
+      Bio::Root::IO->catfile( $ENV{'PAMLDIR'}, $PROGRAMNAME ) . ( $^O =~ /mswin/i ? '.exe' : '' );
+  }
 
-                     # (runmode) 0:user tree, 1:semi-autmatic, 2:automatic
-		     #           3:stepwise addition, 4,5:PerturbationNNI
-		     #           -2:pairwise
-		     'runmode' => [ 0..5, -2], 
+  # valid values for parameters, the default one is always
+  # the first one in the array
+  # much of the documentation here is lifted directly from the codeml.ctl
+  # example file provided with the package
+  %VALIDVALUES = (
+    'outfile' => 'mlc',
+    'noisy'   => [ 0 .. 3, 9 ],
+    'verbose' => [ 1, 0, 2 ],     # 0:concise, 1:detailed, 2:too much
 
-		     'seqtype' => [ 1..3], # 1:codons, 2:AAs, 3:codons->AAs
+    # (runmode) 0:user tree, 1:semi-autmatic, 2:automatic
+    #           3:stepwise addition, 4,5:PerturbationNNI
+    #           -2:pairwise
+    'runmode' => [ 0 .. 5, -2 ],
 
-		     'CodonFreq' => [ 2, 0,1,3,4,5,6,7], # 0:1/61 each, 1:F1X4, 
-		                                # 2:F3X4, 3:codon table
+    'seqtype' => [ 1 .. 3 ],      # 1:codons, 2:AAs, 3:codons->AAs
 
-		     # (aaDist) 0:equal, +:geometric, -:linear, 
-		     #          1-6:G1974,Miyata, c,p,v,a
-		     'aaDist'  => [ 0,'+','-', 1..6], 
+    'CodonFreq' => [ 2, 0, 1, 3, 4, 5, 6, 7 ],    # 0:1/61 each, 1:F1X4,
+                                                  # 2:F3X4, 3:codon table
 
-                     # (aaRatefile) only used for aa seqs 
-		     # with model=empirical(_F)
-		     # default is usually 'wag.dat', also
-		     # dayhoff.dat, jones.dat, mtmam.dat, or your own
-		     'aaRatefile' => 'wag.dat', 
+    # (aaDist) 0:equal, +:geometric, -:linear,
+    #          1-6:G1974,Miyata, c,p,v,a
+    'aaDist' => [ 0, '+', '-', 1 .. 6 ],
 
-		     # (model) models for codons 
-		     # 0: one, 1:b, 2:2 or more dN/dS ratios for branches
-		     'model'    => [0..2,7], 
-		     
-		     # (NSsites) number of S sites
-		     # 0: one w;1:neutral;2:selection; 3:discrete;4:freqs;
-                     # 5:gamma;6:2gamma;7:beta;8:beta&w;9:beta&gamma;
-                     # 10:beta&gamma+1; 11:beta&normal>1; 12:0&2normal>1;
-                     # 13:3normal>0
-		     'NSsites'  => [0..13],
+    # (aaRatefile) only used for aa seqs
+    # with model=empirical(_F)
+    # default is usually 'wag.dat', also
+    # dayhoff.dat, jones.dat, mtmam.dat, or your own
+    'aaRatefile' => 'wag.dat',
 
-		     # (icode) genetic code
-		     # 0:universal code
-		     # 1:mamalian mt
-		     # 2:yeast mt
-		     # 3:mold mt,
-		     # 4:invertebrate mt
-		     # 5:ciliate nuclear
-		     # 6:echinoderm mt
-		     # 7:euplotid mt
-		     # 8:alternative yeast nu.
-		     # 9:ascidian mt
-		     #10:blepharisma nu
-		     # these correspond to 1-11 in the genbank transl table
-		     
-		     'icode'    => [ 0..10], 
+    # (model) models for codons
+    # 0: one, 1:b, 2:2 or more dN/dS ratios for branches
+    'model' => [ 0 .. 2, 7 ],
 
-                   
-		     'Mgene'    => [0,1,2,3,4], # 0:rates, 1:separate analysis, 2: same (k,w) but diff pi and b.l.s
-                                                # 3: same pi, diff. (k,w) and b.l.s, 4: different (k,w,), pis, and b.l.s
-                     'gene_codon_counts' => '',
-		     'fix_kappa'=> [0,1], # 0:estimate kappa, 1:fix kappa
-		     'kappa'    => '2',   # initial or fixed kappa
-		     'fix_omega'=> [0,1], # 0: estimate omega, 1: fix omega
-		     'omega'    => '.3', # initial or fixed omega for 
-		                          # codons or codon-base AAs
-		     'fix_alpha'=> [1,0], # 0: estimate gamma shape param
-		                          # 1: fix it at alpha
-		     'alpha'    => '0.', # initial or fixed alpha
-		                        # 0: infinity (constant rate)
-		     'Malpha'   => [0,1], # different alphas for genes
-		     'ncatG'    => [3,1,2,4..10], # number of categories in 
-		                        # dG of NSsites models
+    # (NSsites) number of S sites
+    # 0: one w;1:neutral;2:selection; 3:discrete;4:freqs;
+    # 5:gamma;6:2gamma;7:beta;8:beta&w;9:beta&gamma;
+    # 10:beta&gamma+1; 11:beta&normal>1; 12:0&2normal>1;
+    # 13:3normal>0
+    'NSsites' => [ 0 .. 13 ],
 
-		     # (clock)
-		     # 0: no clock, 1: global clock, 2: local clock
-		     # 3: TipDate
-		     'clock'    => [0..3],
-		     # (getSE) Standard Error: 
-		     # 0:don't want them, 1: want S.E.
-		     'getSE'    => [0,1], 
-		     # (RateAncestor) 
-		     # 0,1,2 rates (alpha>0) or
-		     # ancestral states (1 or 2)
-		     'RateAncestor' => [1,0,2], 
-		     'Small_Diff'    => '.5e-6',
-                     # (cleandata) remove sites with ambiguity data
-		     # 1: yes, 0:no 
-		     'cleandata'     => [0,1], 
-		     # this is the number of datasets in
-		     # the file - we would need to change
-		     # our api to allow >1 alignment object
-		     # to be referenced at time
-		     'ndata'         => 1,
-		     # (method) 
-		     # 0: simultaneous,1: 1 branch at a time
-		     'method'        => [0,1], 
+    # (icode) genetic code
+    # 0:universal code
+    # 1:mamalian mt
+    # 2:yeast mt
+    # 3:mold mt,
+    # 4:invertebrate mt
+    # 5:ciliate nuclear
+    # 6:echinoderm mt
+    # 7:euplotid mt
+    # 8:alternative yeast nu.
+    # 9:ascidian mt
+    #10:blepharisma nu
+    # these correspond to 1-11 in the genbank transl table
 
-		     # allow branch lengths to be fixed
-		     # 0 ignore
-		     # -1 use random starting points
-		     # 1 use the branch lengths in initial ML iteration
-		     # 2 branch lengths are fixed
-		     'fix_blength'   => [0,-1,1,2],
-		     );
+    'icode' => [ 0 .. 10 ],
+
+    'Mgene' => [ 0, 1, 2, 3, 4 ]
+    ,    # 0:rates, 1:separate analysis, 2: same (k,w) but diff pi and b.l.s
+         # 3: same pi, diff. (k,w) and b.l.s, 4: different (k,w,), pis, and b.l.s
+    'gene_codon_counts' => '',
+    'fix_kappa'         => [ 0, 1 ],                # 0:estimate kappa, 1:fix kappa
+    'kappa'             => '2',                     # initial or fixed kappa
+    'fix_omega'         => [ 0, 1 ],                # 0: estimate omega, 1: fix omega
+    'omega'             => '.3',                    # initial or fixed omega for
+                                                    # codons or codon-base AAs
+    'fix_alpha'         => [ 1, 0 ],                # 0: estimate gamma shape param
+                                                    # 1: fix it at alpha
+    'alpha'             => '0.',                    # initial or fixed alpha
+                                                    # 0: infinity (constant rate)
+    'Malpha'            => [ 0, 1 ],                # different alphas for genes
+    'ncatG'             => [ 3, 1, 2, 4 .. 10 ],    # number of categories in
+                                                    # dG of NSsites models
+
+    # (clock)
+    # 0: no clock, 1: global clock, 2: local clock
+    # 3: TipDate
+    'clock' => [ 0 .. 3 ],
+
+    # (getSE) Standard Error:
+    # 0:don't want them, 1: want S.E.
+    'getSE' => [ 0, 1 ],
+
+    # (RateAncestor)
+    # 0,1,2 rates (alpha>0) or
+    # ancestral states (1 or 2)
+    'RateAncestor' => [ 1, 0, 2 ],
+    'Small_Diff'   => '.5e-6',
+
+    # (cleandata) remove sites with ambiguity data
+    # 1: yes, 0:no
+    'cleandata' => [ 0, 1 ],
+
+    # this is the number of datasets in
+    # the file - we would need to change
+    # our api to allow >1 alignment object
+    # to be referenced at time
+    'ndata' => 1,
+
+    # (method)
+    # 0: simultaneous,1: 1 branch at a time
+    'method' => [ 0, 1 ],
+
+    # allow branch lengths to be fixed
+    # 0 ignore
+    # -1 use random starting points
+    # 1 use the branch lengths in initial ML iteration
+    # 2 branch lengths are fixed
+    'fix_blength' => [ 0, -1, 1, 2 ],
+  );
 }
 
 =head2 program_name
@@ -345,7 +349,7 @@ BEGIN {
 =cut
 
 sub program_name {
-        return 'codeml';
+  return 'codeml';
 }
 
 =head2 program_dir
@@ -359,9 +363,8 @@ sub program_name {
 =cut
 
 sub program_dir {
-        return Bio::Root::IO->catfile($ENV{PAMLDIR}) if $ENV{PAMLDIR};
+  return Bio::Root::IO->catfile( $ENV{PAMLDIR} ) if $ENV{PAMLDIR};
 }
-
 
 =head2 new
 
@@ -384,31 +387,32 @@ See also: L<Bio::Tree::TreeI>, L<Bio::Align::AlignI>
 =cut
 
 sub new {
-  my($class,@args) = @_;
+  my ( $class, @args ) = @_;
 
   my $self = $class->SUPER::new(@args);
   $self->{'_branchLengths'} = 0;
-  my ($aln, $tree, $st, $params, $exe, $tempdir,
-      $ubl) = $self->_rearrange([qw(ALIGNMENT TREE SAVE_TEMPFILES 
-				    PARAMS EXECUTABLE TEMPDIR BRANCHLENGTHS)],
-				    @args);
-  defined $aln && $self->alignment($aln);
-  defined $tree && $self->tree($tree, branchLengths => ($ubl || 0) );
-  defined $st  && $self->save_tempfiles($st);
-  defined $exe && $self->executable($exe);
+  my ( $aln, $tree, $st, $params, $exe, $tempdir, $ubl ) = $self->_rearrange( [
+      qw(ALIGNMENT TREE SAVE_TEMPFILES
+        PARAMS EXECUTABLE TEMPDIR BRANCHLENGTHS)
+    ],
+    @args
+  );
+  defined $aln     && $self->alignment($aln);
+  defined $tree    && $self->tree( $tree, branchLengths => ( $ubl || 0 ) );
+  defined $st      && $self->save_tempfiles($st);
+  defined $exe     && $self->executable($exe);
   defined $tempdir && $self->tempdir($tempdir);
 
   $self->set_default_parameters();
-  if( defined $params ) {
-      if( ref($params) !~ /HASH/i ) { 
-	  $self->warn("Must provide a valid hash ref for parameter -FLAGS");
-      } else {
-	  map { $self->set_parameter($_, $$params{$_}) } keys %$params;
-      }
+  if ( defined $params ) {
+    if ( ref($params) !~ /HASH/i ) {
+      $self->warn("Must provide a valid hash ref for parameter -FLAGS");
+    } else {
+      map { $self->set_parameter( $_, $$params{$_} ) } keys %$params;
+    }
   }
   return $self;
 }
-
 
 =head2 prepare
 
@@ -422,82 +426,89 @@ sub new {
 
 =cut
 
-sub prepare{
-   my ($self,$aln,$tree) = @_;
+sub prepare {
+  my ( $self, $aln, $tree ) = @_;
 
-   unless ( $self->save_tempfiles ) {
-       # brush so we don't get plaque buildup ;)
-       $self->cleanup();
-   }
-   
-   $tree = $self->tree unless $tree;
-   $aln  = $self->alignment unless $aln;
-   my $tempdir = $self->tempdir();
+  unless ( $self->save_tempfiles ) {
 
-   if( ! $aln ) { 
-       $self->warn("must have supplied a valid alignment file in order to run codeml");
-       return 0;
-   }
-   my ($tempseqFH,$tempseqfile);
-   if( ! ref($aln) && -e $aln ) { 
-       $tempseqfile = $aln;
-   } else { 
-       ($tempseqFH,$tempseqfile) = $self->io->tempfile
-	   ('-dir' => $tempdir, 
-	    UNLINK => ($self->save_tempfiles ? 0 : 1));
-       print "TEMP DIR: $tempdir\n";
-       my $gene_codon_counts = $self->{_codemlparams}->{gene_codon_counts};
-       delete $self->{_codemlparams}->{gene_codon_counts};
-       my $alnout = Bio::AlignIO->new('-format'      => 'phylip',
-				     '-fh'          => $tempseqFH,
-                                     '-interleaved' => 0,
-				     '-idlength'    => $MINNAMELEN > $aln->maxdisplayname_length() ? $MINNAMELEN : $aln->maxdisplayname_length() +1,
-				      '-paml_mgenes' => $gene_codon_counts
-	 );
-       
-       $alnout->write_aln($aln);
-       $alnout->close();
-       undef $alnout;   
-       close($tempseqFH);
-   }
-   # now let's print the codeml.ctl file.
-   # many of the these programs are finicky about what the filename is 
-   # and won't even run without the properly named file.  Ack
-   
-   my $codeml_ctl = "$tempdir/codeml.ctl";
-   open(CODEML, ">$codeml_ctl") or $self->throw("cannot open $codeml_ctl for writing");
-   print CODEML "seqfile = $tempseqfile\n";
-   my $outfile = $self->outfile_name;
-   print CODEML "outfile = $outfile\n";
+    # brush so we don't get plaque buildup ;)
+    $self->cleanup();
+  }
 
-   if( $tree ) {
-       my ($temptreeFH,$temptreefile);
-       if( ! ref($tree) && -e $tree ) { 
-	   $temptreefile = $tree;
-       } else { 
-	   ($temptreeFH,$temptreefile) = $self->io->tempfile
-	       ('-dir' => $tempdir, 
-		UNLINK => ($self->save_tempfiles ? 0 : 1));
-	   
-	   my $treeout = Bio::TreeIO->new('-format' => 'newick',
-					  '-fh'     => $temptreeFH);
-	   $treeout->write_tree($tree);
-	   $treeout->close();
-	   close($temptreeFH);
-       }
-       print CODEML "treefile = $temptreefile\n";
-   }
+  $tree = $self->tree      unless $tree;
+  $aln  = $self->alignment unless $aln;
+  my $tempdir = $self->tempdir();
 
-   my %params = $self->get_parameters;
-   while( my ($param,$val) = each %params ) {
-       next if $param eq 'outfile';
-       print CODEML "$param = $val\n";
-   }
-   close(CODEML);
-   return $tempdir;
+  if ( !$aln ) {
+    $self->warn("must have supplied a valid alignment file in order to run codeml");
+    return 0;
+  }
+  my ( $tempseqFH, $tempseqfile );
+  if ( !ref($aln) && -e $aln ) {
+    $tempseqfile = $aln;
+  } else {
+    ( $tempseqFH, $tempseqfile ) = $self->io->tempfile(
+      '-dir' => $tempdir,
+      UNLINK => ( $self->save_tempfiles ? 0 : 1 )
+    );
+    print "TEMP DIR: $tempdir\n";
+    my $gene_codon_counts = $self->{_codemlparams}->{gene_codon_counts};
+    delete $self->{_codemlparams}->{gene_codon_counts};
+    my $alnout = Bio::AlignIO->new(
+      '-format'      => 'phylip',
+      '-fh'          => $tempseqFH,
+      '-interleaved' => 0,
+      '-idlength'    => $MINNAMELEN > $aln->maxdisplayname_length()
+      ? $MINNAMELEN
+      : $aln->maxdisplayname_length() + 1,
+      '-paml_mgenes' => $gene_codon_counts
+    );
+
+    $alnout->write_aln($aln);
+    $alnout->close();
+    undef $alnout;
+    close($tempseqFH);
+  }
+
+  # now let's print the codeml.ctl file.
+  # many of the these programs are finicky about what the filename is
+  # and won't even run without the properly named file.  Ack
+
+  my $codeml_ctl = "$tempdir/codeml.ctl";
+  open( CODEML, ">$codeml_ctl" ) or $self->throw("cannot open $codeml_ctl for writing");
+  print CODEML "seqfile = $tempseqfile\n";
+  my $outfile = $self->outfile_name;
+  print CODEML "outfile = $outfile\n";
+
+  if ($tree) {
+    my ( $temptreeFH, $temptreefile );
+    if ( !ref($tree) && -e $tree ) {
+      $temptreefile = $tree;
+    } else {
+      ( $temptreeFH, $temptreefile ) = $self->io->tempfile(
+        '-dir' => $tempdir,
+        UNLINK => ( $self->save_tempfiles ? 0 : 1 )
+      );
+
+      my $treeout = Bio::TreeIO->new(
+        '-format' => 'newick',
+        '-fh'     => $temptreeFH
+      );
+      $treeout->write_tree($tree);
+      $treeout->close();
+      close($temptreeFH);
+    }
+    print CODEML "treefile = $temptreefile\n";
+  }
+
+  my %params = $self->get_parameters;
+  while ( my ( $param, $val ) = each %params ) {
+    next if $param eq 'outfile';
+    print CODEML "$param = $val\n";
+  }
+  close(CODEML);
+  return $tempdir;
 }
-
-
 
 =head2 run
 
@@ -513,308 +524,324 @@ sub prepare{
 =cut
 
 sub run {
-   my ($self) = shift;
-   my $tmpdir = $self->prepare(@_);
-   my $outfile = $self->outfile_name;
-   
-   my ($rc,$parser) = (1);
-   {
-       my $cwd = cwd();
-       my $exit_status;
-       chdir($tmpdir);
-       my $codemlexe = $self->executable();
-       $self->throw("unable to find or run executable for 'codeml'") unless $codemlexe && -e $codemlexe && -x _;
-       my $run;
-       if( $self->{'_branchLengths'} ) { 
-	   open($run, "echo $self->{'_branchLengths'} | $codemlexe |") or $self->throw("Cannot open exe $codemlexe");
-       } else {
-	   open($run, "$codemlexe |") or $self->throw("Cannot open exe $codemlexe");
-       }
-       my @output = <$run>;
+  my ($self)  = shift;
+  my $tmpdir  = $self->prepare(@_);
+  my $outfile = $self->outfile_name;
 
-       $exit_status = close($run);
-       $self->error_string(join('',@output));
-       if( (grep { /error/io } @output)  || !$exit_status) {
-#       if (!$exit_status) {
-	   $self->warn("ERROR RUNNING CODEML:\n".$self->error_string);
-	   $rc = 0;
-       }
+  my ( $rc, $parser ) = (1);
+  {
+    my $cwd = cwd();
+    my $exit_status;
+    chdir($tmpdir);
+    my $codemlexe = $self->executable();
+    $self->throw("unable to find or run executable for 'codeml'")
+      unless $codemlexe && -e $codemlexe && -x _;
+    my $run;
+    if ( $self->{'_branchLengths'} ) {
+      open( $run, "echo $self->{'_branchLengths'} | $codemlexe |" )
+        or $self->throw("Cannot open exe $codemlexe");
+    } else {
+      open( $run, "$codemlexe |" ) or $self->throw("Cannot open exe $codemlexe");
+    }
+    my @output = <$run>;
 
-       $self->warn("Maybe an error: ".$self->error_string) if (!$exit_status);
-       # GJ 2009-01-08: Put the main results into a string and store it.
-       open(IN,"$tmpdir/$outfile");
-       my @main_results_lines = <IN>;
-       $self->main_results(\@main_results_lines);
-       close(IN);
+    $exit_status = close($run);
+    $self->error_string( join( '', @output ) );
+    if ( ( grep { /error/io } @output ) || !$exit_status ) {
 
-       eval {
-	   $parser = Bio::Tools::Phylo::PAML->new(-file => "$tmpdir/$outfile",
-						  -verbose => $self->verbose,
-						  -dir => "$tmpdir");
-       };
-       warn() if $@;
-       eval {
-	   #
-	   # GJ 2009-01-08 : Parse the supplementary results.
-	   #
-           open(IN,"$tmpdir/rst");
-	   my @supps = <IN>;
-	   $self->supplementary_results(\@supps);
-	   close(IN);
-       };
-       warn() if $@;
+      #       if (!$exit_status) {
+      $self->warn( "ERROR RUNNING CODEML:\n" . $self->error_string );
+      $rc = 0;
+    }
 
-       chdir($cwd);
-   }
-   return ($rc,$parser);
+    $self->warn( "Maybe an error: " . $self->error_string ) if ( !$exit_status );
+
+    # GJ 2009-01-08: Put the main results into a string and store it.
+    open( IN, "$tmpdir/$outfile" );
+    my @main_results_lines = <IN>;
+    $self->main_results( \@main_results_lines );
+    close(IN);
+
+    eval {
+      $parser = Bio::Tools::Phylo::PAML->new(
+        -file    => "$tmpdir/$outfile",
+        -verbose => $self->verbose,
+        -dir     => "$tmpdir"
+      );
+    };
+    warn() if $@;
+    eval {
+
+      #
+      # GJ 2009-01-08 : Parse the supplementary results.
+      #
+      open( IN, "$tmpdir/rst" );
+      my @supps = <IN>;
+      $self->supplementary_results( \@supps );
+      close(IN);
+    };
+    warn() if $@;
+
+    chdir($cwd);
+  }
+  return ( $rc, $parser );
 }
-
 
 # GJ 2009-01-08 : store the supplementary results for later retrieval.
 sub supplementary_results {
-    my $self = shift;
-    my $suppl_arrayref = shift;
+  my $self           = shift;
+  my $suppl_arrayref = shift;
 
-    $self->{'_suppl'} = $suppl_arrayref if (defined $suppl_arrayref);
-    return $self->{'_suppl'};
+  $self->{'_suppl'} = $suppl_arrayref if ( defined $suppl_arrayref );
+  return $self->{'_suppl'};
 }
 
 sub main_results {
-    my $self = shift;
-    my $main_arrayref = shift;
+  my $self          = shift;
+  my $main_arrayref = shift;
 
-    $self->{'_main'} = $main_arrayref if (defined $main_arrayref);
-    return $self->{'_main'};
+  $self->{'_main'} = $main_arrayref if ( defined $main_arrayref );
+  return $self->{'_main'};
 }
 
 # GJ 2009-01-08 : extracts the naive bayes predictions from the supplementary string.
 sub extract_empirical_bayes {
-    my $self = shift;
-    my $suppl_arrayref = shift;
+  my $self           = shift;
+  my $suppl_arrayref = shift;
 
-    $suppl_arrayref = $self->supplementary_results() unless (defined $suppl_arrayref);
-    my @suppl = @{$suppl_arrayref};
+  $suppl_arrayref = $self->supplementary_results() unless ( defined $suppl_arrayref );
+  my @suppl = @{$suppl_arrayref};
 
-    # Naive:
-    #Naive Empirical Bayes (NEB) probabilities for 10 classes& postmean_w
-    # 1 M   0.00320 0.01289 0.02424 0.03656 0.04965 0.06350 0.07828 0.09450 0.11369 0.52349 (10)  0.642     
-    # Bayesian:
-    #Bayes Empirical Bayes (BEB) probabilities for 11 classes (class)& postmean_w
-    # 1 M   0.03403 0.08222 0.10935 0.11735 0.11455 0.10627 0.09566 0.08451 0.07399 0.07080 0.11128 ( 4)  0.745 +-  1.067
-    # NOTE FROM PAML DOCUMENTATION, p.29: "We suggest that you ignore the NEB output and use the BEB results only."
+# Naive:
+#Naive Empirical Bayes (NEB) probabilities for 10 classes& postmean_w
+# 1 M   0.00320 0.01289 0.02424 0.03656 0.04965 0.06350 0.07828 0.09450 0.11369 0.52349 (10)  0.642
+# Bayesian:
+#Bayes Empirical Bayes (BEB) probabilities for 11 classes (class)& postmean_w
+# 1 M   0.03403 0.08222 0.10935 0.11735 0.11455 0.10627 0.09566 0.08451 0.07399 0.07080 0.11128 ( 4)  0.745 +-  1.067
+# NOTE FROM PAML DOCUMENTATION, p.29: "We suggest that you ignore the NEB output and use the BEB results only."
 
-    my $has_bayes_section = 0;
-    my $bayes_results;
-    my $bayes_se;
-    my $bayes_prob; # Probability that a given site is greater than one.
-    my $pos_sites;
+  my $has_bayes_section = 0;
+  my $bayes_results;
+  my $bayes_se;
+  my $bayes_prob;    # Probability that a given site is greater than one.
+  my $pos_sites;
 
-    my $site_class_omegas;
-    
-    my $naive_output_has_p_gt_one_at_end = 0;
+  my $site_class_omegas;
 
-    foreach my $line (@suppl) {
-#      chomp($line);
-#      next if (length($line) ==0);
-      $has_bayes_section = 1 if ($line =~ m/Bayes Empirical Bayes/i);
-    }
-    
-    #print "Has bayes: $has_bayes_section\n";
-    my $started_bayes = 0;
-    my $started_pos_sel_sites = 0;
-    my $started_naive = 0;
-    foreach my $line (@suppl) {
-      chomp($line);
-      next if (length($line) == 0);      
-      next if ($line =~ /amino acids/i); # Skip lines like: (amino acids refer to 1st sequence: ENSDARP00000087283)
-#      next if ($line =~ /prob/i);
-#      next if ($line =~ /lnL/i);
+  my $naive_output_has_p_gt_one_at_end = 0;
 
-      if ($line =~ /w:\s+(.*)/) {
-        my $stuff = $1;
-        chomp $stuff;
-        my @toks = split(/\s+/,$stuff);
-        for (my $i=0; $i < scalar(@toks); $i++) {
-          $site_class_omegas->{$i} = $toks[$i];
-          print "Site class: $i ".$toks[$i]."\n";
-        }
-      }
+  foreach my $line (@suppl) {
 
-      $started_bayes = 1 if ($line =~ m/Bayes Empirical Bayes/i);
-      $started_naive = 1 if ($line =~ m/Naive Empirical Bayes/i);
-      $started_pos_sel_sites = 1 if ($line =~ m/positively selected sites/i && !$has_bayes_section);
-      $started_pos_sel_sites = 1 if ($line =~ m/positively selected sites/i && $has_bayes_section && $started_bayes);
-      
-      if (!$has_bayes_section && $started_naive && !$started_pos_sel_sites) {
-        if ($line =~ /empirical/i) {
-          if ($line =~ /w>1/i) {
-            $naive_output_has_p_gt_one_at_end = 1;
-          }
-        }
+    #      chomp($line);
+    #      next if (length($line) ==0);
+    $has_bayes_section = 1 if ( $line =~ m/Bayes Empirical Bayes/i );
+  }
 
-        #Naive Empirical Bayes (NEB) probabilities for 10 classes& postmean_w
-        # 1 M   0.00320 0.01289 0.02424 0.03656 0.04965 0.06350 0.07828 0.09450 0.11369 0.52349 (10)  0.642     
-        chomp $line;
-        my @bits = split(/\s+/,$line);
-        my $pos = $bits[1];
+  #print "Has bayes: $has_bayes_section\n";
+  my $started_bayes         = 0;
+  my $started_pos_sel_sites = 0;
+  my $started_naive         = 0;
+  foreach my $line (@suppl) {
+    chomp($line);
+    next if ( length($line) == 0 );
+    next
+      if ( $line =~ /amino acids/i )
+      ;    # Skip lines like: (amino acids refer to 1st sequence: ENSDARP00000087283)
 
-        my $prob_gt_one = 0;
-        if ($naive_output_has_p_gt_one_at_end) {
-          $prob_gt_one = pop @bits;
-        } else {
-          foreach my $site_class (keys %{$site_class_omegas}) {
-            my $post_prob = $bits[$site_class+3];
-            #print "  Post prob: ${site_class} $post_prob\n";
-            if ($site_class_omegas->{$site_class} > 1) {
-              $prob_gt_one += $post_prob;
-            }
-          }
-        }
+    #      next if ($line =~ /prob/i);
+    #      next if ($line =~ /lnL/i);
 
-        my $omega = pop @bits;
-
-        print " -> Naive p(w>1): ${prob_gt_one}\n";        
-        $bayes_results->{$pos} = $omega;
-        $bayes_prob->{$pos} = $prob_gt_one;
-        $bayes_se->{$pos} = '';
-      }
-
-      if ($has_bayes_section && $started_bayes && !$started_pos_sel_sites) {
-        next if ($line =~ /empirical/i);
-        #Bayes Empirical Bayes (BEB) probabilities for 11 classes (class)& postmean_w
-        # 1 M   0.03403 0.08222 0.10935 0.11735 0.11455 0.10627 0.09566 0.08451 0.07399 0.07080 0.11128 ( 4)  0.745 +-  1.067
-
-        # GJ 2010-01-25 - the first 10 classes are probably equivalent to a 10-site class model, with the 11th position
-        # position being the probability of w>1 integrated over all possible parameter values. So we'll take the last
-        # category as the p(w>1) and ignore the rest of the site classes.
-        # 
-
-        my @bits = split(/\s+/,$line);
-        my $pos = $bits[1];
-        my $se = pop @bits;
-        my $plus_minus_sign = pop @bits;
-        my $omega = pop @bits;
-
-        # GJ 2010-01-25 ASSUMPTION: we assume the BEB output always gives 11 classes, where the last class is the p(w>1).
-        # Is this true??
-        my $prob_gt_one = $bits[13];
-        
-        print " -> BEB p(w>1) = $prob_gt_one\n";
-        $bayes_prob->{$pos} = $prob_gt_one;
-        $bayes_results->{$pos} = $omega;
-        $bayes_se->{$pos} = $se;
-      }
-
-      if ($started_pos_sel_sites) {
-        next if ($line =~ m/positively/i);
-        next if ($line =~ m/Prob(w>1)/i);
-        last if ($line =~ m/lnL/i);
-        last if ($line =~ m/reconstruction/i);
-
-        my @bits = split(/\s+/,$line);
-        #Positively selected sites
-        #     7 T      0.705         3.979 +- 3.258
-        #    41 S      0.830         4.654 +- 3.213
-        shift @bits;
-        my $site = shift @bits;
-        $pos_sites->{$site} = 1;
+    if ( $line =~ /w:\s+(.*)/ ) {
+      my $stuff = $1;
+      chomp $stuff;
+      my @toks = split( /\s+/, $stuff );
+      for ( my $i = 0 ; $i < scalar(@toks) ; $i++ ) {
+        $site_class_omegas->{$i} = $toks[$i];
+        print "Site class: $i " . $toks[$i] . "\n";
       }
     }
-    return ($bayes_results,$bayes_se,$bayes_prob,$pos_sites);
+
+    $started_bayes         = 1 if ( $line =~ m/Bayes Empirical Bayes/i );
+    $started_naive         = 1 if ( $line =~ m/Naive Empirical Bayes/i );
+    $started_pos_sel_sites = 1 if ( $line =~ m/positively selected sites/i && !$has_bayes_section );
+    $started_pos_sel_sites = 1
+      if ( $line =~ m/positively selected sites/i && $has_bayes_section && $started_bayes );
+
+    if ( !$has_bayes_section && $started_naive && !$started_pos_sel_sites ) {
+      if ( $line =~ /empirical/i ) {
+        if ( $line =~ /w>1/i ) {
+          $naive_output_has_p_gt_one_at_end = 1;
+        }
+      }
+
+ #Naive Empirical Bayes (NEB) probabilities for 10 classes& postmean_w
+ # 1 M   0.00320 0.01289 0.02424 0.03656 0.04965 0.06350 0.07828 0.09450 0.11369 0.52349 (10)  0.642
+      chomp $line;
+      my @bits = split( /\s+/, $line );
+      my $pos = $bits[1];
+
+      my $prob_gt_one = 0;
+      if ($naive_output_has_p_gt_one_at_end) {
+        $prob_gt_one = pop @bits;
+      } else {
+        foreach my $site_class ( keys %{$site_class_omegas} ) {
+          my $post_prob = $bits[ $site_class + 3 ];
+
+          #print "  Post prob: ${site_class} $post_prob\n";
+          if ( $site_class_omegas->{$site_class} > 1 ) {
+            $prob_gt_one += $post_prob;
+          }
+        }
+      }
+
+      my $omega = pop @bits;
+
+      print " -> Naive p(w>1): ${prob_gt_one}\n";
+      $bayes_results->{$pos} = $omega;
+      $bayes_prob->{$pos}    = $prob_gt_one;
+      $bayes_se->{$pos}      = '';
+    }
+
+    if ( $has_bayes_section && $started_bayes && !$started_pos_sel_sites ) {
+      next if ( $line =~ /empirical/i );
+
+#Bayes Empirical Bayes (BEB) probabilities for 11 classes (class)& postmean_w
+# 1 M   0.03403 0.08222 0.10935 0.11735 0.11455 0.10627 0.09566 0.08451 0.07399 0.07080 0.11128 ( 4)  0.745 +-  1.067
+
+# GJ 2010-01-25 - the first 10 classes are probably equivalent to a 10-site class model, with the 11th position
+# position being the probability of w>1 integrated over all possible parameter values. So we'll take the last
+# category as the p(w>1) and ignore the rest of the site classes.
+#
+
+      my @bits            = split( /\s+/, $line );
+      my $pos             = $bits[1];
+      my $se              = pop @bits;
+      my $plus_minus_sign = pop @bits;
+      my $omega           = pop @bits;
+
+# GJ 2010-01-25 ASSUMPTION: we assume the BEB output always gives 11 classes, where the last class is the p(w>1).
+# Is this true??
+      my $prob_gt_one = $bits[13];
+
+      print " -> BEB p(w>1) = $prob_gt_one\n";
+      $bayes_prob->{$pos}    = $prob_gt_one;
+      $bayes_results->{$pos} = $omega;
+      $bayes_se->{$pos}      = $se;
+    }
+
+    if ($started_pos_sel_sites) {
+      next if ( $line =~ m/positively/i );
+      next if ( $line =~ m/Prob(w>1)/i );
+      last if ( $line =~ m/lnL/i );
+      last if ( $line =~ m/reconstruction/i );
+
+      my @bits = split( /\s+/, $line );
+
+      #Positively selected sites
+      #     7 T      0.705         3.979 +- 3.258
+      #    41 S      0.830         4.654 +- 3.213
+      shift @bits;
+      my $site = shift @bits;
+      $pos_sites->{$site} = 1;
+    }
+  }
+  return ( $bayes_results, $bayes_se, $bayes_prob, $pos_sites );
 }
-
 
 # GJ 2009-01-08 : Parse the tree from a block of CODEML-formatted text.
 sub extract_tree {
-    my $self = shift;
-    my $main_arrayref = shift;
-    $main_arrayref = $self->main_results unless (defined $main_arrayref);
+  my $self          = shift;
+  my $main_arrayref = shift;
+  $main_arrayref = $self->main_results unless ( defined $main_arrayref );
 
-    my @main = @{$main_arrayref};
-    
-    #print "@main\n";
-    
-    my $treeI;
-    my $spotted_tree_count = 0;
-    foreach my $line (@main) {
-	chomp $line;
-	next if (length($line) == 0);  # skip blanks.
+  my @main = @{$main_arrayref};
 
-	# GJ 2009-01-08 : we should see 3 trees, and the third one will have the proper labels in them.
+  #print "@main\n";
 
-	my $line_contains_tree = ($line =~ /\(.*?\)\;/);
-	$spotted_tree_count++ if ($line_contains_tree);
-	
-	if ($spotted_tree_count == 3 && $line_contains_tree)
-	{
-	    $line =~ s/: /:/g; # Remove spaces in the string.
-	    $line =~ s/, /,/g;
+  my $treeI;
+  my $spotted_tree_count = 0;
+  foreach my $line (@main) {
+    chomp $line;
+    next if ( length($line) == 0 );    # skip blanks.
 
-	    #print "$line\n";
-	    open(my $fake_fh, "<", \$line);
-	    my $treein = new Bio::TreeIO(-fh => $fake_fh, -format => 'newick');
-	    $treeI = $treein->next_tree;
-	    $treein->close();
-	}
+    # GJ 2009-01-08 : we should see 3 trees, and the third one will have the proper labels in them.
+
+    my $line_contains_tree = ( $line =~ /\(.*?\)\;/ );
+    $spotted_tree_count++ if ($line_contains_tree);
+
+    if ( $spotted_tree_count == 3 && $line_contains_tree ) {
+      $line =~ s/: /:/g;               # Remove spaces in the string.
+      $line =~ s/, /,/g;
+
+      #print "$line\n";
+      open( my $fake_fh, "<", \$line );
+      my $treein = new Bio::TreeIO( -fh => $fake_fh, -format => 'newick' );
+      $treeI = $treein->next_tree;
+      $treein->close();
     }
-    return $treeI;
+  }
+  return $treeI;
 }
 
 # GJ 2009-01-09 Extracting log-likelihoods from runs.
 sub extract_lnL {
-    my $self = shift;
-    my $main_arrayref = shift;
-    $main_arrayref = $self->main_results unless (defined $main_arrayref);
-    my @main = @{$main_arrayref};
+  my $self          = shift;
+  my $main_arrayref = shift;
+  $main_arrayref = $self->main_results unless ( defined $main_arrayref );
+  my @main = @{$main_arrayref};
 
-    foreach my $line(@main) {
-	chomp $line;
-	next if (length($line) == 0); # skip blank lines.
+  foreach my $line (@main) {
+    chomp $line;
+    next if ( length($line) == 0 );    # skip blank lines.
 
-        # Example line:
-        # lnL(ntime:  8  np: 13):  -4820.123143     +0.000000
-	if ($line =~ /lnL(.*):\s+(\S*?)\s+(\S*?)/) {
-	    #print "$1 $2\n";
-	    my $lnL = $2;
-	    return $lnL;
-	}
+    # Example line:
+    # lnL(ntime:  8  np: 13):  -4820.123143     +0.000000
+    if ( $line =~ /lnL(.*):\s+(\S*?)\s+(\S*?)/ ) {
+
+      #print "$1 $2\n";
+      my $lnL = $2;
+      return $lnL;
     }
+  }
 }
 
 # GJ 2009-01-09 Extracting log-likelihoods from runs.
 sub extract_omegas {
-    my $self = shift;
-    my $main_arrayref = shift;
-    $main_arrayref = $self->main_results unless (defined $main_arrayref);
-    my @main = @{$main_arrayref};
+  my $self          = shift;
+  my $main_arrayref = shift;
+  $main_arrayref = $self->main_results unless ( defined $main_arrayref );
+  my @main = @{$main_arrayref};
 
-    foreach my $line(@main) {
-	chomp $line;
-	next if (length($line) == 0); # skip blank lines.
+  foreach my $line (@main) {
+    chomp $line;
+    next if ( length($line) == 0 );    # skip blank lines.
 
-	#print "$line\n";
-	if ($line =~ m/omega/) {
-	  my @tokens = split("=",$line);
-	  my $value_string = $tokens[1];
-	  $value_string = strip($value_string);
-	  return ($value_string);
-        } elsif ($line =~ m/w \(dN\/dS\) for branches/) {
-	  #print "$line\n";
-	  my @tokens = split(":",$line);
-	  #print "Tokens: @tokens\n";
-	  my $values_string = $tokens[1];
-	  $values_string = strip($values_string);
-	  my @values = split(/\s/,$values_string);
-	  #print "Omegas: @values\n";
-	  return @values;
-	}
+    #print "$line\n";
+    if ( $line =~ m/omega/ ) {
+      my @tokens = split( "=", $line );
+      my $value_string = $tokens[1];
+      $value_string = strip($value_string);
+      return ($value_string);
+    } elsif ( $line =~ m/w \(dN\/dS\) for branches/ ) {
+
+      #print "$line\n";
+      my @tokens = split( ":", $line );
+
+      #print "Tokens: @tokens\n";
+      my $values_string = $tokens[1];
+      $values_string = strip($values_string);
+      my @values = split( /\s/, $values_string );
+
+      #print "Omegas: @values\n";
+      return @values;
     }
+  }
 }
 
 sub each_line {
-  my $self = shift;
+  my $self          = shift;
   my $main_arrayref = shift;
-  $main_arrayref = $self->main_results unless (defined $main_arrayref);
+  $main_arrayref = $self->main_results unless ( defined $main_arrayref );
   my @main = @{$main_arrayref};
   return @main;
 }
@@ -823,49 +850,50 @@ sub get_t_tree {
   my $self = shift;
   my $tree = shift;
 
-  return $self->get_tree($tree,'t');
+  return $self->get_tree( $tree, 't' );
 }
 
 sub get_ds_tree {
   my $self = shift;
   my $tree = shift;
 
-  return $self->get_tree($tree,'dS');
+  return $self->get_tree( $tree, 'dS' );
 }
 
 sub get_dnds_tree {
   my $self = shift;
   my $tree = shift;
 
-  return $self->get_tree($tree,'dN/dS');
+  return $self->get_tree( $tree, 'dN/dS' );
 }
 
 sub get_tree {
-  my $self = shift;
-  my $tree = shift;
+  my $self  = shift;
+  my $tree  = shift;
   my $value = shift || 't';
 
   # Create a copy of the tree.
-  my $newick = Bio::EnsEMBL::Compara::TreeUtils->to_newick($tree);
+  my $newick   = Bio::EnsEMBL::Compara::TreeUtils->to_newick($tree);
   my $new_tree = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($newick);
-  
+
   my $hash = $self->extract_branch_params();
 
-  foreach my $node ($new_tree->get_leaf_nodes) {
-    warn "No dnds id for ".$node->id."\n" unless (defined $hash->{$node->id});
-    return undef if (!defined $hash->{$node->id});
-    while (defined $hash->{$node->id}) {
-      #print "Node: ".$node->id."\n";
-      $self->_set_branch_length($node,$hash,$value);
+  foreach my $node ( $new_tree->get_leaf_nodes ) {
+    warn "No dnds id for " . $node->id . "\n" unless ( defined $hash->{ $node->id } );
+    return undef if ( !defined $hash->{ $node->id } );
+    while ( defined $hash->{ $node->id } ) {
 
-      my $obj = $hash->{$node->id};
-      my $parent_id = $obj->{'parent'};
+      #print "Node: ".$node->id."\n";
+      $self->_set_branch_length( $node, $hash, $value );
+
+      my $obj         = $hash->{ $node->id };
+      my $parent_id   = $obj->{'parent'};
       my $parent_node = $node->ancestor;
-      if (defined $parent_node) {
-	$parent_node->id($parent_id);
-	$node = $parent_node;
+      if ( defined $parent_node ) {
+        $parent_node->id($parent_id);
+        $node = $parent_node;
       } else {
-	return $new_tree;
+        return $new_tree;
       }
     }
   }
@@ -873,13 +901,13 @@ sub get_tree {
 }
 
 sub _set_branch_length {
-  my $self = shift;
-  my $node = shift;
-  my $dnds_hash = shift;
+  my $self         = shift;
+  my $node         = shift;
+  my $dnds_hash    = shift;
   my $value_to_set = shift;
 
-  die "No branch length ID!" unless (defined $dnds_hash->{$node->id});
-  my $obj = $dnds_hash->{$node->id};
+  die "No branch length ID!" unless ( defined $dnds_hash->{ $node->id } );
+  my $obj  = $dnds_hash->{ $node->id };
   my $dnds = $obj->{$value_to_set};
   $node->branch_length($dnds);
 }
@@ -891,38 +919,40 @@ sub extract_branch_params {
   my $map = $self->get_leaf_number_map;
 
   my $looking = 0;
-  foreach my $line($self->each_line) {
+  foreach my $line ( $self->each_line ) {
     chomp $line;
-    next if (length($line) == 0); # skip blank lines.
-    
-    if ($line =~ m/dN & dS for each branch/i) {
+    next if ( length($line) == 0 );    # skip blank lines.
+
+    if ( $line =~ m/dN & dS for each branch/i ) {
       $looking = 1;
       next;
     }
-    
+
     if ($looking) {
-      if ($line =~ m/\d\.\.\d/) {
-	$line = strip($line);
-#	print $line."\n";
-	# branch           t        N        S    dN/dS       dN       dS   N*dN   S*dS
-	#   5..6       0.101   2374.1    973.9   0.2223   0.0166   0.0747   39.4   72.8
-	my @tokens = split(/\s+/,$line);
-	my @branches = split(/\.\./,$tokens[0]);
-	my $child = $branches[1];
-	my $id = $map->{$child} || $child;
-	my $parent = $branches[0];
-#	print "$child!!\n";
-	my $obj = {
-	  't' => $tokens[1],
-	  'N' => $tokens[2],
-	  'S' => $tokens[3],
-	  'dN/dS' => $tokens[4],
-	  'dN' => $tokens[5],
-	  'dS' => $tokens[6],
-	  'parent' => $parent
+      if ( $line =~ m/\d\.\.\d/ ) {
+        $line = strip($line);
+
+        #	print $line."\n";
+        # branch           t        N        S    dN/dS       dN       dS   N*dN   S*dS
+        #   5..6       0.101   2374.1    973.9   0.2223   0.0166   0.0747   39.4   72.8
+        my @tokens   = split( /\s+/,  $line );
+        my @branches = split( /\.\./, $tokens[0] );
+        my $child    = $branches[1];
+        my $id = $map->{$child} || $child;
+        my $parent = $branches[0];
+
+        #	print "$child!!\n";
+        my $obj = {
+          't'      => $tokens[1],
+          'N'      => $tokens[2],
+          'S'      => $tokens[3],
+          'dN/dS'  => $tokens[4],
+          'dN'     => $tokens[5],
+          'dS'     => $tokens[6],
+          'parent' => $parent
         };
-	$values->{$id} = $obj;
-      }      
+        $values->{$id} = $obj;
+      }
     }
   }
   return $values;
@@ -935,42 +965,45 @@ sub get_leaf_number_map {
   my $look_for_tree_two = 0;
   my $tree_one;
   my $tree_two;
-  foreach my $line($self->each_line) {
+  foreach my $line ( $self->each_line ) {
     chomp $line;
-    next if (length($line) == 0); # skip blank lines.
-    
-    if ($line =~ m/^tree length =/i) {
+    next if ( length($line) == 0 );    # skip blank lines.
+
+    if ( $line =~ m/^tree length =/i ) {
       $look_for_tree_one = 1;
       next;
     }
     if ($look_for_tree_one) {
-      $tree_one = Bio::TreeIO->new(-string => $line)->next_tree;
+      $tree_one          = Bio::TreeIO->new( -string => $line )->next_tree;
       $look_for_tree_one = 0;
       $look_for_tree_two = 1;
       next;
     }
     if ($look_for_tree_two) {
-      $tree_two = Bio::TreeIO->new(-string => $line)->next_tree;
+      $tree_two = Bio::TreeIO->new( -string => $line )->next_tree;
       $look_for_tree_two = 0;
     }
   }
 
-  return unless (defined $tree_one);
+  return unless ( defined $tree_one );
 
   my $map;
+
   # Tree one contains the PAML-numbered names.
   my @one_nodes = $tree_one->get_nodes;
-  print "Nodes: ".scalar(@one_nodes)."\n";
+  print "Nodes: " . scalar(@one_nodes) . "\n";
+
   # Tree two contains the input names.
   my @two_nodes = $tree_two->get_nodes;
-  for (my $i=0; $i < scalar(@one_nodes); $i++) {
+  for ( my $i = 0 ; $i < scalar(@one_nodes) ; $i++ ) {
     my $one = $one_nodes[$i];
     my $two = $two_nodes[$i];
-#    print $one->id."  ".$two->id."\n";
-    if ($one->id && $two->id) {
-      $map->{strip($one->id)} = strip($two->id);
+
+    #    print $one->id."  ".$two->id."\n";
+    if ( $one->id && $two->id ) {
+      $map->{ strip( $one->id ) } = strip( $two->id );
     }
-  }  
+  }
   return $map;
 }
 
@@ -983,108 +1016,120 @@ sub strip {
 
 # GJ 2009-01-08 : Convenience method for re-estimating branch lengths using the M0 model.
 sub get_m0_tree {
-    my $class = shift;
-    my $tree = shift;
-    my $codon_aln = shift;
+  my $class     = shift;
+  my $tree      = shift;
+  my $codon_aln = shift;
 
-    # M0 parameters:
-    my $params = {
-	NSsites => 2,
-	fix_blength=>1
-	};
-    
-    my $codeml = $class->new(-params => $params);
-    $codeml->tree($tree);
-    $codeml->alignment($codon_aln);
-    $codeml->run();
+  # M0 parameters:
+  my $params = {
+    NSsites     => 2,
+    fix_blength => 1
+  };
 
-    my $new_tree = $codeml->extract_tree();
+  my $codeml = $class->new( -params => $params );
+  $codeml->tree($tree);
+  $codeml->alignment($codon_aln);
+  $codeml->run();
 
-    return $new_tree;
+  my $new_tree = $codeml->extract_tree();
+
+  return $new_tree;
 }
 
 sub codon_model_likelihood {
-  my $class = shift;
-  my $tree = shift;
+  my $class     = shift;
+  my $tree      = shift;
   my $codon_aln = shift;
-  my $tempdir = shift;
-  my $params = shift;
+  my $tempdir   = shift;
+  my $params    = shift;
 
   my $default_params = {
-    NSsites => 0, # No sites categories.
-    model => 0, # One rate throughout tree.
-    fix_blength => 0, # Ignore input branch lengths
+    NSsites     => 0,    # No sites categories.
+    model       => 0,    # One rate throughout tree.
+    fix_blength => 0,    # Ignore input branch lengths
   };
 
   my $final_params = $default_params;
 
-  my $codeml = $class->new(-params => $final_params, -tree => $tree, -alignment => $codon_aln, -tempdir => $tempdir);
+  my $codeml = $class->new(
+    -params    => $final_params,
+    -tree      => $tree,
+    -alignment => $codon_aln,
+    -tempdir   => $tempdir
+  );
+
   #$codeml->save_tempfiles(1);
-  my ($rs,$parser) = $codeml->run();
-  my $lnL = $codeml->extract_lnL();
-  my @omegas = $codeml->extract_omegas();  
+  my ( $rs, $parser ) = $codeml->run();
+  my $lnL    = $codeml->extract_lnL();
+  my @omegas = $codeml->extract_omegas();
 
   return {
-    lnL => $lnL,
+    lnL    => $lnL,
     omegas => \@omegas
   };
 }
 
 sub branch_model_likelihood {
-  my $class = shift;
-  my $tree = shift;
+  my $class     = shift;
+  my $tree      = shift;
   my $codon_aln = shift;
-  my $tempdir = shift;
-  my $params = shift;
+  my $tempdir   = shift;
+  my $params    = shift;
 
   my $default_params = {
-    fix_blength => 1, # Use initial branch lengths as estimates.
-    model => 2,
-    cleandata => 1
+    fix_blength => 1,    # Use initial branch lengths as estimates.
+    model       => 2,
+    cleandata   => 1
   };
 
   # If certain parameters are given, apply them to the parameter object
   # passed to the new Codeml instance.
   my $final_params = {%$default_params};
-  foreach my $param ('model','omega','Mgene','gene_codon_counts','cleandata') {
-    $final_params->{$param} = $params->{$param} if (defined $params->{$param});
+  foreach my $param ( 'model', 'omega', 'Mgene', 'gene_codon_counts', 'cleandata' ) {
+    $final_params->{$param} = $params->{$param} if ( defined $params->{$param} );
   }
   $final_params->{verbose} = 1;
 
   # Create the new Codeml object and run it.
-  my $codeml = $class->new(-params => $final_params, -tree => $tree, -alignment => $codon_aln, -tempdir => $tempdir, no_param_checks => 1);
+  my $codeml = $class->new(
+    -params         => $final_params,
+    -tree           => $tree,
+    -alignment      => $codon_aln,
+    -tempdir        => $tempdir,
+    no_param_checks => 1
+  );
   $codeml->save_tempfiles(1);
+
   # Note: we'll ignore the $parser object here because it doesn't seem to work...
-  my ($rs,$parser) = $codeml->run();
+  my ( $rs, $parser ) = $codeml->run();
 
   # Instead, manually extract likelihood and omega values from the results file.
-  my $lnL = $codeml->extract_lnL();
+  my $lnL    = $codeml->extract_lnL();
   my @omegas = $codeml->extract_omegas();
   print "Omegas: @omegas\n";
 
-  my $dnds = $codeml->extract_branch_params();
+  my $dnds      = $codeml->extract_branch_params();
   my $dnds_tree = $codeml->get_dnds_tree($tree);
-  my $t_tree = $codeml->get_t_tree($tree);
-  my $ds_tree = $codeml->get_ds_tree($tree);
+  my $t_tree    = $codeml->get_t_tree($tree);
+  my $ds_tree   = $codeml->get_ds_tree($tree);
 
   my $newick = Bio::EnsEMBL::Compara::TreeUtils->to_newick($dnds_tree);
 
   # Return an object with our results of interest.
   return {
-    lnL => $lnL,
-    omegas => \@omegas,
-    dnds => $dnds,
+    lnL       => $lnL,
+    omegas    => \@omegas,
+    dnds      => $dnds,
     dnds_tree => $dnds_tree,
-    ds_tree => $ds_tree,
-    t_tree => $t_tree
+    ds_tree   => $ds_tree,
+    t_tree    => $t_tree
   };
 }
-
 
 sub file_array {
   my $file = shift;
 
-  open(IN,$file);
+  open( IN, $file );
   my @lines = <IN>;
   close(IN);
   return @lines;
@@ -1092,102 +1137,118 @@ sub file_array {
 
 # GJ 2009-01-09 : Ratio tests for pos-sel.
 sub NSsites_ratio_test {
-    my $class = shift;
-    my $tree = shift;
-    my $codon_aln = shift;
-    my $model_a = shift;
-    my $model_b = shift;
-    my $tempdir = shift;
-    
-    # Model A should be a model nested within B, i.e. A=m2 b=m3, A=m7 b=m8
-    $model_a = 7 unless (defined $model_a);
-    $model_b = 8 unless (defined $model_b);
+  my $class     = shift;
+  my $tree      = shift;
+  my $codon_aln = shift;
+  my $model_a   = shift;
+  my $model_b   = shift;
+  my $tempdir   = shift;
 
-    my $fix_omega = 0;
-    my $omega = 1.3;
-    if ($model_a eq '8a') {
-      $model_a = '8';
-      $fix_omega = 1;
-      $omega = 1;
-    }
+  # Model A should be a model nested within B, i.e. A=m2 b=m3, A=m7 b=m8
+  $model_a = 7 unless ( defined $model_a );
+  $model_b = 8 unless ( defined $model_b );
 
-    my $params = {
-	NSsites => $model_a,
-	fix_blength=>1,
-        fix_omega => $fix_omega,
-	omega => $omega
-    };
-    my $codemla = $class->new(-params => $params, -tree => $tree, -alignment => $codon_aln, -tempdir => $tempdir);
-    $codemla->run();
+  my $fix_omega = 0;
+  my $omega     = 1.3;
+  if ( $model_a eq '8a' ) {
+    $model_a   = '8';
+    $fix_omega = 1;
+    $omega     = 1;
+  }
 
-    my $ma_lnL = $codemla->extract_lnL();
-    
+  my $params = {
+    NSsites     => $model_a,
+    fix_blength => 1,
+    fix_omega   => $fix_omega,
+    omega       => $omega
+  };
+  my $codemla = $class->new(
+    -params    => $params,
+    -tree      => $tree,
+    -alignment => $codon_aln,
+    -tempdir   => $tempdir
+  );
+  $codemla->run();
+
+  my $ma_lnL = $codemla->extract_lnL();
+
+  $params = {
+    NSsites     => $model_b,
+    fix_blength => 1,
+    fix_omega   => 0,
+    omega       => 1.3
+  };
+  my $codemlb = $class->new(
+    -params    => $params,
+    -tree      => $tree,
+    -alignment => $codon_aln,
+    -tempdir   => $tempdir
+  );
+  $codemlb->run();
+  my $mb_lnL = $codemlb->extract_lnL();
+
+  if ( $model_b == 8 ) {
+
+    # We should probably run M8 again here.
+    # From Anisimova et al. 2002 (http://www.citeulike.org/user/gjuggler/article/1597691):
+    #   "To avoid being trapped at a local optimum, it is important to run
+    #   M8 at least twice, once with initial omega > 1 and once with
+    #   omega < 1, and results corresponding to the highest likelihood
+    #   value should be used."
+
     $params = {
-	NSsites => $model_b,
-	fix_blength => 1,
-        fix_omega => 0,
-	omega => 1.3
+      NSsites     => 8,
+      fix_blength => 1,
+      omega       => 0.3
     };
-    my $codemlb = $class->new(-params => $params, -tree => $tree, -alignment => $codon_aln, -tempdir => $tempdir);
-    $codemlb->run();
-    my $mb_lnL = $codemlb->extract_lnL();
-    
-    if ($model_b == 8) {
-	# We should probably run M8 again here.
-	# From Anisimova et al. 2002 (http://www.citeulike.org/user/gjuggler/article/1597691):
-	#   "To avoid being trapped at a local optimum, it is important to run
-	#   M8 at least twice, once with initial omega > 1 and once with
-	#   omega < 1, and results corresponding to the highest likelihood
-	#   value should be used."
-	
-	$params = {
-	    NSsites => 8,
-	    fix_blength => 1,
-	    omega => 0.3
-	    };
-	my $codemlb2 = $class->new(-params => $params, -tree => $tree, -alignment => $codon_aln, -tempdir => $tempdir);
-	$codemlb2->run();
-	my $mb_lnL2 = $codemlb2->extract_lnL();
-	
-	# Use the 2nd run's results if they have a higher likelihood.
-	if ($mb_lnL2 > $mb_lnL) {
-	    $codemlb = $codemlb2;
-	    $mb_lnL = $mb_lnL2;
-	}
+    my $codemlb2 = $class->new(
+      -params    => $params,
+      -tree      => $tree,
+      -alignment => $codon_aln,
+      -tempdir   => $tempdir
+    );
+    $codemlb2->run();
+    my $mb_lnL2 = $codemlb2->extract_lnL();
+
+    # Use the 2nd run's results if they have a higher likelihood.
+    if ( $mb_lnL2 > $mb_lnL ) {
+      $codemlb = $codemlb2;
+      $mb_lnL  = $mb_lnL2;
     }
-    
-    #print "model A: $ma_lnL  MB: $mb_lnL\n";
+  }
 
-    my $twice_lnL = ($mb_lnL - $ma_lnL) * 2;
+  #print "model A: $ma_lnL  MB: $mb_lnL\n";
 
-    my $chi_nf = 5.991; # Chi2 value at 0.05 with 2df
-    my $chi_nn = 9.210; # Chi2 value at 0.01 with 2df
+  my $twice_lnL = ( $mb_lnL - $ma_lnL ) * 2;
 
-    return ($twice_lnL,$codemla,$codemlb);
+  my $chi_nf = 5.991;    # Chi2 value at 0.05 with 2df
+  my $chi_nn = 9.210;    # Chi2 value at 0.01 with 2df
+
+  return ( $twice_lnL, $codemla, $codemlb );
 }
-
 
 # GJ 2009-01-08 : Added unrooted tree method to Codeml.
 sub _ensure_unrooted_tree {
-    my $self = shift;
-    my $tree = shift;
+  my $self = shift;
+  my $tree = shift;
 
-    # GJ 2008-12-15 : need to reroot the tree at an internal node so that it has three branches from the root -- 
-    # PAML requires this for "unrooted" input.
+# GJ 2008-12-15 : need to reroot the tree at an internal node so that it has three branches from the root --
+# PAML requires this for "unrooted" input.
 
-    # GJ 2009-01-08 : TODO: Actually make this work by manually forcing a trifurcation.
+  # GJ 2009-01-08 : TODO: Actually make this work by manually forcing a trifurcation.
 
-    my $root = $tree->get_root_node;
-    my @children = $root->each_Descendent;
-    my $root_child_count = scalar(@children);
-    if ($root_child_count == 2) {
-#      print "CHILD COUNT: $root_child_count\n";
-	my $child = $children[0];
-#	$tree->reroot($child);
-    }
-    return $tree;
+  my $root             = $tree->get_root_node;
+  my @children         = $root->each_Descendent;
+  my $root_child_count = scalar(@children);
+  if ( $root_child_count == 2 ) {
+
+    #      print "CHILD COUNT: $root_child_count\n";
+    my $child = $children[0];
+
+    #	$tree->reroot($child);
+  }
+  return $tree;
 }
-
 
 =head2 error_string
 
@@ -1200,12 +1261,12 @@ sub _ensure_unrooted_tree {
 
 =cut
 
-sub error_string{
-   my ($self,$value) = @_;
-   if( defined $value) {
-      $self->{'error_string'} = $value;
-    }
-    return $self->{'error_string'};
+sub error_string {
+  my ( $self, $value ) = @_;
+  if ( defined $value ) {
+    $self->{'error_string'} = $value;
+  }
+  return $self->{'error_string'};
 
 }
 
@@ -1222,20 +1283,21 @@ sub error_string{
 
 =cut
 
-sub alignment{
-   my ($self,$aln) = @_;
+sub alignment {
+  my ( $self, $aln ) = @_;
 
-   if( defined $aln ) { 
-       if( -e $aln ) { 
-	   $self->{'_alignment'} = $aln;
-       } elsif( !ref($aln) || ! $aln->isa('Bio::Align::AlignI') ) { 
-	   $self->warn("Must specify a valid Bio::Align::AlignI object to the alignment function not $aln");
-	   return undef;
-       } else {
-	   $self->{'_alignment'} = $aln;
-       }
-   }
-   return  $self->{'_alignment'};
+  if ( defined $aln ) {
+    if ( -e $aln ) {
+      $self->{'_alignment'} = $aln;
+    } elsif ( !ref($aln) || !$aln->isa('Bio::Align::AlignI') ) {
+      $self->warn(
+        "Must specify a valid Bio::Align::AlignI object to the alignment function not $aln");
+      return undef;
+    } else {
+      $self->{'_alignment'} = $aln;
+    }
+  }
+  return $self->{'_alignment'};
 }
 
 =head2 tree
@@ -1256,25 +1318,27 @@ sub alignment{
 =cut
 
 sub tree {
-   my ($self, $tree, %params) = @_;
-   if( defined $tree ) { 
-       if( ! ref($tree) || ! $tree->isa('Bio::Tree::TreeI') ) { 
-	   $self->warn("Must specify a valid Bio::Tree::TreeI object to the alignment function");
-       }
+  my ( $self, $tree, %params ) = @_;
+  if ( defined $tree ) {
+    if ( !ref($tree) || !$tree->isa('Bio::Tree::TreeI') ) {
+      $self->warn("Must specify a valid Bio::Tree::TreeI object to the alignment function");
+    }
 
-       # GJ 2009-01-08 : Ensure the tree is unrooted.
-       $tree = $self->_ensure_unrooted_tree($tree);
+    # GJ 2009-01-08 : Ensure the tree is unrooted.
+    $tree = $self->_ensure_unrooted_tree($tree);
 
-       $self->{'_tree'} = $tree;
-       if ( defined $params{'_branchLengths'} ) {
-	 my $ubl = $params{'_branchLengths'};
-	 if ($ubl !~ m/^(0|1|2)$/) {
-	   $self->throw("The branchLengths parameter to tree() must be 0 (ignore), 1 (initial values) or 2 (fixed values) only");
-	 }
-	 $self->{'_branchLengths'} = $ubl;
-       }
-   }
-   return $self->{'_tree'};
+    $self->{'_tree'} = $tree;
+    if ( defined $params{'_branchLengths'} ) {
+      my $ubl = $params{'_branchLengths'};
+      if ( $ubl !~ m/^(0|1|2)$/ ) {
+        $self->throw(
+          "The branchLengths parameter to tree() must be 0 (ignore), 1 (initial values) or 2 (fixed values) only"
+        );
+      }
+      $self->{'_branchLengths'} = $ubl;
+    }
+  }
+  return $self->{'_tree'};
 }
 
 =head2 get_parameters
@@ -1288,12 +1352,12 @@ sub tree {
 
 =cut
 
-sub get_parameters{
-   my ($self) = @_;
-   # we're returning a copy of this
-   return %{ $self->{'_codemlparams'} };
-}
+sub get_parameters {
+  my ($self) = @_;
 
+  # we're returning a copy of this
+  return %{ $self->{'_codemlparams'} };
+}
 
 =head2 set_parameter
 
@@ -1311,24 +1375,28 @@ sub get_parameters{
 
 =cut
 
-sub set_parameter{
-   my ($self,$param,$value) = @_;
-   unless (defined $self->{'no_param_checks'} && $self->{'no_param_checks'} == 1) {
-       if ( ! defined $VALIDVALUES{$param} ) { 
-           $self->warn("unknown parameter $param will not be set unless you force by setting no_param_checks to true");
-           return 0;
-       } 
-       if ( ref( $VALIDVALUES{$param}) =~ /ARRAY/i &&
-            scalar @{$VALIDVALUES{$param}} > 0 ) {
-       
-           unless ( grep { $value eq $_ } @{ $VALIDVALUES{$param} } ) {
-               $self->warn("parameter $param specified value $value is not recognized, please see the documentation and the code for this module or set the no_param_checks to a true value");
-               return 0;
-           }
-       }
-   }
-   $self->{'_codemlparams'}->{$param} = $value;
-   return 1;
+sub set_parameter {
+  my ( $self, $param, $value ) = @_;
+  unless ( defined $self->{'no_param_checks'} && $self->{'no_param_checks'} == 1 ) {
+    if ( !defined $VALIDVALUES{$param} ) {
+      $self->warn(
+        "unknown parameter $param will not be set unless you force by setting no_param_checks to true"
+      );
+      return 0;
+    }
+    if ( ref( $VALIDVALUES{$param} ) =~ /ARRAY/i
+      && scalar @{ $VALIDVALUES{$param} } > 0 ) {
+
+      unless ( grep { $value eq $_ } @{ $VALIDVALUES{$param} } ) {
+        $self->warn(
+          "parameter $param specified value $value is not recognized, please see the documentation and the code for this module or set the no_param_checks to a true value"
+        );
+        return 0;
+      }
+    }
+  }
+  $self->{'_codemlparams'}->{$param} = $value;
+  return 1;
 }
 
 =head2 set_default_parameters
@@ -1344,21 +1412,21 @@ sub set_parameter{
 
 =cut
 
-sub set_default_parameters{
-   my ($self,$keepold) = @_;
-   $keepold = 0 unless defined $keepold;
-   
-   while( my ($param,$val) = each %VALIDVALUES ) {
-       # skip if we want to keep old values and it is already set
-       next if( defined $self->{'_codemlparams'}->{$param} && $keepold);
-       if(ref($val)=~/ARRAY/i ) {
-	   $self->{'_codemlparams'}->{$param} = $val->[0];
-       }  else { 
-	   $self->{'_codemlparams'}->{$param} = $val;
-       }
-   }
-}
+sub set_default_parameters {
+  my ( $self, $keepold ) = @_;
+  $keepold = 0 unless defined $keepold;
 
+  while ( my ( $param, $val ) = each %VALIDVALUES ) {
+
+    # skip if we want to keep old values and it is already set
+    next if ( defined $self->{'_codemlparams'}->{$param} && $keepold );
+    if ( ref($val) =~ /ARRAY/i ) {
+      $self->{'_codemlparams'}->{$param} = $val->[0];
+    } else {
+      $self->{'_codemlparams'}->{$param} = $val;
+    }
+  }
+}
 
 =head1 Bio::Tools::Run::WrapperBase methods
 
@@ -1376,14 +1444,13 @@ sub set_default_parameters{
 
 =cut
 
-sub no_param_checks{
-   my ($self,$value) = @_;
-   if( defined $value) {
-      $self->{'no_param_checks'} = $value;
-    }
-    return $self->{'no_param_checks'};
+sub no_param_checks {
+  my ( $self, $value ) = @_;
+  if ( defined $value ) {
+    $self->{'no_param_checks'} = $value;
+  }
+  return $self->{'no_param_checks'};
 }
-
 
 =head2 save_tempfiles
 
@@ -1409,14 +1476,14 @@ sub no_param_checks{
 =cut
 
 sub outfile_name {
-    my $self = shift;
-    if( @_ ) {
-	return $self->{'_codemlparams'}->{'outfile'} = shift @_;
-    }
-    unless (defined $self->{'_codemlparams'}->{'outfile'}) {
-        $self->{'_codemlparams'}->{'outfile'} = 'mlc';
-    }
-    return $self->{'_codemlparams'}->{'outfile'};    
+  my $self = shift;
+  if (@_) {
+    return $self->{'_codemlparams'}->{'outfile'} = shift @_;
+  }
+  unless ( defined $self->{'_codemlparams'}->{'outfile'} ) {
+    $self->{'_codemlparams'}->{'outfile'} = 'mlc';
+  }
+  return $self->{'_codemlparams'}->{'outfile'};
 }
 
 =head2 tempdir
@@ -1453,28 +1520,28 @@ sub outfile_name {
 =cut
 
 sub DESTROY {
-    my $self= shift;
-    unless ( $self->save_tempfiles ) {
-	$self->cleanup();
-    }
-    $self->SUPER::DESTROY();
+  my $self = shift;
+  unless ( $self->save_tempfiles ) {
+    $self->cleanup();
+  }
+  $self->SUPER::DESTROY();
 }
 
 sub tempdir {
-    my $self = shift;
-    my $new_temp_dir = shift;
+  my $self         = shift;
+  my $new_temp_dir = shift;
 
-    if (defined $new_temp_dir) {
-      $self->{'_tempdir'} = $new_temp_dir;
-    }
-    if (defined $self->{'_tempdir'}) {
-      return $self->{'_tempdir'};
-    }
-    
-    my $tempdir = $self->SUPER::tempdir;
-    $self->SUPER::tempdir($tempdir."_codeml");
+  if ( defined $new_temp_dir ) {
+    $self->{'_tempdir'} = $new_temp_dir;
+  }
+  if ( defined $self->{'_tempdir'} ) {
+    return $self->{'_tempdir'};
+  }
 
-    return $self->SUPER::tempdir();
+  my $tempdir = $self->SUPER::tempdir;
+  $self->SUPER::tempdir( $tempdir . "_codeml" );
+
+  return $self->SUPER::tempdir();
 }
 
 1;

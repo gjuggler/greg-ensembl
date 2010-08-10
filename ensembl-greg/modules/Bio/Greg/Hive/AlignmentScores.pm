@@ -24,15 +24,16 @@ sub fetch_input {
     alignment_scores_action => 'prank'    # Options: 'gblocks', 'prank', 'trimal', 'indelign'
   };
 
-  $self->load_all_params($params);  
+  $self->load_all_params($params);
 
   my $no_filter_param = $self->replace_params( $self->params, { alignment_score_filtering => 0 } );
 
   my ( $tree, $aln ) =
-    Bio::EnsEMBL::Compara::ComparaUtils->get_tree_and_alignment( $self->compara_dba, $no_filter_param );
-  
-  $self->param('tree',$tree);
-  $self->param('aln',$aln);
+    Bio::EnsEMBL::Compara::ComparaUtils->get_tree_and_alignment( $self->compara_dba,
+    $no_filter_param );
+
+  $self->param( 'tree', $tree );
+  $self->param( 'aln',  $aln );
 
   Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $aln, { length => 200 } );
 }
@@ -43,7 +44,7 @@ sub run {
   $self->compara_dba->dbc->disconnect_when_inactive(1);
 
   my $tree = $self->param('tree');
-  my $aln = $self->param('aln');
+  my $aln  = $self->param('aln');
 
   my $params = $self->params;
 
@@ -64,23 +65,20 @@ sub run {
     $score_hash = $self->run_trimal( $tree, $aln, $params );
   } elsif ( $action =~ m/indelign/i ) {
     print " -> RUN INDELIGN [$action]\n";
-    eval {
-      $score_hash = $self->run_indelign( $tree, $aln, $params );
-    };
+    eval { $score_hash = $self->run_indelign( $tree, $aln, $params ); };
     if ($@) {
       print "Indelign error for action [$action]: $@\n";
     }
   } elsif ( $action =~ m/(coffee|score)/i ) {
     print " -> RUN TCOFFEE [$action]\n";
     $score_hash = $self->run_tcoffee( $tree, $aln, $params );
-  } elsif ( $action =~ m/oracle/i) {
-    $score_hash = $self->run_oracle($tree,$aln,$params);
-  } elsif ($action =~ m/none/i) {
+  } elsif ( $action =~ m/oracle/i ) {
+    $score_hash = $self->run_oracle( $tree, $aln, $params );
+  } elsif ( $action =~ m/none/i ) {
     return;
   } else {
     $self->throw("Alignment score action not recognized: [$action]!");
   }
-
 
   $self->store_scores( $tree, $score_hash, $table );
 }
@@ -90,14 +88,15 @@ sub store_scores {
   my $tree         = shift;
   my $score_hash   = shift;
   my $output_table = shift;
-  
-  #$self->compara_dba->dbc->do("CREATE TABLE IF NOT EXISTS $output_table LIKE protein_tree_member_score");
+
+#$self->compara_dba->dbc->do("CREATE TABLE IF NOT EXISTS $output_table LIKE protein_tree_member_score");
   my $sth = $tree->adaptor->prepare(
     "REPLACE INTO $output_table (node_id,member_id,cigar_line) VALUES (?,?,?)");
   foreach my $leaf ( $tree->leaves ) {
     my $score_string = $score_hash->{ $leaf->stable_id };
 
-    die("No score string found when saving!") unless ( defined $score_string && $score_string ne '');
+    die("No score string found when saving!")
+      unless ( defined $score_string && $score_string ne '' );
     $sth->execute( $leaf->node_id, $leaf->member_id, $score_string );
     printf "%20s %10s %s\n", $leaf->stable_id, $leaf->member_id, $score_string;
     sleep(0.1);
@@ -106,42 +105,42 @@ sub store_scores {
 }
 
 sub run_oracle {
-  my $self = shift;
-  my $tree = shift;
-  my $aln = shift;
+  my $self   = shift;
+  my $tree   = shift;
+  my $aln    = shift;
   my $params = shift;
 
   # Get the true and inferred alignment.
-  my ($sa_true,$cdna_true,$sa_aln,$cdna_aln);
+  my ( $sa_true, $cdna_true, $sa_aln, $cdna_aln );
   my $cur_params = $self->params;
+
   # Important!! Remove the tree from params object so it's re-fetched by ComparaUtils.
   # Annoying, I know...
   delete $cur_params->{tree};
   my $true_aln_params =
     $self->replace_params( $cur_params,
-                           { alignment_table => 'protein_tree_member', alignment_score_filtering => 0 } );
+    { alignment_table => 'protein_tree_member', alignment_score_filtering => 0 } );
   $self->hash_print($true_aln_params);
   print "Getting TRUE alignment...\n";
   ( $tree, $sa_true, $cdna_true ) =
     Bio::EnsEMBL::Compara::ComparaUtils->tree_aln_cdna( $self->compara_dba, $true_aln_params );
-  
+
   $self->hash_print($cur_params);
 
   print "Getting INFERRED alignment...\n";
   ( $tree, $sa_aln, $cdna_aln ) =
     Bio::EnsEMBL::Compara::ComparaUtils->tree_aln_cdna( $self->compara_dba, $cur_params );
 
-#  $sa_true = $sa_true->slice(50,100);
-#  $sa_aln = $sa_aln->slice(50,100);
+  #  $sa_true = $sa_true->slice(50,100);
+  #  $sa_aln = $sa_aln->slice(50,100);
   Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $sa_true, { length => 100 } );
-  Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $sa_aln,  { length => 100} );
+  Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $sa_aln,  { length => 100 } );
 
   $aln = $sa_aln;
 
-  
   # Goal: score each site by the fraction of the tree against which
   #   it is correctly aligned.
-  
+
   # Plan:
   # 1) For each site, calculate the size of the subtree comprised of all
   #    sequences against which it's correctly aligned. Score as the fraction
@@ -150,30 +149,32 @@ sub run_oracle {
   # Set-up:
   # Index the alignments by sequence residue #.
   print "Indexing pairs...\n";
-  my $ALNU = 'Bio::EnsEMBL::Compara::AlignUtils';
+  my $ALNU     = 'Bio::EnsEMBL::Compara::AlignUtils';
   my $true_obj = $ALNU->to_arrayrefs($sa_true);
   my $test_obj = $ALNU->to_arrayrefs($sa_aln);
+
   # Add all aligned pairs to the index hashtable.
-  my $true_pairs = $ALNU->store_pairs($sa_true,$true_obj);
-  my $test_pairs = $ALNU->store_pairs($sa_aln,$test_obj);
+  my $true_pairs = $ALNU->store_pairs( $sa_true, $true_obj );
+  my $test_pairs = $ALNU->store_pairs( $sa_aln,  $test_obj );
   print "Done!\n";
 
-  my @id_list = map {$_->id} $aln->each_seq;
-  
+  my @id_list = map { $_->id } $aln->each_seq;
+
   my $tree_bl_hash = {};
   my $scores_hash;
-  map {$scores_hash->{$_} = ''} @id_list;
-  foreach my $i (1..$aln->length) {
-    my @nongap_ids_at_pos = grep {$test_obj->{$_}->[$i] ne '-'} @id_list;
-    my $total_nongap_bl = $self->get_subtree_bl($tree,\@nongap_ids_at_pos,$tree_bl_hash);
+  map { $scores_hash->{$_} = '' } @id_list;
+  foreach my $i ( 1 .. $aln->length ) {
+    my @nongap_ids_at_pos = grep { $test_obj->{$_}->[$i] ne '-' } @id_list;
+    my $total_nongap_bl = $self->get_subtree_bl( $tree, \@nongap_ids_at_pos, $tree_bl_hash );
 
-    print $ALNU->get_column_string($aln,$i)."\n";
+    print $ALNU->get_column_string( $aln, $i ) . "\n";
     my $column_score_string = '';
     foreach my $this_seq_id (@id_list) {
+
       # Get a list of all other IDs to which this seq-residue is correctly aligned.
       my $this_res_num = $test_obj->{$this_seq_id}->[$i];
 
-      if ($this_res_num eq '-') {
+      if ( $this_res_num eq '-' ) {
         $scores_hash->{$this_seq_id} .= '-';
         $column_score_string .= '-';
         next;
@@ -181,44 +182,48 @@ sub run_oracle {
 
       my @correctly_aligned_ids = ($this_seq_id);
       foreach my $other_seq_id (@id_list) {
-        next if ($this_seq_id eq $other_seq_id);
+        next if ( $this_seq_id eq $other_seq_id );
         my $other_res_num = $test_obj->{$other_seq_id}->[$i];
-#        next if ($other_res_num eq '-');
 
-        my $pair_string = join('_',$this_seq_id,$this_res_num,$other_seq_id,$other_res_num);
-        if ($true_pairs->{$pair_string} == 1) {
+        #        next if ($other_res_num eq '-');
+
+        my $pair_string = join( '_', $this_seq_id, $this_res_num, $other_seq_id, $other_res_num );
+        if ( $true_pairs->{$pair_string} == 1 ) {
+
           #print "$pair_string yes!!\n";
-          push @correctly_aligned_ids,$other_seq_id;
+          push @correctly_aligned_ids, $other_seq_id;
         }
       }
-      my $correct_bl = $self->get_subtree_bl($tree,\@correctly_aligned_ids,$tree_bl_hash);
+      my $correct_bl = $self->get_subtree_bl( $tree, \@correctly_aligned_ids, $tree_bl_hash );
 
-      my $score = $correct_bl/$total_nongap_bl * 10.0;
-      $score = 9 if ($score > 9);
-      $score = 0 if ($score < 0);
-      $score = sprintf("%1d",$score);
+      my $score = $correct_bl / $total_nongap_bl * 10.0;
+      $score = 9 if ( $score > 9 );
+      $score = 0 if ( $score < 0 );
+      $score = sprintf( "%1d", $score );
       $scores_hash->{$this_seq_id} .= $score;
       $column_score_string .= $score;
+
       #printf "%d %-20s:%.3f\n",$i,$this_seq_id,$score;
     }
-    print $column_score_string."\n";
+    print $column_score_string. "\n";
   }
   return $scores_hash;
 }
 
 sub get_subtree_bl {
-  my $self = shift;
-  my $tree = shift;
+  my $self    = shift;
+  my $tree    = shift;
   my $seq_ids = shift;
   my $bl_hash = shift;
 
   my @id_array = @$seq_ids;
-#    @id_array = sort {$a <=> $b} @id_array;
-  my $key = join('_',@id_array);
+
+  #    @id_array = sort {$a <=> $b} @id_array;
+  my $key = join( '_', @id_array );
   my $existing_value = $bl_hash->{$key};
-  return $existing_value if (defined $existing_value);
-    
-  my $subtree = Bio::EnsEMBL::Compara::TreeUtils->extract_subtree_from_leaves($tree,\@id_array);
+  return $existing_value if ( defined $existing_value );
+
+  my $subtree = Bio::EnsEMBL::Compara::TreeUtils->extract_subtree_from_leaves( $tree, \@id_array );
   my $total = Bio::EnsEMBL::Compara::TreeUtils->total_distance($subtree);
   $bl_hash->{$key} = $total;
   return $total;
@@ -277,9 +282,9 @@ sub run_tcoffee {
 
   Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $aln, { length => 200 } );
 
-  my $tmpdir  = $self->worker_temp_directory;
+  my $tmpdir = $self->worker_temp_directory;
 
-#  system("rm -rf ${tmpdir}*.*");
+  #  system("rm -rf ${tmpdir}*.*");
 
   my $filename = "$tmpdir" . "tcoffee_aln.fasta";
   my $tmpfile  = Bio::AlignIO->new(
@@ -290,7 +295,7 @@ sub run_tcoffee {
   $tmpfile->close;
 
   my $tmp = $tmpdir;
-  $tmp = substr($tmp,0,-1);
+  $tmp = substr( $tmp, 0, -1 );
   my $prefix = "export HOME_4_TCOFFEE=\"$tmp\";";
   $prefix = "export DIR_4_TCOFFEE=\"${tmp}\";";
   $prefix .= "export METHODS_4_TCOFFEE=\"${tmp}\";";
@@ -305,8 +310,10 @@ sub run_tcoffee {
 
   my $outfile = $filename . ".score_ascii";
 
-  my $exec = $self->param('t_coffee_executable') || "/homes/greg/src/T-COFFEE_distribution_Version_8.69/bin/binaries/linux/t_coffee";
-  my $cmd = qq^$exec -mode=evaluate -evaluate_mode t_coffee_slow -infile=$filename -outfile=$outfile -output=score_ascii -n_core=1 -multi_core=no^;
+  my $exec = $self->param('t_coffee_executable')
+    || "/homes/greg/src/T-COFFEE_distribution_Version_8.69/bin/binaries/linux/t_coffee";
+  my $cmd =
+    qq^$exec -mode=evaluate -evaluate_mode t_coffee_slow -infile=$filename -outfile=$outfile -output=score_ascii -n_core=1 -multi_core=no^;
   print $cmd. "\n";
   system( $prefix. $cmd );
 
@@ -351,10 +358,11 @@ sub run_tcoffee {
     throw("No score string found!") unless ( defined $string );
 
     $string =~ s/[^\d-]/9/g;
-        # Convert non-digits and non-dashes into 9s. This is necessary because t_coffee leaves some leftover letters.
-        #print $string."\n";
-        #print $leaf->alignment_string."\n";
-        #exit(0);
+
+# Convert non-digits and non-dashes into 9s. This is necessary because t_coffee leaves some leftover letters.
+#print $string."\n";
+#print $leaf->alignment_string."\n";
+#exit(0);
     $score_hash{$id} = $string;
   }
 

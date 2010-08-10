@@ -16,7 +16,8 @@ sub dawg_lambda {
   $params->{tree} = $tree;
   my $aln = $self->get_cdna_aln($params);
 
-  my $lambda = Bio::EnsEMBL::Compara::AlignUtils->dawg_lambda($aln,$tree,{},$self->worker_temp_directory);
+  my $lambda =
+    Bio::EnsEMBL::Compara::AlignUtils->dawg_lambda( $aln, $tree, {}, $self->worker_temp_directory );
 
   return $lambda;
 }
@@ -111,14 +112,14 @@ sub mean_copy_count {
 
 sub duplication_count {
   my $class = shift;
-  my $tree = shift;
+  my $tree  = shift;
 
-  my $dup_sum = 0;
+  my $dup_sum  = 0;
   my $node_sum = 0;
-  foreach my $node ($tree->nodes) {
+  foreach my $node ( $tree->nodes ) {
     my $is_duplication = $node->get_tagvalue("Duplication") || 0;
-    my $is_dubious = $node->get_tagvalue("dubious_dup") || 0;
-    if ($is_duplication && !$is_dubious) {
+    my $is_dubious     = $node->get_tagvalue("dubious_dup") || 0;
+    if ( $is_duplication && !$is_dubious ) {
       $dup_sum++;
     }
     $node_sum++;
@@ -128,14 +129,14 @@ sub duplication_count {
 
 sub duplication_fraction {
   my $class = shift;
-  my $tree = shift;
+  my $tree  = shift;
 
-  my $dup_sum = 0;
+  my $dup_sum  = 0;
   my $node_sum = 0;
-  foreach my $node ($tree->nodes) {
+  foreach my $node ( $tree->nodes ) {
     my $is_duplication = $node->get_tagvalue("Duplication") || 0;
-    my $is_dubious = $node->get_tagvalue("dubious_dup") || 0;
-    if ($is_duplication && !$is_dubious) {
+    my $is_dubious     = $node->get_tagvalue("dubious_dup") || 0;
+    if ( $is_duplication && !$is_dubious ) {
       $dup_sum++;
     }
     $node_sum++;
@@ -145,25 +146,25 @@ sub duplication_fraction {
 
 sub root_node_gene_count {
   my $class = shift;
-  my $tree = shift;
+  my $tree  = shift;
 
   #my $root_node_id = $class->root_node_id($tree);
   my $root_node_id = $class->param('orig_node_id') || $class->root_node_id($tree);
 
-  my $pta = $tree->adaptor;
+  my $pta       = $tree->adaptor;
   my $root_tree = $pta->fetch_node_by_node_id($root_node_id);
-  return scalar($root_tree->leaves);
+  return scalar( $root_tree->leaves );
 }
 
 sub root_node_id {
   my $class = shift;
-  my $tree = shift;
+  my $tree  = shift;
 
   my $root_id = $tree->node_id;
-  my $cmd = qq^SELECT parent.node_id FROM protein_tree_node parent, protein_tree_node child
+  my $cmd     = qq^SELECT parent.node_id FROM protein_tree_node parent, protein_tree_node child
                WHERE child.left_index BETWEEN parent.left_index AND parent.right_index
                AND child.node_id=$root_id^;
-  return $class->mysql_getval($tree,$cmd);
+  return $class->mysql_getval( $tree, $cmd );
 }
 
 sub seq_length_mean {
@@ -182,7 +183,8 @@ sub gc_content_mean {
   my @seqs;
   if ( $tr =~ /ProteinTree/i ) {
     foreach my $leaf ( $tr->leaves ) {
-      my $seq  = $leaf->sequence_cds;
+      my $seq = $leaf->sequence_cds;
+
       #my $seq = $tx->seq->seq;
       push @seqs, $seq;
     }
@@ -217,7 +219,7 @@ sub get_tag_hash {
   my $cmd = qq^SELECT aln_position,tag,value
     FROM $table WHERE ( parameter_set_id=$pset or parameter_set_id=0 ) and node_id=$node_id
     ^;
-  print $cmd."\n";
+  print $cmd. "\n";
   my $tag_hash = {};
 
   my $sth = $dbc->prepare($cmd);
@@ -225,21 +227,21 @@ sub get_tag_hash {
   while ( my $obj = $sth->fetchrow_hashref ) {
     my $aln_position = $obj->{'aln_position'};
 
-    $tag_hash->{$aln_position} = {} if (!defined $tag_hash->{$aln_position});
-    $tag_hash->{$aln_position}->{$obj->{'tag'}} = $obj->{'value'};
+    $tag_hash->{$aln_position} = {} if ( !defined $tag_hash->{$aln_position} );
+    $tag_hash->{$aln_position}->{ $obj->{'tag'} } = $obj->{'value'};
   }
 
   return $tag_hash;
 }
 
 sub get_gene_name {
-  my $class = shift;
-  my $tree = shift;
+  my $class    = shift;
+  my $tree     = shift;
   my $taxon_id = shift;
 
-  foreach my $member ($tree->leaves) {
-    if ($member->taxon_id == $taxon_id) {
-      
+  foreach my $member ( $tree->leaves ) {
+    if ( $member->taxon_id == $taxon_id ) {
+
     }
   }
 }
@@ -249,12 +251,12 @@ sub get_psc_hash {
   my $dbc    = shift;
   my $params = shift;
 
-  my $table   = $params->{'omega_table'};
-  my $pset    = $params->{'parameter_set_id'} || '0';
-  my $data_id = $class->data_id;
-  my $node_id = $class->node_id;
+  my $table                = $params->{'omega_table'};
+  my $pset                 = $params->{'parameter_set_id'} || '0';
+  my $data_id              = $class->data_id;
+  my $node_id              = $class->node_id;
   my $include_crappy_sites = $params->{'get_all_sites'};
-  
+
   my $CLEAN_WHERE = qq^
     AND o.note != 'random' AND o.omega_upper < 99
     ^;
@@ -264,7 +266,7 @@ sub get_psc_hash {
 
   my $cmd;
 
-  if ($params->{filtered} && $params->{genome}) {
+  if ( $params->{filtered} && $params->{genome} ) {
     print "Both!\n";
     my $filter_value = $params->{alignment_filtering_value} || 1;
     print "Filtering value: $filter_value\n";
@@ -278,11 +280,11 @@ WHERE
   o.parameter_set_id=$pset AND o.data_id=$data_id
   AND t.tag="FILTER" AND t.value >= $filter_value
 $CLEAN_WHERE;
-      ^;    
-  } elsif ($params->{filtered} ) {
+      ^;
+  } elsif ( $params->{filtered} ) {
     print "Filtered!\n";
     my $filter_value = $params->{alignment_filtering_value} || 1;
- 
+
     # Filter on alignment columns that pass Pollard et al's filtering criteria.
     $cmd = qq^SELECT * from $table o, sitewise_tag t  WHERE
       o.parameter_set_id=$pset AND 
@@ -291,58 +293,60 @@ $CLEAN_WHERE;
       AND o.aln_position=t.aln_position
       AND t.tag="FILTER" AND t.value >= $filter_value $CLEAN_WHERE;
       ^;
-} elsif ($params->{genome}) {
+  } elsif ( $params->{genome} ) {
     print "Genome!\n";
     $cmd = qq^SELECT * from $table o, sitewise_genome g WHERE o.parameter_set_id=$pset AND 
       (o.data_id=$data_id)
       AND g.node_id=$node_id
       AND o.aln_position=g.aln_position $CLEAN_WHERE^;
-} else {
-  $cmd     = qq^SELECT aln_position,omega,omega_lower,omega_upper,lrt_stat,ncod,type,note 
+  } else {
+    $cmd = qq^SELECT aln_position,omega,omega_lower,omega_upper,lrt_stat,ncod,type,note 
     FROM $table o WHERE parameter_set_id=$pset and (data_id=$data_id) $CLEAN_WHERE
     ^;
-}
+  }
 
-  print $cmd."\n";
+  print $cmd. "\n";
 
   my $sth = $dbc->prepare($cmd);
   $sth->execute;
   my $id_field = 'aln_position';
-  my $obj = $sth->fetchall_hashref($id_field);
+  my $obj      = $sth->fetchall_hashref($id_field);
   $sth->finish;
 
-  printf "SITE COUNT: %d\n", scalar(keys(%$obj));
+  printf "SITE COUNT: %d\n", scalar( keys(%$obj) );
   return $obj;
 }
 
 sub combined_pval {
-  my $class = shift;
+  my $class    = shift;
   my $psc_hash = shift;
-  my $method = shift || 'stouffer';
+  my $method   = shift || 'stouffer';
 
   my @obj_array = map { $psc_hash->{$_} } keys %$psc_hash;
-  return undef if (scalar @obj_array == 0);
+  return undef if ( scalar @obj_array == 0 );
 
   my $first_obj = $obj_array[0];
-  my @keys = sort keys %$first_obj;
+  my @keys      = sort keys %$first_obj;
 
-  my $header = join("\t",@keys);
+  my $header = join( "\t", @keys );
   my $body;
   foreach my $obj (@obj_array) {
-    my $line = join("\t",map {$obj->{$_}} @keys);
-    $body .= $line."\n";
+    my $line = join( "\t", map { $obj->{$_} } @keys );
+    $body .= $line . "\n";
   }
 
-  my $temp_f = $class->worker_temp_directory."/temp.txt";
-  open(OUT,">$temp_f");
-  print OUT $header."\n";
-#  print $header."\n";
-  print OUT $body."\n";
-#  print $body."\n";
+  my $temp_f = $class->worker_temp_directory . "/temp.txt";
+  open( OUT, ">$temp_f" );
+  print OUT $header . "\n";
+
+  #  print $header."\n";
+  print OUT $body . "\n";
+
+  #  print $body."\n";
   close(OUT);
 
-  my $combine_p = Bio::Greg::EslrUtils->baseDirectory."/scripts/combine.p.R";
-  my $rcmd = qq^
+  my $combine_p = Bio::Greg::EslrUtils->baseDirectory . "/scripts/combine.p.R";
+  my $rcmd      = qq^
 sites = read.table(file="$temp_f",sep="\t",header=T)
 source("$combine_p")
 #print(sites)
@@ -359,23 +363,26 @@ if (nrow(pos.sites) > 0) {
 }
 print(p.value)
 ^;
-  my @values = Bio::Greg::EslrUtils->get_r_values($rcmd,$class->worker_temp_directory);
+  my @values = Bio::Greg::EslrUtils->get_r_values( $rcmd, $class->worker_temp_directory );
   print " combined p-val ($method): [@values]\n";
   my $pval = $values[0];
-  $pval = undef if ($pval eq 'NULL');
+  $pval = undef if ( $pval eq 'NULL' );
   return $pval;
 }
 
 sub max_lrt {
-  my $class             = shift;
-  my $psc_hash          = shift;
+  my $class    = shift;
+  my $psc_hash = shift;
 
   my @obj_array = map { $psc_hash->{$_} } keys %$psc_hash;
-  my @signed_lrt = map { if ($_->{omega} > 0) {$_->{lrt_stat}} else {-$_->{lrt_stat}}} @obj_array;
-  
+  my @signed_lrt = map {
+    if   ( $_->{omega} > 0 ) { $_->{lrt_stat} }
+    else                     { -$_->{lrt_stat} }
+  } @obj_array;
+
   my $max_lrt_stat = -10000;
   foreach my $lrt (@signed_lrt) {
-    $max_lrt_stat = $lrt if ($lrt > $max_lrt_stat);
+    $max_lrt_stat = $lrt if ( $lrt > $max_lrt_stat );
   }
 
   # Correct by the number of viable sites.
@@ -385,28 +392,28 @@ sub max_lrt {
 }
 
 sub psc_count {
-  my $class             = shift;
-  my $psc_hash          = shift;
-  my $include_psc_num   = shift;
+  my $class           = shift;
+  my $psc_hash        = shift;
+  my $include_psc_num = shift;
 
   my @obj_array = map { $psc_hash->{$_} } keys %$psc_hash;
   my @psc_objs;
 
-  if ($include_psc_num == 1) {
+  if ( $include_psc_num == 1 ) {
     @psc_objs = grep { $_->{type} =~ /positive[1234]/ } @obj_array;
-  } elsif ($include_psc_num == 2) {
+  } elsif ( $include_psc_num == 2 ) {
     @psc_objs = grep { $_->{type} =~ /positive[234]/ } @obj_array;
-  } elsif ($include_psc_num == 3) {
+  } elsif ( $include_psc_num == 3 ) {
     @psc_objs = grep { $_->{type} =~ /positive[34]/ } @obj_array;
-  } elsif ($include_psc_num == 4) {
+  } elsif ( $include_psc_num == 4 ) {
     @psc_objs = grep { $_->{type} =~ /positive[4]/ } @obj_array;
-  } elsif ($include_psc_num == -1) {
+  } elsif ( $include_psc_num == -1 ) {
     @psc_objs = grep { $_->{type} =~ /negative[1234]/ } @obj_array;
-  } elsif ($include_psc_num == -2) {
+  } elsif ( $include_psc_num == -2 ) {
     @psc_objs = grep { $_->{type} =~ /negative[234]/ } @obj_array;
-  } elsif ($include_psc_num == -3) {
+  } elsif ( $include_psc_num == -3 ) {
     @psc_objs = grep { $_->{type} =~ /negative[34]/ } @obj_array;
-  } elsif ($include_psc_num == -4) {
+  } elsif ( $include_psc_num == -4 ) {
     @psc_objs = grep { $_->{type} =~ /negative[4]/ } @obj_array;
   }
 
@@ -414,8 +421,8 @@ sub psc_count {
 }
 
 sub sitewise_count {
-  my $class             = shift;
-  my $psc_hash          = shift;
+  my $class    = shift;
+  my $psc_hash = shift;
 
   my @obj_array = map { $psc_hash->{$_} } keys %$psc_hash;
   return scalar(@obj_array);
@@ -427,11 +434,11 @@ sub omega_median {
 
   my @obj_array = map { $hash->{$_} } keys %$hash;
 
-  my @omega_values = map {$_->{omega}} @obj_array;
-  
-  @omega_values = sort {$a <=> $b} @omega_values;
+  my @omega_values = map { $_->{omega} } @obj_array;
 
-  my $median = $omega_values[scalar(@omega_values)/2];
+  @omega_values = sort { $a <=> $b } @omega_values;
+
+  my $median = $omega_values[ scalar(@omega_values) / 2 ];
 
   return 'NA' if ( scalar @obj_array == 0 );
   return sprintf "%.3f", $median;

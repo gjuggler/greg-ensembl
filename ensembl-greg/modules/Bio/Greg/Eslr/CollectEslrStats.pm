@@ -27,14 +27,14 @@ my $results;
 
 my $gene_stats_def = {
   parameter_set_name => 'string',
-  
+
   tree_length      => 'float',
   tree_max_path    => 'float',
   tree_mean_path   => 'float',
   tree_max_branch  => 'float',
   tree_mean_branch => 'float',
   leaf_count       => 'int',
-  tree_newick => 'string',
+  tree_newick      => 'string',
 
   column_entropy_mean => 'float',
   seq_length_mean     => 'float',
@@ -246,10 +246,10 @@ sub get_gene_data {
   }
 
   my $ps = $cur_params->{'parameter_set_id'};
-  $cur_params->{'omega_m0'} = $cur_params->{ 'slr_omega_' . $ps };
-  $cur_params->{'kappa'}    = $cur_params->{ 'slr_kappa_' . $ps };
-  $cur_params->{'slr_lnl'}  = $cur_params->{ 'slr_lnL_' . $ps };
-  $cur_params->{'hyphy_omega'} = $cur_params->{ 'hyphy_omega_' . $ps };
+  $cur_params->{'omega_m0'}       = $cur_params->{ 'slr_omega_' . $ps };
+  $cur_params->{'kappa'}          = $cur_params->{ 'slr_kappa_' . $ps };
+  $cur_params->{'slr_lnl'}        = $cur_params->{ 'slr_lnL_' . $ps };
+  $cur_params->{'hyphy_omega'}    = $cur_params->{ 'hyphy_omega_' . $ps };
   $cur_params->{'hyphy_omega_lo'} = $cur_params->{ 'hyphy_omega_lo_' . $ps };
   $cur_params->{'hyphy_omega_hi'} = $cur_params->{ 'hyphy_omega_hi_' . $ps };
 

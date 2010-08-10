@@ -16,9 +16,7 @@ sub fetch_input {
   my $self = shift;
 
   ### DEFAULT PARAMETERS ###
-  my $params = {
-    get_chimp_quals => 0
-  };
+  my $params = { get_chimp_quals => 0 };
 
   $self->load_all_params($params);
 }
@@ -30,7 +28,7 @@ sub run {
 
   my $tree = $self->get_tree;
   my $seq_id_quals_hash;
-  
+
   foreach my $leaf ( $tree->leaves ) {
     my $member = $leaf;
     print $member->stable_id . "\n";
@@ -38,13 +36,12 @@ sub run {
     #next unless ($member->taxon_id == 9598);
     #    next unless ($member->stable_id =~ m/(pvap|stop)/ig);
 
-
 # This is finicky: we need to call the "db_adaptor" method to get the Bio::EnsEMBL::DBSQL::DBAdaptor object, and then the meta container.
     my $gdb = $member->genome_db;
-    next unless (defined $gdb->db_adaptor);
+    next unless ( defined $gdb->db_adaptor );
 
-    # Right now we've got not quick way to get chimp quality scores... skip unless specifically told to get them.
-    next if ($member->taxon_id == 9598 && $self->param('get_chimp_quals') != 1);
+# Right now we've got not quick way to get chimp quality scores... skip unless specifically told to get them.
+    next if ( $member->taxon_id == 9598 && $self->param('get_chimp_quals') != 1 );
 
     my $meta     = $gdb->db_adaptor->get_MetaContainer;
     my $coverage = @{ $meta->list_value_by_key('assembly.coverage_depth') }[0];
@@ -74,7 +71,7 @@ sub run {
   }
   $self->{'end_time'} = time() * 1000;
 
-  $self->param('seq_id_quals_hash',$seq_id_quals_hash);
+  $self->param( 'seq_id_quals_hash', $seq_id_quals_hash );
 }
 
 sub write_output {

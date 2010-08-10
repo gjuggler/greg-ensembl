@@ -42,7 +42,6 @@
 
 =cut
 
-
 package Treefam::Tree;
 
 use strict;
@@ -65,208 +64,212 @@ use Compress::Zlib;
 
 sub new {
 
-  my ($class,$dbc,$familyID,$type,$tree) = @_;
+  my ( $class, $dbc, $familyID, $type, $tree ) = @_;
 
   my $self = {};
-  if (!$tree && $familyID) {
+  if ( !$tree && $familyID ) {
+
     # get tree from database
     my $dbh = $dbc->{'database_handle'};
-    if ($dbc->get_Database eq 'treefam_3') { # using Treefam_3
+    if ( $dbc->get_Database eq 'treefam_3' ) {    # using Treefam_3
       my $query = qq( SELECT tree FROM trees WHERE AC= ? AND type= ?);
-      my $sth= $dbh->prepare ($query);
-      $sth->execute($familyID,$type);
+      my $sth   = $dbh->prepare($query);
+      $sth->execute( $familyID, $type );
       ($tree) = $sth->fetchrow_array();
-    }
-    else { # assume Treefam_4 or newer
+    } else {                                      # assume Treefam_4 or newer
       my $sth = $dbh->prepare(qq(SELECT f.tree_id FROM tff_fam f WHERE f.ac=? AND f.tree_type=?));
-      $sth->execute($familyID, $type);
+      $sth->execute( $familyID, $type );
       my ($tree_id) = $sth->fetchrow_array;
-      $sth = $dbh->prepare(qq(SELECT t.node_id, t.parent_id, t.branch_len FROM tff_topology t WHERE t.tree_id=?));
-      my $sth2 = $dbh->prepare(qq(SELECT n.node_key, n.node_val FROM tff_node_info n WHERE n.tree_id=? AND n.node_id=?));
+      $sth = $dbh->prepare(
+        qq(SELECT t.node_id, t.parent_id, t.branch_len FROM tff_topology t WHERE t.tree_id=?));
+      my $sth2 = $dbh->prepare(
+        qq(SELECT n.node_key, n.node_val FROM tff_node_info n WHERE n.tree_id=? AND n.node_id=?));
       my $str = '';
-      my ($node_id, $parent_id, $branch_len);
+      my ( $node_id, $parent_id, $branch_len );
       $sth->execute($tree_id);
-      while ((($node_id, $parent_id, $branch_len) = $sth->fetchrow_array)) {
-	my ($siid, $key, $val);
-	my $s = '';
-	$sth2->execute($tree_id, $node_id);
-	while ((($key, $val) = $sth2->fetchrow_array)) {
-	  $s .= "$key=$val\t";
-	  if ($key eq 'O') { # add gene name
-	    my $gh = $dbc->get_GeneHandle;
-	    my $gene = $gh->get_by_sequence_id($val);
-	    if ($gene) {
-	      my $t = $gene->ID;
-	      $s .= "G=$t" if ($t);
-	    }
-	    else {
-	      warn "ERROR: Can't find gene $val (AC: $familyID)\n";
-	    }
-	  }
-	}
-	chop($s); # chop trailing "\t"
-	$str .= "$node_id\t$parent_id\t$branch_len\t$s\n";
+
+      while ( ( ( $node_id, $parent_id, $branch_len ) = $sth->fetchrow_array ) ) {
+        my ( $siid, $key, $val );
+        my $s = '';
+        $sth2->execute( $tree_id, $node_id );
+        while ( ( ( $key, $val ) = $sth2->fetchrow_array ) ) {
+          $s .= "$key=$val\t";
+          if ( $key eq 'O' ) {    # add gene name
+            my $gh   = $dbc->get_GeneHandle;
+            my $gene = $gh->get_by_sequence_id($val);
+            if ($gene) {
+              my $t = $gene->ID;
+              $s .= "G=$t" if ($t);
+            } else {
+              warn "ERROR: Can't find gene $val (AC: $familyID)\n";
+            }
+          }
+        }
+        chop($s);                 # chop trailing "\t"
+        $str .= "$node_id\t$parent_id\t$branch_len\t$s\n";
       }
     }
   }
 
   $self->{'DBConnection'} = $dbc;
-  weaken($self->{'DBConnection'});
+  weaken( $self->{'DBConnection'} );
 
-  $self->{'ID'} = $familyID if $familyID;
-  $self->{'type'} = $type if $type;
-  %{$self->{_valid_tags}} = (O=>1, Sd=>1, B=>1, S=>1, G=>1, E=>1, D=>1, Com=>1);
+  $self->{'ID'}   = $familyID if $familyID;
+  $self->{'type'} = $type     if $type;
+  %{ $self->{_valid_tags} } = ( O => 1, Sd => 1, B => 1, S => 1, G => 1, E => 1, D => 1, Com => 1 );
+
   # parse tree (using Li Heng's code)
   if ($tree) {
     $self->{_error} = 0;
-    @{$self->{_nodes}} = ();
-    my ($array, @stack);
-    $array = \@{$self->{_nodes}};
+    @{ $self->{_nodes} } = ();
+    my ( $array, @stack );
+    $array = \@{ $self->{_nodes} };
     my $str = $tree;
 
-    if ($tree=~/^\(/) { # assume nhx format
+    if ( $tree =~ /^\(/ ) {    # assume nhx format
       $self->{'nhx'} = $tree;
+
       # parse nhx format
       my $pos;
-      $_ = (($pos = index($str, ';')) >= 0)? substr($str, 0, $pos) : $str;
+      $_ = ( ( $pos = index( $str, ';' ) ) >= 0 ) ? substr( $str, 0, $pos ) : $str;
       s/\s//g;
-      while ($_=~/(\(|((\)?[^,;:\[\]\(\)]+|\))(:[\d.eE\-]+)?(\[&&NHX[^\[\]]*\])?))/g) {
-	my $st = &_parse_nhx($self,$array,\@stack,$1,$3,$4,$5);
+      while ( $_ =~ /(\(|((\)?[^,;:\[\]\(\)]+|\))(:[\d.eE\-]+)?(\[&&NHX[^\[\]]*\])?))/g ) {
+        my $st = &_parse_nhx( $self, $array, \@stack, $1, $3, $4, $5 );
       }
-      if (@stack != 1) {
-	my $count = @stack;
-	my $msg = qq(ERROR: unmatched "\(" \($count\) );
-	warn($msg);
-	$self->{_error} = 1;
-	@stack = ();
+      if ( @stack != 1 ) {
+        my $count = @stack;
+        my $msg   = qq(ERROR: unmatched "\(" \($count\) );
+        warn($msg);
+        $self->{_error} = 1;
+        @stack = ();
       }
-      if ($self->{_error} == 0) {
-	$self->{_root} = shift(@stack);
-	weaken($self->{_root});
+      if ( $self->{_error} == 0 ) {
+        $self->{_root} = shift(@stack);
+        weaken( $self->{_root} );
+      } else {
+        @{ $self->{_nodes} } = ();
+        delete( $self->{_root} );
       }
-      else {
-	@{$self->{_nodes}} = ();
-	delete($self->{_root});
+      if ( $self->{_root} ) {
+        my $j = 0;
+        foreach my $p ( @{ $self->{_nodes} } ) {
+          ++$j unless ( $p->{C} );
+        }
+        $self->{_n_leaf} = $j;
       }
-      if ($self->{_root}) {
-	my $j = 0;
-	foreach my $p (@{$self->{_nodes}}) {
-	  ++$j unless ($p->{C});
-	}
-	$self->{_n_leaf} = $j;
-      }
-    }
-    elsif ($tree=~/\t/) { # assume TFF format
+    } elsif ( $tree =~ /\t/ ) {    # assume TFF format
       $self->{'tff'} = $tree;
+
       # parse TFF format
-      my (@data, %conv, @node, $root_index);
+      my ( @data, %conv, @node, $root_index );
       my $i = 0;
-      $self->DESTROY if ($self->{_root});
-      @{$data[$i++]} = split("\t") foreach (split("\n", $str));
+      $self->DESTROY if ( $self->{_root} );
+      @{ $data[ $i++ ] } = split("\t") foreach ( split( "\n", $str ) );
       $i = 0;
-      foreach my $p (sort {$a->[0]<=>$b->[0]} @data) { # initialization
-	my %hash;
-	push(@node, \%hash);
-	$conv{$p->[0]} = $i++;
-	$root_index = $p->[0] if (!$root_index && $p->[0] == $p->[1]);
+      foreach my $p ( sort { $a->[0] <=> $b->[0] } @data ) {    # initialization
+        my %hash;
+        push( @node, \%hash );
+        $conv{ $p->[0] } = $i++;
+        $root_index = $p->[0] if ( !$root_index && $p->[0] == $p->[1] );
       }
-      if (!$root_index) {
-	warn('ERROR: $type tree (AC: $familyID) has no root');
-	$self->{_error} = 1;
-	return;
+      if ( !$root_index ) {
+        warn('ERROR: $type tree (AC: $familyID) has no root');
+        $self->{_error} = 1;
+        return;
       }
       $root_index = $conv{$root_index};
       foreach my $p (@data) {
-	my ($chi, $par) = ($conv{$p->[0]}, $conv{$p->[1]});
-	my $q = \%{$node[$chi]};
-	$q->{P} = $node[$par];
-	push(@{$node[$par]->{C}}, $q) if ($chi != $par);
-	$q->{dist} = $p->[2];
-	foreach (my $i = 3; $i < @$p; ++$i) {
-	  $q->{$1} = $2 if ($p->[$i] =~ /^\s*([A-Za-z][A-Za-z0-9]*)\s*=\s*([^\n\t]+)\s*$/);
-	}
+        my ( $chi, $par ) = ( $conv{ $p->[0] }, $conv{ $p->[1] } );
+        my $q = \%{ $node[$chi] };
+        $q->{P} = $node[$par];
+        push( @{ $node[$par]->{C} }, $q ) if ( $chi != $par );
+        $q->{dist} = $p->[2];
+        foreach ( my $i = 3 ; $i < @$p ; ++$i ) {
+          $q->{$1} = $2 if ( $p->[$i] =~ /^\s*([A-Za-z][A-Za-z0-9]*)\s*=\s*([^\n\t]+)\s*$/ );
+        }
       }
       $self->{_root} = $node[$root_index];
-      weaken($self->{_root});
+      weaken( $self->{_root} );
       my @stack;
-      my $k = 0;
-      my $array = \@{$self->{_nodes}};
-      my $p = \%{$stack[0]};
+      my $k     = 0;
+      my $array = \@{ $self->{_nodes} };
+      my $p     = \%{ $stack[0] };
       @$array = ();
       $p->{P} = $self->{_root};
       $p->{i} = 0;
-      for (;;) {
-	while ($p->{P}{C} && $p->{i} != @{$p->{P}{C}}) {
-	  $stack[++$k]{i} = 0;
-	  $stack[$k]{P} = $p->{P}{C}[$p->{i}];
-	  $p = \%{$stack[$k]};
-	}
-	push(@$array, $p->{P});
-	$p = \%{$stack[--$k]};
-	if ($k >= 0) { ++$p->{i}; }
-	else { last; }
+
+      for ( ; ; ) {
+        while ( $p->{P}{C} && $p->{i} != @{ $p->{P}{C} } ) {
+          $stack[ ++$k ]{i} = 0;
+          $stack[$k]{P}     = $p->{P}{C}[ $p->{i} ];
+          $p                = \%{ $stack[$k] };
+        }
+        push( @$array, $p->{P} );
+        $p = \%{ $stack[ --$k ] };
+        if   ( $k >= 0 ) { ++$p->{i}; }
+        else             { last; }
       }
       $i = 0;
-      for my $p (@{$self->{_nodes}}) {
-	if (!$p->{N} && !$p->{C}) {
-	  $p->{N} = $i;
-	  warn("ERROR: leaf has no name ($type tree (AC: $familyID))\n");
-	}
-	++$i;
+      for my $p ( @{ $self->{_nodes} } ) {
+        if ( !$p->{N} && !$p->{C} ) {
+          $p->{N} = $i;
+          warn("ERROR: leaf has no name ($type tree (AC: $familyID))\n");
+        }
+        ++$i;
       }
-    }
-    else {
+    } else {
       croak "ERROR: unrecognized format for $type tree (AC: $familyID)";
     }
+
     # make all nodes Treefam::Node objects
-    foreach my $n (@{$self->{_nodes}}) {
-      $n = Treefam::Node->new($dbc,$n);
+    foreach my $n ( @{ $self->{_nodes} } ) {
+      $n = Treefam::Node->new( $dbc, $n );
     }
   }
 
-  bless ($self, $class);
+  bless( $self, $class );
 
   return $self;
 
 }
 
 sub _parse_nhx {
+
   # code from li Heng
-  my ($self, $array, $stack, $str, $name, $dist, $nhx) = @_;
-  if ($str eq '(') {
-    push(@$stack, $str);
-  }
-  elsif ($name) {
+  my ( $self, $array, $stack, $str, $name, $dist, $nhx ) = @_;
+  if ( $str eq '(' ) {
+    push( @$stack, $str );
+  } elsif ($name) {
     my %hash;
-    if ($name =~ /^\)/) {
-      my (@s, $t);
-      while (($t = pop(@$stack))) {
-	last if (ref($t) ne 'HASH');
-	push(@s, $t);
+    if ( $name =~ /^\)/ ) {
+      my ( @s, $t );
+      while ( ( $t = pop(@$stack) ) ) {
+        last if ( ref($t) ne 'HASH' );
+        push( @s, $t );
       }
-      unless (defined($t)) {
-	warn('ERROR: unmatched ")"');
-	$self->{_error} = 1;
-	return;
+      unless ( defined($t) ) {
+        warn('ERROR: unmatched ")"');
+        $self->{_error} = 1;
+        return;
       }
       foreach (@s) {
-	push(@{$hash{C}}, $_);
-	$_->{P} = \%hash;
-	weaken($_->{P});
+        push( @{ $hash{C} }, $_ );
+        $_->{P} = \%hash;
+        weaken( $_->{P} );
       }
-      $hash{N} = substr($name, 1) if (length($name) > 1);
-    }
-    else {
+      $hash{N} = substr( $name, 1 ) if ( length($name) > 1 );
+    } else {
       $hash{N} = $name;
     }
-    $hash{dist} = substr($dist, 1) if ($dist);
-    while ($nhx && $nhx=~/(:([^\s=:]+)=([^:=\[\]]+))/g) {
-      $hash{$2}=$3;
-      $nhx =~s/$1//;
+    $hash{dist} = substr( $dist, 1 ) if ($dist);
+    while ( $nhx && $nhx =~ /(:([^\s=:]+)=([^:=\[\]]+))/g ) {
+      $hash{$2} = $3;
+      $nhx =~ s/$1//;
     }
- #   $nhx =~ s/:([^\s=:]+)=([^:=\[\]]+)/$hash{$1}=$2,''/eg if ($nhx);
-    push(@$stack, \%hash);
-    push(@$array, \%hash);
+
+    #   $nhx =~ s/:([^\s=:]+)=([^:=\[\]]+)/$hash{$1}=$2,''/eg if ($nhx);
+    push( @$stack, \%hash );
+    push( @$array, \%hash );
   }
   return $str;
 }
@@ -316,33 +319,32 @@ sub tff {
   my $self = shift;
   if (@_) {
     $self->{'tff'} = shift;
-  }
-  else {
+  } else {
+
     # do this each time because tree may have been modified
     # between 2 calls to this function.
     # code from Li Heng
-    my ($k, $str, $s) = (0, '', '');
+    my ( $k, $str, $s ) = ( 0, '', '' );
+
     # calculate _index and _lindex
-    foreach my $p (@{$self->{_nodes}}) {
-      $p->{_lindex} = ($p->{C})? $p->{C}[0]->{_lindex} : $k;
+    foreach my $p ( @{ $self->{_nodes} } ) {
+      $p->{_lindex} = ( $p->{C} ) ? $p->{C}[0]->{_lindex} : $k;
       $p->{_index} = $k++;
     }
-    foreach my $p (@{$self->{_nodes}}) {
+    foreach my $p ( @{ $self->{_nodes} } ) {
       $s = '';
-      foreach my $q (sort keys %$p) {
-	next if (ref($p->{$q}) || $q eq 'internalID' || $q eq 'dist');
-	$s .= "\t$q=".$p->{$q} if ($q !~ /^_/);
+      foreach my $q ( sort keys %$p ) {
+        next if ( ref( $p->{$q} ) || $q eq 'internalID' || $q eq 'dist' );
+        $s .= "\t$q=" . $p->{$q} if ( $q !~ /^_/ );
       }
-      $str .= "$p->{_index}\t" . ($p == $self->root ? $p->{_index} : $p->{P}->{_index});
-      $str .= "\t" . (defined($p->{dist}) ? $p->{dist} : 0) . "$s\n";
+      $str .= "$p->{_index}\t" . ( $p == $self->root     ? $p->{_index} : $p->{P}->{_index} );
+      $str .= "\t" .             ( defined( $p->{dist} ) ? $p->{dist}   : 0 ) . "$s\n";
     }
     $self->{'tff'} = $str;
   }
 
   return $self->{'tff'};
 }
-
-
 
 =head2 nhx
 
@@ -357,11 +359,11 @@ sub nhx {
   my $self = shift;
   if (@_) {
     $self->{'nhx'} = shift;
-  }
-  else {
+  } else {
+
     # do this each time because tree may have been modified
     # between 2 calls to this function.
-    $self->{'nhx'} = $self->_string_nhx($self->root). ";\n";
+    $self->{'nhx'} = $self->_string_nhx( $self->root ) . ";\n";
   }
 
   return $self->{'nhx'};
@@ -369,31 +371,33 @@ sub nhx {
 }
 
 sub _string_nhx {
+
   # code from Li Heng
-  my ($self, $root) = @_;
+  my ( $self, $root ) = @_;
   my $str;
-  if ($root->{C}) {
+  if ( $root->{C} ) {
     $str = '(';
-    for my $p (reverse @{$root->{C}}) {
+    for my $p ( reverse @{ $root->{C} } ) {
       $str .= $self->_string_nhx($p) . ",\n";
     }
-    chop($str); chop($str);	# chop the trailing ",\n"
+    chop($str);
+    chop($str);    # chop the trailing ",\n"
     $str .= "\n)";
-    $str .= $root->{N} if ($root->{N}); # node name
-    $str .= ":" . $root->{dist} if ($root->{dist}); # length
-    # nhx output
+    $str .= $root->{N} if ( $root->{N} );                # node name
+    $str .= ":" . $root->{dist} if ( $root->{dist} );    # length
+                                                         # nhx output
     $str .= '[&&NHX';
-    foreach my $p (keys %{$self->{_valid_tags}}) {
-      $str .= ":$p=" . $root->{$p} if ($root->{$p});
+
+    foreach my $p ( keys %{ $self->{_valid_tags} } ) {
+      $str .= ":$p=" . $root->{$p} if ( $root->{$p} );
     }
     $str .= ']';
-  }
-  else {			# leaf
+  } else {                                               # leaf
     $str = $root->{N};
-    $str .= ":" . $root->{dist} if ($root->{dist});
+    $str .= ":" . $root->{dist} if ( $root->{dist} );
     $str .= '[&&NHX';
-    foreach my $p (keys %{$self->{_valid_tags}}) {
-      $str .= ":$p=" . $root->{$p} if ($root->{$p});
+    foreach my $p ( keys %{ $self->{_valid_tags} } ) {
+      $str .= ":$p=" . $root->{$p} if ( $root->{$p} );
     }
     $str .= ']';
   }
@@ -412,7 +416,7 @@ sub get_all_nodes {
 
   my $self = shift;
 
-  return @{$self->{_nodes}};
+  return @{ $self->{_nodes} };
 
 }
 
@@ -426,19 +430,18 @@ sub get_all_nodes {
 
 sub get_last_common_ancestor {
 
-  my $self = shift;
+  my $self  = shift;
   my @input = @_ if @_;
-  my $dbc = $self->{'DBConnection'};
+  my $dbc   = $self->{'DBConnection'};
   my @nodes;
-  foreach my $i(@input) {
-    if (ref($i)=~/Gene/) {
+  foreach my $i (@input) {
+    if ( ref($i) =~ /Gene/ ) {
       my $geneID = $i->ID;
-      my ($node) = $self->get_nodes_by_tag_value(-G=>$geneID);
-      croak "Gene $geneID not found in tree (AC: ",$self->ID,")" unless $node;
-      push @nodes,$node if ($node);
-    }
-    else {
-      push @nodes,$i;
+      my ($node) = $self->get_nodes_by_tag_value( -G => $geneID );
+      croak "Gene $geneID not found in tree (AC: ", $self->ID, ")" unless $node;
+      push @nodes, $node if ($node);
+    } else {
+      push @nodes, $i;
     }
   }
   croak "ERROR: Treefam::Node objects required" unless (@nodes);
@@ -447,14 +450,14 @@ sub get_last_common_ancestor {
   my %seen_parent;
   my $parent = $nodes[0];
 
-  while ($parent){
-    $seen_parent{$parent->internalID} = $parent;
+  while ($parent) {
+    $seen_parent{ $parent->internalID } = $parent;
     $parent = $parent->parent;
   }
   $parent = $nodes[1];
-  while ( $parent ){
-    if ( $seen_parent{$parent->internalID} ){
-      return $seen_parent{$parent->internalID};
+  while ($parent) {
+    if ( $seen_parent{ $parent->internalID } ) {
+      return $seen_parent{ $parent->internalID };
     }
     $parent = $parent->parent;
   }
@@ -474,8 +477,8 @@ sub root {
 
   my $self = shift;
   if (@_) {
-    $self->{_root}  = shift;
-    weaken($self->{_root});
+    $self->{_root} = shift;
+    weaken( $self->{_root} );
   }
 
   return $self->{_root};
@@ -493,7 +496,7 @@ sub get_leaves {
   my $self = shift;
 
   # Leaves are nodes with no children
-  return grep { !$_->{C} } @{$self->{_nodes}};
+  return grep { !$_->{C} } @{ $self->{_nodes} };
 }
 
 =head2 get_node_by_id
@@ -507,9 +510,9 @@ sub get_leaves {
 sub get_node_by_id {
 
   my $self = shift;
-  my $id = shift;
+  my $id   = shift;
 
-  my ($node) = grep { defined($_->id) && $_->id eq $id } @{$self->{_nodes}};
+  my ($node) = grep { defined( $_->id ) && $_->id eq $id } @{ $self->{_nodes} };
 
   return $node;
 }
@@ -525,18 +528,21 @@ sub get_node_by_id {
 
 sub get_nodes_by_tag_value {
 
-  my ($self,$tag,$value) = @_;
-  $tag=~s/^-//;
+  my ( $self, $tag, $value ) = @_;
+  $tag =~ s/^-//;
   my @all_nodes = $self->get_all_nodes;
   my @found_nodes;
-  foreach my $node(@all_nodes) {
+  foreach my $node (@all_nodes) {
     my @tags = $node->get_all_tags();
-    foreach my $t(@tags) {
-      next unless ($t eq $tag);
+    foreach my $t (@tags) {
+      next unless ( $t eq $tag );
       my $v = $node->get_tag_value($t);
+
       # look for exact matches but also allow for things like 'B>=70'
-      next unless ( lc($v) eq lc($value) || ($tag eq 'B' && $t eq 'B' && $value=~/\D/ && eval("$v$value")));
-      push @found_nodes,$node;
+      next
+        unless ( lc($v) eq lc($value)
+        || ( $tag eq 'B' && $t eq 'B' && $value =~ /\D/ && eval("$v$value") ) );
+      push @found_nodes, $node;
       last;
     }
   }
@@ -556,9 +562,9 @@ sub get_genes {
 
   my $self = shift;
   my @genes;
-  foreach my $leaf($self->get_leaves) {
+  foreach my $leaf ( $self->get_leaves ) {
     my $gene = $leaf->gene;
-    $gene->family($self->family);
+    $gene->family( $self->family );
     push @genes, $gene if $gene;
   }
   return @genes;
@@ -576,24 +582,23 @@ sub get_leaf_by_gene {
 
   my $self = shift;
   my $gene = shift;
-  if (!$gene || ref($gene) ne 'Treefam::Gene') {
+  if ( !$gene || ref($gene) ne 'Treefam::Gene' ) {
     croak "Treefam::Gene required";
   }
   my @leaves = $self->get_leaves;
-  foreach my $leaf(@leaves) {
+  foreach my $leaf (@leaves) {
     my @tags = $leaf->get_all_tags();
-    foreach my $t(@tags) {
-      next unless ($t eq 'G' || $t eq 'O');
+    foreach my $t (@tags) {
+      next unless ( $t eq 'G' || $t eq 'O' );
       my $v = $leaf->get_tag_value($t);
-      if ($v eq $gene->ID || $v eq $gene->sequence_id) {
-	return $leaf;
+      if ( $v eq $gene->ID || $v eq $gene->sequence_id ) {
+        return $leaf;
       }
     }
   }
 
   return undef;
 }
-
 
 =head2 score
 
@@ -623,25 +628,25 @@ sub score {
 
 sub get_distance {
 
-  my ($self,$node1,$node2) = @_;
-  if (ref($node1) eq 'Treefam::Gene') {
+  my ( $self, $node1, $node2 ) = @_;
+  if ( ref($node1) eq 'Treefam::Gene' ) {
     $node1 = $self->get_leaf_by_gene($node1);
   }
-  if (ref($node2) eq 'Treefam::Gene') {
+  if ( ref($node2) eq 'Treefam::Gene' ) {
     $node2 = $self->get_leaf_by_gene($node2);
   }
-  unless (ref($node1) eq 'Treefam::Node' && ref($node2) eq 'Treefam::Node') {
+  unless ( ref($node1) eq 'Treefam::Node' && ref($node2) eq 'Treefam::Node' ) {
     croak "ERROR: Two nodes are required";
   }
   my $distance = $node1->branch_length;
-  my $lca = $self->get_last_common_ancestor($node1,$node2);
-  foreach my $node ($node1->get_all_ancestors) {
-    last if ($node->internalID eq $lca->internalID);
+  my $lca = $self->get_last_common_ancestor( $node1, $node2 );
+  foreach my $node ( $node1->get_all_ancestors ) {
+    last if ( $node->internalID eq $lca->internalID );
     $distance += $node->branch_length;
   }
   $distance += $node2->branch_length;
-  foreach my $node ($node2->get_all_ancestors) {
-    last if ($node->internalID eq $lca->internalID);
+  foreach my $node ( $node2->get_all_ancestors ) {
+    last if ( $node->internalID eq $lca->internalID );
     $distance += $node->branch_length;
   }
   return $distance;
@@ -659,53 +664,54 @@ sub get_distance {
 
 sub delete_node {
 
-  my ($self,$node) = @_;
+  my ( $self, $node ) = @_;
   unless ($node) {
     croak "ERROR: Node required";
   }
-  my $status = 0;
-  my $parent = $node->parent;
+  my $status     = 0;
+  my $parent     = $node->parent;
   my $internalID = $node->internalID;
   $self->_remove_node($node);
 
   # delete parent node if it is left with 1 child,
   # child becomes child of grand-parent keeping its original distance from it
-  if ($parent->children && scalar($parent->children)==1) {
+  if ( $parent->children && scalar( $parent->children ) == 1 ) {
     my ($child) = $parent->children;
     my $branch_length;
-    if ($child->branch_length && $parent->branch_length) {
+    if ( $child->branch_length && $parent->branch_length ) {
       $branch_length = $child->branch_length + $parent->branch_length;
       $child->branch_length($branch_length);
     }
+
     # add child to grand-parent's children
-    my $gp = $parent->parent;
+    my $gp       = $parent->parent;
     my $parentID = $parent->internalID;
     my @chldrn;
     if ($gp) {
-      foreach my $n($gp->children) {
-	if  ($n->internalID eq $parentID) {
-	  push @chldrn,$child;
-	  $child->{P} = $gp;
-	  weaken($child->{P});
-	  undef %{$n};
-	  undef $n;
-	  $status++;
-	}
-	else {
-	  push @chldrn,$n;
-	}
+      foreach my $n ( $gp->children ) {
+        if ( $n->internalID eq $parentID ) {
+          push @chldrn, $child;
+          $child->{P} = $gp;
+          weaken( $child->{P} );
+          undef %{$n};
+          undef $n;
+          $status++;
+        } else {
+          push @chldrn, $n;
+        }
       }
       $gp->children(@chldrn);
     }
   }
+
   # remove root if it has one child
-  while (scalar($self->{_root}->children) ==1) {
+  while ( scalar( $self->{_root}->children ) == 1 ) {
     my ($child) = $self->{_root}->children;
     $self->{_root} = $child;
   }
 
   # remove undefined nodes from list
-  @{$self->{_nodes}} = grep {$_->internalID} @{$self->{_nodes}};
+  @{ $self->{_nodes} } = grep { $_->internalID } @{ $self->{_nodes} };
 
   return $self;
 
@@ -713,21 +719,21 @@ sub delete_node {
 
 sub _remove_node {
 
-  my ($self,$node) = @_;
+  my ( $self, $node ) = @_;
   unless ($node) {
     croak "ERROR: Node required";
   }
-  my $parent = $node->parent;
+  my $parent     = $node->parent;
   my $internalID = $node->internalID;
-  while (my $child=shift(@{$node->{C}})) {
+  while ( my $child = shift( @{ $node->{C} } ) ) {
     $self->_remove_node($child);
   }
+
   # remove node from list of its parent's children
-  @{$parent->{C}} = grep { $_->internalID ne $internalID } @{$parent->{C}};
+  @{ $parent->{C} } = grep { $_->internalID ne $internalID } @{ $parent->{C} };
   undef %{$node};
   undef $node;
 }
-
 
 =head2 get_subtree
 
@@ -743,29 +749,28 @@ sub _remove_node {
 
 sub get_subtree {
 
-  my $self = shift;
+  my $self  = shift;
   my @nodes = @_;
-  my $dbc = $self->{'DBConnection'};
+  my $dbc   = $self->{'DBConnection'};
   my $nhx;
-  if (scalar(@nodes)==2) {
+  if ( scalar(@nodes) == 2 ) {
     my $node = $self->get_last_common_ancestor(@nodes);
     $nhx = $self->_string_nhx($node);
-  }
-  elsif (scalar(@nodes)==1) {
-    if (defined($nodes[0]->parent)) {
+  } elsif ( scalar(@nodes) == 1 ) {
+    if ( defined( $nodes[0]->parent ) ) {
+
       # Node is not root of the tree
-      $nhx = $self->_string_nhx($nodes[0]);
-    }
-    else {
+      $nhx = $self->_string_nhx( $nodes[0] );
+    } else {
+
       # Node is root of the tree
       return $self;
     }
-  }
-  else {
+  } else {
     croak "ERROR: One or two nodes required";
   }
 
-  return new Treefam::Tree($dbc,$self->ID,$self->type,$nhx);
+  return new Treefam::Tree( $dbc, $self->ID, $self->type, $nhx );
 
 }
 
@@ -784,10 +789,11 @@ sub get_species {
   my $self = shift;
   my $type = shift if @_;
   my @species;
+
   # Go gene by gene as the tree might be different from the database one
   my %seen;
-  foreach my $gene($self->get_genes) {
-    push @species,$gene->species($type) unless $seen{$gene->species($type)}++;
+  foreach my $gene ( $self->get_genes ) {
+    push @species, $gene->species($type) unless $seen{ $gene->species($type) }++;
   }
   return @species;
 
@@ -803,19 +809,17 @@ sub get_species {
 
 sub family {
 
-  my $self = shift;
+  my $self   = shift;
   my $family = shift if @_;
-  my $dbc = $self->{'DBConnection'};
-  my $famh = $dbc->get_FamilyHandle();
+  my $dbc    = $self->{'DBConnection'};
+  my $famh   = $dbc->get_FamilyHandle();
   my $familyID;
-  if (!$family) {
+  if ( !$family ) {
     $familyID = $self->ID;
-  }
-  else {
-    if (ref($family)) {
+  } else {
+    if ( ref($family) ) {
       return $family;
-    }
-    else {
+    } else {
       $familyID = $family;
     }
   }
@@ -839,88 +843,87 @@ sub family {
 
 sub get_species_tree {
 
-  my $self = shift;
-  my $type = shift if @_;
-  my $dbc = $self->{'DBConnection'};
-  my $species_tree = Treefam::Tree->new($dbc,undef,'species',undef);
-  @{$species_tree->{_nodes}} = ();
+  my $self         = shift;
+  my $type         = shift if @_;
+  my $dbc          = $self->{'DBConnection'};
+  my $species_tree = Treefam::Tree->new( $dbc, undef, 'species', undef );
+  @{ $species_tree->{_nodes} } = ();
   my %seen;
   my @node_names = $self->get_species('latin');
-  my $dbh = $dbc->{'database_handle'};
-  my $query = qq(SELECT taxon_id FROM spec_names WHERE name= ?);
-  my $sth1 = $dbh->prepare($query);
-  $query = qq(SELECT t2.name FROM spec_nodes t1 LEFT JOIN spec_nodes t2 ON t1.parent_id=t2.taxon_id WHERE t1.taxon_id =?);
+  my $dbh        = $dbc->{'database_handle'};
+  my $query      = qq(SELECT taxon_id FROM spec_names WHERE name= ?);
+  my $sth1       = $dbh->prepare($query);
+  $query =
+    qq(SELECT t2.name FROM spec_nodes t1 LEFT JOIN spec_nodes t2 ON t1.parent_id=t2.taxon_id WHERE t1.taxon_id =?);
   my $sth2 = $dbh->prepare($query);
-  while (my $name = shift(@node_names)) {
+
+  while ( my $name = shift(@node_names) ) {
     my $node;
-    if ($seen{$name}) {
+    if ( $seen{$name} ) {
       $node = $seen{$name};
-    }
-    else {
+    } else {
       $node = Treefam::Node->new($dbc);
       $node->name($name);
       $node->branch_length(0.1);
       $seen{$name} = $node;
     }
-    push @{$species_tree->{_nodes}},$node;
+    push @{ $species_tree->{_nodes} }, $node;
     $sth1->execute($name);
     my ($taxid) = $sth1->fetchrow_array();
     $sth2->execute($taxid);
     my ($n) = $sth2->fetchrow_array();
     if ($n) {
       my $parent;
-      if ($seen{$n}) {
-	$parent = $seen{$n};
-      }
-      else {
-	$parent = Treefam::Node->new($dbc);
-	$parent->name($n);
-	$parent->branch_length(0.1);
-	push @node_names,$n;
-	$seen{$n} = $parent;
+      if ( $seen{$n} ) {
+        $parent = $seen{$n};
+      } else {
+        $parent = Treefam::Node->new($dbc);
+        $parent->name($n);
+        $parent->branch_length(0.1);
+        push @node_names, $n;
+        $seen{$n} = $parent;
       }
       $node->parent($parent);
-      push @{$parent->{C}},$node;
-    }
-    else { # no parent, this is the root
+      push @{ $parent->{C} }, $node;
+    } else {    # no parent, this is the root
       $species_tree->{_root} = $node;
     }
   }
 
-  if (!defined($type)|| (lc($type) ne 'complete' && lc($type) ne 'full')) {
-    foreach my $node (@{$species_tree->{_nodes}}) {
+  if ( !defined($type) || ( lc($type) ne 'complete' && lc($type) ne 'full' ) ) {
+    foreach my $node ( @{ $species_tree->{_nodes} } ) {
+
       # delete node if it has only 1 child,
       # child becomes child of grand-parent
-      if ($node->children && scalar($node->children)==1) {
-	my ($child) = $node->children;
-	my $parent = $node->parent;
-	my $nodeID = $node->internalID;
-	my @chldrn;
-	if ($parent) {
-	  foreach my $n ($parent->children) {
-	    if ($n->internalID eq $nodeID) {
-	      push @chldrn,$child;
-	      $child->{P} = $parent;
-	      weaken($child->{P});
-	      undef %{$n};
-	      undef $n;
-	    }
-	    else {
-	      push @chldrn,$n;
-	    }
-	  }
-	  $parent->children(@chldrn);
-	}
+      if ( $node->children && scalar( $node->children ) == 1 ) {
+        my ($child) = $node->children;
+        my $parent  = $node->parent;
+        my $nodeID  = $node->internalID;
+        my @chldrn;
+        if ($parent) {
+          foreach my $n ( $parent->children ) {
+            if ( $n->internalID eq $nodeID ) {
+              push @chldrn, $child;
+              $child->{P} = $parent;
+              weaken( $child->{P} );
+              undef %{$n};
+              undef $n;
+            } else {
+              push @chldrn, $n;
+            }
+          }
+          $parent->children(@chldrn);
+        }
       }
     }
 
     # remove root if it has one child
-    while (scalar($species_tree->{_root}->children) ==1) {
+    while ( scalar( $species_tree->{_root}->children ) == 1 ) {
       my ($child) = $species_tree->{_root}->children;
       $species_tree->{_root} = $child;
     }
   }
-  @{$species_tree->{_nodes}} = grep { $_->internalID } @{$species_tree->{_nodes}};
+  @{ $species_tree->{_nodes} } = grep { $_->internalID } @{ $species_tree->{_nodes} };
 
   return $species_tree;
 }
@@ -938,19 +941,19 @@ sub get_species_tree {
 
 sub get_alignment {
 
-  my $self = shift;
-  my $type = shift if @_;
-  my $dbc = $self->{'DBConnection'};
-  my $dbh = $dbc->get_DatabaseHandle;
+  my $self        = shift;
+  my $type        = shift if @_;
+  my $dbc         = $self->{'DBConnection'};
+  my $dbh         = $dbc->get_DatabaseHandle;
   my $tree_aln_aa = '';
   my $tree_aln_nt = '';
-  my $family = $self->family;
-  my $AC = $family->AC if $family;
-  if (!$AC) {
+  my $family      = $self->family;
+  my $AC          = $family->AC if $family;
+  if ( !$AC ) {
     warn "WARNING: Tree not in a family. No alignment available.\n";
     return;
   }
-  if (!defined($self->{'aa_alignment'})) {
+  if ( !defined( $self->{'aa_alignment'} ) ) {
     my $query = qq( SELECT al.ID, al.CIGAR, s.SEQ
                     FROM genes g, aa_full_align al, aa_seq s
                     WHERE g.GID = ?
@@ -958,31 +961,31 @@ sub get_alignment {
                     AND al.ID = s.ID
                     AND al.AC = ?);
     my $sth = $dbh->prepare($query);
-    foreach my $gene($self->get_genes) {
+    foreach my $gene ( $self->get_genes ) {
       my $geneID = $gene->ID;
-      my $seqID = $gene->sequence_id;
-      $sth->execute($geneID,$AC);
-      my ($ID,$cigar,$seq) = $sth->fetchrow_array;
-      my $aln = _cigar2align($cigar,$seq,0);
+      my $seqID  = $gene->sequence_id;
+      $sth->execute( $geneID, $AC );
+      my ( $ID, $cigar, $seq ) = $sth->fetchrow_array;
+      my $aln = _cigar2align( $cigar, $seq, 0 );
       $tree_aln_aa .= ">$ID GENEID=$geneID\n";
-      $tree_aln_aa .=_pretty_seq($aln)."\n";
+      $tree_aln_aa .= _pretty_seq($aln) . "\n";
+
       # convert to protein-guided nucleotide alignment
       $query = qq(SELECT s.SEQ FROM nt_seq s WHERE s.ID= ?);
       my $sth = $dbh->prepare($query);
       $sth->execute($seqID);
       my ($ntseq) = $sth->fetchrow_array;
       next unless $ntseq;
-      $aln = _cigar2align($cigar,$ntseq,1);
+      $aln = _cigar2align( $cigar, $ntseq, 1 );
       $tree_aln_nt .= ">$ID GENEID=$geneID\n";
-      $tree_aln_nt .=_pretty_seq($aln)."\n";
+      $tree_aln_nt .= _pretty_seq($aln) . "\n";
     }
     $self->{'aa_alignment'} = $tree_aln_aa;
     $self->{'nt_alignment'} = $tree_aln_nt;
   }
-  if (lc($type) eq 'nt' || lc($type) eq 'nucleotide') {
+  if ( lc($type) eq 'nt' || lc($type) eq 'nucleotide' ) {
     return $self->{'nt_alignment'};
-  }
-  else {
+  } else {
     return $self->{'aa_alignment'};
   }
 }
@@ -998,18 +1001,18 @@ sub get_alignment {
 =cut
 
 sub _cigar2align {
+
   # code from Li Heng
-  my $cigar = shift;
-  my $seq = shift;
-  my $is_nucl = (@_)? shift : 0;
-  my $tmp = $cigar;
-  my $start = 0;
-  my $len = length($seq);
+  my $cigar   = shift;
+  my $seq     = shift;
+  my $is_nucl = (@_) ? shift : 0;
+  my $tmp     = $cigar;
+  my $start   = 0;
+  my $len     = length($seq);
   if ($is_nucl) {
     $tmp =~ s/(\d+)D/'-'x($1*3)/eg;
     $tmp =~ s/(\d+)M/$start+=$1*3,($start<=$len)?substr($seq,$start-$1*3,$1*3):'-'x($1*3)/eg;
-  }
-  else {
+  } else {
     $tmp =~ s/(\d+)D/'-'x$1/eg;
     $tmp =~ s/(\d+)M/$start+=$1,($start<=$len)?substr($seq,$start-$1,$1):'-'x$1/eg;
   }
@@ -1029,14 +1032,14 @@ sub _cigar2align {
 
 sub _pretty_seq {
 
-  my $seq = shift;
+  my $seq       = shift;
   my $line_size = (@_) ? shift : 60;
   my $seqlength = length($seq);
-  my $i = $line_size;
-  while ($i < $seqlength) {
-    substr($seq, $i, 0) = "\n";
+  my $i         = $line_size;
+  while ( $i < $seqlength ) {
+    substr( $seq, $i, 0 ) = "\n";
     $seqlength++;
-    $i += $line_size+1;
+    $i += $line_size + 1;
   }
   return $seq;
 }
@@ -1053,21 +1056,22 @@ sub hmm {
 
   my $self = shift;
   $self->{'hmm'} = shift if @_;
-  if (!defined $self->{'hmm'}) {
+  if ( !defined $self->{'hmm'} ) {
     my $familyID = $self->{'ID'};
-    my $dbc = $self->{'DBConnection'};
-    my $dbh = $dbc->{'database_handle'};
-    my $sth = $dbh->prepare("SELECT HMMER,HMM_TYPE FROM hmmer WHERE AC = ? AND TYPE = ?");
-    $sth->execute($familyID,$self->{'type'});
-    my ($hmm,$type) = $sth->fetchrow_array();
+    my $dbc      = $self->{'DBConnection'};
+    my $dbh      = $dbc->{'database_handle'};
+    my $sth      = $dbh->prepare("SELECT HMMER,HMM_TYPE FROM hmmer WHERE AC = ? AND TYPE = ?");
+    $sth->execute( $familyID, $self->{'type'} );
+    my ( $hmm, $type ) = $sth->fetchrow_array();
     $sth->finish();
     unless ($hmm) {
       warn "No HMM for selected tree (AC: $familyID).\n";
       return undef;
     }
+
     # HMM is stored as gzipped text
     $self->{'hmm'} = Compress::Zlib::memGunzip($hmm);
-    unless ($self->{'hmm'}) {
+    unless ( $self->{'hmm'} ) {
       warn "Can't uncompress HMM.\n";
       return undef;
     }
@@ -1089,18 +1093,17 @@ sub hmm_type {
 
   my $self = shift;
   $self->{'hmm_type'} = shift if @_;
-  if (!defined $self->{'hmm_type'}) {
+  if ( !defined $self->{'hmm_type'} ) {
     my $familyID = $self->{'ID'};
-    my $dbc = $self->{'DBConnection'};
-    my $dbh = $dbc->{'database_handle'};
-    my $sth = $dbh->prepare("SELECT HMM_TYPE FROM hmmer WHERE AC = ? AND TYPE = ?");
-    $sth->execute($familyID,$self->{'type'});
+    my $dbc      = $self->{'DBConnection'};
+    my $dbh      = $dbc->{'database_handle'};
+    my $sth      = $dbh->prepare("SELECT HMM_TYPE FROM hmmer WHERE AC = ? AND TYPE = ?");
+    $sth->execute( $familyID, $self->{'type'} );
     my ($type) = $sth->fetchrow_array();
     $sth->finish();
-    if ($type eq 'hmmsw') {
+    if ( $type eq 'hmmsw' ) {
       $self->{'hmm_type'} = 'local';
-    }
-    else {
+    } else {
       $self->{'hmm_type'} = 'global';
     }
   }
@@ -1118,91 +1121,125 @@ sub hmm_type {
 =cut
 
 sub draw {
+
   # Adapted from code by Li Heng
   require GD;
-  my $self = shift;
-  my %param = ('-width'=>640,
-	       '-height'=>480,
-	       '-skip'=>14,
-	       '-use_branch_length'=>1,
-	       '-y_margin'=>20,
-	       '-x_left_margin'=>20,
-	       '-x_right_margin'=>20,
-	       '-half_box'=>2,
-	       '-font_size'=>8,
-	       '-font_width'=>6,
-	       '-bg_color'=>[255,255,255],
-	       '-txt_color'=>[0,0,0],
-	       '-line_color'=>[0,0,255],
-	       '-box_color'=>[50,200,0],
-	       @_);
+  my $self  = shift;
+  my %param = (
+    '-width'             => 640,
+    '-height'            => 480,
+    '-skip'              => 14,
+    '-use_branch_length' => 1,
+    '-y_margin'          => 20,
+    '-x_left_margin'     => 20,
+    '-x_right_margin'    => 20,
+    '-half_box'          => 2,
+    '-font_size'         => 8,
+    '-font_width'        => 6,
+    '-bg_color'          => [ 255, 255, 255 ],
+    '-txt_color'         => [ 0, 0, 0 ],
+    '-line_color'        => [ 0, 0, 255 ],
+    '-box_color'         => [ 50, 200, 0 ],
+    @_
+  );
 
-  $self->_compute_nodes_relative_coordinates($param{'-use_branch_length'});
+  $self->_compute_nodes_relative_coordinates( $param{'-use_branch_length'} );
 
-  $param{'-height'} =  2 * $param{'-y_margin'} + $param{'-skip'} * $self->{'_n_leaf'} if ($param{'-skip'});
+  $param{'-height'} = 2 * $param{'-y_margin'} + $param{'-skip'} * $self->{'_n_leaf'}
+    if ( $param{'-skip'} );
+
   # Position nodes on canvas taking into account space for leaves names
   my $max = 0;
-  foreach my $leaf($self->get_leaves) {
-    $max = length($leaf->name) if (length($leaf->name) > $max);
+  foreach my $leaf ( $self->get_leaves ) {
+    $max = length( $leaf->name ) if ( length( $leaf->name ) > $max );
   }
-  my ($real_x, $real_y, $shift_x, $shift_y);
-  $real_x = $param{'-width'} - $param{'-x_left_margin'} - $param{'-x_right_margin'} - $max * $param{'-font_width'};
-  $real_y = $param{'-height'} - 2 * $param{'-y_margin'} - $param{'-font_size'};
+  my ( $real_x, $real_y, $shift_x, $shift_y );
+  $real_x =
+    $param{'-width'} -
+    $param{'-x_left_margin'} -
+    $param{'-x_right_margin'} -
+    $max * $param{'-font_width'};
+  $real_y  = $param{'-height'} - 2 * $param{'-y_margin'} - $param{'-font_size'};
   $shift_x = $param{'-x_left_margin'};
   $shift_y = $param{'-y_margin'} + $param{'-font_size'} / 2;
 
-  my $half = $param{'-half_box'};
+  my $half  = $param{'-half_box'};
   my @nodes = $self->get_all_nodes;
   foreach my $node (@nodes) {
-    $node->{'canvas_x'} = int($node->{'X'} * $real_x + $shift_x + 0.5);
-    $node->{'canvas_y'} = int($node->{'Y'} * $real_y + $shift_y + 0.5);
+    $node->{'canvas_x'} = int( $node->{'X'} * $real_x + $shift_x + 0.5 );
+    $node->{'canvas_y'} = int( $node->{'Y'} * $real_y + $shift_y + 0.5 );
+
     # Calculate node area (useful for making image maps)
-    @{$node->{'_node_area'}} = ($node->{'canvas_x'}-$half, $node->{'canvas_y'}-$half, $node->{'canvas_x'}+$half, $node->{'canvas_y'}+$half);
-    next if ($node->{C});
+    @{ $node->{'_node_area'} } = (
+      $node->{'canvas_x'} - $half,
+      $node->{'canvas_y'} - $half,
+      $node->{'canvas_x'} + $half,
+      $node->{'canvas_y'} + $half
+    );
+    next if ( $node->{C} );
+
     # Calculate name area for leaves (useful for making image maps)
-    @{$node->{name_area}} = ($node->{canvas_x}+$half+2,
-			 $node->{canvas_y}-$param{'-font_size'}/2-1,
-			 $node->{canvas_x}+$half+3+$param{'-font_width'}*length($node->name),
-			$node->{canvas_y}+$param{'-font_size'}/2+2);
+    @{ $node->{name_area} } = (
+      $node->{canvas_x} + $half + 2,
+      $node->{canvas_y} - $param{'-font_size'} / 2 - 1,
+      $node->{canvas_x} + $half + 3 + $param{'-font_width'} * length( $node->name ),
+      $node->{canvas_y} + $param{'-font_size'} / 2 + 2
+    );
   }
 
   # Image initialisation
-  my $image = GD::Image->new($param{'-width'}, $param{'-height'});
+  my $image = GD::Image->new( $param{'-width'}, $param{'-height'} );
 
   # First allocated color becomes background
-  my $bg_color = $image->colorAllocate(@{$param{'-bg_color'}});
-  my $txt_color = $image->colorAllocate(@{$param{'-txt_color'}});
-  my $line_color = $image->colorAllocate(@{$param{'-line_color'}});
-  my $box_color = $image->colorAllocate(@{$param{'-box_color'}});
-  # Define some colors for later use
-  my $white = $image->colorAllocate(255,255,255);
-  my $black = $image->colorAllocate(0, 0, 0);
-  my $red = $image->colorAllocate(255, 0, 0);
-  my $blue = $image->colorAllocate(0, 0, 255);
-  my $green = $image->colorAllocate(50, 200, 0);
-  my $purple = $image->colorAllocate(200, 0, 255);
-  my $orange = $image->colorAllocate(255, 200, 0);
-  my $brown = $image->colorAllocate(255, 153, 0);
-  my $violet = $image->colorAllocate(255, 0, 255);
-  my $yellow = $image->colorAllocate(255, 255, 0);
+  my $bg_color   = $image->colorAllocate( @{ $param{'-bg_color'} } );
+  my $txt_color  = $image->colorAllocate( @{ $param{'-txt_color'} } );
+  my $line_color = $image->colorAllocate( @{ $param{'-line_color'} } );
+  my $box_color  = $image->colorAllocate( @{ $param{'-box_color'} } );
 
-  $image->transparent(-1); # no transparency
+  # Define some colors for later use
+  my $white  = $image->colorAllocate( 255, 255, 255 );
+  my $black  = $image->colorAllocate( 0,   0,   0 );
+  my $red    = $image->colorAllocate( 255, 0,   0 );
+  my $blue   = $image->colorAllocate( 0,   0,   255 );
+  my $green  = $image->colorAllocate( 50,  200, 0 );
+  my $purple = $image->colorAllocate( 200, 0,   255 );
+  my $orange = $image->colorAllocate( 255, 200, 0 );
+  my $brown  = $image->colorAllocate( 255, 153, 0 );
+  my $violet = $image->colorAllocate( 255, 0,   255 );
+  my $yellow = $image->colorAllocate( 255, 255, 0 );
+
+  $image->transparent(-1);    # no transparency
   $image->interlaced('true');
-  $image->filledRectangle(0, 0, $param{'-width'}, $param{'-height'}, $white);
+  $image->filledRectangle( 0, 0, $param{'-width'}, $param{'-height'}, $white );
 
   # Draw leaves
-  foreach my $leaf ($self->get_leaves) {
-    $image->filledRectangle(@{$leaf->{name_area}}, $box_color);
-    $image->string(GD::Font->Small, $leaf->{canvas_x}+$half+3, $leaf->{canvas_y}-$param{'-font_size'}/2-2, $leaf->name, $txt_color);
+  foreach my $leaf ( $self->get_leaves ) {
+    $image->filledRectangle( @{ $leaf->{name_area} }, $box_color );
+    $image->string(
+      GD::Font->Small,
+      $leaf->{canvas_x} + $half + 3,
+      $leaf->{canvas_y} - $param{'-font_size'} / 2 - 2,
+      $leaf->name, $txt_color
+    );
   }
+
   # Draw lines
-  $image->line($param{'-x_left_margin'}, $self->root->{canvas_y}, $self->root->{canvas_x}, $self->root->{canvas_y}, $line_color);
-  foreach my $node(@nodes) {
+  $image->line(
+    $param{'-x_left_margin'}, $self->root->{canvas_y}, $self->root->{canvas_x},
+    $self->root->{canvas_y},  $line_color
+  );
+  foreach my $node (@nodes) {
+
     # Horizontal
-    $image->line($node->{canvas_x}, $node->{canvas_y}, $node->{P}->{canvas_x}, $node->{canvas_y}, $line_color) if ($node->internalID ne $self->root->internalID);
-    next if ($node->is_leaf);
+    $image->line(
+      $node->{canvas_x}, $node->{canvas_y}, $node->{P}->{canvas_x},
+      $node->{canvas_y}, $line_color
+    ) if ( $node->internalID ne $self->root->internalID );
+    next if ( $node->is_leaf );
+
     # Vertical
-    $image->line($node->{canvas_x}, $node->{C}[0]->{canvas_y}, $node->{canvas_x}, $node->{C}[@{$node->{C}}-1]->{canvas_y}, $line_color);
+    $image->line( $node->{canvas_x}, $node->{C}[0]->{canvas_y},
+      $node->{canvas_x}, $node->{C}[ @{ $node->{C} } - 1 ]->{canvas_y}, $line_color );
   }
   return $image->png;
 }
@@ -1216,44 +1253,60 @@ sub draw {
 =cut
 
 sub _compute_nodes_relative_coordinates {
+
   # Adapted from code by Li Heng
   my $self = shift;
-  my $is_real = shift if @_; # if false, branch lengths are ignored
-  my ($i, $j, $scale);
+  my $is_real = shift if @_;    # if false, branch lengths are ignored
+  my ( $i, $j, $scale );
   my @nodes = $self->get_all_nodes;
   $scale = $self->{_n_leaf};
+
   # Calculate Y coordinates
   $j = 0;
-  foreach my $node(@nodes) {
+  foreach my $node (@nodes) {
+
     # If node has children, Y is the average of the positions of the first and last children
     # otherwise, node is a leaf and Y corresponds to its relative position in the tree
-    $node->{Y} = ($node->{C})? ($node->{C}[0]->{Y} + $node->{C}[@{$node->{C}}-1]->{Y}) / 2.0 : ($j++) / $scale;
+    $node->{Y} =
+        ( $node->{C} )
+      ? ( $node->{C}[0]->{Y} + $node->{C}[ @{ $node->{C} } - 1 ]->{Y} ) / 2.0
+      : ( $j++ ) / $scale;
   }
+
   # Calculate X coordinates
   if ($is_real) {
+
     # Respect branch lengths if any
-    $scale = $self->root->{X} = (defined($self->root->{dist}) && $self->root->{dist} > 0.0)? $self->root->{dist} : 0.0;
-    for (my $i = scalar(@nodes) - 2; $i >= 0; --$i) {
+    $scale = $self->root->{X} =
+      ( defined( $self->root->{dist} ) && $self->root->{dist} > 0.0 ) ? $self->root->{dist} : 0.0;
+    for ( my $i = scalar(@nodes) - 2 ; $i >= 0 ; --$i ) {
       my $node = $nodes[$i];
+
       # X = X of parent node + branch length
-      $node->{X} = $node->{P}->{X} + ((defined($node->{dist}) && $node->{dist} >= 0.0)? $node->{dist} : 0.0);
+      $node->{X} =
+        $node->{P}->{X} +
+        ( ( defined( $node->{dist} ) && $node->{dist} >= 0.0 ) ? $node->{dist} : 0.0 );
+
       # Keep track of the most distant position
-      $scale = $node->{X} if ($node->{X} > $scale);
+      $scale = $node->{X} if ( $node->{X} > $scale );
     }
-  }
-  else {
+  } else {
+
     # Ignoring branch lengths
     $scale = $self->root->{X} = 1.0;
-    for (my $i = scalar(@nodes) - 2; $i >= 0; --$i) {
+    for ( my $i = scalar(@nodes) - 2 ; $i >= 0 ; --$i ) {
       my $node = $nodes[$i];
+
       # X = X of parent node + 1
       $node->{X} = $node->{P}->{X} + 1.0;
+
       # Keep track of the most distant position
-      $scale = $node->{X} if ($node->{X} > $scale);
+      $scale = $node->{X} if ( $node->{X} > $scale );
     }
+
     # Since we're ignoring branch lengths, put all leaves at the most extreme position
     foreach my $node (@nodes) {
-      $node->{X} = $scale unless ($node->{C});
+      $node->{X} = $scale unless ( $node->{C} );
     }
   }
   foreach my $node (@nodes) {

@@ -18,13 +18,15 @@ sub run {
 
   my $base = 'nfs/users/nfs_g/gj1/scratch/mammals/output';
   $self->get_output_folder($base);
-  
+
   $self->export_genes;
-#  $self->export_sites;
+
+  #  $self->export_sites;
   $self->summarize_sites;
-#  $self->model_sites_distribution;
-#   $self->get_psg_overlaps;
-#  $self->plot_global_distribution;
+
+  #  $self->model_sites_distribution;
+  #   $self->get_psg_overlaps;
+  #  $self->plot_global_distribution;
 }
 
 sub export_genes {
@@ -33,8 +35,8 @@ sub export_genes {
   my $genes_file = $self->get_output_folder . "/genes.Rdata";
 
   my $folder = $self->get_output_folder;
-  my $base = Bio::Greg::EslrUtils->baseDirectory;
-  my $csr = "$base/scripts/collect_sitewise.R";
+  my $base   = Bio::Greg::EslrUtils->baseDirectory;
+  my $csr    = "$base/scripts/collect_sitewise.R";
 
   my $cmd = qq^
 source("$csr");
@@ -43,7 +45,7 @@ save(genes,file="${genes_file}")
 ^;
   print "$cmd\n";
   my $params = {};
-  Bio::Greg::EslrUtils->run_r($cmd,$params);
+  Bio::Greg::EslrUtils->run_r( $cmd, $params );
 
 }
 
@@ -60,31 +62,33 @@ sub export_sites {
   }
 
   $max_pset = 1;
-  foreach my $i (0 .. $max_pset) {
-    my $sites_file = $self->get_output_folder . "/sites_$i.tsv";
+  foreach my $i ( 0 .. $max_pset ) {
+    my $sites_file      = $self->get_output_folder . "/sites_$i.tsv";
     my $sites_psc_rdata = $self->get_output_folder . "/sites_${i}_psc.Rdata";
-    my $sites_zipped = $self->get_output_folder . "/sites_$i.tsv.gz";
-    my $sites_rdata = $self->get_output_folder . "/sites_$i.Rdata";
-    my $csr = $self->base."/scripts/collect_sitewise.R";
+    my $sites_zipped    = $self->get_output_folder . "/sites_$i.tsv.gz";
+    my $sites_rdata     = $self->get_output_folder . "/sites_$i.Rdata";
+    my $csr             = $self->base . "/scripts/collect_sitewise.R";
 
-    my $mysqlArgs = Bio::Greg::EslrUtils->mysqlArgsFromConnection($self->dbc);
-#    if (!-e $sites_zipped) {
-      my $cmd = qq^
+    my $mysqlArgs = Bio::Greg::EslrUtils->mysqlArgsFromConnection( $self->dbc );
+
+    #    if (!-e $sites_zipped) {
+    my $cmd = qq^
 mysql $mysqlArgs -e "SELECT s.node_id,s.aln_position,s.parameter_set_id,domain,filter_value,omega,omega_lower,omega_upper,lrt_stat,note,type,g.chr_name,g.chr_start from stats_sites s LEFT JOIN sitewise_genome g ON s.node_id=g.node_id AND s.aln_position=g.aln_position WHERE s.parameter_set_id=$i;" > ${sites_file}
 ^;
-      $cmd = qq^
+    $cmd = qq^
 mysql $mysqlArgs -e "SELECT s.node_id,s.aln_position,s.parameter_set_id,domain,filter_value,omega,omega_lower,omega_upper,lrt_stat,note,type,g.chr_name,g.chr_start from stats_sites s LEFT JOIN sitewise_genome g ON s.node_id=g.node_id AND s.aln_position=g.aln_position WHERE s.parameter_set_id=1 LIMIT 500000;" > ${sites_file}
-^ if ($i == 0);
-      print "$cmd\n";
-      my $rc = system($cmd);
+^ if ( $i == 0 );
+    print "$cmd\n";
+    my $rc = system($cmd);
     die "Bad return value!" if ($rc);
-      $cmd = "rm -f ${sites_zipped}; gzip ${sites_file}";
-      print "$cmd\n";
-      system($cmd);
-#    }
+    $cmd = "rm -f ${sites_zipped}; gzip ${sites_file}";
+    print "$cmd\n";
+    system($cmd);
 
-#    if (!-e $sites_rdata) {
-      my $rcmd = qq^
+    #    }
+
+    #    if (!-e $sites_rdata) {
+    my $rcmd = qq^
 source("${csr}");
 gcinfo(TRUE)
 sites = read.table(gzfile("${sites_zipped}"),header=T,stringsAsFactors=T,na.strings="NULL")
@@ -101,10 +105,11 @@ save(sites,file="${sites_rdata}")
 psc.sites = subset(sites,pval < 0.05 & omega > 1)
 save(psc.sites,file="${sites_psc_rdata}")
 ^;
-      print "$rcmd\n";
-      my $params = {};
-      Bio::Greg::EslrUtils->run_r($rcmd,$params);  
-#    }
+    print "$rcmd\n";
+    my $params = {};
+    Bio::Greg::EslrUtils->run_r( $rcmd, $params );
+
+    #    }
   }
 }
 
@@ -112,18 +117,18 @@ sub summarize_sites {
   my $self = shift;
 
   my $sites_file = $self->get_output_folder . "/sites.Rdata";
-  my $fdr_file = $self->get_output_folder . "/fdr_thresholds.Rdata";
+  my $fdr_file   = $self->get_output_folder . "/fdr_thresholds.Rdata";
 
   my $folder = $self->get_output_folder;
 
   my $slrsim_r_connection = $self->get_r_dbc_string('gj1_slrsim');
-  my $indel_r_connection = $self->get_r_dbc_string('gj1_indelsim');
+  my $indel_r_connection  = $self->get_r_dbc_string('gj1_indelsim');
 
   my $cslr = $self->base . "/projects/slrsim/collect_slrsim.R";
-  my $csw = $self->base . "/scripts/collect_sitewise.R";
+  my $csw  = $self->base . "/scripts/collect_sitewise.R";
 
   my $dbname = $self->compara_dba->dbc->dbname;
-my $cmd = qq^
+  my $cmd    = qq^
 
 if (!file.exists("$fdr_file")) {
   $slrsim_r_connection
@@ -169,7 +174,7 @@ write.csv(summary,file="${folder}/summary_table_domains.csv",row.names=F)
 ^;
   print "$cmd\n";
   my $params = {};
-  Bio::Greg::EslrUtils->run_r($cmd,$params);
+  Bio::Greg::EslrUtils->run_r( $cmd, $params );
 
 }
 
@@ -177,9 +182,9 @@ sub model_sites_distribution {
   my $self = shift;
 
   my $folder = $self->get_output_folder;
-  my $csr = $self->base."/scripts/collect_sitewise.R";
+  my $csr    = $self->base . "/scripts/collect_sitewise.R";
 
-my $rcmd = qq^
+  my $rcmd = qq^
 source("${csr}")
 library(fitdistrplus)
 
@@ -207,7 +212,7 @@ write.csv(fits,file="${folder}/distribution_fits_filt_below_one.csv",row.names=F
 ^;
   print "$rcmd\n";
   my $params = {};
-  Bio::Greg::EslrUtils->run_r($rcmd,$params);
+  Bio::Greg::EslrUtils->run_r( $rcmd, $params );
 
 }
 
@@ -217,8 +222,8 @@ sub get_psg_overlaps {
   my $cwd = cwd();
   chdir("psg_overlaps");
 
-  my $folder = $self->get_output_folder;
-  my $base = $self->base;
+  my $folder         = $self->get_output_folder;
+  my $base           = $self->base;
   my $psg_overlaps_r = "$base/projects/2xmammals/psg_overlaps/psg_overlaps.R";
 
   my $rcmd = qq^
@@ -244,8 +249,8 @@ save(roc.kosiol,roc.nielsen,roc.clark,roc.sabeti,roc.summary,file="${folder}/psg
 ^;
   print "$rcmd\n";
   my $params = {};
-  Bio::Greg::EslrUtils->run_r($rcmd,$params);
-  
+  Bio::Greg::EslrUtils->run_r( $rcmd, $params );
+
   chdir($cwd);
 }
 
@@ -267,9 +272,8 @@ dev.off()
 ^;
   print "$rcmd\n";
   my $params = {};
-  Bio::Greg::EslrUtils->run_r($rcmd,$params);
+  Bio::Greg::EslrUtils->run_r( $rcmd, $params );
 
 }
-
 
 1;

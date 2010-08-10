@@ -5,7 +5,7 @@ use strict;
 sub taxon_short {
   my $class = shift;
   my $taxon = shift;
-  
+
   my $taxon_to_short = {
     9606 => 'Hsap',
     9598 => 'Ptro',
@@ -15,16 +15,16 @@ sub taxon_short {
     9999 => 'Background'
   };
   my $short_to_taxon = {
-    'Hsap' => 9606,
-    'Ptro' => 9598,
-    'Ggor' => 9593,
-    'Ppyg' => 9600,
-    'Mmul' => 9544,
+    'Hsap'       => 9606,
+    'Ptro'       => 9598,
+    'Ggor'       => 9593,
+    'Ppyg'       => 9600,
+    'Mmul'       => 9544,
     'Background' => 9999
   };
-  if (defined $taxon_to_short->{$taxon}) {
+  if ( defined $taxon_to_short->{$taxon} ) {
     return $taxon_to_short->{$taxon};
-  } elsif (defined $short_to_taxon->{$taxon}) {
+  } elsif ( defined $short_to_taxon->{$taxon} ) {
     return $short_to_taxon->{$taxon};
   }
 }
@@ -32,7 +32,7 @@ sub taxon_short {
 sub taxon_letter {
   my $class = shift;
   my $taxon = shift;
-  
+
   my $taxon_to_letter = {
     9606 => 'H',
     9598 => 'C',
@@ -41,10 +41,10 @@ sub taxon_letter {
     9544 => 'M'
   };
   my $letter_to_taxon = {
-    'H' => 9606,
-    'C' => 9598,
-    'G' => 9593,
-    'O' => 9600,
+    'H'    => 9606,
+    'C'    => 9598,
+    'G'    => 9593,
+    'O'    => 9600,
     'Hsap' => 9606,
     'Ptro' => 9598,
     'Ggor' => 9593,
@@ -52,9 +52,9 @@ sub taxon_letter {
     'Mmul' => 9544
   };
 
-  if (defined $taxon_to_letter->{$taxon}) {
+  if ( defined $taxon_to_letter->{$taxon} ) {
     return $taxon_to_letter->{$taxon};
-  } elsif (defined $letter_to_taxon->{$taxon}) {
+  } elsif ( defined $letter_to_taxon->{$taxon} ) {
     return $letter_to_taxon->{$taxon};
   }
 }
