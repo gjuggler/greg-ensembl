@@ -64,12 +64,24 @@ slr.roc = function(df,na.rm=F) {
 
   df$fdr = df$fp/(df$count)
 
+	# Last row before fpr is 0.1
+  last.row.index <- max(which(df$fpr <= 0.1))
+  last.row <- df[last.row.index,]
+  df$`tpr.at.0.1` <- last.row$tpr
+
   return(df)
 }
 
 summarize.by.labels = function(data,fn,thresh=3.8) {
   library(plyr)
   a = ddply(data,.(slrsim_label),fn,thresh=thresh)
+  if (!is.null(a$`tpr.at.0.1`)) {
+    #levels(a$slrsim_label) <- 
+#    print("Ordering!")
+#    print(unique(a$`tpr.at.0.1`))
+#    a <- orderBy(~-`tpr.at.0.1`,data=a)
+#    print(unique(a$`tpr.at.0.1`))
+  }
   return(a)
 }
 

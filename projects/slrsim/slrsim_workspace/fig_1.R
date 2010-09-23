@@ -29,24 +29,24 @@ plot.f = function(data,low='blue',high='red',field='fdr',limits=c(0,1),x.lim=c(0
   print(p)
 }
 
-series = '_artificial'
+series = 'slrsim_one_c'
 source("slrsim.functions.R")
 source("slrsim.plots.R")
 
-load(paste("fig_1",series,".Rdata",sep=""))
+load(paste(series,".Rdata",sep=""))
 sub.data = data
 slr.threshold = 0
 a = summarize.by.labels(sub.data,fn=fig.1.summary,thresh=slr.threshold)
 
-pdf(file=paste("fig_1a",series,".pdf",sep=""),width=6,height=6)
+pdf(file=paste(series,"_a.pdf",sep=""),width=6,height=6)
 plot.f(a,low='blue',high='red')
 dev.off()
 
-pdf(file=paste("fig_1b",series,".pdf",sep=""),width=6,height=6)
+pdf(file=paste(series,"_b.pdf",sep=""),width=6,height=6)
 plot.f(a,low='white',high='blue',field='sens')
 dev.off()
 
-pdf(file=paste("fig_1c",series,".pdf",sep=""),width=6,height=6)
+pdf(file=paste(series,"_c.pdf",sep=""),width=6,height=6)
 plot.f(a,low='red',high='yellow',field='cor')
 dev.off()
 
@@ -54,9 +54,9 @@ sub.data = subset(sub.data,slrsim_label == '2|0.1')
 
 
 # TODO: Plot some alignments from here.
-f <- function(df) {
-  lbl <- df[1,]$slrsim_label
-  p <- plot.indel.distribution(lbl)
-  
-}
-do.by.labels(data.sub,fn=f)
+#f <- function(df) {
+#  lbl <- df[1,]$slrsim_label
+#  p <- plot.indel.distribution(lbl)
+#  
+#}
+#do.by.labels(data.sub,fn=f)

@@ -13,6 +13,7 @@ for (rate in c(0, 0.05)) {
   data.sub = subset(data,phylosim_insertrate==rate)
 #  data.sub = subset(data,slrsim_label=='uniform_low')
   if (nrow(data.sub) == 0) {
+    print(paste("No rows for rate",rate))
     next
   }
 
@@ -27,8 +28,9 @@ for (rate in c(0, 0.05)) {
     return(slr.roc(df))
   }
   comb.roc = summarize.by.labels(data.sub,f)
-  p <- plot.roc(comb.roc,plot=F)
+  p <- plot.roc(comb.roc,plot=F,plot.x='fpr',plot.y='tpr')
   p <- p + scale_colour_discrete('Reference species')
+  p <- p + scale_x_continuous(limits=c(0,0.2))
   print(p)
   dev.off()
 }

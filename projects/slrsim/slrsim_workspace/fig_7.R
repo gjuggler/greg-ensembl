@@ -22,13 +22,21 @@ for (rate in c(0, 0.05)) {
   print(xtbl,type='html',file=paste(fig_num,".html",sep=""),html.table.attributes='style="border:0px;"')
   
   # ROC plot of alignments.
-  pdf(file=paste(fig_num,"_roc.pdf",sep=""),width=10,height=10)
   f = function(df,thresh) {
     return(slr.roc(df,na.rm=T))
   }
-  comb.roc = summarize.by.labels(data.sub,f)
+  comb.roc <- summarize.by.labels(data.sub,f)
+
   p <- plot.roc(comb.roc,plot=F,plot.x='fpr',plot.y='tpr')
   p <- p + scale_colour_discrete('Alignment program')
+
+  pdf(file="fig_7_roc.pdf",width=10,height=10)
+#  p <- p + scale_colour_brewer(palette="Set1")
+  p <- linetypes.and.colors(p,n=8)
+  print(p)
+  dev.off()
+
+  pdf(file="fig_7_roc_zoom.pdf",width=10,height=10)
   p <- p + scale_x_continuous(limits=c(0,0.2))
   print(p)
   dev.off()
@@ -72,7 +80,7 @@ for (rate in c(0, 0.05)) {
   height = desired.aspect * width
 
   print(paste("width x height:",width,height))
-  pdf(file=paste(fig_num,"_alns.pdf",sep=""),width=20,height=15)
+  pdf(file="fig_7_alns.pdf",width=20,height=15)
   n.cols = 1
   i <- 1
   vplayout(n.cols,n)
