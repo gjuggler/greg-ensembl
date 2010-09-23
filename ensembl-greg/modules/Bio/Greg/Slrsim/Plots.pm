@@ -121,7 +121,7 @@ save(df.list,file="$all_file")
 
 for (df in df.list) {
   name = df[1,'experiment_name']
-  print(name)
+  print(paste("Experiment name:",name))
   data = df
   save(data,file=paste("$folder",'/',name,'.Rdata',sep=''))
 }
@@ -257,6 +257,43 @@ save(data,file="$out_file")
   print "$rcmd\n";
   my $params = {};
   Bio::Greg::EslrUtils->run_r($rcmd,$params);
+}
+
+# Reference sequences.
+sub slrsim_five {
+  my $self = shift;
+
+  my $out_file = $self->param('output_folder') . '/all.data.Rdata';
+  my $script = $self->script;
+  my $dbname = $self->dbc->dbname;
+  my $rcmd = qq^
+dbname="$dbname"
+source("$script")
+data = get.all.data(
+  genes.cols=c(
+    'slrsim_tree_length',
+    'phylosim_insertrate',
+    'phylosim_insertmodel',
+    'slrsim_ref',
+    'tree_mean_path'
+  ),
+  sites.cols=c(
+    'aln_dnds_lower',
+    'aln_dnds_upper'
+  )
+)
+save(data,file="$out_file")
+^;
+  print "$rcmd\n";
+  my $params = {};
+  Bio::Greg::EslrUtils->run_r($rcmd,$params);
+}
+
+# Different aligners.
+sub slrsim_six {
+  my $self = shift;
+
+  $self->slrsim_all();
 }
 
 sub mammals_indel_simulations {
