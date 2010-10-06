@@ -67,6 +67,7 @@ get.all.data = function(sites.cols=NULL,genes.cols=NULL,where=NULL) {
     'g.experiment_name','g.slrsim_label',
     'g.data_id','g.node_id',
     'g.phylosim_insertrate','g.phylosim_insertmodel',
+    'g.alignment_name',
     'g.tree_mean_path'
     )) {
     if (!necessary %in% genes.cols) {

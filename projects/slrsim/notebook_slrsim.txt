@@ -579,3 +579,73 @@ Indelign install:
 Trying to get together a decent set of plots for meeting w/ Nick tomorrow. Working on the collect_slrsim.R and plot.proteins.R
 scripts...
 
+### 2010-09-27 ###
+
+Root-to-tip path lengths for different phylogenies:
+
+Vertebrates (http://hgdownload.cse.ucsc.edu/goldenPath/hg18/phastCons44way/) out to lamprey
+ -> 1.57
+Placental (http://hgdownload.cse.ucsc.edu/goldenPath/hg18/phastCons44way/) out to sloth
+ -> 0.24
+Primates (http://hgdownload.cse.ucsc.edu/goldenPath/hg18/phastCons44way/) out to bushbaby
+ -> 0.13
+Vertebrates (H.sap out to Fugu, Siepel 2005 Gen Res)
+ -> 0.75
+Drosophila & Anopheles (Siepel 2005 Gen Res)
+ -> 1.0
+Yeast (S.cerevisiae out to S.kluyveri, Siepel 2005 Gen Res)
+ -> 1.25
+
+### 2010-09-28 ###
+
+# Unscaled tree sizes:
+
+ucsc vertebrate: {
+ mean_path:1.569
+ total_dist:12.116943
+ max_dist:1.7968
+}
+ucsc placental: {
+ mean_path:0.240
+ total_dist:4.743962
+ max_dist:0.404
+}
+ucsc primate: {
+ mean_path:0.132
+ total_dist:0.650735
+ max_dist:0.1645
+}
+anisimova bglobin: {
+ mean_path:2.543
+ total_dist:8.43490206
+ max_dist:3.0453
+}
+anisimova artificial: {
+ mean_path:0.250
+ total_dist:1.1
+ max_dist:0.25
+}
+
+
+### 2010-09-29 ###
+
+TREES:
+
+1) UCSC 44 mammals
+
+
+2) Anisimova bglobin
+
+Parameters:
+ - M3, kappa=2
+Tree sizes:
+ - Total lengths: 0.38, 2.11, 8.44, 16.88
+ - Mean paths: 0.11, 0.64, 2.54, 5.08
+
+3) Anisimova artificial
+
+Parameters:
+ - M3, kappa=2
+Tree sizes:
+ - Total lengths: 0.11, 1.1, 11
+ - Mean paths: 0.025, 0.25, 2.5
