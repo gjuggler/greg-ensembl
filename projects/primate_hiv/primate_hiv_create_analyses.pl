@@ -25,6 +25,8 @@ $h->init($url);
 if ($clean) {
   $h->clean_compara_analysis_tables;
   $h->clean_hive_tables;
+  my @truncate_tables = qw^stats_windows^;
+  $h->truncate_tables(\@truncate_tables);
 }
 
 # Define parameters (species sets, filtering options, etc).
@@ -32,42 +34,23 @@ parameter_sets();
 
 # Create analyses.
 node_sets();
-align();
-sequence_quality();
 split_params();
-gene_omegas();
-sitewise_omegas();
-mapping();
-collect_go();
-collect_stats();
+window_analysis();
 output_data();
 
 # Connect the dots.
-$h->connect_analysis("NodeSets","Align");
-$h->connect_analysis("Align","SequenceQuality");
-$h->connect_analysis("SequenceQuality","SplitParams");
-$h->connect_analysis("SplitParams","GeneOmegas");
-$h->connect_analysis("GeneOmegas","SitewiseOmegas");
-$h->connect_analysis("SitewiseOmegas","CollectStats");
+$h->connect_analysis("NodeSets","SplitParams");
+$h->connect_analysis("SplitParams","WindowAnalysis");
 
-$h->connect_analysis("Align","Mapping");
-$h->connect_analysis("Mapping","CollectGo");
-$h->wait_for("CollectStats",["Mapping","CollectGo"]);
-$h->wait_for("OutputTabularData",["GeneOmegas","SitewiseOmegas","CollectStats"]);
+$h->wait_for("OutputData",["NodeSets","SplitParams","WindowAnalysis"]);
 
-#my @genes = gene_list();
-#$h->add_genes_to_analysis("NodeSets",\@genes);
-my @nodes = all_nodes();
-_add_nodes_to_analysis("NodeSets",\@nodes);
-
-sub all_nodes {
-  my $cmd = "SELECT node_id FROM protein_tree_node WHERE parent_id=1;";
-  my @nodes = _select_node_ids($cmd);
-  return @nodes;
-}
+my @genes = gene_list();
+#@genes = @genes[1..300];
+#@genes = grep {$_ =~ m/(ENSG00000197123|ENSG00000119977)/gi} @genes;
+$h->add_genes_to_analysis("NodeSets",\@genes);
 
 sub gene_list {
-  open INPUT, "<candidate_genes.txt";
+  open INPUT, "<scale_up_genes.txt";
   my @lines = <INPUT>;
   close INPUT;
   return @lines;
@@ -101,55 +84,24 @@ sub parameter_sets {
   my $mammals = join(",",clade_taxon_ids("Eutheria"));
 
   my $non_primates = join(",",subtract(\@mammals_arr,\@primates_arr));
- 
-#  $params = {
-#    parameter_set_name => "Homininae",
-#    parameter_set_shortname => 'hmn',
-#    keep_species => $homininae,
-#    };
-#  $h->add_parameter_set($params);
-  
-  $params = {
-    parameter_set_name => "Hominidae",
-    parameter_set_shortname => 'hmd',
-    keep_species => $hominidae
-    };
-  $h->add_parameter_set($params);
-  
-#  $params = {
-#    parameter_set_name => "NonHominidPrimates",
-#    parameter_set_shortname => 'nonhom',
-#    keep_species => $non_hominidae
-#    };
-#  _add_parameter_set($params);
-  
-  $params = {
-    parameter_set_name => "Primates",
-    parameter_set_shortname => 'p',
-    keep_species => $primates
-    };
-  $h->add_parameter_set($params);
 
-#  $params = {
-#    parameter_set_name => "Laurasiatheria",
-#    parameter_set_shortname => 'l',
-#    keep_species => $laurasiatheria
-#    };
-#  _add_parameter_set($params);
-  
-#  $params = {
-#    parameter_set_name => "Mammals",
-#    parameter_set_shortname => 'm',
-#    keep_species => $mammals
-#    };
-#  _add_parameter_set($params);
-  
-#  $params = {
-#    parameter_set_name => "NonPrimateMammals",
-#    parameter_set_shortname => 'nonprm',
-#    keep_species => $non_primates
-#    };
-#  _add_parameter_set($params);
+  foreach my $aln_type ('compara','genomic_primates','genomic_mammals','genomic_all') {
+    $params = {
+      parameter_set_name => "Hominidae",
+      parameter_set_shortname => 'h',
+      keep_species => $hominidae,
+      aln_type => $aln_type,
+    };
+    $h->add_parameter_set($params);
+    
+    $params = {
+      parameter_set_name => "Primates",
+      parameter_set_shortname => 'p',
+      keep_species => $primates,
+      aln_type => $aln_type
+    };
+    $h->add_parameter_set($params);
+  }
 }
 
 sub node_sets {
@@ -158,17 +110,7 @@ sub node_sets {
   my $params = {
     flow_node_set => 'Primates'
   };
-  $h->create_analysis($logic_name,$module,$params,50,1);
-}
-
-sub align {
-  my $logic_name = "Align";
-  my $module = "Bio::Greg::Hive::Align";
-  my $params = {
-    alignment_method => 'prank',
-  };
-
-  $h->create_analysis($logic_name,$module,$params,400,1);
+  $h->create_analysis($logic_name,$module,$params,20,1);
 }
 
 sub sequence_quality {
@@ -187,55 +129,20 @@ sub split_params {
   my $params = {
     flow_parameter_sets => 'all'
   };
-  $h->create_analysis($logic_name,$module,$params,50,1);
+  $h->create_analysis($logic_name,$module,$params,20,1);
 }
 
-sub gene_omegas {
-  my $logic_name = "GeneOmegas";
-  my $module = "Bio::Greg::Hive::PhyloAnalysis";
-  my $base_params = {
-    analysis_action => 'hyphy_dnds',
-  };
-  $h->create_analysis($logic_name,$module,$base_params,500,1);
-}
+sub window_analysis {
+ my $logic_name = "WindowAnalysis";
+ my $module = "Bio::Greg::PrimateHIV::WindowAnalysis";
+ my $params = {
+ };
+ $h->create_analysis($logic_name,$module,$params,50,1);
 
-sub sitewise_omegas {
-  my $logic_name = "SitewiseOmegas";
-  my $module = "Bio::Greg::Hive::PhyloAnalysis";
-  my $base_params = {
-    analysis_action => 'slr',
-  };
-  $h->create_analysis($logic_name,$module,$base_params,500,1);
-}
-
-sub mapping {
-  my $logic_name = "Mapping";
-  my $module = "Bio::Greg::Hive::SitewiseMapper";
-  my $params = {
-    collect_go => 0
-  };
-  $h->create_analysis($logic_name,$module,$params,50,1);
-}
-
-sub collect_go {
-  my $logic_name = "CollectGo";
-  my $module = "Bio::Greg::Hive::CollectGO";
-  my $params = {
-    go_taxon_ids => '9606,9593,9598',
-  };
-  $h->create_analysis($logic_name,$module,$params,50,1);
-}
-
-sub collect_stats {
-  my $logic_name = "CollectStats";
-  my $module = "Bio::Greg::PrimateHIV::CollectPrimateHIVStats";
-  my $params = {
-  };
-  $h->create_analysis($logic_name,$module,$params,80,1);
 }
 
 sub output_data {
-  my $logic_name = "OutputTabularData";
+  my $logic_name = "OutputData";
   my $module = "Bio::Greg::PrimateHIV::OutputPrimateHIVData";
   my $params = {
   };

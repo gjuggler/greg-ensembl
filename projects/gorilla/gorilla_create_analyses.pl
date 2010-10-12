@@ -9,7 +9,7 @@ use Bio::Greg::Hive::ComparaHiveLoaderUtils;
 #my ($url) = undef;
 #GetOptions('url=s' => \$url);
 
-my $url = 'mysql://ensadmin:ensembl@ens-research:3306/gj1_gor_58';
+my $url = 'mysql://ensadmin:ensembl@ens-research:3306/gj1_gor_58_nofilter';
 my $clean = 1;
 
 my $h = new Bio::Greg::Hive::ComparaHiveLoaderUtils;
@@ -41,7 +41,11 @@ collect_duplications();
 filter_one_to_one();
 count_sites();
 count_sites_outgroup();
-likelihood_tests();
+lnl();
+lnl_grantham();
+lnl_more_primates();
+lnl_nofilter();
+lnl_norealign();
 collect_go();
 ### End branch-model tests.
 
@@ -63,7 +67,11 @@ $h->connect_analysis("NodeSets","CollectDuplications",1);
 $h->connect_analysis("NodeSets","FilterOneToOne",1);
 $h->connect_analysis("FilterOneToOne","CountSites",1);
 $h->connect_analysis("FilterOneToOne","CountSitesOutgroup",1);
-$h->connect_analysis("FilterOneToOne","LikelihoodTests",1);
+$h->connect_analysis("FilterOneToOne","lnl",1);
+$h->connect_analysis("FilterOneToOne","lnl_grantham",1);
+$h->connect_analysis("FilterOneToOne","lnl_more_primates",1);
+$h->connect_analysis("FilterOneToOne","lnl_nofilter",1);
+$h->connect_analysis("FilterOneToOne","lnl_norealign",1);
 $h->connect_analysis("NodeSets","CollectGo",1);
 
 add_all_nodes();
@@ -71,11 +79,11 @@ add_all_nodes();
 sub add_genes {
   my @genes = ();
 
-  open INPUT, "<candidate_genes.txt";
-  my @lines = <INPUT>;
-  close INPUT;
+  #open INPUT, "<candidate_genes.txt";
+  #my @lines = <INPUT>;
+  #close INPUT;
   #@genes =  @lines;
-  @genes = ('PAX2','CYBB','MB','BRCA2');
+  @genes = ('PAX2','CYBB','MB','BRCA2','KIRREL3','VPRBP','EIF2AK2','DSCAM','NACC1');
 
   $h->add_genes_to_analysis("NodeSets",\@genes);
 }
@@ -275,10 +283,57 @@ sub count_sites_outgroup {
   $h->create_analysis($logic_name,$module,$params,50,1);
 }
 
-sub likelihood_tests {
-  my $logic_name = "LikelihoodTests";
+sub lnl {
+  my $logic_name = "lnl";
   my $module = "Bio::Greg::Gorilla::LikelihoodTests";
   my $params = {
+    output_table => 'lnl',
+    alignment_output_folder => 'alns',
+  };
+  $h->create_analysis($logic_name,$module,$params,300,1);
+}
+
+sub lnl_grantham {
+  my $logic_name = "lnl_grantham";
+  my $module = "Bio::Greg::Gorilla::LikelihoodTests";
+  my $params = {
+    output_table => 'lnl_grantham',
+    alignment_output_folder => 'alns_grantham',
+    use_grantham_scores => 1
+  };
+  $h->create_analysis($logic_name,$module,$params,300,1);
+}
+
+sub lnl_more_primates {
+  my $logic_name = "lnl_more_primates";
+  my $module = "Bio::Greg::Gorilla::LikelihoodTests";
+  my $params = {
+    output_table => 'lnl_more_primates',
+    alignment_output_folder => 'alns_more_primates',
+    species_taxon_ids => '9606, 9593, 9598, 9600, 9544, 9483, 9478, 30608, 30611'
+  };
+  $h->create_analysis($logic_name,$module,$params,300,1);
+}
+
+sub lnl_nofilter {
+  my $logic_name = "lnl_nofilter";
+  my $module = "Bio::Greg::Gorilla::LikelihoodTests";
+  my $params = {
+    output_table => 'lnl_nofilter',
+    alignment_output_folder => 'alns_nofilter',
+    likelihood_filter_triple_substitutions => 0
+  };
+  $h->create_analysis($logic_name,$module,$params,300,1);
+}
+
+sub lnl_norealign {
+  my $logic_name = "lnl_norealign";
+  my $module = "Bio::Greg::Gorilla::LikelihoodTests";
+  my $params = {
+    output_table => 'lnl_norealign',    
+    alignment_output_folder => 'alns_norealign',
+    likelihood_realign_with_prank => 0,
+    likelihood_filter_triple_substitutions => 0
   };
   $h->create_analysis($logic_name,$module,$params,300,1);
 }
