@@ -9,7 +9,10 @@ sub fetch_input {
   my $self = shift;
 
   ### DEFAULT PARAMETERS ###
-  my $defaults = { genome_taxon_id => 9606, };
+  my $defaults = { 
+    genome_taxon_id => 9606, 
+    split_by_genes_limit => 0
+  };
   ##########################
 
   $self->load_all_params($defaults);
@@ -20,32 +23,38 @@ sub run {
 
   $self->autoflow_inputjob(0);
 
+  my $taxon_id = $self->param('genome_taxon_id');
+
   my $compara  = $self->compara_dba;
-  my $gdba     = $compara->get_GenomeDBAdaptor;
-  my $gdb      = $gdba->fetch_by_taxon_id( $self->param('genome_taxon_id') );
-  my $core_dba = $gdb->db_adaptor;
-  my $gene_a   = $core_dba->get_GeneAdaptor;
+  my $member_a = $compara->get_MemberAdaptor;
 
-  foreach my $gene ( @{ $gene_a->fetch_all } ) {
-    next unless ( $gene->biotype eq 'protein_coding' );
+  my $lim = $self->param('split_by_genes_limit');
+  my $i=0;
+#  my @members = @{$member_a->fetch_all_by_source_taxon('ENSEMBLPEP',$taxon_id)};
+#  print "Members: ".scalar(@members)."\n";
+  foreach my $member ( @{ $member_a->fetch_all_by_source_taxon('ENSEMBLGENE', $taxon_id)} ) {
+#    next unless ( $gene->biotype eq 'protein_coding' );
 
-    $self->fan_gene($gene);
+    last if ($lim > 0 && $i > $lim);
+
+    $i++;
+    $self->fan_gene($member);
   }
 }
 
 sub fan_gene {
   my $self = shift;
-  my $gene = shift;
+  my $member = shift;
 
-  my $canonical_ts = $gene->canonical_transcript;
-  print $canonical_ts->stable_id . "\n";
+  my $pep_member = $member->get_canonical_peptide_Member;
+  return unless (defined $pep_member);
 
-  my $added_params  = { transcript_stable_id => $canonical_ts->stable_id };
+  my $added_params  = { stable_id => $pep_member->stable_id };
   my $input_params  = $self->_parse_string('input_id');
   my $output_params = { %$input_params, %$added_params };
 
   my ($job_id) = @{ $self->dataflow_output_id( $output_params, 1 ) };
-  print "  -> Fanned gene job: $job_id \n";
+  print "  -> Fanned member job: $job_id \n";
   $self->hash_print($output_params);
 }
 

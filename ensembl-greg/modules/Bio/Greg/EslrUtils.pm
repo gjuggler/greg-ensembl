@@ -11,6 +11,15 @@ sub baseDirectory {
   }
 }
 
+sub scratchDirectory {
+  my $class = shift;
+  if ( $ENV{'USER'} =~ /gj1/ ) {
+    return $ENV{'HOME'} . '/scratch';
+  } else {
+    return $ENV{'HOME'} . '/scratch';
+  }
+}
+
 sub defaultMysqlURL {
   my $class = shift;
 
@@ -336,6 +345,8 @@ sub run_r {
   use File::Path;
   mkpath($temp_dir);
 
+  
+
   my $temp_in = $temp_dir . "/temp_in.txt";
 
   #my $temp_out = $temp_dir . "/temp_out.txt";
@@ -363,11 +374,11 @@ sub get_r_command {
 
   my $r_cmd = "R-2.10.0";
   if ( $params->{'farm'} ) {
-    $r_cmd = "/software/bin/R-2.10.0";
+    $r_cmd = "/software/bin/R-2.11.1";
   } elsif ( $params->{'bigmem'} ) {
     $r_cmd = "bsub -Is -R'select[mem>10000] rusage[mem=10000]' -M10000000 /software/R-2.9.0/bin/R ";
   } elsif ( $ENV{'USER'} =~ /gj1/ ) {
-    $r_cmd = "/software/R-2.10.0/bin/R";
+    $r_cmd = "/software/R-2.11.1/bin/R";
   } else {
 
   }
@@ -412,8 +423,8 @@ sub get_r_values {
   close(IN);
 
   if ($rc) {
-    print join( "\n", @lines );
-    die "R returned an error!";
+    my $err =  join( "\n", @lines );
+    die "R returned an error! [$err]";
   }
 
   unlink($temp_in);

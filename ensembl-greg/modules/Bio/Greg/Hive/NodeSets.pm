@@ -74,27 +74,38 @@ sub write_output {
   my $tree = $self->param('tree');
 
   if ( defined $self->param('flow_node_set') ) {
-    $self->autoflow_inputjob(0);
+    $self->input_job->autoflow(0);
     my $flow_set = $self->param('flow_node_set');
 
     foreach my $node ( $tree->nodes ) {
       next if ( $node->is_leaf );
 
+      my $params = {
+        orig_node_id => $self->param('node_id'),
+        node_id => $node->node_id
+      };
       my $id = $node->node_id;
+
       if ( $node->has_tag( "cc_root_" . $flow_set ) ) {
 
-        my $output_id = { node_id => $id, orig_node_id => $self->param('node_id') };
-        my ($output_job_id) = @{ $self->dataflow_output_id( $output_id, 1 ) };
+        # Don't flow this node if this job has a specific target gene ID.
+        if (defined $self->param('gene_id')) {
+          my $gene_id = $self->param('gene_id');
+          next unless ($self->tree_contains_a_gene_with_name($node,$gene_id));
+          $params->{gene_id} = $gene_id;
+        }
+        
+        my ($output_job_id) = @{ $self->dataflow_output_id( $params, 1 ) };
         print " -> Flowed node $id (job id: $output_job_id)\n";
         if ( $self->param('flow_parent_and_children') ) {
           my $i = 0;
           foreach my $child ( @{ $node->children } ) {
-            my $output_id = {
+            my $output_id = $self->replace($params,{
               node_id               => $child->node_id,
               orig_node_id          => $self->param('node_id'),
               node_set_parent_id    => $id,
               node_set_child_number => $i++
-            };
+            });
             my ($output_job_id) = @{ $self->dataflow_output_id( $output_id, 1 ) };
             print "  --> Flowed child $output_job_id\n";
           }
@@ -102,6 +113,32 @@ sub write_output {
       }
     }
   }
+}
+
+sub tree_contains_a_gene_with_name {
+  my $self = shift;
+  my $tree = shift;
+  my $name = shift;
+
+  my @members = $tree->leaves;
+  foreach my $member (@members) {
+    # Note: the 'gene_name' can be either ENSG, ENST, ENSP, or gene-name like string.
+    if ($member->stable_id eq $name) {
+      return 1;
+    }
+    if ($member->gene_member->stable_id eq $name) {
+      return 1;
+    }
+    my $gene = $member->get_Gene;
+    if (!$gene) {
+      next;
+    }
+    my $member_name = $gene->external_name;
+    if ($member_name eq $name) {
+      return 1;
+    }
+  }
+  return 0;
 }
 
 sub tag_root_nodes {

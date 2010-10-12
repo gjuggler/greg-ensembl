@@ -11,6 +11,8 @@ use Bio::EnsEMBL::Compara::ComparaUtils;
 
 use Bio::EnsEMBL::Hive::Utils 'stringify';    # import 'stringify()'
 
+use Bio::Greg::EslrUtils;
+
 our $analysis_counter = 1;
 
 sub new {
@@ -47,8 +49,19 @@ sub init {
   my $self = shift;
   my $url  = shift;
 
+  $url =~ m!.*/(.+?)$!;
+  my $dbname = $1;
+
+  my $obj = Bio::Greg::EslrUtils->url_to_hashref($url);
+
   my $dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new( -url => $url );
-  my $hive_dba = Bio::EnsEMBL::Hive::DBSQL::DBAdaptor->new( -url => $url );
+  my $hive_dba = Bio::EnsEMBL::Hive::DBSQL::DBAdaptor->new( 
+    -host => $obj->{host}, 
+    -dbname => $obj->{database},
+    -user => $obj->{user},
+    -pass => $obj->{password},
+    -port => $obj->{port}
+    );
   $self->dba($dba);
   $self->hive_dba($hive_dba);
 
@@ -178,6 +191,7 @@ sub clean_hive_tables {
     analysis_ctrl_rule
     analysis_data analysis_description
     analysis_job analysis_job_file
+    analysis_job_error
     analysis_stats analysis_stats_monitor
     dataflow_rule
     hive

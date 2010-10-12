@@ -2,6 +2,7 @@ package Bio::Greg::Gorilla::LikelihoodTests;
 
 use strict;
 use Bio::Greg::Codeml;
+use File::Path;
 
 use base ( 'Bio::Greg::Hive::Process', 'Bio::Greg::StatsCollectionUtils',
   'Bio::Greg::Hive::Align' );
@@ -12,30 +13,68 @@ sub fetch_input {
   my ($self) = @_;
 
   my $default_params = {
-    output_table            => 'stats_branch',
-    chimp_output_table      => 'stats_chimp_branch',
-    alignment_output        => 1,
-    alignment_output_folder => 'branch_alns'
+    output_table                           => 'stats_branch',
+    alignment_output                       => 1,
+    alignment_output_folder                => 'branch_alns_nofilter',
+    likelihood_realign_with_prank          => 1,
+    likelihood_filter_triple_substitutions => 1,
+    use_grantham_scores                    => 0,
+    species_taxon_ids                      => '9606, 9593, 9598, 9600, 9544, 9483'
   };
 
   # Fetch parameters from all possible locations.
   $self->load_all_params($default_params);
+
+  $self->param('chimp_output_table',$self->param('output_table') . '_chimp');
 
   # Create tables if necessary.
   $self->create_table_from_params( $self->compara_dba, $self->param('output_table'),
     $self->get_gene_stats_def );
   $self->create_table_from_params( $self->compara_dba, $self->param('chimp_output_table'),
     $self->get_gene_stats_def );
+
+  my $base = '/nfs/users/nfs_g/gj1/scratch/gorilla/output';
+  my $actual_folder = $self->get_output_folder($base);
+
+  my $aln_subdir = $self->param('alignment_output_folder');
+  my $aln_root_folder = "${actual_folder}/${aln_subdir}";
+  mkpath([$aln_root_folder]);
+
+}
+
+sub list_from_string {
+  my $self = shift;
+  my $string = shift;
+  return Bio::EnsEMBL::Compara::ComparaUtils->get_taxon_ids_from_keepers_list($self->compara_dba,$string);
+}
+
+sub subtract {
+  my $self = shift;
+  my $list_a = shift;
+  my @remove_us = @_;
+  my $hash;
+  map {$hash->{$_}=1} @$list_a;
+  foreach my $list_b (@remove_us) {
+    map {delete $hash->{$_}} @$list_b;
+}
+  return [keys %$hash];
 }
 
 sub run {
   my $self = shift;
 
+  my @taxon_ids = $self->list_from_string($self->param('species_taxon_ids'));
+  print "@taxon_ids\n";
+  my $all = \@taxon_ids;
+  my $no_chimp = $self->subtract($all,[9598]);
+  my $no_human = $self->subtract($all,[9606]);
+  my $no_gor = $self->subtract($all,[9593]);
+
   my $full_tree = $self->get_tree;
-  my $tree_no_chimp = $self->good_primate_tree( $full_tree, [ 9606, 9593, 9600, 9544, 9483 ] );
+  my $tree_no_chimp = $self->good_primate_tree( $full_tree, $no_chimp  );
   my $full_primate_tree =
-    $self->good_primate_tree( $full_tree, [ 9606, 9593, 9598, 9600, 9544, 9483 ] );
-  my $tree_no_human = $self->good_primate_tree( $full_tree, [ 9593, 9598, 9600, 9544, 9483 ] );
+    $self->good_primate_tree( $full_tree, $all );
+  my $tree_no_human = $self->good_primate_tree( $full_tree, $no_human );
 
   print "full primates: \n";
   print $full_primate_tree->newick_format . "\n";
@@ -44,7 +83,9 @@ sub run {
   print "no human: \n";
   print $tree_no_human->newick_format . "\n";
 
-  my $full_primate_aln = $self->get_filtered_aln($full_primate_tree);
+  my $tree_aln_obj = $self->get_filtered_aln($full_primate_tree);
+  $full_primate_tree = $tree_aln_obj->{tree};
+  my $full_primate_aln = $tree_aln_obj->{aln};
 
   # Branch models summary:
   # a: (H, G, others)
@@ -62,30 +103,43 @@ sub run {
   my $tree;
   my $aln;
 
-  foreach my $non_gorilla ( 'chimpanzee', 'human' ) {
+  foreach my $non_gorilla ( 'human','chimpanzee' ) {
     print "NON-GORILLA SPECIES: $non_gorilla\n";
 
+    my $non_gorilla_member;
+    my $gorilla_member;
     if ( $non_gorilla eq 'human' ) {
 
       # Analyze with human and gorilla.
       $tx_id = 9606;
       $tree  = $tree_no_chimp;
-      my ($chimp_member) = grep { $_->taxon_id == 9598 } $full_primate_tree->leaves;
       my $aln_no_chimp = Bio::EnsEMBL::Compara::AlignUtils->remove_seq_from_aln( $full_primate_aln,
-        $chimp_member->stable_id );
+        'ens_9598' );
       $aln   = $aln_no_chimp;
       $table = $self->param('output_table');
+
+      ($non_gorilla_member) = grep {$_->taxon_id == 9606 } $full_primate_tree->leaves;
+      ($gorilla_member) = grep {print ">>>".$_."_".$_->taxon_id."\n";$_->taxon_id==9593} $full_primate_tree->leaves;
     } else {
 
       # Analyze with chimp and gorilla.
       $tx_id = 9598;
       $tree  = $tree_no_human;
-      my ($human_member) = grep { $_->taxon_id == 9606 } $full_primate_tree->leaves;
       my $aln_no_human = Bio::EnsEMBL::Compara::AlignUtils->remove_seq_from_aln( $full_primate_aln,
-        $human_member->stable_id );
+        'ens_9606' );
       $aln   = $aln_no_human;
       $table = $self->param('chimp_output_table');
+
+      ($non_gorilla_member) = grep {$_->taxon_id == 9598 } $full_primate_tree->leaves;
+      ($gorilla_member) = grep {$_->taxon_id==9593} $full_primate_tree->leaves;
     }
+
+    $self->param('gorilla_member',$gorilla_member);
+    $self->param('non_gorilla_member',$non_gorilla_member);
+
+    my $map;
+    map {$map->{$_->name} = 'ens_'.$_->taxon_id} $tree->leaves;
+    $tree = Bio::EnsEMBL::Compara::TreeUtils->translate_ids($tree,$map);
 
     Bio::EnsEMBL::Compara::AlignUtils->pretty_print($aln);    # Debugging print the alignment.
 
@@ -128,11 +182,6 @@ sub run {
     $self->_get_peptides( $full_primate_tree, 9598, 'chimpanzee' );
     $self->collect_values($tree);
 
-    my $lambda_mammals  = $self->dawg_lambda($full_tree);
-    my $lambda_primates = $self->dawg_lambda($full_primate_tree);
-    $self->param( 'lambda_mammals',  $lambda_mammals );
-    $self->param( 'lambda_primates', $lambda_primates );
-
     $self->store_params_in_table( $self->db_handle(1), $table, $self->params );
   }
 
@@ -149,9 +198,11 @@ sub _get_peptides {
     my $member = $proteins[0];
     $self->param( $prefix . '_protein', $member->stable_id );
     $self->param( $prefix . '_gene',    $member->gene_member->stable_id );
+#    $self->param( $prefix . '_tx',    $member->get_Transcript->stable_id );
   } else {
     $self->param( $prefix . '_protein', undef );
     $self->param( $prefix . '_gene',    undef );
+#    $self->param( $prefix . '_tx',    undef);
   }
 }
 
@@ -169,73 +220,85 @@ sub get_filtered_aln {
   my $self = shift;
   my $tree = shift;
 
+  $self->params('tree_to_use',$tree);
   my $file;
 
-  # A little funkiness here to make sure we get the correct alignment for our chosen sub-tree.
-  my $params = $self->params();
-  $params->{tree} = $tree;
-  my $aln      = $self->get_cdna_aln($params);
-  my $orig_aln = $aln;
+  $self->param( 'reference_species', 9606 );
+  my $ref_species = $self->param('reference_species');
+  my @members     = $tree->leaves;
+  my ($ref_member) = grep { $_->taxon_id == $self->param('reference_species') } @members;
+  $ref_member = $members[0] if (!defined $ref_member);
 
-  #Bio::EnsEMBL::Compara::AlignUtils->pretty_print($aln); # Debugging print the alignment.
-  delete $params->{tree};
+  my $gene_name = $ref_member->get_Gene->external_name || $ref_member->gene_member->stable_id;
+  $self->param('gene_name',$gene_name);
 
-  my @leaves = $tree->leaves;
-  my ($member) = grep { $_->taxon_id == 9606 } @leaves;
-  $member = $leaves[0] if ( !defined $member );
-  my $aln_id = $member->stable_id;
+  $self->param('aln_type','compara');
+  my $c_dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new(
+    -url => 'mysql://ensadmin:ensembl@ens-livemirror:3306/ensembl_compara_58' );
+  my $tree_aln_obj = Bio::EnsEMBL::Compara::ComparaUtils->get_compara_or_genomic_aln($c_dba,$tree,$ref_member,$self->params);
+
+  my $aln = $tree_aln_obj->{aln};
+  $tree = $tree_aln_obj->{tree};
+  my $aln_id = $gene_name;
 
   $file =
     $self->save_aln( $aln,
-    { id => $aln_id, filename => $aln_id . "_orig", subfolder => 'branch_alns' } );
+    { id => $aln_id, filename => $aln_id . "_orig", subfolder => $self->param('alignment_output_folder') } );
   $self->param( 'orig_aln_length', $aln->length );
-  $self->param( 'orig_aln_file',   $file );
+  $self->param( 'orig_aln_file',   $file->{rel_file} );
 
-  # Align with Prank to try and de-align incorrectly called exons.
-  my $pep_aln = Bio::EnsEMBL::Compara::AlignUtils->translate($aln);
-  my $prank_params = { alignment_prank_f => 1 };
-  $pep_aln = $self->align_with_prank( $pep_aln, $tree, $prank_params );
-  $aln = Bio::EnsEMBL::Compara::AlignUtils->peptide_to_cdna_alignment( $pep_aln, $tree );
-  my $prank_aln = $aln;
+  $self->param('likelihood_realign_with_prank',0);
+  $self->param('likelihood_filter_triple_substitutions',0);
+  if ( $self->param('likelihood_realign_with_prank') ) {
 
-  $file =
-    $self->save_aln( $aln,
-    { id => $aln_id, filename => $aln_id . "_realign", subfolder => 'branch_alns' } );
-  $self->param( 'prank_aln_length', $aln->length );
-  $self->param( 'prank_aln_file',   $file );
+    # Align with Prank to try and de-align incorrectly called exons.
+    my $pep_aln = Bio::EnsEMBL::Compara::AlignUtils->translate($aln);
+    my $prank_params = { alignment_prank_f => 1 };
+    $pep_aln = $self->align_with_prank( $pep_aln, $tree, $prank_params );
+    $aln = Bio::EnsEMBL::Compara::AlignUtils->peptide_to_cdna_alignment( $pep_aln, $tree );
+    my $prank_aln = $aln;
 
-  # Remove 'funky' columns with triple substitutions between close pairs of species.
-  my ($first_keeper)  = grep { $_->taxon_id == 9606 } $tree->leaves;
-  my ($second_keeper) = grep { $_->taxon_id == 9593 } $tree->leaves;
-  my ($third_keeper)  = grep { $_->taxon_id == 9598 } $tree->leaves;
-
-  if ( $first_keeper && $second_keeper ) {
-    $aln = Bio::EnsEMBL::Compara::AlignUtils->remove_triple_mutated_codons( $aln,
-      $first_keeper->stable_id, $second_keeper->stable_id );
-  }
-  if ( $first_keeper && $third_keeper ) {
-    $aln = Bio::EnsEMBL::Compara::AlignUtils->remove_triple_mutated_codons( $aln,
-      $first_keeper->stable_id, $third_keeper->stable_id );
-  }
-  if ( $second_keeper && $third_keeper ) {
-    $aln = Bio::EnsEMBL::Compara::AlignUtils->remove_triple_mutated_codons( $aln,
-      $second_keeper->stable_id, $third_keeper->stable_id );
+    $file =
+      $self->save_aln( $aln,
+      { id => $aln_id, filename => $aln_id . "_realign", subfolder => $self->param('alignment_output_folder') } );
+    $self->param( 'prank_aln_length', $aln->length );
+    $self->param( 'prank_aln_file',   $file->{rel_file} );
+    Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $prank_aln, { width => 200 } )
+      ;    # Debugging print the alignment.
   }
 
-  $file =
-    $self->save_aln( $aln,
-    { id => $aln_id, filename => $aln_id . "_final", subfolder => 'branch_alns' } );
-  $self->param( 'filtered_aln_length', $aln->length );
-  $self->param( 'filtered_aln_file',   $file );
+  if ( $self->param('likelihood_filter_triple_substitutions') ) {
 
-  Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $orig_aln, { width => 200 } )
-    ;    # Debugging print the alignment.
-  Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $prank_aln, { width => 200 } )
-    ;    # Debugging print the alignment.
+    # Remove 'funky' columns with triple substitutions between close pairs of species.
+    my ($first_keeper)  = grep { $_->taxon_id == 9606 } $tree->leaves;
+    my ($second_keeper) = grep { $_->taxon_id == 9593 } $tree->leaves;
+    my ($third_keeper)  = grep { $_->taxon_id == 9598 } $tree->leaves;
+
+    if ( $first_keeper && $second_keeper ) {
+      $aln = Bio::EnsEMBL::Compara::AlignUtils->remove_triple_mutated_codons( $aln,
+        $first_keeper->stable_id, $second_keeper->stable_id );
+    }
+    if ( $first_keeper && $third_keeper ) {
+      $aln = Bio::EnsEMBL::Compara::AlignUtils->remove_triple_mutated_codons( $aln,
+        $first_keeper->stable_id, $third_keeper->stable_id );
+    }
+    if ( $second_keeper && $third_keeper ) {
+      $aln = Bio::EnsEMBL::Compara::AlignUtils->remove_triple_mutated_codons( $aln,
+        $second_keeper->stable_id, $third_keeper->stable_id );
+    }
+    $file =
+      $self->save_aln( $aln,
+                       { id => $aln_id, filename => $aln_id . "_final", subfolder => 'branch_alns' } );
+    $self->param( 'filtered_aln_length', $aln->length );
+    $self->param( 'filtered_aln_file',   $file->{rel_file} );
+  }
+  
+#  Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $orig_aln, { width => 200 } )
+#    ;    # Debugging print the alignment.
   Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $aln, { width => 200 } )
     ;    # Debugging print the alignment.
 
-  return $aln;
+  return {tree => $tree, aln => $aln};
 }
 
 sub calculate_branch_likelihood {
@@ -264,6 +327,12 @@ sub calculate_branch_likelihood {
   if ( $newick !~ m/(#|\$)/ ) {
     print "Only one omega category!\n";
     $params->{model} = 0;
+  }
+
+  if ( $self->param('use_grantham_scores')) {
+    $params->{aaDist} = 1;
+  } else {
+    $params->{aaDist} = 0;
   }
 
   # Use the Codeml.pm helper function to run Codeml.
@@ -318,7 +387,7 @@ sub good_primate_tree {
   my @keeper_leaves = $TREE->get_leaves_for_species( $tree, \@good_primates );
 
   # Turn our Bio::EnsEMBL::Compara::Member objects into a list of (database-specific) node_ids.
-  my @keeper_ids = map { $_->node_id } @keeper_leaves;
+  my @keeper_ids = map {$_->node_id } @keeper_leaves;
 
   # Helper method to generate a nice sub-tree from a list of node_ids.
   $tree = $TREE->extract_subtree_from_leaves( $tree, \@keeper_ids );
@@ -353,6 +422,42 @@ sub store {
     $self->param( "${key}omega_${i}", $omega );
   }
 
+  # Get the grantham scores and N and S substitution counts.
+  if ($prefix !~ m/[efgh]/) {
+    my $subs = $model->{subs};
+    my $gor_key = $self->param('gorilla_member')->stable_id;
+    my $other_key = $self->param('non_gorilla_member')->stable_id;
+    $self->store_subs_parameters('gorilla',$subs->{$gor_key});
+    $self->store_subs_parameters('other',$subs->{$other_key});
+  }
+}
+
+sub store_subs_parameters {
+  my $self = shift;
+  my $suffix = shift;
+  my $subs_hash = shift;
+
+  my $scores = Bio::Greg::Codeml->get_grantham_score_hash;
+
+  my $dn=0;
+  my $ds=0;
+  my $grantham=0;
+  foreach my $key (keys %$subs_hash) {
+    my $sub = $subs_hash->{$key};
+    my $sub_key = $sub->{'aa_a'}.$sub->{'aa_b'};
+    #print "sub_key[$sub_key] ". $scores->{$sub_key}."\n";
+    $grantham += $scores->{$sub_key};
+    $self->hash_print($sub);
+    if ($sub->{'aa_a'} ne $sub->{'aa_b'}) {
+      $dn += 1;
+    } else {
+      $ds += 1;
+    }
+  }
+  
+  $self->param('grantham_'.$suffix,$grantham);
+  $self->param('subs_n_'.$suffix,$dn);
+  $self->param('subs_s_'.$suffix,$ds);
 }
 
 sub get_gene_stats_def {
@@ -361,23 +466,23 @@ sub get_gene_stats_def {
     node_id      => 'int',
     orig_node_id => 'string',
 
-    human_protein      => 'string',
-    human_gene         => 'string',
-    gorilla_protein    => 'string',
-    gorilla_gene       => 'string',
-    chimpanzee_protein => 'string',
-    chimpanzee_gene    => 'string',
-
-    orig_aln_length     => 'int',
-    prank_aln_length    => 'int',
-    filtered_aln_length => 'int',
+    human_protein      => 'char16',
+    human_gene         => 'char16',
+    human_tx           => 'char16',
+    gorilla_protein    => 'char16',
+    gorilla_gene       => 'char16',
+    gorilla_tx         => 'char16',
 
     orig_aln_file     => 'string',
     prank_aln_file    => 'string',
     filtered_aln_file => 'string',
 
-    lambda_mammals  => 'float',
-    lambda_primates => 'float',
+    grantham_gorilla => 'int',
+    grantham_other => 'int',
+    subs_n_gorilla => 'int',
+    subs_n_other => 'int',
+    subs_s_gorilla => 'int',
+    subs_s_other => 'int',
 
     unique_keys => 'data_id,node_id'
   };

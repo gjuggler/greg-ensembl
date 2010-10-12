@@ -16,7 +16,7 @@ use Bio::EnsEMBL::Compara::DBSQL::DBAdaptor;
 use File::Path;
 use POSIX qw(strftime mktime);
 
-use base ('Bio::EnsEMBL::Hive::ProcessWithParams');
+use base ('Bio::EnsEMBL::Hive::Process');
 
 sub get_tree {
   my $self   = shift;
@@ -179,7 +179,7 @@ sub compara_dba {
   my $self = shift;
 
   if ( !defined $self->{_compara_dba} ) {
-    print " >> Getting new DBA!!!!\n";
+    print " >> Getting new DBA!!!!\n" if ($self->debug);
     my $compara_dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new( -DBCONN => $self->db->dbc );
     eval {
       $compara_dba->dbc->do("select * from member limit 1;");
@@ -191,8 +191,7 @@ sub compara_dba {
       Bio::EnsEMBL::Registry->load_registry_from_multiple_dbs( {
           -host => 'ens-livemirror',
           -user => 'ensro',
-
-          #                                                               -verbose => 1
+          #-verbose => 1,
         }
       );
       $compara_dba = Bio::EnsEMBL::Registry->get_DBAdaptor( 'multi', 'compara' );
@@ -208,7 +207,7 @@ sub hive_dba {
   my $self = shift;
 
   if ( !defined $self->{_hive_dba} ) {
-    print " >>>> Getting new Hive DBA!!!!\n";
+    #print " >>>> Getting new Hive DBA!!!!\n";
     my $hive_dba = Bio::EnsEMBL::Hive::DBSQL::DBAdaptor->new( -DBCONN => $self->db->dbc );
     $self->{_hive_dba} = $hive_dba;
   }
@@ -221,7 +220,7 @@ sub pta {
   #  return $self->compara_dba->get_ProteinTreeAdaptor;
 
   if ( !defined $self->param('_pta') ) {
-    print " >>>> Getting new PTA!!!!\n";
+    #print " >>>> Getting new PTA!!!!\n";
     my $compara_dba = $self->compara_dba;
     my $pta         = $compara_dba->get_ProteinTreeAdaptor;
     $self->param( '_pta', $pta );
@@ -235,7 +234,7 @@ sub mba {
   #return $self->compara_dba->get_MemberAdaptor;
 
   if ( !defined $self->param('_mba') ) {
-    print " >>>> Getting new MBA!!!!\n";
+    #print " >>>> Getting new MBA!!!!\n";
     my $compara_dba = $self->compara_dba;
     my $pta         = $compara_dba->get_MemberAdaptor;
     $self->param( '_mba', $pta );
@@ -250,7 +249,7 @@ sub db_handle {
   warn('Shouldn\'t be accessing db_handle directly -- use $dbc->do and $dbc->prepare');
 
   if ( !defined $self->param('_compara_dbh') || $force == 1 ) {
-    print " >>>> Getting new Compara DBH!!!!\n";
+    #print " >>>> Getting new Compara DBH!!!!\n";
     my $dbc = $self->dbc;
     my $dbh = $dbc->db_handle;
     $self->param( '_compara_dbh', $dbh );
@@ -260,7 +259,7 @@ sub db_handle {
   my $dbh = $self->param('_compara_dbh');
 
   my $ping = $dbh->ping;
-  print "PING: $ping\n";
+  #print "PING: $ping\n";
 
   #  if (!$ping) {
   #    $dbh = $dbh->clone;
@@ -282,7 +281,7 @@ sub dbc {
   return $self->db->dbc;
 
   if ( !defined $self->param('_compara_dbc') ) {
-    print " >>>> Getting new Compara DBC!!!!\n";
+    #print " >>>> Getting new Compara DBC!!!!\n";
     my $compara_dba = $self->compara_dba;
     my $dbc         = $compara_dba->dbc;
 
@@ -419,10 +418,10 @@ sub new_data_id {
   my $uuid = $ug->create();
 
   my $dbc = $self->dbc;
-  $dbc->do("LOCK TABLES protein_tree_tag WRITE");
+  $dbc->do("LOCK TABLES meta WRITE");
 
   my $sth = $self->dbc->prepare(
-    "SELECT value from protein_tree_tag WHERE node_id=0 AND tag='data_id_counter';");
+    "SELECT meta_value from meta WHERE meta_key='data_id_counter';");
   $sth->execute;
   my @row = $sth->fetchrow_array;
   $sth->finish;
@@ -433,7 +432,7 @@ sub new_data_id {
 
   $data_id++;
   $self->dbc->do(
-    "REPLACE into protein_tree_tag (node_id,tag,value) VALUES (0,'data_id_counter',$data_id);");
+    "REPLACE into meta (meta_key,meta_value) VALUES ('data_id_counter',$data_id);");
   $self->add_breadcrumb( $params, $data_id );
 
   $self->param( 'data_id', $data_id );
@@ -448,12 +447,17 @@ sub param {
   my $self  = shift;
   my $param = shift;
 
+  my $param_value;
   if (@_) {
     $self->SUPER::param( $param, shift @_ );
+    $param_value = $self->SUPER::param($param);
+    if ($self->debug) {
+      print "Set $param => [$param_value]\n";
+    }
+  } else {
+    $param_value = $self->SUPER::param($param);
   }
-
-  my $param_value = $self->SUPER::param($param);
-
+  
   #print "$param value: $param_value\n" if ($param =~ m/slr/);
   if ( !defined $param_value && $param ne 'breadcrumb' ) {
     $param_value = $self->breadcrumb_param($param);
@@ -463,10 +467,9 @@ sub param {
 
 sub params {
   my $self = shift;
-  $self->param_init();
 
   # Make a copy!
-  my $param_hash = $self->{_param_hash};
+  my $param_hash = $self->input_job->{_param_hash};
   my $new_params = {};
   foreach my $key ( keys %$param_hash ) {
     $new_params->{$key} = $param_hash->{$key};
@@ -476,27 +479,21 @@ sub params {
 
 sub load_all_params {
   my $self = shift;
-  my $default_params = shift || {};
-
-  $self->param_init(%$default_params);
 
   my $node_id          = $self->param('node_id');
   my $parameter_set_id = $self->param('parameter_set_id');
 
   my $tree_tag_params = {};
   if ( defined $node_id ) {
-    $tree_tag_params = $self->get_params_from_tree_tags( $self->compara_dba, $node_id )
-      || {};
+    $tree_tag_params = $self->get_params_from_tree_tags( $self->compara_dba, $node_id );
+    $self->set_params($tree_tag_params) if ($tree_tag_params);
   }
 
   my $param_set_params = {};
   if ( defined $parameter_set_id ) {
-    $param_set_params = $self->get_params_from_param_set($parameter_set_id)
-      || {};
+    $param_set_params = $self->get_params_from_param_set($parameter_set_id);
+    $self->set_params($param_set_params) if ($param_set_params);
   }
-
-  my $old_param_hash = $self->{'_param_hash'};
-  $self->{'_param_hash'} = { %$old_param_hash, %$param_set_params, %$tree_tag_params };
 
   if ( !defined $self->param('data_id') ) {
     $self->param( 'data_id', $node_id );
@@ -504,10 +501,14 @@ sub load_all_params {
   if ( !defined $self->param('parameter_set_id') ) {
     $self->param( 'parameter_set_id', 0 );
   }
+  if ( !defined $self->param('job_id')) {
+    $self->param('job_id',$self->input_job->dbID);
+  }
 
-  print "Bio::Greg::Hive::Process.pm - load all params\n";
-  $self->hash_print( $self->params );
-
+  if ($self->debug) {
+    print "Bio::Greg::Hive::Process.pm - load all params\n";
+    $self->hash_print( $self->params );
+  }
 }
 
 sub get_params_from_tree_tags {
@@ -541,6 +542,13 @@ sub load_params_from_tag {
 
   my $tag_string = $tree->get_tagvalue($tag);
   return $self->string_to_hash($tag_string);
+}
+
+sub store_message {
+  my $self = shift;
+  my $msg = shift;
+
+  $self->db()->get_JobMessageAdaptor()->register_message($self->input_job->dbID, $msg, 0 );
 }
 
 # Eval a hashref from a string.
@@ -612,6 +620,15 @@ sub get_params {
   return $self->params;
 }
 
+sub set_params {
+  my $self = shift;
+  my $params = shift;
+
+  foreach my $key (keys %$params) {
+    $self->param($key,$params->{$key});
+  }
+}
+
 sub get_params_from_string {
   my $self         = shift;
   my $param_string = shift;
@@ -678,7 +695,9 @@ sub create_table_from_params {
     );
   };
   if ($@) {
-    print "TABLE $table_name EXISTS!!\n";
+    if ($self->debug) {
+      print "TABLE $table_name EXISTS!!\n";
+    }
     return;
   }
   print "Creating new table $table_name ...\n";
@@ -788,7 +807,7 @@ sub store_tag {
     $tag = $self->param('breadcrumb') . "." . $tag;
   }
 
-  print "  -> Storing tag [$tag] => [$value]\n";
+  print "  -> Storing tag [$tag] => [$value]\n" if ($self->debug);
   $tree->store_tag( $tag, $value );
 }
 
@@ -800,12 +819,11 @@ sub base {
 
 sub get_output_folder {
   my $self        = shift;
-  my $output_base = shift;
 
   if ( defined $self->param('output_folder') ) {
     my $folder = $self->param('output_folder');
 
-    #print "Output folder: $folder\n";
+    print "Output folder: $folder\n" if ($self->debug);
     if ( !-e $folder ) {
       print
         "Warning: Output folder was already stored in the database, but the folder did not exist.\n";
@@ -815,7 +833,9 @@ sub get_output_folder {
     return $folder;
   }
 
-  die("No output base folder specified!") unless ($output_base);
+  my $output_base = Bio::Greg::EslrUtils->scratchDirectory.'/'.$self->hive_dba->dbname;
+
+  print "output_base: $output_base\n";
 
   my $date_string = strftime( "%Y-%m-%d", localtime );
   my $i = 0;
@@ -826,7 +846,6 @@ sub get_output_folder {
     $filename = sprintf( "%s/%s/%s_%.2d", $output_base, $date_string, $date_string, $i );
   } while ( -e $filename );
 
-  print "Output folder: $filename\n";
   mkpath( [$filename] );
   $self->param( 'output_folder', $filename );
 
@@ -842,11 +861,28 @@ sub save_aln {
   my $aln    = shift;
   my $params = shift;
 
-  my @seqs     = $aln->each_seq;
-  my $first    = @seqs[0];
-  my $filename = $first->id;
-  my $id       = $filename;
+  $params->{extension} = 'fasta';
+
+  my $file_obj = $self->save_file($params);
+  
+  my $full_file = $file_obj->{full_file};
+
+  Bio::EnsEMBL::Compara::AlignUtils->to_file( $aln, $full_file );
+
+  return $file_obj;
+}
+
+sub save_file {
+  my $self = shift;
+  my $params = shift;
+
+  my $hash_subfolders = 1;
+  my $hash_subfolders = $params->{hash_subfolders} if (defined $params->{hash_subfolders});
+
+  my $filename = "[unnamed_file]";
   $filename = $params->{filename} if ( defined $params->{filename} );
+
+  my $id       = $filename;
   $id       = $params->{id}       if ( defined $params->{id} );
 
   my $subfolder = '';
@@ -854,23 +890,32 @@ sub save_aln {
 
   my $output_base = $self->get_output_folder;
 
-  my $lo = 0;
-  my $hi = 0;
-  my (@md5) = md5_hex($id) =~ /\G(..)/g;
-  my $hash_subfolder = join( '/', @md5[ $lo .. $hi ] );
+  my $extension = $params->{extension} || 'txt';
 
-  my $full_dir = "$output_base/$subfolder/$hash_subfolder";
+  my $full_dir;
+  my $full_file;
+  my $rel_file;
+  if ($hash_subfolders) {
+    my $lo = 0;
+    my $hi = 0;
+    my (@md5) = md5_hex($id) =~ /\G(..)/g;
+    my $hash_subfolder = join( '/', @md5[ $lo .. $hi ] );
+    
+    $full_dir = "$output_base/$subfolder/$hash_subfolder";
+    $full_file = "$full_dir/$filename.$extension";
+    $rel_file = "$hash_subfolder/$filename.$extension";
+  } else {
+    $full_dir = "$output_base/$subfolder";
+    $full_file = "$full_dir/$filename.$extension";
+    $rel_file = "$filename.$extension";
+  }
   mkpath( [$full_dir] );
 
-  my $full_file = "$full_dir/$filename.fasta";
-  print $full_file. "\n";
-
-  my $rel_file = "$hash_subfolder/$filename.fasta";
-
-  # TODO: Output the aln.
-  Bio::EnsEMBL::Compara::AlignUtils->to_file( $aln, $full_file );
-
-  return $rel_file;
+  return {
+    full_file => $full_file,
+    rel_file => $rel_file,
+    full_dir => $full_dir
+  };
 }
 
 sub get_hashed_file {
@@ -889,7 +934,7 @@ sub get_hashed_file {
   mkpath( [$full_dir] );
 
   my $full_file = "$full_dir/$filename";
-  print "$full_file\n";
+  print "$full_file\n" if ($self->debug);
   return $full_file;
 }
 
@@ -931,7 +976,7 @@ sub get_taxon_ids_from_keepers_list {
 sub DESTROY {
   my $self = shift;
 
-  $self->cleanup_temp;
+#  $self->cleanup_temp;
 
   delete $self->{_param_hash};
   $self->SUPER::DESTROY if $self->can("SUPER::DESTROY");

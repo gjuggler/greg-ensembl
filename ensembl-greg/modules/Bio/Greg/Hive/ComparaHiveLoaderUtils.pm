@@ -45,8 +45,15 @@ sub add_genes_to_analysis {
     }
 
     my $pta  = $self->dba->get_ProteinTreeAdaptor;
-    my $tree = $pta->fetch_by_gene_Member_root_id($member);
-    $self->add_job_to_analysis( $analysis_name, { node_id => $tree->node_id } );
+    my $tree = $pta->fetch_by_Member_root_id($member,0);
+    if (!defined $tree) {
+      print STDERR " -> $gene_id tree not found!\n";
+      next;
+    }
+    $self->add_job_to_analysis( $analysis_name, {
+      node_id => $tree->node_id,
+      gene_id => $gene_id
+                                } );
   }
 }
 

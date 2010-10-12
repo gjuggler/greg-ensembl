@@ -7,14 +7,18 @@ use base ('Bio::Greg::Hive::Process');
 
 my $TREE = 'Bio::EnsEMBL::Compara::TreeUtils';
 
+sub param_defaults {
+  my $self = shift;
+
+  return {
+    flow_parameter_sets => 'all'
+  };
+}
+
 sub fetch_input {
   my $self = shift;
 
-  ### DEFAULT PARAMETERS ###
-  my $defaults = { flow_parameter_sets => 'all' };
-  ##########################
-
-  $self->load_all_params($defaults);
+  $self->load_all_params();
 }
 
 sub run {
@@ -35,7 +39,7 @@ sub run {
     my $new_params = { parameter_set_id => $param_set };
 
     my $parameter_set_params = $self->get_params_from_param_set($param_set);
-    my $input_params         = $self->_parse_string('input_id');
+    my $input_params         = eval($self->input_job->input_id);
 
     my $output_params = { %$input_params, %$parameter_set_params, %$new_params };
 

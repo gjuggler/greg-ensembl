@@ -155,7 +155,11 @@ sub run {
     $self->throw("Alignment method [$method] not implemented!");
   }
 
-  Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $sa_aligned, { length => 200 } );
+  print "BEFORE: \n";
+  Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $sa, { full => 1} );
+
+  print "AFTER: \n";
+  Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $sa_aligned, { full => 1} );
 
   $self->param( 'sa_aligned', $sa_aligned );
 }
@@ -673,7 +677,7 @@ sub parse_and_store_alignment_into_proteintree {
     }
 
     # Call the method to do the actual conversion
-    print "$id  $alignment_string\n";
+#    print "$id  $alignment_string\n";
     $align_hash{$id} = Bio::EnsEMBL::Compara::ComparaUtils->cigar_line($alignment_string);
   }
 
@@ -702,8 +706,8 @@ sub parse_and_store_alignment_into_proteintree {
     my $member_sequence = $member->sequence;
     $member_sequence =~ s/\*//g;
     if ( $seq_cigar_length != length($member_sequence) ) {
-      print "MC  " . $member->cigar_line . "\n";
-      print "MS  " . $member_sequence . "\n";
+#      print "MC  " . $member->cigar_line . "\n";
+#      print "MS  " . $member_sequence . "\n";
       die(
         "While storing the cigar line, the returned cigar length did not match the sequence length\n"
       );
@@ -716,8 +720,8 @@ sub parse_and_store_alignment_into_proteintree {
     # Do a manual insert into the correct output table.
     #my $cmd = "CREATE TABLE IF NOT EXISTS $table_name LIKE protein_tree_member;";
     #$pta->dbc->do($cmd);
-    printf( "Updating $table_name %.10s : %.30s\n", $member->stable_id, $member->cigar_line )
-      if ( $self->debug );
+#    printf( "Updating $table_name %.10s : %.30s\n", $member->stable_id, $member->cigar_line )
+#      if ( $self->debug );
     my $sth = $pta->prepare(
       "REPLACE INTO $table_name
                                (node_id,

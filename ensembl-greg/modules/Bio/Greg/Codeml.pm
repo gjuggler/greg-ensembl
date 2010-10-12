@@ -507,6 +507,13 @@ sub prepare {
     print CODEML "$param = $val\n";
   }
   close(CODEML);
+
+  # Print a copy of the grantham.dat if needed.
+  if ($params{'aaDist'} == 1) {
+    print STDERR "PRINTING OUTPUT TABLE!!!\n";
+    $self->output_grantham_table;
+  }
+
   return $tempdir;
 }
 
@@ -878,11 +885,22 @@ sub get_tree {
 
   my $hash = $self->extract_branch_params();
 
-  foreach my $node ( $new_tree->get_leaf_nodes ) {
-    warn "No dnds id for " . $node->id . "\n" unless ( defined $hash->{ $node->id } );
-    return undef if ( !defined $hash->{ $node->id } );
-    while ( defined $hash->{ $node->id } ) {
+  #print join(",",keys(%$hash))."\n";
 
+  foreach my $node ( $new_tree->get_leaf_nodes ) {
+    my $node_id = $node->id;
+    #print "id:$node_id\n";
+    warn "No dnds id for " . $node_id . "\n" unless ( defined $hash->{ $node_id } );
+    
+    if (!defined $hash->{$node_id}) {
+      # Try removing the branch model specs from the node ID.
+      $node_id =~ s/#\d+//g;
+      $node_id =~ s/\$\d+//g;
+      $node->id($node_id);
+    }
+
+    return undef if ( !defined $hash->{ $node_id } );
+    while ( defined $hash->{ $node->id } ) {
       #print "Node: ".$node->id."\n";
       $self->_set_branch_length( $node, $hash, $value );
 
@@ -940,6 +958,7 @@ sub extract_branch_params {
         my $child    = $branches[1];
         my $id = $map->{$child} || $child;
         my $parent = $branches[0];
+        my $parent_id = $map->{$parent} || $parent;
 
         #	print "$child!!\n";
         my $obj = {
@@ -949,7 +968,7 @@ sub extract_branch_params {
           'dN/dS'  => $tokens[4],
           'dN'     => $tokens[5],
           'dS'     => $tokens[6],
-          'parent' => $parent
+          'parent' => $parent_id
         };
         $values->{$id} = $obj;
       }
@@ -991,7 +1010,7 @@ sub get_leaf_number_map {
 
   # Tree one contains the PAML-numbered names.
   my @one_nodes = $tree_one->get_nodes;
-  print "Nodes: " . scalar(@one_nodes) . "\n";
+  #print "Nodes: " . scalar(@one_nodes) . "\n";
 
   # Tree two contains the input names.
   my @two_nodes = $tree_two->get_nodes;
@@ -999,9 +1018,49 @@ sub get_leaf_number_map {
     my $one = $one_nodes[$i];
     my $two = $two_nodes[$i];
 
-    #    print $one->id."  ".$two->id."\n";
+    #print $one->id."  ".$two->id."\n";
     if ( $one->id && $two->id ) {
       $map->{ strip( $one->id ) } = strip( $two->id );
+    }
+  }
+  return $map;
+}
+
+sub get_branch_substitution_map {
+  my $self = shift;
+  
+  my $suppl_arrayref = $self->supplementary_results();
+  my @suppl = @{$suppl_arrayref};
+
+  my $leaf_map = $self->get_leaf_number_map;
+
+  my $map = {};
+
+  my $within_changes = 0;
+  my $current_branch;
+  foreach my $line (@suppl) {
+    $within_changes = 1 if ($line =~ m/Summary of changes along branches/i);
+    $within_changes = 0 if ($line =~ m/List of extant and reconstructed/i);
+
+    if ($within_changes) {
+      # Branch 5:    9..5  (ENSGGOP00000012863)  (n= 2.0 s=10.0)
+      if ($line =~ m/Branch (\d+):\s+(\d+?)\.\.(\d+?)/gi) {
+        $current_branch = $3;
+        $current_branch = $leaf_map->{$current_branch} if (defined $leaf_map->{$current_branch});
+        $map->{$current_branch} = {};
+        #print $current_branch."\n";
+      }
+      if ($line =~ m/\s*(\d+) (\S+) \((\S)\) (.*) -> (\S+) \((\S)\)/g) {
+        my $obj = {
+          pos => $1,
+          codon_a => $2,
+          codon_b => $5,
+          aa_a => $3,
+          aa_b => $6,
+          confidence => $4
+        };
+        $map->{$current_branch}->{$1} = $obj;
+      }
     }
   }
   return $map;
@@ -1082,10 +1141,12 @@ sub branch_model_likelihood {
     cleandata   => 1
   };
 
+  my @variable_params = qw(model omega Mgene gene_codon_counts cleandata aaDist);
+
   # If certain parameters are given, apply them to the parameter object
   # passed to the new Codeml instance.
   my $final_params = {%$default_params};
-  foreach my $param ( 'model', 'omega', 'Mgene', 'gene_codon_counts', 'cleandata' ) {
+  foreach my $param (@variable_params) {
     $final_params->{$param} = $params->{$param} if ( defined $params->{$param} );
   }
   $final_params->{verbose} = 1;
@@ -1112,6 +1173,7 @@ sub branch_model_likelihood {
   my $dnds_tree = $codeml->get_dnds_tree($tree);
   my $t_tree    = $codeml->get_t_tree($tree);
   my $ds_tree   = $codeml->get_ds_tree($tree);
+  my $sub_map = $codeml->get_branch_substitution_map($tree);
 
   my $newick = Bio::EnsEMBL::Compara::TreeUtils->to_newick($dnds_tree);
 
@@ -1122,7 +1184,8 @@ sub branch_model_likelihood {
     dnds      => $dnds,
     dnds_tree => $dnds_tree,
     ds_tree   => $ds_tree,
-    t_tree    => $t_tree
+    t_tree    => $t_tree,
+    subs      => $sub_map
   };
 }
 
@@ -1249,6 +1312,117 @@ sub _ensure_unrooted_tree {
   }
   return $tree;
 }
+
+sub output_grantham_table {
+  my $self = shift;
+
+  my $filename = $self->tempdir."grantham.dat";
+  my $grantham = $self->get_grantham_table_string;
+  open(OUT,">$filename");
+  print OUT $grantham;
+  close(OUT);
+}
+
+sub get_grantham_score_hash {
+  my $self = shift;
+
+  my $g = $self->get_grantham_table_string;
+
+  my @number_rows = ();
+  my @lines = split("\n",$g);
+  foreach my $line (@lines) {
+    last if (strip($line) eq '');
+    push @number_rows,$line;
+  }
+  #print "number_rows:[@number_rows]\n";
+  
+  my $scores;
+
+  my ($order_line) = grep {$_ =~ m/A\s+R\s+N/gi} @lines;
+  my @residues = split(/\s+/,$order_line);
+  @residues = grep {strip($_) ne ''} @residues;
+  #print "residues: [@residues]\n";
+  #return;
+  
+  my $i=0;
+  my @residues_minus_one = @residues;
+  shift @residues_minus_one;
+  foreach my $residue (@residues_minus_one) {
+    my $i_residue = $residue;
+    $scores->{$i_residue.$i_residue} = 0;
+    my $row = $number_rows[$i];
+    #print "row:[$row]\n";
+    my @numbers = split(/\s+/,$row);
+    @numbers = grep {strip($_) ne ''} @numbers;
+    #print "numbers: [@numbers]\n";
+    my $j=0;
+    foreach my $num (@numbers) {
+      my $j_residue = $residues[$j];
+      #print "i[$i_residue] j[$j_residue] score[$num] \n";
+      $scores->{$i_residue.$j_residue} = strip($num) + 0.0;
+      $scores->{$j_residue.$i_residue} = strip($num) + 0.0;
+      $j++;
+    }
+    $i++;
+  }
+  return $scores;
+}
+
+sub get_grantham_table_string {
+  my $self = shift;
+
+  my $grantham = qq^111  
+111  85  
+126  96  23  
+195 180 139 154  
+ 91  43  46  61 154  
+107  54  41  45 170  29  
+ 60 125  79  94 158  87  98  
+ 86  29  68  81 174  24  41  98  
+ 94  98 149 168 197 109 134 136  94  
+ 96 102 153 172 198 113 139 138  99   5  
+106  26  94 102 202  53  57 127  32 102 107  
+ 85  92 141 160 196 101 126 127  86  10  14  95  
+113  97 158 177 205 116 140 153 100  21  22 102  29  
+ 27 103  90 108 169  75  94  42  76  96  98 103  87 114  
+ 99 109  46  66 112  68  80  55  89 142 144 121 135 155  73  
+ 58  71  65  85 149  41  66  59  47  89  92  78  81 103  38  58  
+148 101 174 191 215 130 152 184 115  61  61 110  67  40 147 177 129  
+112  77 142 160 194  99 123 147  83  33  36  85  35  22 110 143  92  37  
+ 65  96 133 152 191  96 121 109  84  30  32  97  22  50  68 123  70  88  55  
+
+ A   R   N   D   C   Q   E   G   H   I   L   K   M   F   P   S   T   W   Y   V
+Ala Arg Asn Asp Cys Gln Glu Gly His Ile Leu Lys Met Phe Pro Ser Thr Trp Tyr Val
+
+
+Table 1 in Grantham (1974).
+
+	c	p	v      aromaticity (from Xuhua Xia)
+
+Ala	0	8.1	31      -0.11    
+Arg	.65	10.5	124     0.079    
+Asn	1.33	11.6	56      -0.136   
+Asp	1.38	13.0	54      -0.285   
+Cys	2.75	5.5	55      -0.184   
+Gln	.89	10.5	85      -0.067   
+Glu	.92	12.3	83      -0.246   
+Gly	.74	9.0	3       -0.073   
+His	.58	10.4	96      0.32     
+Ile	0	5.2	111     0.001    
+Leu	0	4.9	111     -0.008   
+Lys	.33	11.3	119     0.049    
+Met	0	5.7	105     -0.041   
+Phe	0	5.2	132     0.438    
+Pro	.39	8.0	32.5    -0.016   
+Ser	1.42	9.2	32      -0.153   
+Thr	.71	8.6	61      -0.208   
+Trp	.13	5.4	170     0.493    
+Tyr	.20	6.2	136     0.381    
+Val	0	5.9	84      -0.155   
+^;
+  return $grantham;
+}
+
 
 =head2 error_string
 

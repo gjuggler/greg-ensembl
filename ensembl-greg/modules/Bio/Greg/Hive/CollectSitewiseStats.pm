@@ -51,7 +51,7 @@ sub get_gene_data {
   my $gene_data = $self->data_for_gene;
 
   print " -> Storing gene data...\n";
-  $self->hash_print($gene_data);
+  #$self->hash_print($gene_data);
   $self->store_params_in_table( $self->compara_dba->dbc->db_handle,
     $self->param('genes_table'), $gene_data );
 }
@@ -128,7 +128,7 @@ sub data_for_gene {
 sub get_sites_data {
   my $self = shift;
 
-  return;   # Temporary 2xmammals speed-up. Don't store sites for now, this worked OK the last time.
+#  return;   # Temporary 2xmammals speed-up. Don't store sites for now, this worked OK the last time.
 
   my $tree = $self->get_tree;
   my $aln  = $tree->get_SimpleAlign;

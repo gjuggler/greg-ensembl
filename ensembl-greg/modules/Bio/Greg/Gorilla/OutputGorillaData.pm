@@ -20,13 +20,13 @@ sub run {
   my $base = '/nfs/users/nfs_g/gj1/scratch/gorilla/output';
   $self->get_output_folder($base);
 
-  $self->genomic_align_test;
+  $self->export_likelihoods('lnl','lnl_human.Rdata','human');
+  $self->export_likelihoods('lnl_chimp','lnl_chimp.Rdata','chimp');
+  $self->export_likelihoods('lnl_grantham','lnl_grantham_human.Rdata','human');
+  $self->export_likelihoods('lnl_grantham_chimp','lnl_grantham_chimp.Rdata','chimp');
 
-  #$self->export_likelihoods('stats_branch','stats_branch_human.Rdata','human');
-  #$self->export_likelihoods('stats_chimp_branch','stats_branch_chimp.Rdata','chimp');
-
-  #$self->branch_enrichments('stats_branch','stats_branch_human.Rdata','human');
-  #$self->branch_enrichments('stats_chimp_branch','stats_branch_chimp.Rdata','chimp');
+  #$self->branch_enrichments('lnl','lnl.Rdata','human');
+  #$self->branch_enrichments('lnl_chimp','lnl_chimp.Rdata','chimp');
 
   #$self->bryndis_enrichments;
   #$self->bryndis_dup_counts;
@@ -34,27 +34,6 @@ sub run {
   #$self->export_counts;
   #$self->analyze_counts;
   #$self->get_enriched_genes;
-}
-
-sub genomic_align_test {
-  my $self = shift;
-
-  my $node_id = 1686351;
-
-  my $tree = $self->pta->fetch_node_by_node_id($node_id);
-
-  my ( $gen_cdna, $gen_aa ) =
-    Bio::EnsEMBL::Compara::ComparaUtils->genomic_align_for_tree( $tree, 9606 );
-
-  my $params = $self->params;
-  $params->{tree} = $tree;
-  my $hom_cdna = $self->get_cdna_aln($params);
-  my $hom_aa   = $self->get_aln($params);
-  ($hom_aa) = Bio::EnsEMBL::Compara::AlignUtils->remove_blank_columns($hom_aa);
-
-  Bio::EnsEMBL::Compara::AlignUtils->pretty_print($gen_aa);
-  Bio::EnsEMBL::Compara::AlignUtils->pretty_print($hom_aa);
-
 }
 
 sub bryndis_dup_counts {
@@ -153,6 +132,7 @@ sub export_likelihoods {
   my $short_prefix    = shift;
 
   my $data_file = $self->get_output_folder . "/$output_filename";
+  my $dbname = $self->dbc->dbname;
 
   my $folder = $self->get_output_folder;
   mkpath( [$folder] );
@@ -165,7 +145,7 @@ sub export_likelihoods {
   my $force = 1;
   if ( !-e $data_file || $force ) {
     my $cmd = qq^
-dbname="gj1_gor_58"
+dbname="${dbname}"
 source("${collect_script}");
 
 stats.lnl <- get.vector(con,"SELECT * from $table;")
@@ -173,12 +153,16 @@ stats.dups <- get.vector(con,"SELECT * from stats_dups;")
 
 stats.lnl = merge(stats.lnl,stats.dups[,c('data_id','name')],by='data_id')
 
-# Likelihoods key:
-# a: (H, G, others)
-# b: (H#1, G, others)
-# c: (H, G#1, others)
-# d: (H#1, G#2, others)
-# e: (H#1, G#1, others)
+  # Branch models summary:
+  # a: (H, G, others)
+  # b: (H#1, G, others)
+  # c: (H, G#1, others)
+  # d: (H#1, G#2, others)
+  # e: (H#1, G#1, others)
+  # f: (((H,C),G)#1, others)
+  # g: (((H,C),G)$1, others)
+  # h: (((H,C),G), others)
+# f: (H
 # Which omegas are which for each test?
 # pval.1: fg=b_omega_1, bg=b_omega_0 # human
 # pval.2: fg=c_omega_1, bg=c_omega_0 # gorilla
@@ -285,7 +269,7 @@ save(stats.lnl,file="${data_file}")
 
 source("${lrt_script}",echo=T)
 
-q()
+#q()
 source("${go_script}")
 
 t = 0.05 # pval / FDR threshold.
@@ -339,7 +323,9 @@ get.go.data = function() {
 }
 
 GOdata = get.go.data()
-save(GOdata,file="${folder}/go_data.Rdata")
+go.vec = strsplit(go.df[,'go'],split=",",fixed=T)
+names(go.vec) = go.df[,'stable_id']
+save(GOdata,go.vec,file="${folder}/go_data.Rdata")
 
 # Useful things to do with the GOdata object:
 
@@ -348,7 +334,7 @@ save(GOdata,file="${folder}/go_data.Rdata")
 #annotated.genes <- genesInTerm(GOdata,term)[[1]]
 #sig.genes <- sigGenes(GOdata) # Get the significant genes according to the score threshold.
 
-#q()
+q()
 
 `1.up`   = subset(stats.lnl,pval.1.bh < t & b_omega_1 > b_omega_0)
 `2.up`     = subset(stats.lnl,pval.2.bh < t & c_omega_1 > c_omega_0)

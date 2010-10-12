@@ -31,26 +31,28 @@ sub run {
 
   foreach my $leaf ( $tree->leaves ) {
     my $member = $leaf;
-    print $member->stable_id . "\n";
+#    print $member->stable_id . "\n";
 
     #next unless ($member->taxon_id == 9598);
     #    next unless ($member->stable_id =~ m/(pvap|stop)/ig);
 
 # This is finicky: we need to call the "db_adaptor" method to get the Bio::EnsEMBL::DBSQL::DBAdaptor object, and then the meta container.
     my $gdb = $member->genome_db;
-    next unless ( defined $gdb->db_adaptor );
+    
+    my $alias = $member->taxon->ensembl_alias;
+    my $gdb = Bio::EnsEMBL::Registry->get_DBAdaptor($alias,'core');
 
-# Right now we've got not quick way to get chimp quality scores... skip unless specifically told to get them.
+    # Right now we've got not quick way to get chimp quality scores... skip unless specifically told to get them.
     next if ( $member->taxon_id == 9598 && $self->param('get_chimp_quals') != 1 );
 
-    my $meta     = $gdb->db_adaptor->get_MetaContainer;
+    my $meta     = $gdb->get_MetaContainer;
     my $coverage = @{ $meta->list_value_by_key('assembly.coverage_depth') }[0];
 
     print "$coverage\n";
     if ( $coverage eq 'low' || $member->taxon_id == 9598 ) {
       print $member->stable_id . " low-quality!\n";
     } else {
-      print $member->stable_id . "\n";
+      print $member->stable_id . " high-qual\n";
       next;
     }
 

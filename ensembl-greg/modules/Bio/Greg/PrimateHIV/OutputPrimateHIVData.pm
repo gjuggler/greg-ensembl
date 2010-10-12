@@ -28,19 +28,13 @@ sub export_windows {
   my $genes_file = $self->get_output_folder . "/gene_windows.Rdata";
   my $genes_csv  = $self->get_output_folder . "/gene_windows.csv";
 
-  my $sitewise_script = Bio::Greg::EslrUtils->baseDirectory . "/scripts/collect_sitewise.R";
+  my $sitewise_script = Bio::Greg::EslrUtils->baseDirectory . "/projects/primate_hiv/collect_primate_hiv.R";
 
   my $dbname = $self->compara_dba->dbc->dbname;
 
   my $cmd = qq^
 dbname = "$dbname"
-source("$sitewise_script");
-#source("./collect_primate_hiv.R");
-genes <- get.genes.list()
-print(nrow(genes))
-save(genes,file="${genes_file}")
-write.csv(genes,file="${genes_csv}",row.names=F)
-
+source("$sitewise_script",echo=T);
 ^;
   print "$cmd\n";
   my $params = {};

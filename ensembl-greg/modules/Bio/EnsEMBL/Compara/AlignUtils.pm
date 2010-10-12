@@ -19,20 +19,39 @@ sub translate_ids {
   my $class = shift;
   my $aln = shift;
   my $map = shift;
-  $aln->set_displayname_flat;
+  my $params = shift;
   
+  my $ensure_unique = 1;
+  $ensure_unique = $params->{ensure_unique} if (defined $params->{ensure_unique});
+
+  $aln->set_displayname_flat;  
   my $new_aln = new $aln;
+
+  my $used_ids;
 
   foreach my $seq ($aln->each_seq) {
     my $id = $seq->id;
     my $nse = $seq->get_nse;
 
     if (defined $id && defined $map->{$id}) {
-      $id = $map->{$id};
+      my $new_id = $map->{$id};
+      if ($ensure_unique) {
+        while ($used_ids->{$new_id}) {
+          $new_id =~ m/_(\d+)$/;
+          my $num = $1;
+          #print "ID in use: [$new_id]\n";
+          $new_id =~ s/_\d+$//;
+          my $new_int = $num + 1;
+          $new_id .= "_$new_int";
+          #print "going to use [$new_id]\n";
+        }
+      }
+
+      $used_ids->{$new_id} = 1;
+      $id = $new_id;
     }
     $new_aln->add_seq(Bio::LocatableSeq->new(-seq => $seq->seq,
 					     -id => $id));
-
   }
   return $new_aln;
 }
@@ -619,6 +638,43 @@ sub cigar_lines {
 }
 
 
+sub filter_stop_codons {
+  my $class = shift;
+  my $aln = shift;
+
+  my $new_aln = new $aln;
+  foreach my $seq ($aln->each_seq) {
+    $new_aln->add_seq($class->_filter_seq_stops($seq));
+  }
+
+  return $new_aln;
+}
+
+sub _filter_seq_stops {
+  my $class = shift;
+  my $seq = shift;
+  my $be_less_stringent = shift || 0;
+
+  for (my $i=1; $i <= $seq->length-2; $i+= 3) {
+    my $seq_str = $seq->seq;
+    my $aa = new Bio::PrimarySeq(-seq => $seq->subseq($i,$i+2))->translate->seq;
+    
+    #substr($seq_str,$i-1,3) = '---' if (substr($seq_str,$i-1,3) =~ m/(tag|tga|taa)/gi);
+    #print "$aa\n";
+    my $is_stop;
+    if ($be_less_stringent) {
+      $is_stop = 1 if ($be_less_stringent && $aa =~ m/(tag|tga|taa)/gi); # Only filter out full-on stop codons.
+    } else {
+      $is_stop = 1 if ($aa =~ m/([x\*])/gi); # More stringent -- anything that doesn't translte correctly.
+    }
+    #print " Masking stop $1 at $i\n" if ($is_stop);
+    substr($seq_str,$i-1,3) = '---' if ($is_stop);
+    #print "  Masking stop $1 at $i\n"  if (substr($seq_str,$i-1,3) =~ m/(tag|tga|taa)/gi);
+    $seq->seq($seq_str);
+  }
+  return $seq;
+}
+
 =head2 flatten_to_sequence
  Title     : flatten_to_sequence
  Usage     : $aln->flatten_to_sequence($my_favorite_sequence_index)
@@ -630,9 +686,10 @@ sub cigar_lines {
 sub flatten_to_sequence {
   my $class = shift;
   my $aln = shift;
-  my $pos = shift;
+  my $id = shift;
   
-  my $ref_seq = $aln->get_seq_by_pos($pos);
+  my $ref_seq = $aln->get_seq_by_id($id);
+#  my $ref_seq = $aln->get_seq_by_pos($pos);
   my $display_id = $ref_seq->display_id;
   my $seq_str = $ref_seq->seq;
     
@@ -642,7 +699,7 @@ sub flatten_to_sequence {
   #FIXME: This is less efficient than it would be if we grouped the deletions into gaps. Sue me.
   my @remove_cols;
   while ($seq_str =~ m/[$gap_char]/g) {
-    print pos($seq_str)."\n";
+    #print pos($seq_str)."\n";
     my @start_end = (pos($seq_str)-1,pos($seq_str)-1);
     push @remove_cols, \@start_end;
   }
@@ -656,10 +713,12 @@ sub combine_alns {
 
   my $seq_hash;
 
+  # Collect all species from all alignments into a hash.
   foreach my $aln (@alns) {
-    # Add any new species from the alignment to the hash.
     map {$seq_hash->{$_->id} = [] if (!defined $seq_hash->{$_->id});} $aln->each_seq;
+  }
 
+  foreach my $aln (@alns) {
     # Fill in each sequence in the hash with the current alignment, or gaps if that species is currently missing.
     foreach my $id (keys %$seq_hash) {
       my @chars = @{$seq_hash->{$id}};
@@ -682,6 +741,28 @@ sub combine_alns {
 					 -id => $id));
   }
   return $aln;
+}
+
+sub contains_sequence {
+  my $class = shift;
+  my $aln = shift;
+  my $seq_str = shift;
+
+  my $ref_aa = new Bio::LocatableSeq(-seq=>$seq_str)->translate->seq;
+  $ref_aa =~ s/\*//g;
+  
+  foreach my $seq ($aln->each_seq) {
+    my $compare_str = $seq->seq;
+    my $nogaps = $compare_str;
+    $nogaps =~ s/-//g;
+    my $nogaps_aa = new Bio::LocatableSeq(-seq=>$nogaps)->translate->seq;
+    $nogaps_aa =~ s/\*//g;
+    #print $nogaps_aa."\n";
+    #print $ref_aa."\n\n";
+    
+    return 1 if ($nogaps_aa eq $ref_aa);
+  }
+  return 0;
 }
 
 
@@ -809,7 +890,7 @@ sub remove_funky_stretches {
   return $aln;
 }
 
-# Removes codons where all three nucleotide positions differe between two species.
+# Removes codons where all three nucleotide positions differ between two species.
 sub remove_triple_mutated_codons {
   my $class = shift;
   my $aln = shift;
@@ -901,15 +982,8 @@ sub sort_by_tree {
     $temp->close();
   } else {
     # If we're given an object hashref, we assume it's a TreeI object.
-    if ($tree->isa('Bio::EnsEMBL::Compara::ProteinTree')) {
-      #$tree = $TREE->to_treeI($tree);
-      my $new_aln = $aln->new;
-      foreach my $leaf ($tree->leaves) {
-        my $name = $leaf->stable_id;
-        my $seq = $class->get_seq_with_id($aln,$name);
-        $new_aln->add_seq($seq);
-      }
-      return $new_aln;
+    if ($tree->isa('Bio::EnsEMBL::Compara::NestedSet')) {
+      $tree = $TREE->to_treeI($tree);
     } elsif (! $tree->isa('Bio::Tree::TreeI')) {
       # Try converting ProteinTree to TreeI.
       warn "sort_by_tree: given a hashref that is not a TreeI object!\n";
@@ -919,6 +993,7 @@ sub sort_by_tree {
   my $new_aln = $aln->new;
   foreach my $leaf ($tree->get_leaf_nodes) {
     my $name = $leaf->id;
+    #print "$name\n";
     my $seq = $class->get_seq_with_id($aln,$name);
     $new_aln->add_seq($seq);
   }
@@ -1507,7 +1582,7 @@ sub pretty_print {
   my $params = shift;
 
   my $full = $params->{'full'} || 0;
-  my $length = $params->{'length'} || 50;
+  my $length = $params->{'length'} || $params->{width} || 50;
 
   $full = 1 if (!$full && $length > $aln->length + 10);
   
@@ -1516,7 +1591,7 @@ sub pretty_print {
     
     for (my $i=0; $i <= $num_slices; $i++) {
       my $start = $i*$length+1;
-      my $end = ($i+1)*$length+1;
+      my $end = ($i+1)*$length;
 
       my $top_string = "";
       for (my $j=0; $j < $length && ($start+$j) < $aln->length; $j++) {
@@ -1623,7 +1698,7 @@ sub peptide_to_cdna_alignment {
   my @leaves = $tree->leaves;
   foreach my $seq ($aln->each_seq) {
     my $pep_string = $seq->seq;
-    my ($member) = grep {$_->stable_id eq $seq->id} @leaves;
+    my ($member) = grep {$_->name eq $seq->id} @leaves;
     die ("No member found for ".$seq->id."!") unless (defined $member);
 
     my $cdna_seq = $member->sequence_cds;
@@ -1683,10 +1758,14 @@ sub has_stop_codon {
   for (my $i=0; $i < $aln->length-2; $i+= 3) {
     foreach my $str (@seq_strings) {
       my $codon = substr($str,$i,3);
+      #print $codon;
       next if ($codon =~ m/^-+$/);
-      #print "$i $codon\n";
+
+      my $ps = new Bio::PrimarySeq(-seq => $codon);
+      my $aa = $ps->translate()->seq;
+      #print "$i $codon $aa\n";
       if ($code->is_ter_codon($codon)) {
-        print "Terminal codon: $codon\n";
+        print "Terminal codon: $codon  $i\n";
         return {
                 aln_pos => $i
                };

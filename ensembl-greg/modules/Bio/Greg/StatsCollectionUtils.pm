@@ -251,8 +251,8 @@ sub get_psc_hash {
   my $dbc    = shift;
   my $params = shift;
 
-  my $table                = $params->{'omega_table'};
-  my $pset                 = $params->{'parameter_set_id'} || '0';
+  my $table = $params->{'omega_table'}      || 'sitewise_omega';
+  my $pset  = $params->{'parameter_set_id'} || '0';
   my $data_id              = $class->data_id;
   my $node_id              = $class->node_id;
   my $include_crappy_sites = $params->{'get_all_sites'};
@@ -301,7 +301,7 @@ $CLEAN_WHERE;
       AND o.aln_position=g.aln_position $CLEAN_WHERE^;
   } else {
     $cmd = qq^SELECT aln_position,omega,omega_lower,omega_upper,lrt_stat,ncod,type,note 
-    FROM $table o WHERE parameter_set_id=$pset and (data_id=$data_id) $CLEAN_WHERE
+    FROM $table o WHERE parameter_set_id=$pset and (data_id=$node_id) $CLEAN_WHERE
     ^;
   }
 
@@ -322,31 +322,38 @@ sub combined_pval {
   my $psc_hash = shift;
   my $method   = shift || 'stouffer';
 
-  my @obj_array = map { $psc_hash->{$_} } keys %$psc_hash;
-  return undef if ( scalar @obj_array == 0 );
-
-  my $first_obj = $obj_array[0];
-  my @keys      = sort keys %$first_obj;
-
-  my $header = join( "\t", @keys );
-  my $body;
-  foreach my $obj (@obj_array) {
-    my $line = join( "\t", map { $obj->{$_} } @keys );
-    $body .= $line . "\n";
+  my @obj_array;
+  if ( ref($psc_hash) =~ m/array/gi ) {
+    @obj_array = @$psc_hash;
+  } else {
+    @obj_array = map { $psc_hash->{$_} } keys %$psc_hash;
   }
 
-  my $temp_f = $class->worker_temp_directory . "/temp.txt";
-  open( OUT, ">$temp_f" );
-  print OUT $header . "\n";
+  my $pval;
+  if ( scalar @obj_array > 0) {
 
-  #  print $header."\n";
-  print OUT $body . "\n";
-
-  #  print $body."\n";
-  close(OUT);
-
-  my $combine_p = Bio::Greg::EslrUtils->baseDirectory . "/scripts/combine.p.R";
-  my $rcmd      = qq^
+    my $first_obj = $obj_array[0];
+    my @keys      = sort keys %$first_obj;
+    
+    my $header = join( "\t", @keys );
+    my $body;
+    foreach my $obj (@obj_array) {
+      my $line = join( "\t", map { $obj->{$_} } @keys );
+      $body .= $line . "\n";
+    }
+    
+    my $temp_f = $class->worker_temp_directory . "/temp.txt";
+    open( OUT, ">$temp_f" );
+    print OUT $header . "\n";
+    
+    #print $header."\n";
+    print OUT $body . "\n";
+    
+    #print $body."\n";
+    close(OUT);
+    
+    my $combine_p = Bio::Greg::EslrUtils->baseDirectory . "/scripts/combine.p.R";
+    my $rcmd      = qq^
 sites = read.table(file="$temp_f",sep="\t",header=T)
 source("$combine_p")
 #print(sites)
@@ -356,17 +363,23 @@ p.values[p.values >= 1] = 1
 sites[,'pval'] = p.values
 
 pos.sites = subset(sites,omega>1)
-p.value = NULL
+p.value = 999
 if (nrow(pos.sites) > 0) {
   comb.p = combine.p(pos.sites[,'pval'],method='$method')
   p.value = as.numeric(comb.p[['p.value']])
+} else {
+  p.value = -1
 }
 print(p.value)
 ^;
-  my @values = Bio::Greg::EslrUtils->get_r_values( $rcmd, $class->worker_temp_directory );
-  print " combined p-val ($method): [@values]\n";
-  my $pval = $values[0];
-  $pval = undef if ( $pval eq 'NULL' );
+    my @values = Bio::Greg::EslrUtils->get_r_values( $rcmd, $class->worker_temp_directory );
+    
+    # P-value is either the real p-value, or -1 if there were no positive sites.
+    $pval = $values[0];
+  } else {
+    # P-value is -2 if there were no sites at all.
+    $pval = -2;
+  }
   return $pval;
 }
 
@@ -538,6 +551,70 @@ sub mysql_getval {
   $val = 'NA' unless ( defined $val );
   $sth->finish;
   return $val;
+}
+
+sub get_hg18_from_hg19 {
+  my $self   = shift;
+  my $chr    = shift;
+  my $pos    = shift;
+  my $strand = shift;
+
+  # Get the dba for the reference species.
+  my $alias = 'Human';
+  my $dba   = Bio::EnsEMBL::Registry->get_DBAdaptor( $alias, 'core' );
+  my $asma  = $dba->get_AssemblyMapperAdaptor;
+  my $csa   = $dba->get_CoordSystemAdaptor;
+
+  my $new_cs = $csa->fetch_by_name('chromosome');
+  my $old_cs = $csa->fetch_by_name( 'chromosome', 'NCBI36' );
+
+  my $asm_mapper = $asma->fetch_by_CoordSystems( $new_cs, $old_cs );
+
+  my @coords = $asm_mapper->map( $chr, $pos, $pos, $strand, $new_cs );
+  my ($coord) = @coords;
+  if ($coord) {
+    return $coord->start;
+  }  
+}
+
+sub get_coords_from_pep_position {
+  my $self   = shift;
+  my $member = shift;
+  my $pos    = shift;
+
+  my $ref_tx = $member->get_Transcript;
+
+  # Get the dba for the reference species.
+  my $alias = $member->taxon->ensembl_alias;
+  my $dba   = Bio::EnsEMBL::Registry->get_DBAdaptor( $alias, 'core' );
+  my $asma  = $dba->get_AssemblyMapperAdaptor;
+  my $csa   = $dba->get_CoordSystemAdaptor;
+
+  my $new_cs = $csa->fetch_by_name('chromosome');
+  my $old_cs = $csa->fetch_by_name( 'chromosome', 'NCBI36' );
+
+  my $asm_mapper = $asma->fetch_by_CoordSystems( $new_cs, $old_cs );
+
+  my @genomic1 = $ref_tx->pep2genomic( $pos, $pos );
+  foreach my $coord (@genomic1) {
+    next unless ($coord->isa('Bio::EnsEMBL::Mapper::Coordinate'));
+    my $chr    = $ref_tx->seq_region_name;
+    my $start  = $coord->start;
+    my $end    = $coord->end;
+    my $strand = $coord->strand;
+    
+    # Map to old coordinates.
+    my @coords = $asm_mapper->map( $chr, $start, $end, $strand, $new_cs );
+    my ($coord) = @coords;
+    if ($coord) {
+      return {
+        'hg19_name' => $chr,
+        'hg18_name' => $chr,
+        'hg19_pos'  => $start,
+        'hg18_pos'  => $coord->start,
+      };
+    }
+  }
 }
 
 1;
