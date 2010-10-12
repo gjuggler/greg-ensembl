@@ -22,13 +22,19 @@ for (rate in c(0, 0.05)) {
   print(xtbl,type='html',file=paste(fig_num,".html",sep=""),html.table.attributes='style="border:0px;"')
   
   # ROC plot of alignments.
-  pdf(file=paste(fig_num,"_roc.pdf",sep=""),width=10,height=10)
   f = function(df,thresh) {
     return(slr.roc(df))
   }
   comb.roc = summarize.by.labels(data.sub,f)
-  p <- plot.roc(comb.roc,plot=F)
+  p <- plot.roc(comb.roc,plot=F,plot.x='fpr',plot.y='tpr')
   p <- p + scale_colour_discrete('Alignment program')
+
+  pdf(file="fig_6_roc.pdf",width=10,height=10)
+  print(p)
+  dev.off()
+
+  pdf(file="fig_6_roc_zoom.pdf",width=10,height=10)
+	p <- p + scale_x_continuous(limits=c(0,0.2))
   print(p)
   dev.off()
 
@@ -40,7 +46,7 @@ for (rate in c(0, 0.05)) {
     # Important -- order by node ID so we get the first rep from each set of replicates.
     df = orderBy(~node_id,data=df)
     node_id <- df[1,]$node_id
-    print(node_id)
+    print(paste("Node id:",node_id))
     dump.protein(node_id=node_id,base=paste(fig_num,'_plots',sep=""),dbname=dbname)
 
     p <- plot.aln.overview(node_id=node_id,base=paste(fig_num,'_plots',sep=""))
@@ -52,7 +58,7 @@ for (rate in c(0, 0.05)) {
     )
     p <- p + opts(title=df[1,'slrsim_label'])
     p <- p + coord_cartesian(xlim=c(0,800))
-    p <- p + coord_equal(ratio=3)
+    p <- p + coord_equal(ratio=10)
 
     print(p,vp=subplot(c(1),c(i)))
     print(i)
@@ -71,7 +77,7 @@ for (rate in c(0, 0.05)) {
   width = desired.aspect * height
 
   print(paste("width x height:",width,height))
-  pdf(file=paste(fig_num,"_alns.pdf",sep=""),width=width,height=height)
+  pdf(file="fix_6_alns.pdf",width=width,height=height)
   n.cols = 1
   i <- 1
   vplayout(n.cols,n)

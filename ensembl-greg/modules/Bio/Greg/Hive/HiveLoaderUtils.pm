@@ -70,6 +70,10 @@ sub init {
   my $compara_sql = "$base_folder/ensembl-greg/sql/compara-basic-tables.sql";
   my $hive_sql    = "$base_folder/ensembl-greg/sql/hive-basic-tables.sql";
 
+  my $args = Bio::Greg::EslrUtils->mysqlArgsFromConnection($dba->dbc);
+  `mysql $args < $compara_sql`;
+  `mysql $args < $hive_sql`;
+
 }
 
 sub add_job_to_analysis {

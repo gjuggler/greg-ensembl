@@ -28,6 +28,7 @@ dump.protein = function(node_id,base=node_id,tree_file=NA,aln_file=NA,sw_file=NA
 
   url = paste("mysql://slrsim:slrsim@mysql-greg.ebi.ac.uk:4134/",
     dbname,sep="")
+  print(paste("URL:",url))
   system(paste("perl ~/lib/greg-ensembl/scripts/tree_dump.pl",
     " --url=",url,
     " --id=",node_id,
@@ -77,7 +78,6 @@ no.margins <- function(p) {
   p <- p + scale_y_continuous(breaks=NA)
   return(p)
 }
-
 
 plot.aln.overview = function(node_id,base,len=1000) {
   t_f = paste(base,'/',node_id,".nh",sep="")
@@ -141,6 +141,8 @@ plot.roc = function(data,plot.x='tn',plot.y='tp',plot.unity=F,fill.below=F,plot=
 
   p <- ggplot(data,aes(x=roc.x,y=roc.y,colour=slrsim_label))
   p <- p + geom_line()
+  p <- p + xlab(plot.x)
+  p <- p + ylab(plot.y)
   if (plot) {
     print(p)
   }
