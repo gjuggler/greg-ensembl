@@ -35,68 +35,36 @@ Bio::EnsEMBL::Hive::DBSQL::DBAdaptor
 
 package Bio::EnsEMBL::Hive::DBSQL::DBAdaptor;
 
-use vars qw(@ISA);
 use strict;
-
 use Bio::EnsEMBL::DBSQL::DBConnection;
-use Bio::EnsEMBL::DBSQL::DBAdaptor;
 
-use Bio::EnsEMBL::Utils::Argument;
-
-@ISA = qw( Bio::EnsEMBL::DBSQL::DBAdaptor );
+use base ('Bio::EnsEMBL::DBSQL::DBAdaptor');
 
 
-sub get_Queen {
-  my $self = shift;
-
-  return $self->get_QueenAdaptor();
-}
-
-sub new {
-  my ($class, @args) = @_;
-
-  my ($conf_file, $url, $species) = rearrange(['CONF_FILE', 'URL', 'SPECIES'], @args);
-
-  if ($url and $url =~ /mysql\:\/\/([^\@]+\@)?([^\:\/]+)(\:\d+)?\/(.+)/) {
-    my $user_pass = $1;
-    my $host = $2;
-    my $port = $3;
-    my $dbname = $4;
-
-    $user_pass =~ s/\@$//;
-    my ($user, $pass) = $user_pass =~ m/([^\:]+)(\:.+)?/;
-    $pass =~ s/^\:// if ($pass);
-    $port =~ s/^\:// if ($port);
-    push(@args, "-user" => $user) if ($user);
-    push(@args, "-pass" => $pass) if ($pass);
-    push(@args, "-port" => $port) if ($port);
-    push(@args, "-host" => $host);
-    push(@args, "-dbname" => $dbname);
-    if (!$species) {
-      push(@args, "-species" => $dbname);
-    }
-  }
-
-  my $self = $class->SUPER::new(@args);
-  return $self;
-}
+#sub get_Queen {
+#  my $self = shift;
+#
+#  return $self->get_QueenAdaptor();
+#}
 
 sub get_available_adaptors {
  
     my %pairs =  (
-        'MetaContainer'       => 'Bio::EnsEMBL::DBSQL::MetaContainer',
-        'Analysis'            => 'Bio::EnsEMBL::DBSQL::AnalysisAdaptor',
+            # Core adaptors extended with Hive stuff:
+        'MetaContainer'       => 'Bio::EnsEMBL::Hive::DBSQL::MetaContainer',
+        'Analysis'            => 'Bio::EnsEMBL::Hive::DBSQL::AnalysisAdaptor',
+            # Hive adaptors:
         'Queen'               => 'Bio::EnsEMBL::Hive::Queen',
         'AnalysisJob'         => 'Bio::EnsEMBL::Hive::DBSQL::AnalysisJobAdaptor',
-        'AnalysisJobError'    => 'Bio::EnsEMBL::Hive::DBSQL::AnalysisJobErrorAdaptor',
         'AnalysisData'        => 'Bio::EnsEMBL::Hive::DBSQL::AnalysisDataAdaptor',
         'AnalysisStats'       => 'Bio::EnsEMBL::Hive::DBSQL::AnalysisStatsAdaptor',
         'AnalysisCtrlRule'    => 'Bio::EnsEMBL::Hive::DBSQL::AnalysisCtrlRuleAdaptor',
         'DataflowRule'        => 'Bio::EnsEMBL::Hive::DBSQL::DataflowRuleAdaptor',
         'ResourceDescription' => 'Bio::EnsEMBL::Hive::DBSQL::ResourceDescriptionAdaptor',
+        'NakedTable'          => 'Bio::EnsEMBL::Hive::DBSQL::NakedTableAdaptor',
+        'JobMessage'          => 'Bio::EnsEMBL::Hive::DBSQL::JobMessageAdaptor',
     );
     return (\%pairs);
 }
  
 1;
-

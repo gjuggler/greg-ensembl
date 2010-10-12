@@ -87,7 +87,6 @@ It will be convenient to set a variable pointing at this directory for future us
 		#
 		# (for best results, append these lines to your ~/.bashrc configuration file)
 
-
 # using [t]csh syntax:
 	$ setenv PERL5LIB  ${PERL5LIB}:${ENS_CODE_ROOT}/bioperl-live
 	$ setenv PERL5LIB  ${PERL5LIB}:${ENS_CODE_ROOT}/ensembl/modules
@@ -97,59 +96,31 @@ It will be convenient to set a variable pointing at this directory for future us
 		# (for best results, append these lines to your ~/.cshrc or ~/.tcshrc configuration file)
 
 
-3. It will be convenient to set a variable with MySQL connection parameters to the MySQL instance
-where you'll be creating eHive pipelines
-(which means, you'll need priveleges to create databases and to write into them):
+3. Useful files and directories of the eHive repository.
 
-# using bash syntax:
-	$ export MYCONN="--host=hostname --port=3306 --user=mysql_username --password=SeCrEt"
+3.1 In ensembl-hive/scripts we keep perl scripts used for controlling the pipelines.
+    Adding this directory to your $PATH may make your life easier.
 
-# using [t]csh syntax:
-	$ setenv MYCONN "--host=hostname --port=3306 --user=mysql_username --password=SeCrEt"
+    * init_pipeline.pl is used to create hive databases, populate hive-specific and pipeline-specific tables and load data
 
-The same syntax will work for eHive control scripts, so you'll be using the same variable.
+    * beekeeper.pl is used to run the pipeline; send 'Workers' to the 'Meadow' to run the jobs of the pipeline
 
+3.2 In ensembl-hive/modules/Bio/EnsEMBL/Hive/PipeConfig we keep example pipeline configuration modules that can be used by init_pipeline.pl .
+    A PipeConfig is a parametric module that defines the structure of the pipeline.
+    That is, which analyses with what parameters will have to be run and in which order.
+    The code for each analysis is contained in a RunnableDB module.
+    For some tasks bespoke RunnableDB have to be written, whereas some other problems can be solved by only using 'universal buliding blocks'.
+    A typical pipeline is a mixture of both.
 
-4. Create an "empty" eHive:
+3.3 In ensembl-hive/modules/Bio/EnsEMBL/Hive/RunnableDB we keep 'universal building block' RunnableDBs:
 
-The state of each eHive is maintained in a MySQL database that has to be created from the file ensembl-hive/sql/tables.sql :
+    * SystemCmd.pm  is a parameter substitution wrapper for any command line executed by the current shell
 
-	$ mysql $MYCONN -e 'CREATE DATABASE ehive_test'
-	$ mysql $MYCONN ehive_test < $ENS_CODE_ROOT/ensembl-hive/sql/tables.sql
+    * SqlCmd.pm     is a parameter substitution wrapper for running any MySQL query or a session of linked queries
+                    against a particular database (eHive pipeline database by default, but not necessarily)
 
-In this step you have created a database with empty tables
-that will have to be "loaded" with tasks to perform, depending on the particular pipeline we want to run.
+    * JobFactory.pm is a universal module for dynamically creating batches of same analysis jobs (with different parameters)
+                    to be run within the current pipeline
 
-5. Configure and load a pipeline:
-
-Now the structure of a particular pipeline has to be defined:
-(A) Each 'analysis' table entry describes a particular type of job that can be run,
-	with the corresponding Perl module to run and the generic parameters for that module.
-	Most of our pipelines have more than one analysis.
-(B) Each 'control_rule' table entry links two analyses A and B in such a way that until all A-jobs
-	have been completed none of the B-jobs can be started.
-(C) Each 'dataflow_rule' table entry links two analyses A and B in such a way that when an A-job completes,
-	it is said to "flow into" a B-job (a B-job is automatically created for each A-job,
-	and parameters are passed from A to B individually).
-(D) A particular pipeline may have extra tables defined to store the intermediate and final
-	results of computation. They may need to be loaded with some initial data.
-(E) A certain number of jobs will have to be loaded into 'analysis_job' table (this number won't usually
-	reflect the total number of jobs, as jobs can create other jobs or "flow into" them).
-
-The task of loading all the components of pipelines is usually automated by a configuration script
-(or sometimes two, the first for loading "pipeline definition" (A-D) and the second for loading jobs (E) )
-
-Please familiarize yourself with the file $ENS_CODE_ROOT/ensembl-hive/docs/long_mult_example_pipeline.txt
-that gives step-by-step instruction of how to load and run our toy pipeline for distributed multiplication of long numbers.
-Although it is a toy pipeline, it gives a good example on how to address each of the points (A)..(E) listed above.
-
-
-6. Scripts used for sending Workers to the farm.
-
-The scripts used to control the loading/execution of eHive pipelines are stored in "$ENS_CODE_ROOT/ensembl-hive/scripts" directory.
-(Again, we suggest that you add $ENS_CODE_ROOT/ensembl-hive/scripts to your executable PATH variable to avoid much typing.)
-
-The main script to query and run the eHive pipelines is 'beekeeper.pl',
-but the other two scripts 'runWorker.pl' and 'cmd_hive.pl' may also become useful at some point.
-Running each script without parameters will provide the list of options and usage examples.
+3.4 In ensembl-hive/modules/Bio/EnsEMBL/Hive/RunnableDB/LongMult we keep bespoke RunnableDBs for long multiplication example pipeline.
 

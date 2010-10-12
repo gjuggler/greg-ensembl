@@ -2,9 +2,9 @@
 
 # cmd_hive.pl
 #
-# Cared for by Albert Vilella <>
-# Copyright Albert Vilella
-#
+# Copyright (c) 1999-2010 The European Bioinformatics Institute and
+# Genome Research Limited.  All rights reserved.
+# 
 # You may distribute this module under the same terms as perl itself
 
 use strict;
@@ -25,9 +25,12 @@ $self->{'db_conf'} = {};
 $self->{'db_conf'}->{'-user'} = 'ensro';
 $self->{'db_conf'}->{'-port'} = 3306;
 
-$self->{'logic_name'}  = 'cmd_hive_analysis';
-$self->{'module'}      = 'Bio::EnsEMBL::Hive::RunnableDB::SystemCmd';
-$self->{'parameters'}  = '{}';
+# DEFAULT VALUES FOR NEW ANALYSES
+my $DEFAULT_LOGIC_NAME    = 'cmd_hive_analysis';
+my $DEFAULT_MODULE        = 'Bio::EnsEMBL::Hive::RunnableDB::SystemCmd';
+my $DEFAULT_PARAMETERS    = '{}';
+my $DEFAULT_HIVE_CAPACITY = 20;
+my $DEFAULT_BATCH_SIZE    = 1;
 
 my ($help, $host, $user, $pass, $dbname, $port, $adaptor, $url);
 
@@ -99,25 +102,7 @@ exit(0);
 sub job_creation {
   my $self = shift;
 
-  my $logic_name = $self->{'logic_name'};
-  my $module     = $self->{'module'};
-  my $parameters = $self->{'parameters'};
-  print("creating analysis '$logic_name' to be computed using module '$module' with parameters '$parameters'\n");
-  $self->{_analysis} = Bio::EnsEMBL::Analysis->new (
-      -db              => '',
-      -db_file         => '',
-      -db_version      => '1',
-      -parameters      => $parameters,
-      -logic_name      => $logic_name,
-      -module          => $module,
-    );
-  $DBA->get_AnalysisAdaptor()->store($self->{_analysis});
-
-  my $stats = $self->{_analysis}->stats;
-  $stats->batch_size( $self->{'batch_size'} || 1 );
-  $stats->hive_capacity( $self->{'hive_capacity'} || 20 );
-  $stats->status('READY');
-  $stats->update();
+  $self->create_analysis;
 
   print("$0 -- inserting jobs\n");
   my $starttime = time();
@@ -161,11 +146,67 @@ sub job_creation {
         }
         $self->create_resolved_input_id_job($resolved_input_id);
     }
+  } else {
+    $self->create_resolved_input_id_job($self->{input_id});
+    $count++;
   }
   my $total_time = (time()-$starttime);
   print "$count jobs created in $total_time secs\n";
   print("speed : ",($count / $total_time), " jobs/sec\n");
 }
+
+
+sub create_analysis {
+  my ($self) = @_;
+
+  my $logic_name = ( $self->{'logic_name'} || $DEFAULT_LOGIC_NAME );
+  my $module     = ( $self->{'module'} || $DEFAULT_MODULE );
+  my $parameters = ( $self->{'parameters'} || $DEFAULT_PARAMETERS );
+  my $hive_capacity;
+  my $batch_size;
+
+  # Try to get the analysis from the DB in case we are simply adding jobs to this analysis
+  $self->{_analysis} = $DBA->get_AnalysisAdaptor()->fetch_by_logic_name($logic_name);
+
+  if (!$self->{_analysis}) {
+    # No existing analysis with this logic_name. Create a new one.
+    print("creating analysis '$logic_name' to be computed using module '$module' with parameters '$parameters'\n");
+
+    $self->{_analysis} = Bio::EnsEMBL::Analysis->new (
+        -db              => '',
+        -db_file         => '',
+        -db_version      => '1',
+        -parameters      => $parameters,
+        -logic_name      => $logic_name,
+        -module          => $module,
+      );
+    $DBA->get_AnalysisAdaptor()->store($self->{_analysis});
+
+    $hive_capacity = ( $self->{'hive_capacity'} || $DEFAULT_HIVE_CAPACITY );
+    $batch_size = ( $self->{'batch_size'} || $DEFAULT_BATCH_SIZE );
+  } else {
+    # We have found an analysis with the same logic_name.
+    # Check that the analysis module is the same
+    if ($self->{'module'} and $module ne $self->{_analysis}->module) {
+      die "Analysis <$logic_name> exists already and uses module '".$self->{_analysis}->module."'\n";
+    }
+    # Check that the analysis parameters are the same
+    if ($self->{'parameters'} and $parameters ne $self->{_analysis}->parameters) {
+      die "Analysis <$logic_name> exists already with parameters '".$self->{_analysis}->parameters."'\n";
+    }
+    # Set hive_capacity and batch_size if set through the command line only.
+    # Keep the current value otherwise
+    $hive_capacity = $self->{'hive_capacity'};
+    $batch_size = $self->{'batch_size'};
+  }
+
+  my $stats = $self->{_analysis}->stats;
+  $stats->batch_size( $batch_size ) if (defined($batch_size));
+  $stats->hive_capacity( $hive_capacity ) if (defined($hive_capacity));
+  $stats->status('READY');
+  $stats->update();
+}
+
 
 sub create_resolved_input_id_job {
   my ($self, $resolved_input_id) = @_;
@@ -262,29 +303,29 @@ __DATA__
 
 =head1 NAME
 
-cmd_hive.pl
+    cmd_hive.pl
 
 =head1 USAGE
 
-cmd_hive.pl -url mysql://user:password@host:port/name_of_hive_db \
-    -logic_name example1 -input_id 'echo I.have.$suffix.and.I.am.baking.one.right.now' \
-    -suffix_a apple01 -suffix_b apple05
+    cmd_hive.pl -url mysql://user:password@host:port/name_of_hive_db \
+        -logic_name example1 -input_id 'echo I.have.$suffix.and.I.am.baking.one.right.now' \
+        -suffix_a apple01 -suffix_b apple05
 
-cmd_hive.pl -url mysql://user:password@host:port/avilella_compara_homology_54 \
-    -input_id  '{ "sequence_id" => "$suffix", "minibatch" => "$suffixn" }' \
-    -parameters '{ "fastadb" => "/data/blastdb/Ensembl/family_54/fasta/metazoa_54.pep", "tabfile" => "/data/blastdb/Ensembl/family_54/fasta/metazoa_54.tab" }' \
-    -suffix_a 1 -suffix_b 100 -step 9 -hive_capacity 200 -logic_name family_blast_54a \
-    -module Bio::EnsEMBL::Compara::RunnableDB::FamilyBlast
+    cmd_hive.pl -url mysql://user:password@host:port/avilella_compara_homology_54 \
+        -input_id  '{ "sequence_id" => "$suffix", "minibatch" => "$suffixn" }' \
+        -parameters '{ "fastadb" => "/data/blastdb/Ensembl/family_54/fasta/metazoa_54.pep", "tabfile" => "/data/blastdb/Ensembl/family_54/fasta/metazoa_54.tab" }' \
+        -suffix_a 1 -suffix_b 100 -step 9 -hive_capacity 200 -logic_name family_blast_54a \
+        -module Bio::EnsEMBL::Compara::RunnableDB::FamilyBlast
 
 =head1 DESCRIPTION
 
- This script helps to load a batch of jobs all belonging to the same analysis,
- whose parameters are given by a range of values.
+    This script helps to load a batch of jobs all belonging to the same analysis,
+    whose parameters are given by a range of values.
 
- By default it will use the 'Bio::EnsEMBL::Hive::RunnableDB::SystemCmd'
- to run a script wrapped into eHive jobs, but it will run any RunnableDB module that you specify instead.
+    By default it will use the 'Bio::EnsEMBL::Hive::RunnableDB::SystemCmd'
+    to run a script wrapped into eHive jobs, but it will run any RunnableDB module that you specify instead.
 
- There are three ways of providing the range for the mutable parameter(s):
+    There are three ways of providing the range for the mutable parameter(s):
     - values provided in a file (by setting -inputfile filename)
     - perl built-in .. range operator (by setting -suffix_a 1234 and -suffix_b 5678 values)
         ** you can create mini-batches by providing the -step value, which will percolate as $suffixn
@@ -294,60 +335,60 @@ cmd_hive.pl -url mysql://user:password@host:port/avilella_compara_homology_54 \
 
 =head2 Connection parameters
 
-  -url <url string>              : url defining where hive database is located
-  -host <machine>                : mysql database host <machine>
-  -port <port#>                  : mysql port number
-  -user <name>                   : mysql connection user <name>
-  -password <pass>               : mysql connection password <pass>
-  -database <name>               : mysql database <name>
+    -url <url string>              : url defining where hive database is located
+    -host <machine>                : mysql database host <machine>
+    -port <port#>                  : mysql port number
+    -user <name>                   : mysql connection user <name>
+    -password <pass>               : mysql connection password <pass>
+    -database <name>               : mysql database <name>
 
 =head2 Analysis parameters
 
-  -logic_name <analysis_name>    : logic_name of the analysis
-  -module <module_name>          : name of the module to be run
-  -hive_capacity <hive_capacity> : top limit on the number of jobs of this analysis run at the same time
-  -batch_size <batch_size>       : how many jobs can be claimed by a worker at once
-  -parameters <parameters_hash>  : hash containing analysis-wide parameters for the module
-  -input_id <inputid_hash>       : hash containing job-specific parameters for the module
+    -logic_name <analysis_name>    : logic_name of the analysis
+    -module <module_name>          : name of the module to be run
+    -hive_capacity <hive_capacity> : top limit on the number of jobs of this analysis run at the same time
+    -batch_size <batch_size>       : how many jobs can be claimed by a worker at once
+    -parameters <parameters_hash>  : hash containing analysis-wide parameters for the module
+    -input_id <inputid_hash>       : hash containing job-specific parameters for the module
 
-Always use single quotes to protect the values of -input_id and -parameters.
+    Always use single quotes to protect the values of -input_id and -parameters.
 
 =head2 Range parameters (file mode)
 
-  -inputfile <filename>          : filename to take the values from (one per line)
+    -inputfile <filename>          : filename to take the values from (one per line)
 
-  Contents of each line will be substituted for '$inputfile' pattern in the input_id.
+    Contents of each line will be substituted for '$inputfile' pattern in the input_id.
 
 =head2 Range parameters (simple range mode)
 
-  -suffix_a <tag>                : bottom boundary of the range
-  -suffix_b <tag>                : top boundary of the range
-  -step <step_size>              : desired size of the subrange, may be smaller for last subrange (1 by default)
+    -suffix_a <tag>                : bottom boundary of the range
+    -suffix_b <tag>                : top boundary of the range
+    -step <step_size>              : desired size of the subrange, may be smaller for last subrange (1 by default)
 
-  The result of range expansion will get chunked into subranges of <step_size> (or 1 if not specified).
-  Start of the subrange will be substituted for '$suffix',
-  end of the subrange will be substituted for '$suffix2'
-  and size of the subrange will be substituted for '$suffixn' pattern in the input_id.
+    The result of range expansion will get chunked into subranges of <step_size> (or 1 if not specified).
+    Start of the subrange will be substituted for '$suffix',
+    end of the subrange will be substituted for '$suffix2'
+    and size of the subrange will be substituted for '$suffixn' pattern in the input_id.
 
-  Be careful of using things that don't expand, like apple_01 apple_05 instead of apple01 apple05
+    Be careful of using things that don't expand, like apple_01 apple_05 instead of apple01 apple05
 
-  Also don't use suffix_a and suffix_b in the reverse order apple05 to apple01 because they expand in things like:
-  apple54,applf04,applf54,applg04,applg54,applh04,applh54...
+    Also don't use suffix_a and suffix_b in the reverse order apple05 to apple01 because they expand in things like:
+    apple54,applf04,applf54,applg04,applg54,applh04,applh54...
 
 =head2 Range parameters (hashed mode)
 
-  -hashed_a <tag_a>              : for example, -hashed_a 00:00:00
-  -hashed_b <tag_b>              : for example, -hashed_b 01:61:67
+    -hashed_a <tag_a>              : for example, -hashed_a 00:00:00
+    -hashed_b <tag_b>              : for example, -hashed_b 01:61:67
 
-  Please ask Albert about this mode or to provide documentation for it :)
+    Please ask Albert about this mode or to provide documentation for it :)
 
 =head2 Other options
 
-  -help                          : print this help
+    -help                          : print this help
 
 =head1 CONTACT
 
-  Please contact ehive-users@ebi.ac.uk mailing list with questions/suggestions.
+    Please contact ehive-users@ebi.ac.uk mailing list with questions/suggestions.
 
 =cut
 

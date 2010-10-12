@@ -4,12 +4,38 @@
 
 package Bio::EnsEMBL::Hive::Meadow;
 
+use Sys::Hostname;
+use Bio::EnsEMBL::Hive::Meadow::LSF;
+use Bio::EnsEMBL::Hive::Meadow::LOCAL;
+
 use strict;
 
 sub new {
     my $class = shift @_;
 
+    unless($class=~/::/) {
+        $class = 'Bio::EnsEMBL::Hive::Meadow'.$class;
+    }
+
     return bless { @_ }, $class;
+}
+
+sub guess_current_type_pid_exechost {
+    my $self = shift @_;
+
+    my ($type, $pid);
+    eval {
+        $pid  = Bio::EnsEMBL::Hive::Meadow::LSF->get_current_worker_process_id();
+        $type = 'LSF';
+    };
+    if($@) {
+        $pid  = Bio::EnsEMBL::Hive::Meadow::LOCAL->get_current_worker_process_id();
+        $type = 'LOCAL';
+    }
+
+    my $exechost = hostname();
+
+    return ($type, $pid, $exechost);
 }
 
 sub type { # should return 'LOCAL' or 'LSF'
@@ -34,12 +60,18 @@ sub meadow_options {    # general options that different Meadows can plug into t
     return $self->{'_meadow_options'} || '';
 }
 
+sub job_name_prefix {
+    my $self = shift @_;
+
+    return ($self->pipeline_name() ? $self->pipeline_name().'-' : '') . 'Hive';
+}
+
 sub generate_job_name {
     my ($self, $worker_count, $iteration, $rc_id) = @_;
     $rc_id ||= 0;
 
-    return ($self->pipeline_name() ? $self->pipeline_name().'-' : '')
-        ."Hive${rc_id}_${iteration}"
+    return $self->job_name_prefix()
+        ."${rc_id}_${iteration}"
         . (($worker_count > 1) ? "[1-${worker_count}]" : '');
 }
 
@@ -49,7 +81,7 @@ sub responsible_for_worker {
     return $worker->beekeeper() eq $self->type();
 }
 
-sub check_worker_is_alive {
+sub check_worker_is_alive_and_mine {
     my ($self, $worker) = @_;
 
     die "Please use a derived method";
