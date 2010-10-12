@@ -281,7 +281,8 @@ sub binomial {
   if ($self->has_tag('scientific name') && ($self->rank eq 'species' || $self->rank eq 'subspecies')) {
     return $self->get_tagvalue('scientific name');
   } else {
-    warning("taxon_id=",$self->node_id," is not a species or subspecies. So binomial is undef\n");
+    my $str = "taxon_id=".$self->node_id." is not a species or subspecies. So binomial is undef";
+    die($str);
     return undef;
   }
 }

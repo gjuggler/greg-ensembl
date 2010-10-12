@@ -44,7 +44,7 @@ our @ISA = qw(Bio::EnsEMBL::Compara::NestedSet);
 sub new {
   my ($class, @args) = @_;
 
-  my $self = bless {}, $class;
+  my $self = bless {}, ref($class) || $class;
   
   if (scalar @args) {
     #do this explicitly.
