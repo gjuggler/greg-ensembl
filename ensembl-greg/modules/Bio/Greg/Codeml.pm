@@ -611,6 +611,16 @@ sub main_results {
   return $self->{'_main'};
 }
 
+sub all_lines {
+  my $self = shift;
+  
+  my @main_lines = @{$self->main_results};
+  my @supp_lines = @{$self->supplementary_results};
+  
+  my @all_lines = (@main_lines,@supp_lines);
+  return \@all_lines;
+}
+
 # GJ 2009-01-08 : extracts the naive bayes predictions from the supplementary string.
 sub extract_empirical_bayes {
   my $self           = shift;
@@ -794,9 +804,8 @@ sub extract_tree {
 sub extract_lnL {
   my $self          = shift;
   my $main_arrayref = shift;
-  $main_arrayref = $self->main_results unless ( defined $main_arrayref );
-  my @main = @{$main_arrayref};
 
+  my @main = @{$main_arrayref};
   foreach my $line (@main) {
     chomp $line;
     next if ( length($line) == 0 );    # skip blank lines.
@@ -816,7 +825,7 @@ sub extract_lnL {
 sub extract_omegas {
   my $self          = shift;
   my $main_arrayref = shift;
-  $main_arrayref = $self->main_results unless ( defined $main_arrayref );
+
   my @main = @{$main_arrayref};
 
   foreach my $line (@main) {
@@ -930,20 +939,22 @@ sub _set_branch_length {
   $node->branch_length($dnds);
 }
 
-sub extract_branch_params {
-  my $self = shift;
+sub parse_branch_params {
+  my $class = shift;
+  my $line_arrayref = shift;
 
   my $values;
-  my $map = $self->get_leaf_number_map;
-
   my $looking = 0;
-  foreach my $line ( $self->each_line ) {
+  foreach my $line ( @$line_arrayref ) {
     chomp $line;
     next if ( length($line) == 0 );    # skip blank lines.
 
     if ( $line =~ m/dN & dS for each branch/i ) {
       $looking = 1;
       next;
+    }
+    if ($line =~ m/tree length for/i) {
+      $looking = 0;
     }
 
     if ($looking) {
@@ -956,9 +967,9 @@ sub extract_branch_params {
         my @tokens   = split( /\s+/,  $line );
         my @branches = split( /\.\./, $tokens[0] );
         my $child    = $branches[1];
-        my $id = $map->{$child} || $child;
         my $parent = $branches[0];
-        my $parent_id = $map->{$parent} || $parent;
+        my $id = $child;
+        my $parent_id = $parent;
 
         #	print "$child!!\n";
         my $obj = {
@@ -968,6 +979,9 @@ sub extract_branch_params {
           'dN/dS'  => $tokens[4],
           'dN'     => $tokens[5],
           'dS'     => $tokens[6],
+          'node_a' => $parent,
+          'node_b' => $child,
+          'id' => $id,
           'parent' => $parent_id
         };
         $values->{$id} = $obj;
@@ -977,28 +991,46 @@ sub extract_branch_params {
   return $values;
 }
 
-sub get_leaf_number_map {
-  my $self = shift;
+sub parse_number_tree {
+  my $class = shift;
+  my $input_lines_arrayref = shift;
+
+  return $class->parse_tree($input_lines_arrayref,0);
+}
+
+sub parse_id_tree {
+  my $class = shift;
+  my $input_lines_arrayref = shift;
+
+  return $class->parse_tree($input_lines_arrayref,1);
+}
+
+sub parse_tree {
+  my $class = shift;
+  my $input_lines_arrayref = shift;
+  my $return_id_tree = shift; # 0 = return numbers, 1 = return IDs
 
   my $look_for_tree_one = 0;
   my $look_for_tree_two = 0;
   my $tree_one;
   my $tree_two;
-  foreach my $line ( $self->each_line ) {
+
+  foreach my $line ( @$input_lines_arrayref ) {
     chomp $line;
     next if ( length($line) == 0 );    # skip blank lines.
-
     if ( $line =~ m/^tree length =/i ) {
       $look_for_tree_one = 1;
       next;
     }
     if ($look_for_tree_one) {
+      $line =~ s/ //g; # Remove paml's extra spaces.
       $tree_one          = Bio::TreeIO->new( -string => $line )->next_tree;
       $look_for_tree_one = 0;
       $look_for_tree_two = 1;
       next;
     }
     if ($look_for_tree_two) {
+      $line =~ s/ //g; # Remove paml's extra spaces.
       $tree_two = Bio::TreeIO->new( -string => $line )->next_tree;
       $look_for_tree_two = 0;
     }
@@ -1006,60 +1038,114 @@ sub get_leaf_number_map {
 
   return unless ( defined $tree_one );
 
+  # Get the internal node IDs from PAML's branch labels.
+  my $child_to_parent_id;
+  my $looking = 0;
+  foreach my $line ( @$input_lines_arrayref) {
+    chomp $line;
+    next if ( length($line) == 0 );    # skip blank lines.
+    if ( $line =~ m/dN & dS for each branch/i ) {
+      $looking = 1;
+      next;
+    }
+    if ($looking) {
+      if ( $line =~ m/\d\.\.\d/ ) {
+        $line = strip($line);
+        # branch           t        N        S    dN/dS       dN       dS   N*dN   S*dS
+        #   5..6       0.101   2374.1    973.9   0.2223   0.0166   0.0747   39.4   72.8
+        my @tokens   = split( /\s+/,  $line );
+        my @branches = split( /\.\./, $tokens[0] );
+        my $child    = $branches[1];
+        my $parent = $branches[0];
+        $child_to_parent_id->{$child} = $parent;
+      }
+      if ($line =~ m/tree length/i) {
+        $looking = 0; # Stop looking, we're done!
+      }
+    }
+  }
+  # Assign internal node IDs.
+  foreach my $leaf ($tree_one->get_leaf_nodes) {
+    my $node = $leaf;
+    while (my $parent = $node->ancestor) {
+      my $child_id = $node->id;
+      if (defined $child_to_parent_id->{$child_id}) {
+        $parent->id($child_to_parent_id->{$child_id});
+      }
+      $node = $parent;
+    }
+  }
+
+  if ($return_id_tree) {
+    return $tree_two;
+  } else {
+    return $tree_one;
+  }
+}
+
+sub parse_leaf_number_map {
+  my $class = shift;
+  my $input_lines_arrayref = shift;
+
   my $map;
 
-  # Tree one contains the PAML-numbered names.
-  my @one_nodes = $tree_one->get_nodes;
-  #print "Nodes: " . scalar(@one_nodes) . "\n";
-
-  # Tree two contains the input names.
-  my @two_nodes = $tree_two->get_nodes;
-  for ( my $i = 0 ; $i < scalar(@one_nodes) ; $i++ ) {
-    my $one = $one_nodes[$i];
-    my $two = $two_nodes[$i];
-
-    #print $one->id."  ".$two->id."\n";
-    if ( $one->id && $two->id ) {
-      $map->{ strip( $one->id ) } = strip( $two->id );
+  my $number_tree = $class->parse_number_tree($input_lines_arrayref);
+  my $id_tree = $class->parse_id_tree($input_lines_arrayref);
+  
+  # Tree one contains the PAML node numbers.
+  my @number_nodes = $number_tree->get_nodes;
+  # Tree two contains the leaf node names.
+  my @id_nodes = $id_tree->get_nodes;
+  for ( my $i = 0 ; $i < scalar(@number_nodes) ; $i++ ) {
+    my $number = $number_nodes[$i];
+    my $id = $id_nodes[$i];
+    #print $number->id."  ".$id->id."\n";
+    if ( $number->id && $id->id ) {
+      $map->{ strip( $number->id ) } = strip( $id->id );
     }
   }
   return $map;
 }
 
-sub get_branch_substitution_map {
-  my $self = shift;
-  
-  my $suppl_arrayref = $self->supplementary_results();
-  my @suppl = @{$suppl_arrayref};
-
-  my $leaf_map = $self->get_leaf_number_map;
+sub parse_branch_substitution_map {
+  my $class = shift;
+  my $lines_arrayref = shift;
 
   my $map = {};
 
   my $within_changes = 0;
-  my $current_branch;
-  foreach my $line (@suppl) {
+  my $node_id;
+  my $parent_id;
+  my $branch_line;
+  foreach my $line (@$lines_arrayref) {
     $within_changes = 1 if ($line =~ m/Summary of changes along branches/i);
     $within_changes = 0 if ($line =~ m/List of extant and reconstructed/i);
 
     if ($within_changes) {
+      #print $line;
       # Branch 5:    9..5  (ENSGGOP00000012863)  (n= 2.0 s=10.0)
-      if ($line =~ m/Branch (\d+):\s+(\d+?)\.\.(\d+?)/gi) {
-        $current_branch = $3;
-        $current_branch = $leaf_map->{$current_branch} if (defined $leaf_map->{$current_branch});
-        $map->{$current_branch} = {};
-        #print $current_branch."\n";
+      if ($line =~ m/Branch (\d+):\s+(\d+)\.\.(\d+)/gi) {
+        $branch_line = $line;
+        $parent_id = $2;
+        $node_id = $3;
+        $map->{$node_id} = {};
       }
       if ($line =~ m/\s*(\d+) (\S+) \((\S)\) (.*) -> (\S+) \((\S)\)/g) {
         my $obj = {
+          id => $node_id,
+          parent_id => $parent_id,
           pos => $1,
           codon_a => $2,
           codon_b => $5,
           aa_a => $3,
           aa_b => $6,
-          confidence => $4
+          confidence => $4,
+          line => $line,
+          branch_line => $branch_line
         };
-        $map->{$current_branch}->{$1} = $obj;
+        next if ($obj->{codon_b} eq '---');
+
+        $map->{$node_id}->{$1} = $obj;
       }
     }
   }
@@ -1095,6 +1181,34 @@ sub get_m0_tree {
   return $new_tree;
 }
 
+sub parse_codeml_results {
+  my $class = shift;
+  my $line_ref = shift; # Arrayref with ALL output lines (main + suppl)
+
+  my $tree = $class->parse_number_tree($line_ref);
+
+  my $subs = $class->parse_branch_substitution_map($line_ref);
+  my $branch_params = $class->parse_branch_params($line_ref);
+  my $map = $class->parse_leaf_number_map($line_ref);
+
+  foreach my $node ($tree->get_nodes) {
+    my $id = $node->id;
+    my $subst = $subs->{$id};
+    $node->set_tag_value('substitutions',$subst);
+
+    my $params = $branch_params->{$id};
+    foreach my $key (keys %$params) {
+      $node->set_tag_value($key,$params->{$key});
+    }
+
+    if (defined $map->{$id}) {
+      $node->id($map->{$id});
+    }
+  }
+  
+  return $tree;
+}
+
 sub codon_model_likelihood {
   my $class     = shift;
   my $tree      = shift;
@@ -1119,8 +1233,11 @@ sub codon_model_likelihood {
 
   #$codeml->save_tempfiles(1);
   my ( $rs, $parser ) = $codeml->run();
-  my $lnL    = $codeml->extract_lnL();
-  my @omegas = $codeml->extract_omegas();
+
+  my $lines_ref = $codeml->all_lines;
+
+  my $lnL    = $codeml->extract_lnL($lines_ref);
+  my @omegas = $codeml->extract_omegas($lines_ref);
 
   return {
     lnL    => $lnL,
@@ -1138,7 +1255,7 @@ sub branch_model_likelihood {
   my $default_params = {
     fix_blength => 1,    # Use initial branch lengths as estimates.
     model       => 2,
-    cleandata   => 1
+    cleandata   => 0
   };
 
   my @variable_params = qw(model omega Mgene gene_codon_counts cleandata aaDist);
@@ -1161,31 +1278,22 @@ sub branch_model_likelihood {
   );
   $codeml->save_tempfiles(1);
 
-  # Note: we'll ignore the $parser object here because it doesn't seem to work...
+  # Note: ignore the $parser object here because it doesn't seem to work...
   my ( $rs, $parser ) = $codeml->run();
+  my $lines_ref = $codeml->all_lines;
+  my @lines = @$lines_ref;
 
-  # Instead, manually extract likelihood and omega values from the results file.
-  my $lnL    = $codeml->extract_lnL();
-  my @omegas = $codeml->extract_omegas();
-  print "Omegas: @omegas\n";
-
-  my $dnds      = $codeml->extract_branch_params();
-  my $dnds_tree = $codeml->get_dnds_tree($tree);
-  my $t_tree    = $codeml->get_t_tree($tree);
-  my $ds_tree   = $codeml->get_ds_tree($tree);
-  my $sub_map = $codeml->get_branch_substitution_map($tree);
-
-  my $newick = Bio::EnsEMBL::Compara::TreeUtils->to_newick($dnds_tree);
+  # Manually extract likelihood and omega values from the results files.
+  my $lnL    = $class->extract_lnL($lines_ref);
+  my @omegas = $class->extract_omegas($lines_ref);
+  #print "Omegas: @omegas\n";
+  my $codeml_tree = $class->parse_codeml_results($lines_ref);
 
   # Return an object with our results of interest.
   return {
     lnL       => $lnL,
     omegas    => \@omegas,
-    dnds      => $dnds,
-    dnds_tree => $dnds_tree,
-    ds_tree   => $ds_tree,
-    t_tree    => $t_tree,
-    subs      => $sub_map
+    tree => $codeml_tree
   };
 }
 
@@ -1232,8 +1340,8 @@ sub NSsites_ratio_test {
     -tempdir   => $tempdir
   );
   $codemla->run();
-
-  my $ma_lnL = $codemla->extract_lnL();
+  my $a_lines = $codemla->all_lines;
+  my $ma_lnL = $class->extract_lnL($a_lines);
 
   $params = {
     NSsites     => $model_b,
@@ -1248,7 +1356,8 @@ sub NSsites_ratio_test {
     -tempdir   => $tempdir
   );
   $codemlb->run();
-  my $mb_lnL = $codemlb->extract_lnL();
+  my $b_lines = $codemlb->all_lines;
+  my $mb_lnL = $class->extract_lnL($b_lines);
 
   if ( $model_b == 8 ) {
 
@@ -1271,7 +1380,8 @@ sub NSsites_ratio_test {
       -tempdir   => $tempdir
     );
     $codemlb2->run();
-    my $mb_lnL2 = $codemlb2->extract_lnL();
+    my $b2_lines = $codemlb2->all_lines;
+    my $mb_lnL2 = $codemlb2->extract_lnL($b2_lines);
 
     # Use the 2nd run's results if they have a higher likelihood.
     if ( $mb_lnL2 > $mb_lnL ) {

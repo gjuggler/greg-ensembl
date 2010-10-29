@@ -7,14 +7,16 @@ use base ('Bio::Greg::Hive::Process');
 
 my $TREE = 'Bio::EnsEMBL::Compara::TreeUtils';
 
+sub param_defaults {
+  return {
+    one_to_one_taxon_list => '9606'
+  };
+}
+
 sub fetch_input {
   my $self = shift;
 
-  ### DEFAULT PARAMETERS ###
-  my $defaults = { one_to_one_taxon_list => '9606' };
-  ##########################
-
-  $self->load_all_params($defaults);
+  $self->load_all_params;
 
   my $tree = $self->get_tree();
   $self->param( 'tree', $tree );
@@ -33,19 +35,25 @@ sub run {
   my @keeper_leaves = $TREE->get_leaves_for_species( $tree, \@species_list );
   my @keeper_ids = map { $_->node_id } @keeper_leaves;
   my $pruned_tree = $TREE->extract_subtree_from_leaves( $tree, \@keeper_ids );
-  print $pruned_tree->newick_format . "\n";
-  print map { $_->stable_id . " " } @keeper_leaves;
-  print "\n";
 
-  # Test whether it's a good 1-1-1 orthology.
   my $is_good_tree = 1;
-  my %keeper_hash;
-  map { $keeper_hash{ $_->taxon_id } = 1 } @keeper_leaves;
-  map { $is_good_tree = 0 if ( !defined $keeper_hash{$_} ) } @species_list;
-  $is_good_tree = 0 if ( $#keeper_leaves != $#species_list );
+
+  if (!defined $pruned_tree) {
+    $is_good_tree = 0;
+  } else {
+    print $pruned_tree->newick_format . "\n";
+    print map { $_->stable_id . " " } @keeper_leaves;
+    print "\n";
+    # Test whether it's a good 1-1-1 orthology.
+    my %keeper_hash;
+    map { $keeper_hash{ $_->taxon_id } = 1 } @keeper_leaves;
+    map { $is_good_tree = 0 if ( !defined $keeper_hash{$_} ) } @species_list;
+    $is_good_tree = 0 if ( $#keeper_leaves != $#species_list );
+  }
+
   if ( !$is_good_tree ) {
     print " -> Bad tree! Not one-to-one orthology: Doing nothing!\n";
-    $self->autoflow_inputjob(0);
+    $self->input_job->autoflow(0);
     return;
   } else {
     print " -> Good tree! Allowing output job to flow...\n";

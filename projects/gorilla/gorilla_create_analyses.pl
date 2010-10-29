@@ -6,9 +6,6 @@ use Getopt::Long;
 use Bio::EnsEMBL::Compara::ComparaUtils;
 use Bio::Greg::Hive::ComparaHiveLoaderUtils;
 
-#my ($url) = undef;
-#GetOptions('url=s' => \$url);
-
 my $url = 'mysql://ensadmin:ensembl@ens-research:3306/gj1_gor_58_nofilter';
 my $clean = 1;
 
@@ -28,53 +25,50 @@ parameter_sets();
 node_sets();
 
 ### Genomewide omegas track.
-tree_stats();
-split_by_subtrees();
-paml_omegas();
+#tree_stats();
+#split_by_subtrees();
+#paml_omegas();
 ### End genomewide omegas.
 
 ### Duplication counts track.
-collect_duplications();
+#collect_duplications();
 ### End duplication counts.
 
 ### Branch-model tests track.
 filter_one_to_one();
 count_sites();
 count_sites_outgroup();
-lnl();
-lnl_grantham();
-lnl_more_primates();
-lnl_nofilter();
-lnl_norealign();
+lnl_c();
+lnl_p();
+lnl_m();
+lnl_mp();
 collect_go();
 ### End branch-model tests.
 
 ### Collect everything at the end. Run this one off-hive with an empty input_id
-output_all();
+output_gorilla_data();
 
 # Connect the dots.
 ### Genomewide omega track.
-$h->connect_analysis("NodeSets","TreeStats",1);
+#$h->connect_analysis("NodeSets","TreeStats",1);
 # Add a single trigger job to SplitBySubtrees.
-$h->add_inputs_to_analysis("SplitBySubtrees",[{}]);  
-$h->wait_for("SplitBySubtrees",["NodeSets","TreeStats"]);
-$h->connect_analysis("SplitBySubtrees","PamlOmegas",1);
+#$h->add_inputs_to_analysis("SplitBySubtrees",[{}]);  
+#$h->wait_for("SplitBySubtrees",["NodeSets","TreeStats"]);
+#$h->connect_analysis("SplitBySubtrees","PamlOmegas",1);
 ###
 ### Duplication counts track.
-$h->connect_analysis("NodeSets","CollectDuplications",1);
+#$h->connect_analysis("NodeSets","CollectDuplications",1);
 ###
 ### Branch models track.
 $h->connect_analysis("NodeSets","FilterOneToOne",1);
-$h->connect_analysis("FilterOneToOne","CountSites",1);
-$h->connect_analysis("FilterOneToOne","CountSitesOutgroup",1);
-$h->connect_analysis("FilterOneToOne","lnl",1);
-$h->connect_analysis("FilterOneToOne","lnl_grantham",1);
-$h->connect_analysis("FilterOneToOne","lnl_more_primates",1);
-$h->connect_analysis("FilterOneToOne","lnl_nofilter",1);
-$h->connect_analysis("FilterOneToOne","lnl_norealign",1);
+$h->connect_analysis("FilterOneToOne","lnl_c",1);
+$h->connect_analysis("FilterOneToOne","lnl_p",1);
+$h->connect_analysis("FilterOneToOne","lnl_m",1);
+$h->connect_analysis("FilterOneToOne","lnl_mp",1);
 $h->connect_analysis("NodeSets","CollectGo",1);
 
 add_all_nodes();
+#add_genes();
 
 sub add_genes {
   my @genes = ();
@@ -283,57 +277,46 @@ sub count_sites_outgroup {
   $h->create_analysis($logic_name,$module,$params,50,1);
 }
 
-sub lnl {
-  my $logic_name = "lnl";
+sub lnl_c {
+  my $logic_name = "lnl_c";
   my $module = "Bio::Greg::Gorilla::LikelihoodTests";
   my $params = {
-    output_table => 'lnl',
-    alignment_output_folder => 'alns',
+    output_table => 'lnl_c',
+    alignment_output_folder => 'alns_c',
   };
   $h->create_analysis($logic_name,$module,$params,300,1);
 }
 
-sub lnl_grantham {
-  my $logic_name = "lnl_grantham";
+sub lnl_p {
+  my $logic_name = "lnl_p";
   my $module = "Bio::Greg::Gorilla::LikelihoodTests";
   my $params = {
-    output_table => 'lnl_grantham',
-    alignment_output_folder => 'alns_grantham',
-    use_grantham_scores => 1
+    output_table => 'lnl_p',
+    aln_type => 'genomic_primates',
+    alignment_output_folder => 'alns_p',
   };
   $h->create_analysis($logic_name,$module,$params,300,1);
 }
 
-sub lnl_more_primates {
-  my $logic_name = "lnl_more_primates";
+sub lnl_m {
+  my $logic_name = "lnl_m";
   my $module = "Bio::Greg::Gorilla::LikelihoodTests";
   my $params = {
-    output_table => 'lnl_more_primates',
-    alignment_output_folder => 'alns_more_primates',
+    output_table => 'lnl_m',
+    aln_type => 'genomic_mammals',
+    alignment_output_folder => 'alns_m',
+  };
+  $h->create_analysis($logic_name,$module,$params,300,1);
+}
+
+sub lnl_mp {
+  my $logic_name = "lnl_mp";
+  my $module = "Bio::Greg::Gorilla::LikelihoodTests";
+  my $params = {
+    output_table => 'lnl_mp',
+    aln_type => 'compara',
+    alignment_output_folder => 'alns_mp',
     species_taxon_ids => '9606, 9593, 9598, 9600, 9544, 9483, 9478, 30608, 30611'
-  };
-  $h->create_analysis($logic_name,$module,$params,300,1);
-}
-
-sub lnl_nofilter {
-  my $logic_name = "lnl_nofilter";
-  my $module = "Bio::Greg::Gorilla::LikelihoodTests";
-  my $params = {
-    output_table => 'lnl_nofilter',
-    alignment_output_folder => 'alns_nofilter',
-    likelihood_filter_triple_substitutions => 0
-  };
-  $h->create_analysis($logic_name,$module,$params,300,1);
-}
-
-sub lnl_norealign {
-  my $logic_name = "lnl_norealign";
-  my $module = "Bio::Greg::Gorilla::LikelihoodTests";
-  my $params = {
-    output_table => 'lnl_norealign',    
-    alignment_output_folder => 'alns_norealign',
-    likelihood_realign_with_prank => 0,
-    likelihood_filter_triple_substitutions => 0
   };
   $h->create_analysis($logic_name,$module,$params,300,1);
 }
@@ -347,8 +330,8 @@ sub collect_go {
   $h->create_analysis($logic_name,$module,$params,200,1);
 }
 
-sub output_all {
-  my $logic_name = "OutputAll";
+sub output_gorilla_data {
+  my $logic_name = "OutputGorillaData";
   my $module = "Bio::Greg::Gorilla::OutputGorillaData";
   my $params = {
   };

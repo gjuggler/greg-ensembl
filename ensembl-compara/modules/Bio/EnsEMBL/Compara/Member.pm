@@ -259,7 +259,7 @@ sub copy {
   $mycopy->version($self->version);
   $mycopy->description($self->description);
   $mycopy->source_name($self->source_name);
-  #$mycopy->adaptor($self->adaptor);
+  $mycopy->adaptor($self->adaptor);
   $mycopy->chr_name($self->chr_name);
   $mycopy->chr_start($self->chr_start);
   $mycopy->chr_end($self->chr_end);

@@ -16,6 +16,16 @@ my $TREEI = "Bio::Tree::TreeI";
 my $NSET = "Bio::EnsEMBL::Compara::NestedSet";
 my $PTREE = "Bio::EnsEMBL::Compara::ProteinTree";
 
+sub species_count {
+  my $class = shift;
+  my $tree = shift;
+
+  my $species_hash;
+  map {$species_hash->{$_->taxon_id} = 1} $tree->leaves;
+
+  return scalar(keys %$species_hash);
+}
+
 sub copy_tree {
   my $self = shift;
   my $tree = shift;
@@ -24,26 +34,37 @@ sub copy_tree {
   my $root;
 
   foreach my $node ($tree->nodes) {
-    $node_hash->{$node->node_id} = new $node;
+    $node_hash->{$node} = new $node;
   }
   
   foreach my $node ($tree->nodes) {
-    my $new_n = $node_hash->{$node->node_id};
+    my $new_n = $node_hash->{$node};
 
     # Add node ID, name, and distance.
     $new_n->node_id($node->node_id);
     $new_n->name($node->name);
     $new_n->distance_to_parent($node->distance_to_parent);
     if ($node->isa("Bio::EnsEMBL::Compara::Member")) {
+      $new_n->source_name($node->source_name);
+      $new_n->stable_id($node->stable_id);
+      $new_n->dbID($node->dbID);
+      $new_n->sequence_id($node->sequence_id);
       $new_n->genome_db($node->genome_db);
+      $new_n->genome_db_id($node->genome_db_id);
       $new_n->taxon_id($node->taxon_id);
-      $new_n->{core_transcript} = $node->{core_transcript};
+      #$new_n->{core_transcript} = $node->{core_transcript};
       $new_n->{core_gene} = $node->{core_gene};
       $new_n->gene_member($node->gene_member);
       $new_n->gene_member_id($node->gene_member_id);
+      $new_n->{_adaptor} = $node->{_adaptor};
+    } elsif ($node->isa("Bio::EnsEMBL::Compara::ProteinTree")) {
+      # You'd think we should just use $node->taxon_id to set the new taxon ID here,
+      # but Compara keeps us on our toes by instead requiring us to manually set a tagvalue.
+      # W.T.F.
+      $new_n->store_tag('taxon_id',$node->taxon_id); 
     }
     
-    my $parent = $node_hash->{$node->_parent_id};
+    my $parent = $node_hash->{$node->parent};
     if ($parent) {
       $parent->add_child($new_n);
     } else {
@@ -991,8 +1012,6 @@ sub translate_ids {
   my $map = shift;
   my $params = shift;
 
-
-  #$tree = $tree->copy;
   $tree = $class->copy_tree($tree); # Important!!
   
   my $ensure_unique = 1;
@@ -1000,25 +1019,32 @@ sub translate_ids {
 
   my $used_ids;
   foreach my $node ($tree->nodes) {
-    my $id = $node->name;
-    if (defined $id && defined $map->{$id}) {
-      my $new_id = $map->{$id};
+    my $name = $node->name;
+    my $node_id = $node->node_id;
+    
+    my $new_name = $map->{$node}; # Mapping defined by node object.
+    $new_name = $map->{$node_id} if (defined $node_id && !defined $new_name);
+    $new_name = $map->{$name} if (defined $name && !defined $new_name); # Defined by node name.
+    
+    if (defined $new_name) {
       if ($ensure_unique) {
-        while ($used_ids->{$new_id}) {
-          $new_id =~ m/_(\d+)$/;
+        while ($used_ids->{$new_name}) {
+          $new_name =~ m/_(\d+)$/;
           my $num = $1;
           #print "ID in use: [$new_id]\n";
-          $new_id =~ s/_\d+$//;
+          $new_name =~ s/_\d+$//;
           my $new_int = $num + 1;
-          $new_id .= "_$new_int";
+          $new_name .= "_$new_int";
           #print "going to use [$new_id]\n";
         }
       }
 
-      $node->name($new_id);
-      $used_ids->{$new_id} = 1;
+      $node->name($new_name);
+      $used_ids->{$new_name} = 1;
+
     }
   }
+
   return $tree;
 }
 

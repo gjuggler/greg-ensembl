@@ -7,7 +7,7 @@ sub new {
   ## Allows to create a new object from an existing one with $object->new
   $class = ref($class) if ( ref($class) );
   my $self = $class->alloc(@args);
-  $self->init;
+  $self->init(@args);
   return $self;
 }
 
@@ -16,13 +16,16 @@ sub alloc {
   my $self = {};
   bless $self, $class;
   return $self;
-
 }
 
 sub init {
   my $self = shift;
+  my $file = shift;
   $self->{'_position_hash'} = undef;
   $self->{'_filehandle'}    = undef;
+
+  #print STDERR "Loading index for [$file]\n";
+  $self->load_indexed_fasta($file) if (defined $file && -e $file);
 }
 
 sub position_hash {
@@ -33,6 +36,11 @@ sub position_hash {
   }
 
   return $self->{'_position_hash'};
+}
+
+sub get_all_ids {
+  my $self = shift;
+  return keys %{ $self->position_hash };
 }
 
 sub filehandle {
@@ -92,6 +100,25 @@ sub get_sequence {
   return $seq;
 }
 
+sub has_key {
+  my $self = shift;
+  my $key = shift;
+
+  my $hash = $self->position_hash;
+  #print "($key)\n";
+  return 1 if ($hash->{$key});
+  return 0;
+}
+
+sub get_qual_region {
+  my $self  = shift;
+  my $key   = shift;
+  my $start = shift;
+  my $end   = shift;
+
+  return $self->get_sequence_region( $key, $start, $end, { sep => ' ' } );
+}
+
 sub get_sequence_region {
   my $self   = shift;
   my $key    = shift;
@@ -99,7 +126,10 @@ sub get_sequence_region {
   my $end    = shift;
   my $params = shift || {};
 
-  my $sep = $params->{residue_separator} || '';
+  my $sep = $params->{sep};
+  $sep = '' unless ( defined $sep );
+  my $use_subindex = $params->{use_subindex};
+  $use_subindex = 1 unless ( defined $use_subindex );
 
   my $filehandle = $self->filehandle;
   if ( !defined $filehandle ) {
@@ -107,26 +137,39 @@ sub get_sequence_region {
   }
 
   my $position_hash = $self->position_hash;
-  my $position      = $position_hash->{$key};
-  if ( !defined $position ) {
 
-    #$key =~ s/genescaffold/contig/i;
-    #$key =~ s/scaffold/contig/i;
+  my $index_freq = 1_000_000;
+  my $position;
+  my $orig_key = $key;
+  if ($start > $index_freq && $use_subindex) {
+    # We'll make use of the sub-sequence hashing to go within our sequence.
+    my $least_index = sprintf("%d",($start/$index_freq));
+    my $start_from = ($least_index*$index_freq);
+    my $new_id = $key."_".$start_from;
+    #print "New id:[$new_id]\n";
+    $position = $position_hash->{$new_id};
+    if (defined $position) {
+      #print "New start: $start_from $position\n";
+      $start = $start - $start_from;
+      $end = $end - $start_from;
+    }
+  } else {
+    # Use the boring old sequence identifier.
     $position = $position_hash->{$key};
+  }
 
-    #die ("No sequence found for $key!") if (!defined $position);
-    return undef if ( !defined $position );
+  if ( !defined $position ) {
+    return undef;
   }
 
   my $current_position = 0;
-
-  #  my $numbers          = 0;
 
   seek( $filehandle, $position, 0 );
   my $line;
   my $seq = "";
   my @toks;
   while ( $line = <$filehandle> ) {
+    chomp $line;
     if ( $line =~ /^>/ ) {
       next if ( $seq eq "" );
       return $seq;
@@ -146,12 +189,10 @@ sub get_sequence_region {
       $current_position++;
 
       if ( $current_position == $end ) {
-        return $seq;
+        return $seq . $toks[$i];
       }
       if ( $current_position >= $start ) {
         $seq .= $toks[$i] . $sep;
-
-        #print $current_position .' '. $toks[$i].' '. scalar(split($sep,$seq))."\n";
       }
     }
   }
@@ -166,7 +207,7 @@ sub load_indexed_fasta {
 
   # Create the index if it doesn't exist yet.
   if ( !-e $index_file ) {
-    $self->index_fasta($orig_file);
+    $self->index_fasta( $orig_file, @_ );
   }
 
   # Load the index into memory.
@@ -204,30 +245,66 @@ sub DESTROY {
 }
 
 sub index_fasta {
-  my $class   = shift;
-  my $file_in = shift;
+  my $class         = shift;
+  my $file_in       = shift;
+  my $index_subseqs = shift;
+  my $params        = shift || {};
+
+  $index_subseqs = 0 unless ( defined $index_subseqs );
+  my $sep = $params->{sep};
+  $sep = '' unless ( defined $sep );
+  my $index_spacing = $params->{index_spacing};
+  $index_spacing = 1_000_000 unless ( defined $index_spacing );
 
   printf "Indexing fasta file %s...\n", $file_in;
-
-  #open(OUT,">${file_in}.ind");
-  #print OUT "Indexing in progress...\n";
-  #close(OUT);
+  print "  (with subseqs each $index_spacing)\n" if ($index_subseqs);
 
   open( IN, "${file_in}" );
 
-  #use IO::Uncompress::Gunzip;
-  #my $in = new IO::Uncompress::Gunzip $file_in;
-
   my $line;
-  my $prev_tell = 0;
-  my $tell      = 0;
+  my $cur_seq_id;
+  my $prev_tell  = 0;
+  my $tell       = 0;
+  my $char_count = 0;
+  my $char_str   = '';
+  my @toks;
   my $qual_hash = {};
   while ( $line = <IN> ) {
     chomp $line;
     $tell = tell(IN);
     if ( substr( $line, 0, 1 ) eq ">" ) {
       $line =~ s/\s//g;
-      $qual_hash->{ substr( $line, 1 ) } = $prev_tell;
+      $line =~ s/\[.*\]//g;
+      $cur_seq_id = substr( $line, 1 );
+      print "  $cur_seq_id $tell\n";
+      $qual_hash->{$cur_seq_id} = $tell;
+      $char_count = 0;
+    } else {
+      if ($index_subseqs) {
+        @toks = split( $sep, $line );
+        for ( my $i = 0 ; $i < scalar(@toks) ; $i++ ) {
+          next if ( $toks[$i] eq ' ' || $toks[$i] eq '' );
+          my $tok = $toks[$i];
+          $char_count++;
+          if ( $char_count % $index_spacing == 0 ) {
+            {
+              # Index a specific region in the file.
+              # The current tell() call brought us to the end of this line,
+              # so subtract what's left of this line from the current tell() to get
+              # the right position to start from.
+              use bytes;
+              my $so_far = join( $sep, @toks[ 0 .. $i ] );
+              my $total_length = length($line);
+              my $so_far_length = length($so_far);
+              my $cur_location = $tell - $total_length + $so_far_length;
+              die("Format error: no sequence ID encountered before sequence data!") unless (defined $cur_seq_id);
+              my $subindex_key = $cur_seq_id.'_'.$char_count;
+              $qual_hash->{$subindex_key} = $cur_location;
+              print "  $subindex_key $cur_location\n";
+            }
+          }
+        }
+      }
     }
     $prev_tell = $tell;
   }
