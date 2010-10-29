@@ -10,7 +10,7 @@ if (!exists('dbname')) {
 }
 #print(paste("dbname is: ",dbname))
 connect.db = function(dbname) {
-  con <- dbConnect(drv, host='ens-research', port=3306, user='ensro', password='', dbname=dbname)
+  con <- dbConnect(drv, host='ens-research', port=3306, user='ensadmin', password='ensembl', dbname=dbname)
   return(con)
 }
 con = connect.db(dbname)

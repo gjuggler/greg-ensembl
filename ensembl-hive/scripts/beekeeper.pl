@@ -5,6 +5,7 @@ use warnings;
 use DBI;
 use Getopt::Long;
 
+use Bio::EnsEMBL::Hive::Utils 'destringify';
 use Bio::EnsEMBL::Hive::DBSQL::DBAdaptor;
 use Bio::EnsEMBL::Hive::Worker;
 use Bio::EnsEMBL::Hive::Queen;
@@ -60,6 +61,8 @@ sub main {
     $self->{'verbose_stats'}        = 1;
     $self->{'reg_name'}             = 'hive';
     $self->{'maximise_concurrency'} = 0;
+    $self->{'retry_throwing_jobs'}  = undef;
+    $self->{'hive_output_dir'} = undef;
 
     GetOptions(
                     # connection parameters
@@ -77,7 +80,7 @@ sub main {
                'loop'              => \$loopit,
                'max_loops=i'       => \$max_loops,
                'run'               => \$run,
-               'run_job_id=i'      => \$self->{'run_job_id'},
+               'job_id|run_job_id=i'  => \$self->{'run_job_id'},
                'sleep=f'           => \$self->{'sleep_minutes'},
 
                     # meadow control
@@ -88,11 +91,13 @@ sub main {
                'meadow_options|lsf_options=s'  => \$meadow_options, # 'lsf_options' is deprecated (please investigate the resource requirements, they may suit your needs way better)
 
                     # worker control
-               'jlimit=i'          => \$self->{'job_limit'},
-               'batch_size=i'      => \$self->{'batch_size'},
-               'lifespan=i'        => \$self->{'lifespan'},
+               'job_limit|jlimit=i'     => \$self->{'job_limit'},
+               'batch_size=i'           => \$self->{'batch_size'},
+               'life_span|lifespan=i'   => \$self->{'life_span'},
                'logic_name=s'      => \$self->{'logic_name'},
-               'maximise_concurrency' => \$self->{'maximise_concurrency'},
+               'hive_output_dir=s' => \$self->{'hive_output_dir'},
+               'maximise_concurrency=i' => \$self->{'maximise_concurrency'},
+               'retry_throwing_jobs=i'  => \$self->{'retry_throwing_jobs'},
 
                     # other commands/options
                'h|help'            => \$help,
@@ -110,6 +115,9 @@ sub main {
                'delete|remove=s'   => \$remove_analysis_id, # careful
                'job_output=i'      => \$job_id_for_output,
                'monitor!'          => \$self->{'monitor'},
+
+                    # loose arguments interpreted as database name (for compatibility with mysql[dump])
+               '<>', sub { $self->{'db_conf'}->{'-dbname'} = shift @_; },
     );
 
     if ($help) { usage(0); }
@@ -146,7 +154,10 @@ sub main {
     $queen->{'maximise_concurrency'} = 1 if ($self->{'maximise_concurrency'});
     $queen->{'verbose_stats'} = $self->{'verbose_stats'};
 
-    my $pipeline_name = $self->{'dba'}->get_MetaContainer->list_value_by_key("name")->[0];
+    my $pipeline_name = destringify(
+            $self->{'dba'}->get_MetaContainer->list_value_by_key("pipeline_name")->[0]
+         || $self->{'dba'}->get_MetaContainer->list_value_by_key("name")->[0]
+    );
 
     if($local) {
         $self->{'meadow'} = Bio::EnsEMBL::Hive::Meadow::LOCAL->new();
@@ -189,7 +200,9 @@ sub main {
                 $worker->analysis->logic_name, $worker->analysis->dbID);
 
             $self->{'meadow'}->kill_worker($worker);
+            $worker->cause_of_death('KILLED_BY_USER');
             $queen->register_worker_death($worker);
+                # what about clean-up? Should we do it here or not?
         }
     }
 
@@ -284,7 +297,7 @@ sub show_given_workers {
             $worker->process_id, 
             $worker->host,
             $worker->last_check_in);
-        printf("%s\n", $worker->output_dir) if ($verbose_stats);
+        printf("%s\n", $worker->worker_output_dir) if ($verbose_stats);
     }
 }
 
@@ -309,11 +322,11 @@ sub generate_worker_cmd {
     if ($self->{'run_job_id'}) {
         $worker_cmd .= " -job_id ".$self->{'run_job_id'};
     } else {
-        $worker_cmd .= ((defined $self->{'job_limit'})  ? (' -limit '     .$self->{'job_limit'})  : '')
-                    .  ((defined $self->{'batch_size'}) ? (' -batch_size '.$self->{'batch_size'}) : '')
-                    .  ((defined $self->{'lifespan'})   ? (' -lifespan '.$self->{'lifespan'}) : '')
-                    .  ((defined $self->{'logic_name'}) ? (' -logic_name '.$self->{'logic_name'}) : '')
-                    .  ((defined $self->{'maximise_concurrency'}) ? ' -maximise_concurrency 1' : '');
+        foreach my $worker_option ('batch_size', 'job_limit', 'life_span', 'logic_name', 'maximize_concurrency', 'retry_throwing_jobs', 'hive_output_dir') {
+            if(defined(my $value = $self->{$worker_option})) {
+                $worker_cmd .= " -${worker_option} $value";
+            }
+        }
     }
 
     if ($self->{'reg_file'}) {
@@ -425,92 +438,94 @@ __DATA__
 
 =head1 DESCRIPTION
 
-The Beekeeper is in charge of interfacing between the Queen and a compute resource or 'compute farm'.
-Its job is to initialize/sync the eHive database (via the Queen), query the Queen if it needs any workers
-and to send the requested number of workers to open machines via the runWorker.pl script.
+    The Beekeeper is in charge of interfacing between the Queen and a compute resource or 'compute farm'.
+    Its job is to initialize/sync the eHive database (via the Queen), query the Queen if it needs any workers
+    and to send the requested number of workers to open machines via the runWorker.pl script.
 
-It is also responsible for interfacing with the Queen to identify workers which died
-unexpectantly so that she can free the dead workers and reclaim unfinished jobs.
+    It is also responsible for interfacing with the Queen to identify workers which died
+    unexpectantly so that she can free the dead workers and reclaim unfinished jobs.
 
 =head1 USAGE EXAMPLES
 
-    # Usually run after the pipeline has been created to calculate the internal statistics necessary for eHive functioning
-beekeeper.pl --host=hostname --port=3306 --user=username --password=secret --database=ehive_dbname -sync
+        # Usually run after the pipeline has been created to calculate the internal statistics necessary for eHive functioning
+    beekeeper.pl --host=hostname --port=3306 --user=username --password=secret ehive_dbname -sync
 
-    # An alternative way of doing the same thing
-beekeeper.pl -url mysql://username:secret@hostname:port/ehive_dbname -sync
+        # An alternative way of doing the same thing
+    beekeeper.pl -url mysql://username:secret@hostname:port/ehive_dbname -sync
 
-    # Do not run any additional Workers, just check for the current status of the pipeline:
-beekeeper.pl -url mysql://username:secret@hostname:port/ehive_dbname
+        # Do not run any additional Workers, just check for the current status of the pipeline:
+    beekeeper.pl -url mysql://username:secret@hostname:port/ehive_dbname
 
-    # Run the pipeline in automatic mode (-loop), run all the workers locally (-local) and allow for 3 parallel workers (-local_cpus 3)
-beekeeper.pl -url mysql://username:secret@hostname:port/long_mult_test -local -local_cpus 3 -loop
+        # Run the pipeline in automatic mode (-loop), run all the workers locally (-local) and allow for 3 parallel workers (-local_cpus 3)
+    beekeeper.pl -url mysql://username:secret@hostname:port/long_mult_test -local -local_cpus 3 -loop
 
-    # Run in automatic mode, but only restrict to running the 'fast_blast' analysis
-beekeeper.pl -url mysql://username:secret@hostname:port/long_mult_test -logic_name fast_blast -loop
+        # Run in automatic mode, but only restrict to running the 'fast_blast' analysis
+    beekeeper.pl -url mysql://username:secret@hostname:port/long_mult_test -logic_name fast_blast -loop
 
-    # Restrict the normal execution to one iteration only - can be used for testing a newly set up pipeline
-beekeeper.pl -url mysql://username:secret@hostname:port/long_mult_test -run
+        # Restrict the normal execution to one iteration only - can be used for testing a newly set up pipeline
+    beekeeper.pl -url mysql://username:secret@hostname:port/long_mult_test -run
 
-    # Reset all 'buggy_analysis' jobs to 'READY' state, so that they can be run again
-beekeeper.pl -url mysql://username:secret@hostname:port/long_mult_test -reset_all_jobs_for_analysis buggy_analysis
+        # Reset all 'buggy_analysis' jobs to 'READY' state, so that they can be run again
+    beekeeper.pl -url mysql://username:secret@hostname:port/long_mult_test -reset_all_jobs_for_analysis buggy_analysis
 
-    # Do a cleanup: find and bury dead workers, reclaim their jobs
-beekeeper.pl -url mysql://username:secret@hostname:port/long_mult_test -dead
+        # Do a cleanup: find and bury dead workers, reclaim their jobs
+    beekeeper.pl -url mysql://username:secret@hostname:port/long_mult_test -dead
 
 =head1 OPTIONS
 
 =head2 Connection parameters
 
-  -conf <path>           : config file describing db connection
-  -regfile <path>        : path to a Registry configuration file
-  -regname <string>      : species/alias name for the Hive DBAdaptor
-  -url <url string>      : url defining where hive database is located
-  -host <machine>        : mysql database host <machine>
-  -port <port#>          : mysql port number
-  -user <name>           : mysql connection user <name>
-  -password <pass>       : mysql connection password <pass>
-  -database <name>       : mysql database <name>
+    -conf <path>           : config file describing db connection
+    -regfile <path>        : path to a Registry configuration file
+    -regname <string>      : species/alias name for the Hive DBAdaptor
+    -url <url string>      : url defining where hive database is located
+    -host <machine>        : mysql database host <machine>
+    -port <port#>          : mysql port number
+    -user <name>           : mysql connection user <name>
+    -password <pass>       : mysql connection password <pass>
+    [-database] <name>     : mysql database <name>
 
 =head2 Looping control
 
-  -loop                  : run autonomously, loops and sleeps
-  -max_loops <num>       : perform max this # of loops in autonomous mode
-  -run                   : run 1 iteration of automation loop
-  -run_job_id <job_id>   : run 1 iteration for this job_id
-  -sleep <num>           : when looping, sleep <num> minutes (default 2min)
+    -loop                  : run autonomously, loops and sleeps
+    -max_loops <num>       : perform max this # of loops in autonomous mode
+    -run                   : run 1 iteration of automation loop
+    -job_id <job_id>       : run 1 iteration for this job_id
+    -sleep <num>           : when looping, sleep <num> minutes (default 2min)
 
 =head2 Meadow control
 
-  -local                    : run jobs on local CPU (fork)
-  -local_cpus <num>         : max # workers to be running locally
-  -wlimit <num>             : max # workers to create per loop
-  -no_pend                  : don't adjust needed workers by pending workers
-  -meadow_options <string>  : passes <string> to the Meadow submission command as <options> (formerly lsf_options)
+    -local                    : run jobs on local CPU (fork)
+    -local_cpus <num>         : max # workers to be running locally
+    -wlimit <num>             : max # workers to create per loop
+    -no_pend                  : don't adjust needed workers by pending workers
+    -meadow_options <string>  : passes <string> to the Meadow submission command as <options> (formerly lsf_options)
 
 =head2 Worker control
 
-  -jlimit <num>           : #jobs to run before worker can die naturally
-  -batch_size <num>       : #jobs a worker can claim at once
-  -lifespan <num>         : lifespan limit for each worker
-  -logic_name <string>    : restrict the pipeline stat/runs to this analysis logic_name
-  -maximise_concurrency 1 : try to run more different analyses at the same time
+    -job_limit <num>            : #jobs to run before worker can die naturally
+    -batch_size <num>           : #jobs a worker can claim at once
+    -life_span <num>            : life_span limit for each worker
+    -logic_name <string>        : restrict the pipeline stat/runs to this analysis logic_name
+    -maximise_concurrency 1     : try to run more different analyses at the same time
+    -retry_throwing_jobs 0|1    : if a job dies *knowingly*, should we retry it by default?
+    -hive_output_dir <path>     : directory where stdout/stderr of the hive is redirected
 
 =head2 Other commands/options
 
-  -help                  : print this help
-  -dead                  : clean dead jobs for resubmission
-  -alldead               : all outstanding workers
-  -no_analysis_stats     : don't show status of each analysis
-  -worker_stats          : show status of each running worker
-  -failed_jobs           : show all failed jobs
-  -reset_job_id <num>    : reset a job back to READY so it can be rerun
-  -reset_all_jobs_for_analysis <logic_name>
-                         : reset jobs back to READY so it can be rerun
+    -help                  : print this help
+    -dead                  : clean dead jobs for resubmission
+    -alldead               : all outstanding workers
+    -no_analysis_stats     : don't show status of each analysis
+    -worker_stats          : show status of each running worker
+    -failed_jobs           : show all failed jobs
+    -reset_job_id <num>    : reset a job back to READY so it can be rerun
+    -reset_all_jobs_for_analysis <logic_name>
+                           : reset jobs back to READY so they can be rerun
 
 =head1 CONTACT
 
-  Please contact ehive-users@ebi.ac.uk mailing list with questions/suggestions.
+    Please contact ehive-users@ebi.ac.uk mailing list with questions/suggestions.
 
 =cut
 

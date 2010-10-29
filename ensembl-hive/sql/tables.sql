@@ -19,11 +19,11 @@ CREATE TABLE hive (
   host	           varchar(40) DEFAULT '' NOT NULL,
   process_id       varchar(40) DEFAULT '' NOT NULL,
   work_done        int(11) DEFAULT '0' NOT NULL,
-  status           enum('READY','GET_INPUT','RUN','WRITE_OUTPUT','DEAD') DEFAULT 'READY' NOT NULL,
+  status           enum('READY','COMPILATION','GET_INPUT','RUN','WRITE_OUTPUT','DEAD') DEFAULT 'READY' NOT NULL,
   born	           datetime NOT NULL,
   last_check_in    datetime NOT NULL,
   died             datetime DEFAULT NULL,
-  cause_of_death   enum('', 'NO_WORK', 'JOB_LIMIT', 'HIVE_OVERLOAD', 'LIFESPAN', 'FATALITY') DEFAULT '' NOT NULL,
+  cause_of_death   enum('', 'NO_WORK', 'JOB_LIMIT', 'HIVE_OVERLOAD', 'LIFESPAN', 'CONTAMINATED', 'KILLED_BY_USER', 'MEMLIMIT', 'RUNLIMIT', 'FATALITY') DEFAULT '' NOT NULL,
   PRIMARY KEY (worker_id),
   INDEX analysis_status (analysis_id, status)
 ) ENGINE=InnoDB;
@@ -54,15 +54,17 @@ CREATE TABLE hive (
 --   from_analysis_id     - foreign key to analysis table analysis_id
 --   to_analysis_url      - foreign key to net distributed analysis logic_name reference
 --   branch_code          - joined to analysis_job.branch_code to allow branching
+--   input_id_template    - a template for generating a new input_id (not necessarily a hashref) in this dataflow; if undefined is kept original
 
 CREATE TABLE dataflow_rule (
   dataflow_rule_id    int(10) unsigned not null auto_increment,
   from_analysis_id    int(10) unsigned NOT NULL,
   to_analysis_url     varchar(255) default '' NOT NULL,
   branch_code         int(10) default 1 NOT NULL,
+  input_id_template   TEXT DEFAULT NULL,
 
   PRIMARY KEY (dataflow_rule_id),
-  UNIQUE (from_analysis_id, to_analysis_url)
+  UNIQUE KEY (from_analysis_id, to_analysis_url, branch_code, input_id_template(512))
 );
 
 
@@ -98,7 +100,7 @@ CREATE TABLE analysis_ctrl_rule (
 -- Table structure for table 'analysis_job'
 --
 -- overview:
---   The analysis_job is the heart of this sytem.  It is the kiosk or blackboard
+--   The analysis_job is the heart of this system.  It is the kiosk or blackboard
 --   where workers find things to do and then post work for other works to do.
 --   The job_claim is a UUID set with an UPDATE LIMIT by worker as they fight
 --   over the work.  These jobs are created prior to work being done, are claimed
@@ -121,15 +123,13 @@ CREATE TABLE analysis_ctrl_rule (
 --                              Default=NULL means "I'm not blocking anything by default".
 
 CREATE TABLE analysis_job (
--- 
---   error									 - filled in if the job died with an exception
   analysis_job_id           int(10) NOT NULL auto_increment,
   prev_analysis_job_id      int(10) NOT NULL,  #analysis_job which created this from rules
   analysis_id               int(10) NOT NULL,
   input_id                  char(255) not null,
   job_claim                 char(40) NOT NULL DEFAULT '', #UUID
   worker_id                 int(10) NOT NULL,
-  status                    enum('READY','BLOCKED','CLAIMED','GET_INPUT','RUN','WRITE_OUTPUT','DONE','FAILED') DEFAULT 'READY' NOT NULL,
+  status                    enum('READY','BLOCKED','CLAIMED','COMPILATION','GET_INPUT','RUN','WRITE_OUTPUT','DONE','FAILED','PASSED_ON') DEFAULT 'READY' NOT NULL,
   retry_count               int(10) default 0 not NULL,
   completed                 datetime NOT NULL,
   runtime_msec              int(10) default 0 NOT NULL, 
@@ -140,9 +140,43 @@ CREATE TABLE analysis_job (
 
   PRIMARY KEY                  (analysis_job_id),
   UNIQUE KEY input_id_analysis (input_id, analysis_id),
-  INDEX claim_analysis_status  (job_claim, analysis_id, status),
+  INDEX claim_analysis_status  (job_claim, analysis_id, status, semaphore_count),
   INDEX analysis_status        (analysis_id, status, semaphore_count),
   INDEX worker_id              (worker_id)
+) ENGINE=InnoDB;
+
+
+-- ---------------------------------------------------------------------------------
+--
+-- Table structure for table 'job_message'
+--
+-- overview:
+--      In case a job throws a message (via die/throw), this message is registered in this table.
+--      It may or may not indicate that the job was unsuccessful via is_error flag.
+--
+-- semantics:
+--      analysis_job_id     - the id of the job that threw the message
+--            worker_id     - the worker in charge of the job at the moment
+--          analysis_id     - analysis_id of both the job and the worker (it is indeed redundant, but very convenient)
+--               moment     - when the message was thrown
+--          retry_count     - of the job when the message was thrown
+--               status     - of the job when the message was thrown
+--                  msg     - string that contains the message
+--             is_error     - binary flag
+
+CREATE TABLE job_message (
+  analysis_job_id           int(10) NOT NULL,
+  worker_id                 int(10) NOT NULL,
+  analysis_id               int(10) NOT NULL,
+  moment                    timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  retry_count               int(10) DEFAULT 0 NOT NULL,
+  status                    enum('UNKNOWN', 'COMPILATION', 'GET_INPUT', 'RUN', 'WRITE_OUTPUT') DEFAULT 'UNKNOWN',
+  msg                       text,
+  is_error                  boolean,
+
+  PRIMARY KEY               (analysis_job_id, worker_id, moment),
+  INDEX worker_id           (worker_id),
+  INDEX analysis_job_id     (analysis_job_id)
 ) ENGINE=InnoDB;
 
 
@@ -198,37 +232,6 @@ CREATE TABLE analysis_data (
 
 
 -- ---------------------------------------------------------------------------------
---
--- Table structure for table 'analysis_job_error'
---
--- overview:
---   	Table which holds information about a job instance on the Hive. As aposed
---		to the way analysis_job works this records how a job died. It is stored
---		as a separate table so to reduce the pressure exerted on analysis_job.
---
--- semantics:
---   	analysis_job_error_id -	primary id; created because InnoDB has no 
---														overhead for this
---		analysis_job_id				- ID of the analysis_job we are holding information
---														about
---		status								- status of the job when this was recorded
---		worker_id							- worker which ran this job
---		retry_count						- iteration of the job the error occured on
---		error									-	text which holds the detected error message
-
--- ----------------------------------------------------------------------------
-CREATE TABLE analysis_job_error (
-	analysis_job_error_id	int(10) NOT NULL AUTO_INCREMENT,
-	analysis_job_id				int(10) NOT NULL,
-	status                enum('READY','BLOCKED','CLAIMED','GET_INPUT','RUN','WRITE_OUTPUT','DONE','FAILED') DEFAULT 'READY' NOT NULL,
-	worker_id             int(10) NOT NULL,
-	retry_count						int(10) NOT NULL,
-	error									text,
-
-	PRIMARY KEY (analysis_job_error_id),	
-	INDEX aje_ajid_idx(analysis_job_id),
-	INDEX aje_wid_idx(worker_id)
-) ENGINE=InnoDB;
 --
 -- Table structure for table 'analysis_stats'
 --
@@ -421,5 +424,5 @@ CREATE TABLE IF NOT EXISTS analysis_description (
 
 
 # Auto add schema version to database (should be overridden by Compara's table.sql)
-INSERT IGNORE INTO meta (species_id, meta_key, meta_value) VALUES (NULL, "schema_version", "57");
+INSERT IGNORE INTO meta (species_id, meta_key, meta_value) VALUES (NULL, 'schema_version', '60');
 

@@ -330,7 +330,7 @@ sub plotTreeWithOmegas {
   #unlink($aln_f) if (-e $aln_f);
 
   # Prune the tree.
-#  $params->{'node_id'} = $tree_in->node_id if ( defined $tree_in );
+  #  $params->{'node_id'} = $tree_in->node_id if ( defined $tree_in );
 
   my @subtrees = ();
 
@@ -417,12 +417,14 @@ sub plotTreeWithOmegas {
       if ( exists $params->{'parameter_set_id'} ) {
         $param_set_str = "AND parameter_set_id=" . $params->{'parameter_set_id'};
       }
+
       #my $node_id        = $tree->node_id;
-      my $node_id = $params->{data_id};
-      my $data_id = $params->{data_id};
+      my $node_id        = $params->{data_id};
+      my $data_id        = $params->{data_id};
       my $sitewise_table = $params->{'sitewise_table'};
-#      $sitewise_table = "stats_sites";
-      my $cmd            = qq^
+
+      #      $sitewise_table = "stats_sites";
+      my $cmd = qq^
    SELECT aln_position,omega,omega_lower,
           omega_upper,lrt_stat,ncod,note,type 
    FROM ${sitewise_table} WHERE 
@@ -457,13 +459,14 @@ sub plotTreeWithOmegas {
   my $out_cmd = qq^
     pdf(file="$file_out",width=width,height=height);
   ^;
-#  $out_cmd = qq^
-#    png(file="$file_out",width=width*10*72,height=height*10*72);
-#  ^ if ( $file_out =~ m/png/i );
-#  $out_cmd = qq^
-#    library(Cairo)
-#    Cairo(file='${file_out}',width=width*72,height=height*72,type="png",units="px")
-#^ if ($file_out =~ m/png/i);
+
+  #  $out_cmd = qq^
+  #    png(file="$file_out",width=width*10*72,height=height*10*72);
+  #  ^ if ( $file_out =~ m/png/i );
+  #  $out_cmd = qq^
+  #    library(Cairo)
+  #    Cairo(file='${file_out}',width=width*72,height=height*72,type="png",units="px")
+  #^ if ($file_out =~ m/png/i);
 
   my $aln_file_list  = "c(" . join( ", ", ("\"$aln_f\"") ) . ")";
   my $tree_file_list = "c(" . join( ", ", ("\"$tree_f\"") ) . ")";

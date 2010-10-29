@@ -10,133 +10,236 @@ use Bio::EnsEMBL::Compara::ComparaUtils;
 use Bio::EnsEMBL::Compara::DBSQL::DBAdaptor;
 use Bio::EnsEMBL::Hive::Process;
 
-use base ('Bio::Greg::Hive::CollectSitewiseStats');
+use base ('Bio::Greg::Hive::CollectSitewiseStats', 'Bio::Greg::StatsCollectionUtils');
 
-sub get_gene_table_structure {
+sub get_table_structure {
   my $self = shift;
-  
-  my $added_structure = {
 
-    # Optional ways to split up the alignments.
-    exon_id => 'string',
-    domain_id => 'string',
-    alignment_slice => 'string',
-    alignment_slice_start => 'int',
-    alignment_slice_end => 'int',
-    
-    human_protein => 'string',
-    human_gene    => 'string',
-    human_gene_list => 'string',
-    human_protein_list => 'string',
-    
-    chr_name => 'string',
-    chr_start => 'int',
-    chr_end => 'int',
-    chr_strand => 'int',
+  my $structure = {
+    data_id   => 'int',
+    gene_name => 'string',
 
-    pval_stouffer => 'float',
-    pval_fisher => 'float',
+    peptide_stable_id  => 'string',
+    peptide_window_start => 'int',
+    peptide_window_end => 'int',
+    peptide_window_width => 'int',
+
+    aln_window_start => 'int',
+    aln_window_end => 'int',
+
+    'hg19_chr_name'     => 'string',
+    'hg19_window_start' => 'int',
+    'hg19_window_end'   => 'int',
+
+    'hg18_chr_name'     => 'string',
+    'hg18_window_start' => 'int',
+    'hg18_window_end'   => 'int',
+
+    dnds_primates => 'float',
+    dnds_hominids => 'float',
+
+    pval_primates => 'float',
+    pval_hominids => 'float',
+    n_leaves_primates => 'int',
+    n_sites_primates    => 'int',
+    n_pos_sites_primates    => 'int',
+    n_leaves_hominids => 'int',
+    n_sites_hominids    => 'int',
+    n_pos_sites_hominids    => 'int',
+    unique_keys => 'data_id,peptide_window_start,peptide_window_end',
   };
-  
-  my $structure = $self->SUPER::get_gene_table_structure();
-  $structure = $self->replace_params($structure,$added_structure);
+
   return $structure;
 }
 
-sub get_sites_table_structure {
-  my $self = shift;
+sub fetch_input {
+  my ($self) = @_;
 
-  my $added_structure = {
-    domain_id => 'string',
-    filter_value => 'int',
-    
-    chr_name  => 'string',
-    chr_start => 'int',
-    chr_end   => 'int',
+  my $params = {
+    table             => 'stats_windows',
+    reference_species => 9606,
+    window_size => 10,
+    window_step => 5
   };
-  
-  my $structure = $self->SUPER::get_sites_table_structure;
-  $structure = $self->replace_params($structure,$added_structure);
-  return $structure;
+
+  $self->load_all_params($params);
+
+  # Create tables if necessary.
+  $self->create_table_from_params( $self->hive_dba, $self->param('table'),
+    $self->get_table_structure );
 }
 
-sub data_for_gene {
+sub run {
   my $self = shift;
-  
-  my $data = $self->SUPER::data_for_gene();  
+
+  foreach my $size (10, 30, 50, 100, 9999) {
+    $self->run_with_windows($size,$size/2);
+  }
+
+}
+
+sub gene_dnds_for_parameter_set {
+  my $self = shift;
+  my $parameter_set_id = shift;
+
+  my $sth = $self->dbc->prepare("SELECT * FROM dnds_genes where parameter_set_id=? and node_id=?");
+  $sth->execute($parameter_set_id,$self->param('node_id'));
+  my $obj = $sth->fetchrow_hashref;
+  $sth->finish;
+  return $obj->{dnds};
+}
+
+sub run_with_windows {
+  my $self = shift;
+  my $w_size = shift;
+  my $w_step = shift;
+
+  my $params = $self->params;
+  my $cur_params = $self->replace( $params, {} );
+
+  my $ref_species = $self->param('reference_species');
+
+  my $aln_aa = $self->get_aln;
+  $self->pretty_print($aln_aa,{full => 1,length => 100});
   my $tree = $self->get_tree;
 
-  # Collect human protein.
-  my @human_proteins = grep { $_->taxon_id == 9606 } $tree->leaves;
-  my @human_genes    = map  { $_->get_Gene } @human_proteins;
-  if ( scalar @human_proteins > 0 ) {
-    my $member = $human_proteins[0];
-    $data->{'human_protein'} = $member->stable_id;
-    $data->{'human_gene'}    = $member->get_Gene->stable_id;
-    $data->{'human_protein_list'} = join( ",", map { $_->stable_id } @human_proteins );
-    $data->{'human_gene_list'} = join( ",", map { $_->stable_id } @human_genes );
-  }
+  my @members = $tree->leaves;
+  my ($ref_member) = grep { $_->taxon_id == $self->param('reference_species') } @members;
 
-  # Collect protein coords.
-  if ( scalar @human_proteins > 0) {
-    my $member = $human_proteins[0];
-    my $tscr_orig = $member->get_Transcript;
-    my $tscr      = $tscr_orig->transform("chromosome");
-    if ( defined $tscr ) {
-      my $chr    = "chr" . $tscr->slice->seq_region_name;
-      my $strand = $tscr->strand;
-      my $start  = $tscr->coding_region_start;
-      my $end    = $tscr->coding_region_end;
-      $data->{chr_name}    = $chr;
-      $data->{chr_start}  = $start;
-      $data->{chr_end}    = $end;
-      $data->{chr_strand} = $strand;
+  print "REF: ".$ref_member->stable_id."\n";
+
+#  return unless (defined $ref_member);
+
+  my @seqs = $aln_aa->each_seq;
+  my ($ref_seq) = grep { $_->id eq $ref_member->stable_id } @seqs;
+  my $ref_tx = $ref_member->get_Transcript;
+
+  my $c_dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new(-url => 'mysql://ensro@ens-livemirror:3306/ensembl_compara_58');
+  my ($cdna,$aa) = Bio::EnsEMBL::Compara::ComparaUtils->genomic_aln_for_member($c_dba,$ref_member);
+  $self->pretty_print($aa,{full => 1, length => 100});
+
+  my $len = $ref_member->seq_length;
+
+  my $hominid_sites = $self->get_psc_hash($self->dbc,$self->params);
+  my $hominid_tree = $self->get_tree($self->params);
+  my $hominid_dnds = $self->gene_dnds_for_parameter_set(1);
+  my $cur_params = $self->params;
+  # Set to primate pset ID
+  $cur_params->{parameter_set_id} = 2;
+  $self->param('parameter_set_id',2);
+  my $primate_sites = $self->get_psc_hash($self->dbc,$cur_params);
+  my $primate_tree = $self->get_tree($cur_params);
+  my $primate_dnds = $self->gene_dnds_for_parameter_set(2);
+
+  # Back to normal pset ID
+  $self->param('parameter_set_id',1);
+
+  my $no_windows_yet = 1;
+  for (my $i=1; $i < $len; $i += $w_step) {
+    my $lo = $i;
+    my $hi = $i + $w_size;
+    $hi = $len if ($hi > $len);
+
+    last if (!$no_windows_yet && $hi - $lo < $w_size - $w_step);
+    $no_windows_yet = 0;
+    printf ">>>> PEPTIDE WINDOW: %d %d\n",$lo,$hi;
+
+    my $lo_coords = $self->get_coords_from_pep_position($ref_member,$lo);
+    my $hi_coords = $self->get_coords_from_pep_position($ref_member,$hi);
+    my $aln_coord_lo = $aln_aa->column_from_residue_number($ref_seq->id,$lo);
+    my $aln_coord_hi = $aln_aa->column_from_residue_number($ref_seq->id,$hi);
+
+    my $cur_params = $self->replace($params,{
+      peptide_stable_id => $ref_tx->stable_id,
+      peptide_window_start => $lo,
+      peptide_window_end => $hi,
+      peptide_window_width => $w_size,
+      aln_window_start => $aln_coord_lo,
+      aln_window_end => $aln_coord_hi,
+      hg19_chr_name => $lo_coords->{hg19_name},
+      hg18_chr_name => $lo_coords->{hg18_name},
+      hg19_window_start => $lo_coords->{hg19_pos},
+      hg18_window_start => $lo_coords->{hg18_pos},
+      hg19_window_end => $hi_coords->{hg19_pos},
+      hg18_window_end => $hi_coords->{hg18_pos},
+      gene_name => $ref_member->get_Gene->external_name,
+      dnds_primates => $primate_dnds,
+      dnds_hominids => $hominid_dnds
+                                    });
+
+    foreach my $sites ($hominid_sites,$primate_sites) {      
+      my @window_sites = map {$sites->{$_}} keys %$sites;
+      @window_sites = grep {
+        my $pos = $_->{aln_position};
+        ($pos >= $aln_coord_lo && $pos <= $aln_coord_hi);
+      } @window_sites;
+      
+      my $pval = $self->combined_pval(\@window_sites,'fisher');
+      
+      my @pos_sites = grep {$_->{omega} > 1} @window_sites;
+
+      my $prefix;
+      my $tree;
+      $prefix = 'hominids' if ($sites == $hominid_sites);
+      $prefix = 'primates' if ($sites == $primate_sites);
+      $tree = $primate_tree if ($sites == $primate_sites);
+      $tree = $hominid_tree if ($sites == $hominid_sites);
+      my $added_params = {
+        'n_leaves_'.$prefix => scalar($tree->leaves),
+        'pval_'.$prefix => $pval,
+        'n_sites_'.$prefix => scalar(@window_sites),
+        'n_pos_sites_'.$prefix => scalar(@pos_sites),
+      };
+      $cur_params = $self->replace($cur_params,$added_params);
     }
+
+    $cur_params->{data_id} = $cur_params->{node_id};
+    $self->hash_print($cur_params);
+    $self->store_params_in_table($self->dbc,$self->param('table'),$cur_params);
+
   }
 
-  my $alignment_slice = $self->param('alignment_slice');
-  my ($start,$end) = split(",",$alignment_slice);
-
-  # Find the postion of this sliding window within the original full alignment.
-  my $aln = $self->get_aln;
-  my $orig_start = $self->get_orig_aln_position($aln,1);
-  my $orig_end = $self->get_orig_aln_position($aln,$aln->length);
-  $data->{alignment_slice_start} = $orig_start;
-  $data->{alignment_slice_end} = $orig_end;
-
-  # Combine p-values for an aggregate p-value for positive selection.
-  my $psc_hash = $self->get_psc_hash( $self->compara_dba->dbc, $self->params );
-  my $pval_stouffer = $self->combined_pval($psc_hash,'stouffer');
-  my $pval_fisher = $self->combined_pval($psc_hash,'fisher');
-
-  print "PVAL: $pval_stouffer $pval_fisher\n";
-  $data->{pval_stouffer} = $pval_stouffer;
-  $data->{pval_fisher} = $pval_fisher;
-
-  return $data;
 }
 
-sub data_for_site {
-  my $self = shift;
-  my $aln_position = shift;
+sub get_coords_from_pep_position {
+  my $self   = shift;
+  my $member = shift;
+  my $pos = shift;
 
-  $self->param('genome',1);
+  my $ref_tx = $member->get_Transcript;
 
-  my $data = $self->SUPER::data_for_site($aln_position);
-  return undef unless (defined $data);
+  # Get the dba for the reference species.
+  my $alias = $member->taxon->ensembl_alias;
+  my $dba   = Bio::EnsEMBL::Registry->get_DBAdaptor( $alias, 'core' );
+  my $asma  = $dba->get_AssemblyMapperAdaptor;
+  my $csa   = $dba->get_CoordSystemAdaptor;
 
-  my $tag_hash = $self->param('tag_hash');
-  if (!defined $tag_hash) {
-    $tag_hash = $self->get_tag_hash( $self->compara_dba->dbc, $self->params);
-    $self->param('tag_hash',$tag_hash);
+  my $new_cs = $csa->fetch_by_name('chromosome');
+  my $old_cs = $csa->fetch_by_name( 'chromosome', 'NCBI36' );
+
+  my $asm_mapper = $asma->fetch_by_CoordSystems( $new_cs, $old_cs );
+
+  my @genomic1 = $ref_tx->pep2genomic( $pos, $pos );
+  if (@genomic1) {
+    my $coord1 = $genomic1[0];
+    my $chr    = $ref_tx->seq_region_name;
+    my $start  = $coord1->start;
+    my $end    = $coord1->end;
+    my $strand = $coord1->strand;
+
+    # Map to old coordinates.
+    my @coords = $asm_mapper->map( $chr, $start, $end, $strand, $new_cs );
+    my ($coord) = @coords;
+    if ($coord) {
+      return {
+        'hg19_name' => $chr,
+        'hg18_name' => $chr,
+        'hg19_pos'  => $start,
+        'hg18_pos'  => $coord->start,
+      };
+    }
+
   }
-
-  my $site_tags = $tag_hash->{$aln_position};
-  #$self->hash_print($site_tags);
-  if (defined $site_tags) {
-    $data->{'filter_value'} = $site_tags->{'FILTER'};
-  }
-  return $data;
 }
 
 1;

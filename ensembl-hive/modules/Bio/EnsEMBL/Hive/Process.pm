@@ -86,8 +86,10 @@ package Bio::EnsEMBL::Hive::Process;
 
 use strict;
 use Bio::EnsEMBL::Utils::Argument;
-use Bio::EnsEMBL::Utils::Exception;
+use Bio::EnsEMBL::Utils::Exception qw(throw warning);
 use Bio::EnsEMBL::Hive::AnalysisJob;
+
+use base ('Bio::EnsEMBL::Utils::Exception');   # provide these methods for deriving classes
 
 sub new {
   my ($class,@args) = @_;
@@ -107,6 +109,31 @@ sub new {
 #
 ##########################################
 
+=head2 strict_hash_format
+
+    Title   :  strict_hash_format
+    Function:  if a subclass wants more flexibility in parsing analysis_job.input_id and analysis.parameters,
+               it should redefine this method to return 0
+
+=cut
+
+sub strict_hash_format {
+    return 1;
+}
+
+
+=head2 param_defaults
+
+    Title   :  param_defaults
+    Function:  sublcass can define defaults for all params used by the RunnableDB/Process
+
+=cut
+
+sub param_defaults {
+    return {};
+}
+
+
 =head2 fetch_input
 
     Title   :  fetch_input
@@ -119,8 +146,9 @@ sub new {
 =cut
 
 sub fetch_input {
-  my $self = shift;
-  return 1;
+    my $self = shift;
+
+    return 1;
 }
 
 =head2 run
@@ -134,8 +162,9 @@ sub fetch_input {
 =cut
 
 sub run {
-  my $self = shift;
-  return 1;
+    my $self = shift;
+
+    return 1;
 }
 
 =head2 write_output
@@ -148,8 +177,9 @@ sub run {
 =cut
 
 sub write_output {
-  my $self = shift;
-  return 1;
+    my $self = shift;
+
+    return 1;
 }
 
 =head2 DESTROY
@@ -162,8 +192,9 @@ sub write_output {
 =cut
 
 sub DESTROY {
-  my $self = shift;
-  $self->SUPER::DESTROY if $self->can("SUPER::DESTROY");
+    my $self = shift;
+
+    $self->SUPER::DESTROY if $self->can("SUPER::DESTROY");
 }
 
 
@@ -266,84 +297,31 @@ sub input_job {
   return $self->{'_input_job'};
 }
 
-=head2 autoflow_inputjob
 
-    Title   :  autoflow_inputjob
-    Function:  Gets/sets flag for whether the input_job should
-               be automatically dataflowed on branch code 1 when the
-               job completes.  If the subclass manually sends a job along
-               branch 1 with dataflow_output_id, the autoflow will be turned off.
-    Returns :  boolean (1/0/undef)
+# ##################### subroutines that link through to Job's methods #########################
 
-=cut
-
-sub autoflow_inputjob {
+sub input_id {
   my $self = shift;
-  $self->{'_autoflow_inputjob'} = shift if(@_);
-  $self->{'_autoflow_inputjob'}=1 unless(defined($self->{'_autoflow_inputjob'}));  
-  return $self->{'_autoflow_inputjob'};
+  return '' unless($self->input_job);
+  return $self->input_job->input_id;
 }
 
-=head2 dataflow_output_id
+sub param {
+    my $self = shift @_;
 
-    Title        :  dataflow_output_id
-    Arg[1](req)  :  <string> $output_id 
-    Arg[2](opt)  :  <int> $branch_code (optional, defaults to 1)
-    Arg[3](opt)  :  <hashref> $create_job_options (optional, defaults to {}, options added to the CreateNewJob method)
-    Usage        :  $self->dataflow_output_id($output_id, $branch_code);
-    Function:  
-      If Process needs to create jobs, this allows it to have jobs 
-      created and flowed through the dataflow rules of the workflow graph.
-      This 'output_id' becomes the 'input_id' of the newly created job at
-      the ends of the dataflow pipes.  The optional 'branch_code' determines
-      which dataflow pipe(s) to flow the job through.      
+    return $self->input_job->param(@_);
+}
 
-=cut
+sub param_substitute {
+    my $self = shift @_;
+
+    return $self->input_job->param_substitute(@_);
+}
 
 sub dataflow_output_id {
-    my ($self, $output_ids, $branch_code, $create_job_options) = @_;
+    my $self = shift @_;
 
-    return unless($self->analysis);
-    return unless($self->input_job);
-
-    $output_ids  ||= [ $self->input_id() ];                                 # replicate the input_id in the branch_code's output by default
-    $output_ids    = [ $output_ids ] unless(ref($output_ids) eq 'ARRAY');   # force previously used single values into an arrayref
-
-    $branch_code        ||=  1;     # default branch_code is 1
-    $create_job_options ||= {};     # { -block => 1 } or { -semaphore_cout => scalar(@fan_job_ids) } or { -semaphored_job_id => $funnel_job_id }
-
-        # this tricky code is responsible for correct propagation of semaphores down the dataflow pipes:
-    my $propagate_semaphore = not exists ($create_job_options->{'-semaphored_job_id'});     # CONVENTION: if zero is explicitly supplied, it is a request not to propagate
-
-        # However nothing is supplied, semaphored_job_id will be propagated from the parent job:
-    my $semaphored_job_id = $create_job_options->{'-semaphored_job_id'} ||= $self->input_job->semaphored_job_id();
-
-        # if branch_code is set to 1 (explicitly or impliticly), turn off automatic dataflow:
-    $self->autoflow_inputjob(0) if($branch_code==1);
-
-    my @output_job_ids = ();
-    my $job_adaptor = $self->db->get_AnalysisJobAdaptor;
-    my $rules       = $self->db->get_DataflowRuleAdaptor->fetch_from_analysis_id_branch_code($self->analysis->dbID, $branch_code);
-    foreach my $rule (@{$rules}) {
-        foreach my $output_id (@$output_ids) {
-            if(my $job_id = Bio::EnsEMBL::Hive::DBSQL::AnalysisJobAdaptor->CreateNewJob(
-                -input_id       => $output_id,
-                -analysis       => $rule->to_analysis,
-                -input_job_id   => $self->input_job->dbID,  # creator_job's id
-                %$create_job_options
-            )) {
-                if($semaphored_job_id and $propagate_semaphore) {
-                    $job_adaptor->increase_semaphore_count_for_jobid( $semaphored_job_id ); # propagate the semaphore
-                }
-                    # only add the ones that were indeed created:
-                push @output_job_ids, $job_id;
-
-            } elsif($semaphored_job_id and !$propagate_semaphore) {
-                $job_adaptor->decrease_semaphore_count_for_jobid( $semaphored_job_id );     # if we didn't succeed in creating the job, fix the semaphore
-            }
-        }
-    }
-    return \@output_job_ids;
+    return $self->input_job->dataflow_output_id(@_);
 }
 
 
@@ -427,12 +405,6 @@ sub worker_temp_directory {
 #
 #################################################
 
-sub input_id {
-  my $self = shift;
-  return '' unless($self->input_job);
-  return $self->input_job->input_id;
-}
-
 sub parameters {
   my $self = shift;
   return '' unless($self->analysis);
@@ -461,7 +433,7 @@ sub runnable {
     if ($arg->isa("Bio::EnsEMBL::Analysis::Runnable")) {
       push(@{$self->{'runnable'}},$arg);
     } else {
-      &throw("[$arg] is not a Bio::EnsEMBL::Analysis::Runnable");
+      throw("[$arg] is not a Bio::EnsEMBL::Analysis::Runnable");
     }
   }
   return $self->{'runnable'};  
@@ -520,5 +492,4 @@ sub check_if_exit_cleanly {
 }
 
 1;
-
 

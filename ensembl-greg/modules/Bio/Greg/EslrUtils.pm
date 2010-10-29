@@ -11,6 +11,15 @@ sub baseDirectory {
   }
 }
 
+sub scratchDirectory {
+  my $class = shift;
+  if ( $ENV{'USER'} =~ /gj1/ ) {
+    return $ENV{'HOME'} . '/scratch';
+  } else {
+    return $ENV{'HOME'} . '/scratch';
+  }
+}
+
 sub defaultMysqlURL {
   my $class = shift;
 
@@ -38,53 +47,50 @@ sub urlFromConnection {
 
 sub mysqlArgsFromConnection {
   my $class = shift;
-  my $dbc = shift;
-  
-  my $args = sprintf("-h%s -u%s -p%s -P%s %s",
-		     $dbc->host,$dbc->username,$dbc->password,$dbc->port,$dbc->dbname);
+  my $dbc   = shift;
+
+  my $args = sprintf( "-h%s -u%s -p%s -P%s %s",
+    $dbc->host, $dbc->username, $dbc->password, $dbc->port, $dbc->dbname );
   return $args;
 }
 
 sub url_to_mysql_args {
   my $class = shift;
-  my $url = shift;
+  my $url   = shift;
 
   $url =~ m!mysql://(.*?):(.*?)@(.*?)/(.*)!;
-  
+
   # Something like mysql -uensadmin -pensembl -hensdb-2-12 -P5106 -A gj1_compara_53
   # $1 = user, $2 = pw, $3 = server+port, $4 = db
-  my ($u,$p,$h,$P,$db) = undef;
-  $u = $1;
-  $p = $2;
-  $h = $3;
-  $P = 3306;
+  my ( $u, $p, $h, $P, $db ) = undef;
+  $u  = $1;
+  $p  = $2;
+  $h  = $3;
+  $P  = 3306;
   $db = $4;
-  if ($h =~ m/(.*?):(.*)/) {
+  if ( $h =~ m/(.*?):(.*)/ ) {
     $h = $1;
     $P = $2;
   }
 
-  my $mysqlargs = sprintf("-u%s -p%s -h%s -P%s -A %s",
-			  $u,
-			  $p,
-			  $h,
-			  $P,
-			  $db);
+  my $mysqlargs = sprintf( "-u%s -p%s -h%s -P%s -A %s", $u, $p, $h, $P, $db );
   return $mysqlargs;
 }
 
 sub url_to_hashref {
   my $class = shift;
-  my $url = shift;
+  my $url   = shift;
 
   my $args = $class->url_to_mysql_args($url);
 
   $args =~ m/-u(.*) -p(.*) -h(.*) -P(.*) -A (.*)/;
-  my $data = {user => $1,
-	      password => $2,
-	      host => $3,
-	      port => $4,
-	      database => $5};
+  my $data = {
+    user     => $1,
+    password => $2,
+    host     => $3,
+    port     => $4,
+    database => $5
+  };
   return $data;
 }
 
@@ -119,38 +125,38 @@ sub loadConfiguration {
 }
 
 sub find_member_by_external_id {
-  my $class = shift;
+  my $class       = shift;
   my $compara_dba = shift;
-  my $id = shift;
+  my $id          = shift;
 
-  Bio::EnsEMBL::Registry->load_registry_from_multiple_dbs(
-    {
+  Bio::EnsEMBL::Registry->load_registry_from_multiple_dbs( {
       -host => 'ensembldb.ensembl.org',
       -user => 'anonymous'
-    });
-  my $gene_adaptor = Bio::EnsEMBL::Registry->get_adaptor("human","core","gene");
+    }
+  );
+  my $gene_adaptor = Bio::EnsEMBL::Registry->get_adaptor( "human", "core", "gene" );
   my $member_adaptor = $compara_dba->get_MemberAdaptor;
-  
-  my @genes = @{ $gene_adaptor->fetch_all_by_external_name($id)};
-  push @genes, $gene_adaptor->fetch_by_stable_id($id) if (scalar @genes == 0);
-  
+
+  my @genes = @{ $gene_adaptor->fetch_all_by_external_name($id) };
+  push @genes, $gene_adaptor->fetch_by_stable_id($id) if ( scalar @genes == 0 );
+
   foreach my $gene (@genes) {
     my $stable_id = $gene->stable_id;
-    
-    my $member = $member_adaptor->fetch_by_source_stable_id(undef,$stable_id);
-    return $member if (defined $member);
+
+    my $member = $member_adaptor->fetch_by_source_stable_id( undef, $stable_id );
+    return $member if ( defined $member );
   }
   return undef;
 }
 
 sub mapSitewiseToGenome {
-  my $class     = shift;
-  my $tree      = shift;
-  my $taxon_id  = shift;
+  my $class    = shift;
+  my $tree     = shift;
+  my $taxon_id = shift;
 
   my $sa      = $tree->get_SimpleAlign;
   my $aln_len = $sa->length;
-  Bio::EnsEMBL::Compara::AlignUtils->pretty_print($sa,{length=>200});
+  Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $sa, { length => 200 } );
 
   my @leaves         = $tree->leaves;
   my @genomic_coords = ();
@@ -170,7 +176,8 @@ sub mapSitewiseToGenome {
         my $char = substr( $seq_str, $i - 1, 1 );
 
         my $loc = $seq->location_from_column($i);
-	#print "$i $char $loc\n";
+
+        #print "$i $char $loc\n";
         next if ( !defined $loc || $loc->location_type() eq 'IN-BETWEEN' );
 
         #next if ($char eq '-');
@@ -242,238 +249,6 @@ sub collectDuplicationTags {
   my $mapped_tags;
   map { $mapped_tags->{ $prefix . '_' . $_ } = $tags->{$_} } keys %{$tags};
   return $mapped_tags;
-}
-
-sub collectGeneTags {
-  my $class = shift;
-  our $tree   = shift;
-  our $params = shift;
-
-  $tree->re_root;
-  my $hash;
-
-  print "Node ID: " . $tree->node_id . "\n";
-
-  sub mysql_getval {
-    my $cmd = shift;
-    my $dbc = $tree->adaptor->dbc;
-    my $sth = $dbc->prepare($cmd);
-    $sth->execute();
-    my $val = @{ $sth->fetchrow_arrayref() }[0];
-    $val = 'NA' unless ( defined $val );
-    return $val;
-  }
-
-  sub mysql_array {
-    my $cmd = shift;
-    my $dbc = shift;
-    my $sth = $dbc->prepare($cmd);
-    $sth->execute;
-    my $array_ref = $sth->fetchall_arrayref( [0] );
-    my @vals = @{$array_ref};
-    @vals = map { @{$_}[0] } @vals;  # Some weird mappings to unpack the numbers from the arrayrefs.
-    $sth->finish;
-    return @vals;
-  }
-
-  sub psc_hash {
-    my $tree  = shift;
-    my $table = shift;
-    my $pset  = shift;
-    my $weak  = shift;
-
-    my $psc_str = qq^("positive3","positive4")^;
-    $psc_str = qq^("positive1","positive2","positive3","positive4")^ if ($weak);
-
-    my $node_id = $tree->node_id;
-    my $cmd =
-      qq^SELECT aln_position FROM $table sa WHERE node_id=$node_id AND parameter_set_id=$pset
-      AND omega_upper > omega AND type != 'random'
-      AND ncod >= 4 AND type IN $psc_str;^;
-    my @vals = mysql_array( $cmd, $tree->adaptor->dbc );
-    my $return_hash;
-    map { $return_hash->{$_} = 1 } @vals;
-    return $return_hash;
-  }
-
-  sub psc_clusters {
-    my $tree  = shift;
-    my $sa    = shift;
-    my $table = shift;
-    my $pset  = shift;
-    my $weak  = shift;
-    my $dbl   = shift;
-
-    my $hash = psc_hash( $tree, $table, $pset, $weak );
-    return 0 unless ($hash);
-    my @pscs = keys %{$hash};
-    @pscs = sort { $a <=> $b } @pscs;
-
-    #   print "@pscs\n";
-    my $len   = $sa->length;
-    my @sites = (0) x $len;
-
-    my $width = $len / 10;
-    $width = 5  if ( $width < 5 );
-    $width = 50 if ( $width > 50 );
-
-    for ( my $i = 0 ; $i < scalar(@pscs) ; $i++ ) {
-      my $psc = $pscs[$i];
-      my $lo  = $psc - $width;
-      my $hi  = $psc + $width;
-      $lo = 1    if ( $lo < 1 );
-      $hi = $len if ( $hi > $len );
-
-      if ( !$dbl ) {
-        my $len = ( $hi - $lo );
-        splice( @sites, $psc, $len, (1) x $len );
-      } else {
-        if ( $i > 0 && $pscs[ $i - 1 ] >= $lo ) {
-          my $len = $psc - $pscs[ $i - 1 ];
-          splice( @sites, $pscs[ $i - 1 ], $len, (1) x $len );
-        }
-        if ( $i < scalar(@pscs) - 1 && $pscs[ $i + 1 ] <= $hi ) {
-          my $len = $pscs[ $i + 1 ] - $psc;
-          splice( @sites, $psc, $len, (1) x $len );
-        }
-      }
-    }
-
-    my $str = join( "", @sites );
-
-    #    print $str."\n";
-
-    my @toks = split( /0+/, $str );
-    my $num_clusters = 0;
-    foreach my $tok (@toks) {
-      $num_clusters++ if ( length($tok) > 0 );
-    }
-
-    #    print "COUNT: $num_clusters\n";
-    return $num_clusters;
-  }
-
-  sub avg_sitewise {
-    my $value            = shift;
-    my $node_id          = shift;
-    my $table            = shift;
-    my $parameter_set_id = shift;
-
-    my $cmd = qq^SELECT avg($value) FROM $table 
-      WHERE node_id=$node_id AND ncod >= 4 AND type != 'random' AND omega_upper > omega
-      AND parameter_set_id=$parameter_set_id
-      ^;
-    return sprintf( "%.4f", mysql_getval($cmd) );
-  }
-
-  sub num_pscs {
-    my ( $node_id, $table, $pset ) = @_;
-    return mysql_getval(
-      qq^ SELECT count(*) FROM $table sa
-			WHERE sa.node_id=$node_id AND sa.parameter_set_id=$pset
-			AND sa.omega_upper > sa.omega AND sa.type != 'random' AND
-			sa.type IN ("positive4","positive3") AND
-			sa.ncod >= 4;
-			^
-    );
-  }
-
-  sub weak_pscs {
-    my ( $node_id, $table, $pset ) = @_;
-    return mysql_getval(
-      qq^ SELECT count(*) FROM $table sa
-			WHERE sa.node_id=$node_id AND sa.parameter_set_id=$pset
-			AND sa.omega_upper > sa.omega AND sa.type != 'random' AND
-			sa.type IN ("positive1","positive2","positive3","positive4") AND
-			sa.ncod >= 4;
-			^
-    );
-  }
-
-  sub gc_content {
-    my $tr = shift;
-
-    my $sum_gc = 0;
-    foreach my $leaf ( $tr->leaves ) {
-      my $tx  = $leaf->transcript;
-      my $seq = $tx->seq->seq;
-      $seq =~ s/[nx]//gi;
-
-      my $total_len = length($seq);
-      $seq =~ s/[at]//gi;
-      my $gc_content = length($seq) / $total_len;
-      $sum_gc += $gc_content;
-    }
-    my $avg_gc = $sum_gc / scalar( $tr->leaves );
-  }
-
-  my $node_id = $tree->node_id;
-  my $sw      = "sitewise_omega";
-
-  $hash->{'leaf_count'}   = scalar( $tree->leaves );
-  $hash->{'node_count'}   = scalar( $tree->nodes );
-  $hash->{'gappiness'}    = mysql_getval("SELECT gappiness($node_id)");
-  $hash->{'duplications'} = mysql_getval("SELECT num_dups_under_node($node_id)");
-  $hash->{'duplication_fraction'} =
-    mysql_getval("SELECT num_dups_under_node($node_id)/node_count($node_id)");
-  my @hum_gen = grep { $_->taxon_id == 9606 } $tree->leaves;
-  $hash->{'human_genes'}       = scalar(@hum_gen);
-  $hash->{'ensp'}              = $hum_gen[0]->stable_id if ( $hum_gen[0] );
-  $hash->{'tree_length_total'} = sprintf "%.3f", total_distance($tree);
-  $hash->{'tree_length_max'}   = sprintf "%.3f", max_distance($tree);
-  $hash->{'tree_length_avg'}   = sprintf "%.3f", avg_distance($tree);
-  $hash->{'avg_gc'}            = gc_content($tree);
-
-  # Alignment stats.
-  my $sa = $tree->get_SimpleAlign;
-  $hash->{'aln_length'}           = sprintf "%d",   $sa->length;
-  $hash->{'aln_percent_identity'} = sprintf "%.3f", $sa->percentage_identity;
-
-  # Avg seq length.
-  my $seq_len = 0;
-  map { $seq_len += $_->seq_length } $tree->leaves;
-  $hash->{'avg_seq_length'} = sprintf "%.3f", $seq_len / scalar( $tree->leaves );
-
-  my @param_names = mysql_getval(
-    "SELECT parameter_value FROM parameter_set where parameter_name='name' ORDER BY parameter_set_id;"
-  );
-  my @param_ids = mysql_getval(
-    "SELECT parameter_set_id FROM parameter_set where parameter_name='name' ORDER BY parameter_set_id;"
-  );
-  my %param_hash = zip( @param_names, @param_ids );
-
-  foreach my $name ( keys %param_hash ) {
-    my $cl = substr( $name, 0, 2 );
-    my $num = $param_hash{$name};
-
-    $hash->{ $cl . '_lrt' }   = avg_sitewise( "lrt_stat", $node_id, $sw, $num );
-    $hash->{ $cl . '_omega' } = avg_sitewise( "omega",    $node_id, $sw, $num );
-    $hash->{ $cl . '_pscs' } = num_pscs( $node_id, $sw, $num );
-    $hash->{ $cl . '_weak_pscs' } = weak_pscs( $node_id, $sw, $num );
-
-    $hash->{ $cl . '_num_clusters' }     = psc_clusters( $tree, $sa, $sw, $num, 0, 0 );
-    $hash->{ $cl . '_num_clusters_dbl' } = psc_clusters( $tree, $sa, $sw, $num, 0, 1 );
-    $hash->{ $cl . '_num_weak_clusters' } = psc_clusters( $tree, $sa, $sw, $num, 1 );
-
-    my $param_set =
-      Bio::EnsEMBL::Compara::ComparaUtils->load_params_from_param_set( $tree->adaptor->dbc, $num );
-    $hash->{ $cl . '_bl_total' } = '';
-    eval { $hash->{ $cl . '_bl_total' } = subtree_total( $tree, $param_set ); };
-    $hash->{ $cl . '_leaves' } = subtree_leaves( $tree, $param_set );
-  }
-
-  my $prefix = "eslr";
-  $prefix = $params->{'tag_prefix'} if ( $params->{'tag_prefix'} );
-
-  my $hash2;
-  map { $hash2->{ $prefix . '_' . $_ } = $hash->{$_} } keys %{$hash};
-
-  my @sorted_keys = sort keys %{$hash2};
-  my @sorted_vals = map { "  " . $_ . "=>" . $hash2->{$_} } @sorted_keys;
-  my $val_string  = join( "\n", @sorted_vals );
-  print "Tags: {\n" . $val_string . "\n}\n";
-
-  return $hash2;
 }
 
 sub avg_distance {
@@ -570,6 +345,8 @@ sub run_r {
   use File::Path;
   mkpath($temp_dir);
 
+  
+
   my $temp_in = $temp_dir . "/temp_in.txt";
 
   #my $temp_out = $temp_dir . "/temp_out.txt";
@@ -597,14 +374,14 @@ sub get_r_command {
 
   my $r_cmd = "R-2.10.0";
   if ( $params->{'farm'} ) {
-    $r_cmd = "/software/bin/R-2.10.0";
+    $r_cmd = "/software/bin/R-2.11.1";
   } elsif ( $params->{'bigmem'} ) {
     $r_cmd = "bsub -Is -R'select[mem>10000] rusage[mem=10000]' -M10000000 /software/R-2.9.0/bin/R ";
   } elsif ( $ENV{'USER'} =~ /gj1/ ) {
-    $r_cmd = "/software/R-2.10.0/bin/R";
+    $r_cmd = "/software/R-2.11.1/bin/R";
   } else {
 
-  }  
+  }
   return $r_cmd;
 }
 
@@ -633,22 +410,21 @@ sub get_r_values {
 
   # cmd to run: /software/R-2.7.1/bin/R CMD BATCH $filename
   my $r_cmd = $class->get_r_command;
-  my $rc = system(
-    "$r_cmd --slave --vanilla < $temp_in > $temp_out");
+  my $rc    = system("$r_cmd --slave --vanilla < $temp_in > $temp_out");
 
   #my $rc = system("/software/R-2.7.1/bin/R --vanilla --slave < $temp_in ");
 
   open( IN, "$temp_out" );
   my @lines = <IN>;
-  map { 
-    chomp $_; 
-    $_ =~ s/\s*\[\d+\]\s*//g 
-} @lines;
+  map {
+    chomp $_;
+    $_ =~ s/\s*\[\d+\]\s*//g
+  } @lines;
   close(IN);
 
   if ($rc) {
-    print join( "\n", @lines );
-    die "R returned an error!";
+    my $err =  join( "\n", @lines );
+    die "R returned an error! [$err]";
   }
 
   unlink($temp_in);

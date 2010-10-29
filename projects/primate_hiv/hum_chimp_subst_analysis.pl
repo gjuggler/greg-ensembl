@@ -23,10 +23,8 @@ collect_substitutions();
 # Connect the dots.
 $h->connect_analysis("SplitByGenes","CollectSubstitutions");
 
-my $feeder_id =
-  {
-   genome_taxon_id => 9606,
-   genome_window_width => 1000000
+my $feeder_id = {    
+  split_by_genes_limit => 0
 };
 $h->add_job_to_analysis("SplitByGenes",$feeder_id);
 

@@ -66,8 +66,7 @@ package Bio::EnsEMBL::Hive::Worker;
 use strict;
 use Bio::EnsEMBL::Utils::Argument;
 use Bio::EnsEMBL::Utils::Exception;
-use Sys::Hostname;
-use Time::HiRes qw(time);
+use Bio::EnsEMBL::Hive::Utils::Stopwatch;
 use POSIX;
 
 use Bio::EnsEMBL::Analysis;
@@ -77,6 +76,8 @@ use Bio::EnsEMBL::Hive::DBSQL::AnalysisStatsAdaptor;
 use Bio::EnsEMBL::Hive::DBSQL::DataflowRuleAdaptor;
 use Bio::EnsEMBL::Hive::Extensions;
 use Bio::EnsEMBL::Hive::Process;
+
+use Bio::EnsEMBL::Hive::Utils ('dir_revhash');  # import dir_revhash
 
 ## Minimum amount of time in msec that a worker should run before reporting
 ## back to the hive. This is used when setting the batch_size automatically.
@@ -91,7 +92,12 @@ sub new {
 
 sub init {
   my $self = shift;
-  $self->start_time(time());
+
+  my $lifespan_stopwatch = Bio::EnsEMBL::Hive::Utils::Stopwatch->new();
+  $lifespan_stopwatch->_unit(1); # count in seconds (default is milliseconds)
+  $lifespan_stopwatch->restart;
+  $self->lifespan_stopwatch( $lifespan_stopwatch );
+
   $self->debug(0);
   return $self;
 }
@@ -165,26 +171,30 @@ sub analysis {
 =cut
 
 sub life_span { # default life_span = 60minutes
-  my( $self, $value ) = @_;
-  $self->{'_life_span'} = 60*60 unless(defined($self->{'_life_span'}));
-  $self->{'_life_span'} = $value if(defined($value));
-  return $self->{'_life_span'};
+    my ($self, $value) = @_;
+
+    if(defined($value)) {               # you can still set it to 0 and avoid having the limit on lifespan
+        $self->{'_life_span'} = $value;
+    } elsif(!defined($self->{'_life_span'})) {
+        $self->{'_life_span'} = 60*60;
+    }
+    return $self->{'_life_span'};
 }
 
-sub start_time {
+sub lifespan_stopwatch {
     my $self = shift @_;
 
     if(@_) {
-        $self->{'start_time'} = shift @_;
+        $self->{'_lifespan_stopwatch'} = shift @_;
     }
-    return $self->{'start_time'};
+    return $self->{'_lifespan_stopwatch'};
 }
 
 sub life_span_limit_reached {
     my $self = shift @_;
 
     if( $self->life_span() ) {
-        my $alive_for_secs = time()-$self->start_time();
+        my $alive_for_secs = $self->lifespan_stopwatch->get_elapsed;
         if($alive_for_secs > $self->life_span() ) {
             return $alive_for_secs;
         }
@@ -238,6 +248,17 @@ sub job_limit_reached {
     return 0;
 }
 
+# By maintaining this information we attempt to detect worker contamination without the user specifically telling us about it
+#
+# Ideally we should be doing an *ALIGNMENT* of error messages (allowing for some numerical IDs to differ),
+# but at the moment we assume all errors identical. If the worker failed two jobs in a row - let him die.
+
+sub prev_job_error {
+    my $self = shift @_;
+
+    $self->{'_prev_job_error'} = shift if(@_);
+    return $self->{'_prev_job_error'};
+}
 
 
 sub worker_id {
@@ -288,41 +309,70 @@ sub last_check_in {
   return $self->{'_last_check_in'};
 }
 
-=head2 output_dir
+# this is a setter/getter that defines default behaviour when a job throws: should it be retried or not?
+
+sub retry_throwing_jobs {
+    my $self = shift @_;
+
+    $self->{'_retry_throwing_jobs'} = shift @_ if(@_);
+    return defined($self->{'_retry_throwing_jobs'}) ? $self->{'_retry_throwing_jobs'} : 1;
+}
+
+=head2 hive_output_dir
 
   Arg [1] : (optional) string directory path
-  Title   :   output_dir
-  Usage   :   $value = $self->output_dir;
-              $self->output_dir($new_value);
-  Description: sets the directory where STDOUT and STRERR will be
-	       redirected to. Each worker will create a subdirectory
-	       where each analysis_job will get a .out and .err file
+  Title   :   hive_output_dir
+  Usage   :   $hive_output_dir = $self->hive_output_dir;
+              $self->hive_output_dir($hive_output_dir);
+  Description: getter/setter for the directory where STDOUT and STRERR of the hive will be redirected to.
+          If it is "true", each worker will create its own subdirectory in it
+          where each analysis_job will have its own .out and .err files.
   Returntype : string
 
 =cut
 
-use Digest::MD5 qw(md5_hex);
+sub hive_output_dir {
+    my $self = shift @_;
 
-sub output_dir {
-  my ($self, $outdir) = @_;
-  if ($outdir and (-d $outdir)) {
-    my $worker_id = $self->worker_id;
-    my (@hex) = md5_hex($worker_id) =~ m/\G(..)/g;
-    # If you want more than one level of directories, change $hex[0]
-    # below into an array slice.  e.g @hex[0..1] for two levels.
-    $outdir = join('/', $outdir, $hex[0], 'worker_id' . $worker_id);
-    system("mkdir -p $outdir") && die "Could not create $outdir\n";
-    $self->{'_output_dir'} = $outdir;
-  }
-  return $self->{'_output_dir'};
+    $self->{'_hive_output_dir'} = shift @_ if(@_);
+    return $self->{'_hive_output_dir'};
+}
+
+sub worker_output_dir {
+    my $self = shift @_;
+
+    if((my $worker_output_dir = $self->{'_worker_output_dir'}) and not @_) { # no need to set, just return:
+
+        return $worker_output_dir;
+
+    } else { # let's try to set first:
+    
+        if(@_) { # setter mode ignores hive_output_dir
+
+            $worker_output_dir = shift @_;
+
+        } elsif( my $hive_output_dir = $self->hive_output_dir ) {
+
+            my $worker_id = $self->worker_id();
+
+            $worker_output_dir = join('/', $hive_output_dir, dir_revhash($worker_id), 'worker_id_'.$worker_id );
+        }
+
+        if($worker_output_dir) { # will not attempt to create if set to false
+            system("mkdir -p $worker_output_dir") && die "Could not create '$worker_output_dir' because: $!";
+        }
+
+        $self->{'_worker_output_dir'} = $worker_output_dir;
+    }
+    return $self->{'_worker_output_dir'};
 }
 
 
-sub perform_global_cleanup {
+sub perform_cleanup {
   my $self = shift;
-  $self->{'_perform_global_cleanup'} = shift if(@_);
-  $self->{'_perform_global_cleanup'} = 1 unless(defined($self->{'_perform_global_cleanup'}));
-  return $self->{'_perform_global_cleanup'};
+  $self->{'_perform_cleanup'} = shift if(@_);
+  $self->{'_perform_cleanup'} = 1 unless(defined($self->{'_perform_cleanup'}));
+  return $self->{'_perform_cleanup'};
 }
 
 sub print_worker {
@@ -335,10 +385,10 @@ sub print_worker {
   print("  batch_size = ", $self->batch_size,"\n");
   print("  job_limit  = ", $self->job_limit,"\n") if(defined($self->job_limit));
   print("  life_span  = ", $self->life_span,"\n") if(defined($self->life_span));
-  if($self->output_dir) {
-    print("  output_dir = ", $self->output_dir, "\n") if($self->output_dir);
+  if(my $worker_output_dir = $self->worker_output_dir) {
+    print("  worker_output_dir = $worker_output_dir\n");
   } else {
-    print("  output_dir = STDOUT/STDERR\n")
+    print("  worker_output_dir = STDOUT/STDERR\n");
   }
 }
 
@@ -348,9 +398,11 @@ sub worker_process_temp_directory {
   
   unless(defined($self->{'_tmp_dir'}) and (-e $self->{'_tmp_dir'})) {
     #create temp directory to hold fasta databases
-    $self->{'_tmp_dir'} = "/tmp/worker.$$/";
+    my $username = $ENV{'USER'};
+    my $worker_id = $self->worker_id();
+    $self->{'_tmp_dir'} = "/tmp/worker_${username}.${worker_id}/";
     mkdir($self->{'_tmp_dir'}, 0777);
-    throw("unable to create ".$self->{'_tmp_dir'}) unless(-e $self->{'_tmp_dir'});
+    throw("unable to create a writable directory ".$self->{'_tmp_dir'}) unless(-w $self->{'_tmp_dir'});
   }
   return $self->{'_tmp_dir'};
 }
@@ -435,99 +487,78 @@ sub batch_size {
 
 =cut
 
-sub run
-{
+sub run {
   my $self = shift;
-  my $specific_job = $self->_specific_job;
 
-  if($self->output_dir()) {
+  $self->print_worker();
+  if( my $worker_output_dir = $self->worker_output_dir ) {
     open OLDOUT, ">&STDOUT";
     open OLDERR, ">&STDERR";
-    open WORKER_STDOUT, ">".$self->output_dir()."/worker.out";
-    open WORKER_STDERR, ">".$self->output_dir()."/worker.err";
+    open WORKER_STDOUT, ">${worker_output_dir}/worker.out";
+    open WORKER_STDERR, ">${worker_output_dir}/worker.err";
     close STDOUT;
     close STDERR;
     open STDOUT, ">&WORKER_STDOUT";
     open STDERR, ">&WORKER_STDERR";
+    $self->print_worker();
   }
-  $self->print_worker();
 
   $self->db->dbc->disconnect_when_inactive(0);
 
+  my $job_adaptor = $self->db->get_AnalysisJobAdaptor;
+
   do { # Worker's lifespan loop (ends only when the worker dies)
-    my $batches_start = time() * 1000;
-    my $batches_end = $batches_start;
-    my $jobs_done_by_batches_loop = 0; # by all iterations of internal loop
-    $self->{fetch_time} = 0;
-    $self->{run_time} = 0;
-    $self->{write_time} = 0;
+    my $batches_stopwatch           = Bio::EnsEMBL::Hive::Utils::Stopwatch->new()->restart();
+    $self->{'fetching_stopwatch'}   = Bio::EnsEMBL::Hive::Utils::Stopwatch->new();
+    $self->{'running_stopwatch'}    = Bio::EnsEMBL::Hive::Utils::Stopwatch->new();
+    $self->{'writing_stopwatch'}    = Bio::EnsEMBL::Hive::Utils::Stopwatch->new();
+    my $jobs_done_by_batches_loop   = 0; # by all iterations of internal loop
 
-    do {    # Worker's "batches loop" exists to prevent logging the status too frequently.
-            # If a batch took less than $MIN_BATCH_TIME to run, the Worker keeps taking&running more batches.
+    if( my $specific_job = $self->_specific_job() ) {
+        $jobs_done_by_batches_loop += $self->run_one_batch( [ $self->queen->worker_reclaim_job($self, $specific_job) ] );
+        $self->cause_of_death('JOB_LIMIT'); 
+    } else {    # a proper "BATCHES" loop
 
-      my $jobs = $specific_job
-        ? [ $self->queen->worker_reclaim_job($self,$specific_job) ]
-        : $self->queen->worker_grab_jobs($self);
+        while (!$self->cause_of_death and $batches_stopwatch->get_elapsed < $MIN_BATCH_TIME) {
 
-      $self->queen->worker_check_in($self); #will sync analysis_stats if needed
+            if(my $incompleted_count = @{ $job_adaptor->fetch_all_incomplete_jobs_by_worker_id( $self->worker_id ) }) {
+                die "This worker is too greedy: not having completed $incompleted_count jobs it is trying to grab yet more jobs! Has it gone multithreaded?\n";
+            } else {
+                $jobs_done_by_batches_loop += $self->run_one_batch( $job_adaptor->grab_jobs_for_worker( $self ) );
 
-      $self->cause_of_death('NO_WORK') unless(scalar @{$jobs});
-
-      if($self->debug) {
-        $self->analysis->stats->print_stats;
-        print(STDOUT "claimed ",scalar(@{$jobs}), " jobs to process\n");
-      }
-
-      foreach my $job (@{$jobs}) {
-        $job->print_job if($self->debug); 
-
-        $self->redirect_job_output($job);
-        $self->run_module_with_job($job);
-        $self->close_and_update_job_output($job);
-
-        $self->queen->worker_register_job_done($self, $job);
-
-        if(my $semaphored_job_id = $job->semaphored_job_id) {
-            $job->adaptor->decrease_semaphore_count_for_jobid( $semaphored_job_id );    # step-unblock the semaphore after job is (successfully) done
+                if( my $jobs_completed = $self->job_limit_reached()) {
+                    print "job_limit reached ($jobs_completed jobs completed)\n";
+                    $self->cause_of_death('JOB_LIMIT'); 
+                } elsif ( my $alive_for_secs = $self->life_span_limit_reached()) {
+                    print "life_span limit reached (alive for $alive_for_secs secs)\n";
+                    $self->cause_of_death('LIFESPAN'); 
+                }
+            }
         }
-
-        $self->more_work_done;
-      }
-      $batches_end = time() * 1000;
-      $jobs_done_by_batches_loop += scalar(@$jobs);
-
-      if( $specific_job ) {
-            $self->cause_of_death('JOB_LIMIT'); 
-      } elsif( my $jobs_completed = $self->job_limit_reached()) {
-            print "job_limit reached (completed $jobs_completed jobs)\n";
-            $self->cause_of_death('JOB_LIMIT'); 
-      } elsif ( my $alive_for_secs = $self->life_span_limit_reached()) {
-            print "life_span limit reached (alive for $alive_for_secs secs)\n";
-            $self->cause_of_death('LIFESPAN'); 
-      }
-    } while (!$self->cause_of_death and $batches_end-$batches_start < $MIN_BATCH_TIME);
+    }
 
         # The following two database-updating operations are resource-expensive (all workers hammering the same database+tables),
         # so they are not allowed to happen too frequently (not before $MIN_BATCH_TIME of work has been done)
         #
-    $self->db->get_AnalysisStatsAdaptor->interval_update_work_done($self->analysis->dbID,
-        $jobs_done_by_batches_loop, $batches_end-$batches_start, $self);
+    $self->db->get_AnalysisStatsAdaptor->interval_update_work_done(
+        $self->analysis->dbID,
+        $jobs_done_by_batches_loop,
+        $batches_stopwatch->get_elapsed,
+        $self->{'fetching_stopwatch'}->get_elapsed,
+        $self->{'running_stopwatch'}->get_elapsed,
+        $self->{'writing_stopwatch'}->get_elapsed,
+    );
 
     if (!$self->cause_of_death
     and $self->analysis->stats->hive_capacity >= 0
-    and $self->analysis->stats->num_running_workers > $self->analysis->stats->hive_capacity) {
-      my $sql = "UPDATE analysis_stats SET num_running_workers = num_running_workers - 1 ".
-                "WHERE num_running_workers > hive_capacity AND analysis_id = " . $self->analysis->stats->analysis_id;
-      my $row_count = $self->queen->dbc->do($sql);
-      if ($row_count == 1) {
+    and $self->analysis->stats->num_running_workers > $self->analysis->stats->hive_capacity
+    and $self->analysis->stats->adaptor->decrease_running_workers_on_hive_overload( $self->analysis->dbID ) # careful with order, this operation has side-effect
+    ) {
         $self->cause_of_death('HIVE_OVERLOAD');
-      }
     }
   } while (!$self->cause_of_death); # /Worker's lifespan loop
 
-  $self->queen->dbc->do("UPDATE hive SET status = 'DEAD' WHERE worker_id = ".$self->worker_id);
-  
-  if($self->perform_global_cleanup) {
+  if($self->perform_cleanup) {
     #have runnable cleanup any global/process files/data it may have created
     $self->cleanup_worker_process_temp_directory;
   }
@@ -539,7 +570,7 @@ sub run
   printf("dbc %d disconnect cycles\n", $self->db->dbc->disconnect_count);
   print("total jobs completed : ", $self->work_done, "\n");
   
-  if($self->output_dir()) {
+  if( $self->worker_output_dir() ) {
     close STDOUT;
     close STDERR;
     close WORKER_STDOUT;
@@ -549,92 +580,141 @@ sub run
   }
 }
 
+sub run_one_batch {
+    my ($self, $jobs) = @_;
+
+    my $jobs_done_here = 0;
+
+    my $max_retry_count = $self->analysis->stats->max_retry_count();  # a constant (as the Worker is already specialized by the Queen) needed later for retrying jobs
+
+    $self->queen->worker_check_in($self); #will sync analysis_stats if needed
+
+    $self->cause_of_death('NO_WORK') unless(scalar @{$jobs});
+
+    if($self->debug) {
+        $self->analysis->stats->print_stats;
+        print(STDOUT "claimed ",scalar(@{$jobs}), " jobs to process\n");
+    }
+
+    foreach my $job (@{$jobs}) {
+        $job->print_job if($self->debug); 
+
+        $self->start_job_output_redirection($job);
+        eval {  # capture any throw/die
+            $self->run_module_with_job($job);
+        };
+        my $msg_thrown = $@;
+        $self->stop_job_output_redirection($job);
+
+        if($msg_thrown) {   # record the message - whether it was a success or failure:
+            my $job_id                   = $job->dbID();
+            my $job_status_at_the_moment = $job->status();
+            warn "Job with id=$job_id died in status '$job_status_at_the_moment' for the following reason: $msg_thrown\n";
+            $self->db()->get_JobMessageAdaptor()->register_message($job_id, $msg_thrown, $job->incomplete );
+        }
+
+        if($job->incomplete) {
+                # If the job specifically said what to do next, respect that last wish.
+                # Otherwise follow the default behaviour set by the beekeeper in $worker:
+                #
+            my $may_retry = defined($job->transient_error) ? $job->transient_error : $self->retry_throwing_jobs;
+
+            $job->adaptor->release_and_age_job( $job->dbID, $max_retry_count, $may_retry );
+
+            if($self->status eq 'COMPILATION'       # if it failed to compile, there is no point in continuing as the code WILL be broken
+            or $self->prev_job_error                # a bit of AI: if the previous job failed as well, it is LIKELY that we have contamination
+            or $job->lethal_for_worker ) {          # trust the job's expert knowledge
+                my $reason = ($self->status eq 'COMPILATION') ? 'compilation error'
+                           : $self->prev_job_error           ? 'two failed jobs in a row'
+                           :                                   'suggested by job itself';
+                warn "Job's error has contaminated the Worker ($reason), so the Worker will now die\n";
+                $self->cause_of_death('CONTAMINATED');
+                return $jobs_done_here;
+            }
+        } else {    # job successfully completed:
+
+            if(my $semaphored_job_id = $job->semaphored_job_id) {
+                $job->adaptor->decrease_semaphore_count_for_jobid( $semaphored_job_id );    # step-unblock the semaphore
+            }
+            $self->more_work_done;
+            $jobs_done_here++;
+            $job->update_status('DONE');
+        }
+
+        $self->prev_job_error( $job->incomplete );
+        $self->enter_status('READY');
+    }
+
+    return $jobs_done_here;
+}
+
 
 sub run_module_with_job {
   my ($self, $job) = @_;
 
-  my ($start_time, $end_time);
+  $job->incomplete(1);
+  $job->autoflow(1);
 
-  my $runObj = $self->analysis->process;
-  return 0 unless($runObj);
-  return 0 unless($job and ($job->worker_id eq $self->worker_id));
+  $self->enter_status('COMPILATION');
+  $job->update_status('COMPILATION');
+  my $runObj = $self->analysis->process or die "Unknown compilation error";
   
-  my $init_time = time() * 1000;
+  my $job_stopwatch = Bio::EnsEMBL::Hive::Utils::Stopwatch->new()->restart();
   $self->queen->dbc->query_count(0);
 
   #pass the input_id from the job into the Process object
-  if($runObj->isa("Bio::EnsEMBL::Hive::Process")) { 
+  if( $runObj->isa('Bio::EnsEMBL::Hive::Process') ) {
     $runObj->input_job($job);
     $runObj->queen($self->queen);
     $runObj->worker($self);
     $runObj->debug($self->debug);
+
+    $job->param_init( $runObj->strict_hash_format(), $runObj->param_defaults(), $self->db->get_MetaContainer->get_param_hash(), $self->analysis->parameters(), $job->input_id() );
+
   } else {
     $runObj->input_id($job->input_id);
     $runObj->db($self->db);
+
+    $job->param_init( 0, $self->db->get_MetaContainer->get_param_hash(), $self->analysis->parameters(), $job->input_id() ); # Well, why not?
   }
 
-  my $analysis_stats = $self->analysis->stats;
+    $self->enter_status('GET_INPUT');
+    $job->update_status('GET_INPUT');
+    print("\nGET_INPUT\n") if($self->debug); 
 
-  $self->enter_status("GET_INPUT");
-  $job->update_status('GET_INPUT');
-  print("\nGET_INPUT\n") if($self->debug); 
+    $self->{'fetching_stopwatch'}->continue();
+    $runObj->fetch_input;
+    $self->{'fetching_stopwatch'}->pause();
 
-  $start_time = time() * 1000;
-  eval {$runObj->fetch_input};
-  $self->_process_error($job, $@) if $@;
-  $end_time = time() * 1000;
-  $self->{fetch_time} += $end_time - $start_time;
+    $self->enter_status('RUN');
+    $job->update_status('RUN');
+    print("\nRUN\n") if($self->debug); 
 
-  $self->enter_status("RUN");
-  $job->update_status('RUN');
-  print("\nRUN\n") if($self->debug); 
+    $self->{'running_stopwatch'}->continue();
+    $runObj->run;
+    $self->{'running_stopwatch'}->pause();
 
-  $start_time = time() * 1000;
-  eval {$runObj->run};
-  $self->_process_error($job, $@) if $@;
-  $end_time = time() * 1000;
-  $self->{run_time} += $end_time - $start_time;
+    if($self->execute_writes) {
+        $self->enter_status('WRITE_OUTPUT');
+        $job->update_status('WRITE_OUTPUT');
+        print("\nWRITE_OUTPUT\n") if($self->debug); 
 
-  if($self->execute_writes) {
-    $self->enter_status("WRITE_OUTPUT");
-    $job->update_status('WRITE_OUTPUT');
-    print("\nWRITE_OUTPUT\n") if($self->debug); 
-    
-    $start_time = time() * 1000;
-    eval {$runObj->write_output};
-    $self->_process_error($job, $@) if $@;
-    $end_time = time() * 1000;
-    $self->{write_time} += $end_time - $start_time;
-  } else {
-    print("\n\n!!!! NOT write_output\n\n\n") if($self->debug); 
-  }
-  $self->enter_status("READY");
+        $self->{'writing_stopwatch'}->continue();
+        $runObj->write_output;
+        $self->{'writing_stopwatch'}->pause();
 
-  $job->query_count($self->queen->dbc->query_count);
-  $job->runtime_msec(time()*1000 - $init_time);
-
-  if ($runObj->isa("Bio::EnsEMBL::Hive::Process") and $runObj->autoflow_inputjob
-      and $self->execute_writes) {
+        if( $job->autoflow ) {
             printf("AUTOFLOW input->output\n") if($self->debug);
-            $runObj->dataflow_output_id();
-  }
+            $job->dataflow_output_id();
+        }
+    } else {
+        print("\n\n!!!! NOT write_output\n\n\n") if($self->debug); 
+    }
 
-  return 1;
-}
+    $job->query_count($self->queen->dbc->query_count);
+    $job->runtime_msec( $job_stopwatch->get_elapsed );
 
-sub _process_error {
-  my ($self, $job, $error) = @_;
-  my $logic_name = $self->analysis()->logic_name();
-  warning "Detected an error whilst running ${logic_name}. Writing error to hive DB: ${error}";
-  eval {
-    $job->update_error($error);
-  };
-  warning "Error detected whilst trying to write error back to hive DB: $@" if $@;
-  
-  #Throws a new error to maintin the normal flow of error handling normally
-  #done using the hive.
-  my $db_id = $job->dbID();
-  throw("Error detected whilst running job ${db_id}; consult output or hive DB for more information");
+    $job->incomplete(0);
 }
 
 sub enter_status {
@@ -642,69 +722,51 @@ sub enter_status {
   return $self->queen->enter_status($self, $status);
 }
 
-sub redirect_job_output
-{
-  my $self = shift;
-  my $job  = shift;
+sub start_job_output_redirection {
+    my $self = shift;
+    my $job  = shift or return;
 
-  my $outdir = $self->output_dir();
-  return unless($outdir);
-  return unless($job);
-  return unless($job->adaptor);
+    my $job_adaptor = $job->adaptor or return;
 
-  $job->stdout_file($outdir . "/job_".$job->dbID.".out");
-  $job->stderr_file($outdir . "/job_".$job->dbID.".err");
+    if( my $worker_output_dir = $self->worker_output_dir ) {
 
-  close STDOUT;
-  open STDOUT, ">".$job->stdout_file;
+        $job->stdout_file( $worker_output_dir . '/job_id_' . $job->dbID . '.out' );
+        $job->stderr_file( $worker_output_dir . '/job_id_' . $job->dbID . '.err' );
 
-  close STDERR;
-  open STDERR, ">".$job->stderr_file;
+        close STDOUT;
+        open STDOUT, ">".$job->stdout_file;
 
-  $job->adaptor->store_out_files($job) if($job->adaptor);
+        close STDERR;
+        open STDERR, ">".$job->stderr_file;
+
+        $job_adaptor->store_out_files($job);
+    }
 }
 
 
-sub close_and_update_job_output
-{
-  my $self = shift;
-  my $job  = shift;
+sub stop_job_output_redirection {
+    my $self = shift;
+    my $job  = shift or return;
 
-  return unless($job);
-  return unless($self->output_dir);
-  return unless($job->adaptor);
+    my $job_adaptor = $job->adaptor or return;
 
+    if( $self->worker_output_dir ) {
 
-  # the following flushes $job->stderr_file and $job->stdout_file
-  open STDOUT, ">&WORKER_STDOUT";
-  open STDERR, ">&WORKER_STDERR";
+        # the following flushes $job->stderr_file and $job->stdout_file
+        open STDOUT, ">&WORKER_STDOUT";
+        open STDERR, ">&WORKER_STDERR";
 
-  if(-z $job->stdout_file) {
-    #print("unlink zero size ", $job->stdout_file, "\n");
-    unlink $job->stdout_file;
-    $job->stdout_file('');
-  }
-  if(-z $job->stderr_file) {
-    #print("unlink zero size ", $job->stderr_file, "\n");
-    unlink $job->stderr_file;
-    $job->stderr_file('');
-  }
+        if(-z $job->stdout_file) {
+            unlink $job->stdout_file;
+            $job->stdout_file('');
+        }
+        if(-z $job->stderr_file) {
+            unlink $job->stderr_file;
+            $job->stderr_file('');
+        }
 
-  $job->adaptor->store_out_files($job) if($job->adaptor);
-
-}
-
-
-# Does not seem to be used anywhere?
-#
-sub check_system_load {
-  my $self = shift;
-
-  my $host = hostname;
-  my $numCpus = `grep -c '^process' /proc/cpuinfo`;
-  print("host: $host  cpus:$numCpus\n");
-
-  return 1;  #everything ok
+        $job_adaptor->store_out_files($job);
+    }
 }
 
 sub _specific_job {

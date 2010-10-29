@@ -1067,6 +1067,12 @@ sub _internal_newick_format {
     }
     $newick .= ")";
   }
+  if ($format_mode =~ m/hide_internal_ids/gi) {
+    if (!$self->is_leaf) {
+      $newick .= sprintf(":%1.4f", $self->distance_to_parent) if ($self->distance_to_parent != 0);
+      return $newick;
+    }
+  }
   if (ref $format_mode) {
     $newick .= $format_mode->($self);
   }
@@ -1077,7 +1083,7 @@ sub _internal_newick_format {
     $newick .= sprintf("%s", $self->name);
     $newick .= sprintf(":%1.4f", $self->distance_to_parent) if ($self->distance_to_parent != 0);
   }
-  if($format_mode eq "full") { 
+  if($format_mode =~ m/full/i) { 
     #full: name and distance on all nodes
     $newick .= sprintf("%s", $self->name);
     $newick .= sprintf(":%1.4f", $self->distance_to_parent);

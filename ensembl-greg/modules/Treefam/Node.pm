@@ -31,9 +31,7 @@
 
 =cut
 
-
 package Treefam::Node;
-
 
 use strict;
 use Scalar::Util qw(weaken);
@@ -41,14 +39,27 @@ use Treefam::Tree;
 use Carp;
 
 {
+
   # map tags to methods
-  my %_valid_tags = (O=>'sequence_id', Sd=>'', B=>'bootstrap', S=>'taxon', G=>'gene', E=>'gene_loss', D=>'is_duplication', Com=>'', SIS=>'species intersection score');
+  my %_valid_tags = (
+    O   => 'sequence_id',
+    Sd  => '',
+    B   => 'bootstrap',
+    S   => 'taxon',
+    G   => 'gene',
+    E   => 'gene_loss',
+    D   => 'is_duplication',
+    Com => '',
+    SIS => 'species intersection score'
+  );
+
   sub _is_valid_tag {
     my $tag = shift;
     return $_valid_tags{$tag};
   }
 
   my $_internalID = 0;
+
   sub _get_new_internalID {
     return ++$_internalID;
   }
@@ -71,16 +82,15 @@ sub new {
   my $self;
   if (@_) {
     $self = shift;
-  }
-  else {
+  } else {
     $self = {};
   }
   $self->{'DBConnection'} = $dbc;
-  weaken($self->{'DBConnection'});
+  weaken( $self->{'DBConnection'} );
 
   $self->{'internalID'} = $class->_get_new_internalID;
 
-  bless ($self, $class);
+  bless( $self, $class );
 
   return $self;
 }
@@ -160,16 +170,16 @@ sub taxon {
 
   my $self = shift;
   $self->{S} = shift if @_;
-  if (!$self->{S} && $self->{G}) {
+  if ( !$self->{S} && $self->{G} ) {
     my $geneID = $self->{G};
-    my $query = qq( SELECT DISTINCT s.tax_id,s.taxname
+    my $query  = qq( SELECT DISTINCT s.tax_id,s.taxname
                     FROM species s, genes g
                     WHERE g.GID = ?
                     AND g.tax_id=s.tax_id);
     my $dbh = $self->{'DBConnection'}->get_DatabaseHandle;
     my $sth = $dbh->prepare($query);
     $sth->execute($geneID);
-    ($self->{taxon_id},$self->{S}) = $sth->fetchrow_array;
+    ( $self->{taxon_id}, $self->{S} ) = $sth->fetchrow_array;
     $sth->finish;
   }
 
@@ -186,18 +196,17 @@ sub taxon {
 sub get_taxon_id {
 
   my $self = shift;
-  if (!$self->{taxon_id}) {
-    my $dbh = $self->{'DBConnection'}->get_DatabaseHandle;
+  if ( !$self->{taxon_id} ) {
+    my $dbh   = $self->{'DBConnection'}->get_DatabaseHandle;
     my $taxon = $self->taxon;
     my $query = qq(SELECT TAX_ID FROM species WHERE SWCODE='$taxon' OR TAXNAME='$taxon');
-    my $sth = $dbh->prepare($query);
+    my $sth   = $dbh->prepare($query);
     $sth->execute;
-    ($self->{taxon_id}) = $sth->fetchrow_array;
+    ( $self->{taxon_id} ) = $sth->fetchrow_array;
     $sth->finish;
   }
   return $self->{taxon_id};
 }
-
 
 =head2 is_duplication
 
@@ -212,7 +221,7 @@ sub is_duplication {
   my $self = shift;
   $self->{D} = shift if @_;
 
-  my $is_dup = uc($self->{D}) eq 'Y' ? 1 : 0;
+  my $is_dup = uc( $self->{D} ) eq 'Y' ? 1 : 0;
 
   return $is_dup;
 
@@ -231,7 +240,7 @@ sub is_speciation {
   my $self = shift;
   $self->{D} = shift if @_;
 
-  my $is_spec = uc($self->{D}) eq 'N' ? 1 : 0;
+  my $is_spec = uc( $self->{D} ) eq 'N' ? 1 : 0;
 
   return $is_spec;
 
@@ -249,9 +258,10 @@ sub is_leaf {
 
   my $self = shift;
   $self->{'is_leaf'} = shift if @_;
-  if (!$self->{'is_leaf'}) {
+  if ( !$self->{'is_leaf'} ) {
+
     # a leaf has no children
-     $self->{'is_leaf'} = $self->children ? 0:1;
+    $self->{'is_leaf'} = $self->children ? 0 : 1;
   }
   return $self->{'is_leaf'};
 
@@ -271,25 +281,25 @@ sub gene {
   my $self = shift;
   if (@_) {
     $self->{'gene'} = shift;
-    $self->{G} = ref($self->{'gene'})?$self->{'gene'}->ID:$self->{'gene'};
+    $self->{G} = ref( $self->{'gene'} ) ? $self->{'gene'}->ID : $self->{'gene'};
   }
-  if (!$self->{'gene'}) {
+  if ( !$self->{'gene'} ) {
     my ($geneID) = $self->{G};
-    my $dbc = $self->{'DBConnection'};
-    my $gh = $dbc->get_GeneHandle;
+    my $dbc      = $self->{'DBConnection'};
+    my $gh       = $dbc->get_GeneHandle;
     if ($geneID) {
       $self->{'gene'} = $gh->get_by_id($geneID);
-    }
-    else {
+    } else {
+
       # try getting gene using sequence id
       my $seqID = $self->sequence_id;
       if ($seqID) {
-	my $query = qq(SELECT GID FROM genes WHERE ID='$seqID');
-	my $dbh = $dbc->get_DatabaseHandle;
-	my $sth = $dbh->prepare($query);
-	$sth->execute;
-	($geneID) = $sth->fetchrow_array;
-	$self->{'gene'} = $gh->get_by_id($geneID) if $geneID;
+        my $query = qq(SELECT GID FROM genes WHERE ID='$seqID');
+        my $dbh   = $dbc->get_DatabaseHandle;
+        my $sth   = $dbh->prepare($query);
+        $sth->execute;
+        ($geneID) = $sth->fetchrow_array;
+        $self->{'gene'} = $gh->get_by_id($geneID) if $geneID;
       }
     }
   }
@@ -308,9 +318,9 @@ sub gene {
 sub children {
 
   my $self = shift;
-  @{$self->{C}} = @_ if @_;
+  @{ $self->{C} } = @_ if @_;
 
-  return @{$self->{C}} if $self->{C};
+  return @{ $self->{C} } if $self->{C};
 
 }
 
@@ -381,10 +391,10 @@ sub gene_loss {
   my $self = shift;
   if (@_) {
     $self->{E} = shift;
-    $self->{E} = "$-".$self->{E} unless ($self->{E}=~/^\$-/);
+    $self->{E} = "$-" . $self->{E} unless ( $self->{E} =~ /^\$-/ );
   }
-  if ($self->{E}) {
-    (my $loss = $self->{E})=~s/^\$-//;
+  if ( $self->{E} ) {
+    ( my $loss = $self->{E} ) =~ s/^\$-//;
     return $loss;
   }
   return undef;
@@ -416,11 +426,11 @@ sub get_all_tags {
 
 sub get_tag_value {
 
- my $self = shift;
- my $tag = shift;
- croak "ERROR: Need a tag" unless $tag;
- croak "ERROR: Not a valid tag" unless _is_valid_tag($tag);
- return $self->{$tag};
+  my $self = shift;
+  my $tag  = shift;
+  croak "ERROR: Need a tag" unless $tag;
+  croak "ERROR: Not a valid tag" unless _is_valid_tag($tag);
+  return $self->{$tag};
 
 }
 
@@ -435,11 +445,11 @@ sub get_tag_value {
 
 sub get_all_ancestors {
 
-  my $self = shift;
+  my $self   = shift;
   my $parent = $self->parent;
   my @ancestors;
-  while ($parent){
-    push @ancestors,$parent;
+  while ($parent) {
+    push @ancestors, $parent;
     $parent = $parent->parent;
   }
   return @ancestors;
@@ -459,11 +469,11 @@ sub height {
 
   my $self = shift;
   $self->{'height'} = shift if @_;
-  if (!$self->{'height'}) {
-    my $node = $self;
+  if ( !$self->{'height'} ) {
+    my $node   = $self;
     my $height = $node->branch_length;
-    while( my $parent = $node->parent) {
-      $height += $parent->branch_length if ($parent->branch_length);
+    while ( my $parent = $node->parent ) {
+      $height += $parent->branch_length if ( $parent->branch_length );
       $node = $parent;
     }
     $self->{'height'} = $height;
@@ -487,38 +497,37 @@ sub species_name {
   my $self = shift;
   my $format = lc(shift) if @_;
   $format ||= 'latin';
-  if ($format ne 'latin' && $format ne 'swcode') {
+  if ( $format ne 'latin' && $format ne 'swcode' ) {
     croak "Argument must be 'latin' or 'swcode'";
   }
   $self->{'species'}{$format} = shift if @_;
 
-  if (!$self->{'species'}{$format}) {
+  if ( !$self->{'species'}{$format} ) {
     my $dbc = $self->{'DBConnection'};
     my $dbh = $dbc->get_DatabaseHandle;
-    my $sp = $self->get_tag_value('S');
+    my $sp  = $self->get_tag_value('S');
     my $name;
     my $column = $format eq 'swcode' ? 'SWCODE' : 'TAXNAME';
-    if ($self->is_leaf) {
+    if ( $self->is_leaf ) {
       my $query = qq(SELECT $column FROM species WHERE TAXNAME = ? OR SWCODE = ? );
-      my $sth = $dbh->prepare($query);
-      $sth->execute($sp,$sp);
+      my $sth   = $dbh->prepare($query);
+      $sth->execute( $sp, $sp );
       ($name) = $sth->fetchrow_array;
       $column = $format eq 'swcode' ? 'SWCODE' : 'NAME';
-      if (!$name) {
-	$query = qq(SELECT $column FROM spec_names WHERE SWCODE = ? );
-	my $sth = $dbh->prepare($query);
-	$sth->execute($sp);
-	($name) = $sth->fetchrow_array;
+      if ( !$name ) {
+        $query = qq(SELECT $column FROM spec_names WHERE SWCODE = ? );
+        my $sth = $dbh->prepare($query);
+        $sth->execute($sp);
+        ($name) = $sth->fetchrow_array;
       }
-      if (!$name) {
-	$sp .='%';
-	$query = qq(SELECT $column FROM spec_names WHERE NAME LIKE ?);
-	$sth = $dbh->prepare($query);
-	$sth->execute($sp);
-	($name) = $sth->fetchrow_array;
+      if ( !$name ) {
+        $sp .= '%';
+        $query = qq(SELECT $column FROM spec_names WHERE NAME LIKE ?);
+        $sth   = $dbh->prepare($query);
+        $sth->execute($sp);
+        ($name) = $sth->fetchrow_array;
       }
-    }
-    else {
+    } else {
       $name = $sp;
     }
     $self->{'species'}{$format} = $name;
@@ -543,11 +552,11 @@ sub sequence {
 
   my $self = shift;
   my $type = shift if @_;
-  $type ||='aa';
+  $type ||= 'aa';
   $self->{'sequence'}{$type} = shift if @_;
-  if (!defined $self->{'sequence'}{$type}) {
+  if ( !defined $self->{'sequence'}{$type} ) {
     my $gene = $self->gene;
-    if (!$gene) {
+    if ( !$gene ) {
       croak "No gene for node";
     }
     $self->{'sequence'}{$type} = $gene->sequence($type);
@@ -556,6 +565,5 @@ sub sequence {
   return $self->{'sequence'}{$type};
 
 }
-
 
 1;

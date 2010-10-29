@@ -6,132 +6,131 @@ use Bio::EnsEMBL::Compara::DBSQL::DBAdaptor;
 my $DBA = "Bio::EnsEMBL::Compara::DBSQL::DBAdaptor";
 my $HIVE_SQL;
 
-
 sub hive_url_to_mysql_args {
   my $class = shift;
-  my $url = shift;
+  my $url   = shift;
 
   $url =~ m!mysql://(.*?):(.*?)@(.*?)/(.*)!;
-  
+
   # Something like mysql -uensadmin -pensembl -hensdb-2-12 -P5106 -A gj1_compara_53
   # $1 = user, $2 = pw, $3 = server+port, $4 = db
-  my ($u,$p,$h,$P,$db) = undef;
-  $u = $1;
-  $p = $2;
-  $h = $3;
-  $P = 3306;
+  my ( $u, $p, $h, $P, $db ) = undef;
+  $u  = $1;
+  $p  = $2;
+  $h  = $3;
+  $P  = 3306;
   $db = $4;
-  if ($h =~ m/(.*?):(.*)/) {
+  if ( $h =~ m/(.*?):(.*)/ ) {
     $h = $1;
     $P = $2;
   }
 
-  my $mysqlargs = sprintf("-u%s -p%s -h%s -P%s -A %s",
-			  $u,
-			  $p,
-			  $h,
-			  $P,
-			  $db);
+  my $mysqlargs = sprintf( "-u%s -p%s -h%s -P%s -A %s", $u, $p, $h, $P, $db );
   return $mysqlargs;
 }
 
 sub hive_url_to_hashref {
   my $class = shift;
-  my $url = shift;
+  my $url   = shift;
 
   my $args = $class->hive_url_to_mysql_args($url);
 
   $args =~ m/-u(.*) -p(.*) -h(.*) -P(.*) -A (.*)/;
-  my $data = {user => $1,
-	      password => $2,
-	      host => $3,
-	      port => $4,
-	      database => $5};
+  my $data = {
+    user     => $1,
+    password => $2,
+    host     => $3,
+    port     => $4,
+    database => $5
+  };
   return $data;
 }
 
 # Creates a database $database in the given mysql server at $url.
 # Returns the new full URL for accessing the database.
 sub hive_create_database {
-  my $class = shift;
-  my $url = shift;
+  my $class           = shift;
+  my $url             = shift;
   my $format_database = shift;
 
-  $format_database = 0 unless (defined $format_database);
+  $format_database = 0 unless ( defined $format_database );
 
   my $obj = $class->hive_url_to_hashref($url);
-  $url = sprintf("mysql://%s:%s@%s/",
-		 $obj->{'user'},
-		 $obj->{'password'},
-		 $obj->{'host'}.":".$obj->{'port'}
-		 );
+  $url = sprintf( "mysql://%s:%s@%s/",
+    $obj->{'user'}, $obj->{'password'}, $obj->{'host'} . ":" . $obj->{'port'} );
   my $database = $obj->{'database'};
+
   #print "BASE URL: $url\n";
   my $temp_url = $url . "mysql";
 
-  my $dba = $DBA->new(-url => $temp_url);
-  eval {
-    $dba->dbc->do("drop database if exists $database;") if ($format_database);
-  };
-  eval {
-    $dba->dbc->do("create database if not exists $database;");
-  };
+  my $dba = $DBA->new( -url => $temp_url );
+  eval { $dba->dbc->do("drop database if exists $database;") if ($format_database); };
+  eval { $dba->dbc->do("create database if not exists $database;"); };
 
 }
 
 # Creates the SQL tables necessary for running a Hive.
 sub hive_create_hive_tables {
-  my $class = shift;
-  my $url = shift; 		# URL of the desired MySQL location INCLUDING the database name.
-  my $format_database = shift;	# Set to 1 if we should wipe the database clean.
+  my $class           = shift;
+  my $url             = shift;    # URL of the desired MySQL location INCLUDING the database name.
+  my $format_database = shift;    # Set to 1 if we should wipe the database clean.
 
-  $format_database = 1 unless (defined $format_database);
+  $format_database = 1 unless ( defined $format_database );
 
-  my $dba = $DBA->new(-url => $url);
+  my $dba = $DBA->new( -url => $url );
+
   # Create the tables.
 
-  open(IN,"/nfs/users/nfs_g/gj1/src/ensembl_svn/ensembl-greg/sql/hive-basic-tables.sql");
-  $HIVE_SQL = join("",<IN>);
+  open( IN, "/nfs/users/nfs_g/gj1/src/ensembl_svn/ensembl-greg/sql/hive-basic-tables.sql" );
+  $HIVE_SQL = join( "", <IN> );
   close(IN);
 
-  $class->run_sql_commands($dba,$HIVE_SQL);
+  $class->run_sql_commands( $dba, $HIVE_SQL );
+
   # Format if necessary.
   if ($format_database) {
     print "Creating hive database: $url \n";
-    my @hive_tables = qw(hive analysis analysis_stats analysis_stats_monitor analysis_ctrl_rule dataflow_rule
-			 analysis_job analysis_job_file analysis_data analysis_description monitor
-			 );
-    map {eval{ $dba->dbc->do("truncate $_;")}} @hive_tables; # Truncate each table in turn.
+    my @hive_tables =
+      qw(hive analysis analysis_stats analysis_stats_monitor analysis_ctrl_rule dataflow_rule
+      analysis_job analysis_job_file analysis_data analysis_description monitor
+    );
+    map {
+      eval { $dba->dbc->do("truncate $_;") }
+    } @hive_tables;    # Truncate each table in turn.
   }
 }
 
 # Creates the SQL tables necessary for housing a ComparaLite database.
 sub hive_create_compara_tables {
-  my $class = shift;
-  my $url = shift;
+  my $class           = shift;
+  my $url             = shift;
   my $format_database = shift;
 
-  $format_database = 1 unless (defined $format_database);
+  $format_database = 1 unless ( defined $format_database );
 
-  open(IN,"/nfs/users/nfs_g/gj1/src/ensembl_svn/ensembl-greg/sql/compara-basic-tables.sql");
-  $COMPARA_SQL = join("",<IN>);
+  open( IN, "/nfs/users/nfs_g/gj1/src/ensembl_svn/ensembl-greg/sql/compara-basic-tables.sql" );
+  $COMPARA_SQL = join( "", <IN> );
   close(IN);
 
-  my $dba = $DBA->new(-url => $url);
+  my $dba = $DBA->new( -url => $url );
+
   # Create the tables.
-  $class->run_sql_commands($dba,$COMPARA_SQL);
+  $class->run_sql_commands( $dba, $COMPARA_SQL );
+
   # Format if necessary.
   if ($format_database) {
     print "Creating Compara database: $url \n";
     my @hive_tables = qw(
-			 member sequence protein_tree_member protein_tree_node sitewise_aln
-			 );
-    map {eval{ $dba->dbc->do("truncate $_;")}} @hive_tables; # Truncate each table in turn.
-  }  
+      member sequence protein_tree_member protein_tree_node sitewise_aln
+    );
+    map {
+      eval { $dba->dbc->do("truncate $_;") }
+    } @hive_tables;    # Truncate each table in turn.
+  }
 }
 
-
 BEGIN {
+
   # Define the Hive and Compara SQL tables.
 
   $HIVE_SQL = qq^
@@ -317,7 +316,6 @@ CREATE TABLE IF NOT EXISTS analysis_description (
 
 ) COLLATE=latin1_swedish_ci TYPE=MyISAM;
 ^;
-
 
   $COMPARA_SQL = qq^
 
@@ -554,24 +552,26 @@ REPLACE INTO meta (meta_key, meta_value) VALUES ("schema_version", "50");
 }
 
 sub run_sql_commands {
-  my $class = shift;
-  my $dba = shift;
+  my $class  = shift;
+  my $dba    = shift;
   my $string = shift;
 
   # Remove comment lines.
   $string =~ s/^#.*$//gm;
   $string =~ s/^-.*$//gm;
 
-  print $string."\n";
+  print $string. "\n";
+
   # Split the string into separate commands.
-  my @sql_array = split(";",$string);
+  my @sql_array = split( ";", $string );
+
   # Remove whitespace lines.
-  @sql_array = grep {$_ !~ m/^\s+$/} @sql_array;
+  @sql_array = grep { $_ !~ m/^\s+$/ } @sql_array;
+
   # Use the map function to run each command in turn.
-  map {eval {$dba->dbc->do($_.";")};} @sql_array; # Run the commands in turn.
+  map {
+    eval { $dba->dbc->do( $_ . ";" ) };
+  } @sql_array;    # Run the commands in turn.
 }
-
-
-
 
 1;

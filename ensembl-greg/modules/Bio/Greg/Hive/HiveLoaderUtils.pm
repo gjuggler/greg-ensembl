@@ -9,31 +9,33 @@ use Bio::EnsEMBL::Hive::DBSQL::AnalysisJobAdaptor;
 
 use Bio::EnsEMBL::Compara::ComparaUtils;
 
-use Bio::EnsEMBL::Hive::Utils 'stringify';  # import 'stringify()'
+use Bio::EnsEMBL::Hive::Utils 'stringify';    # import 'stringify()'
+
+use Bio::Greg::EslrUtils;
 
 our $analysis_counter = 1;
 
 sub new {
-  my ($class,@args) = @_;
+  my ( $class, @args ) = @_;
   my $self = bless {}, $class;
-  
+
   return $self;
 }
 
 sub dba {
   my $self = shift;
-  my $dba = shift;
+  my $dba  = shift;
 
-  $self->{_dba} = $dba if (defined $dba);
+  $self->{_dba} = $dba if ( defined $dba );
 
   return $self->{_dba};
 }
 
 sub hive_dba {
-  my $self = shift;
+  my $self     = shift;
   my $hive_dba = shift;
 
-  $self->{_hive_dba} = $hive_dba if (defined $hive_dba);
+  $self->{_hive_dba} = $hive_dba if ( defined $hive_dba );
 
   return $self->{_hive_dba};
 }
@@ -45,17 +47,28 @@ sub dbc {
 
 sub init {
   my $self = shift;
-  my $url = shift;
+  my $url  = shift;
 
-  my $dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new(-url => $url);
-  my $hive_dba = Bio::EnsEMBL::Hive::DBSQL::DBAdaptor->new(-url => $url);
+  $url =~ m!.*/(.+?)$!;
+  my $dbname = $1;
+
+  my $obj = Bio::Greg::EslrUtils->url_to_hashref($url);
+
+  my $dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new( -url => $url );
+  my $hive_dba = Bio::EnsEMBL::Hive::DBSQL::DBAdaptor->new( 
+    -host => $obj->{host}, 
+    -dbname => $obj->{database},
+    -user => $obj->{user},
+    -pass => $obj->{password},
+    -port => $obj->{port}
+    );
   $self->dba($dba);
   $self->hive_dba($hive_dba);
 
   # Init hive and compara tables if necessary.
   my $base_folder = Bio::Greg::EslrUtils->baseDirectory;
   my $compara_sql = "$base_folder/ensembl-greg/sql/compara-basic-tables.sql";
-  my $hive_sql = "$base_folder/ensembl-greg/sql/hive-basic-tables.sql";
+  my $hive_sql    = "$base_folder/ensembl-greg/sql/hive-basic-tables.sql";
 
   my $args = Bio::Greg::EslrUtils->mysqlArgsFromConnection($dba->dbc);
   `mysql $args < $compara_sql`;
@@ -63,9 +76,8 @@ sub init {
 
 }
 
-
 sub add_job_to_analysis {
-  my $self = shift;
+  my $self          = shift;
   my $analysis_name = shift;
   my $input_id_hash = shift;
 
@@ -78,7 +90,7 @@ sub add_job_to_analysis {
     -input_id     => $input_id_hash,
     -analysis     => $analysis,
     -input_job_id => 0,
-    );
+  );
 
   my $input_string = stringify($input_id_hash);
 
@@ -88,7 +100,7 @@ sub add_job_to_analysis {
 }
 
 sub create_analysis {
-  my $self = shift;
+  my $self          = shift;
   my $logic_name    = shift;
   my $module        = shift;
   my $params        = shift;
@@ -120,13 +132,13 @@ sub create_analysis {
 }
 
 sub connect_analysis {
-  my $self = shift;
+  my $self        = shift;
   my $from_name   = shift;
   my $to_name     = shift;
   my $branch_code = shift;
   $branch_code = 1 unless ( defined $branch_code );
 
-  my $hive_dba = $self->hive_dba;
+  my $hive_dba              = $self->hive_dba;
   my $dataflow_rule_adaptor = $hive_dba->get_DataflowRuleAdaptor;
   my $analysis_adaptor      = $hive_dba->get_AnalysisAdaptor;
 
@@ -141,21 +153,20 @@ sub connect_analysis {
   }
 }
 
-
 sub wait_for {
-  my $self = shift;
+  my $self          = shift;
   my $waiting_name  = shift;
   my $wait_for_list = shift;
-  
-  my $hive_dba = $self->hive_dba;
+
+  my $hive_dba          = $self->hive_dba;
   my $ctrl_rule_adaptor = $hive_dba->get_AnalysisCtrlRuleAdaptor;
   my $analysis_adaptor  = $hive_dba->get_AnalysisAdaptor;
-  
+
   my $waiting_analysis = $analysis_adaptor->fetch_by_logic_name($waiting_name);
-  
+
   foreach my $wait_for_name (@$wait_for_list) {
     my $wait_for_analysis = $analysis_adaptor->fetch_by_logic_name($wait_for_name);
-    
+
     if ( $waiting_analysis and $wait_for_analysis ) {
       $ctrl_rule_adaptor->create_rule( $wait_for_analysis, $waiting_analysis );
       warn "Created Control rule: $waiting_name will wait for $wait_for_name\n";
@@ -166,45 +177,44 @@ sub wait_for {
 }
 
 sub truncate_tables {
-  my $self = shift;
+  my $self   = shift;
   my $tables = shift;
 
   my $dba = $self->dba;
   foreach my $table (@$tables) {
     print "$table\n";
-    eval { $dba->dbc->do("truncate table $table"); }
+    eval { $dba->dbc->do("truncate table $table"); };
   }
 }
 
 sub clean_hive_tables {
-  my $self = shift;
-  my $dba = $self->dba;
+  my $self            = shift;
+  my $dba             = $self->dba;
   my @truncate_tables = qw^
-      analysis 
-      analysis_ctrl_rule
-      analysis_data analysis_description
-      analysis_job analysis_job_file
-      analysis_stats analysis_stats_monitor
-      dataflow_rule
-      hive
-      monitor
-      resource_description
-      ^;
+    analysis
+    analysis_ctrl_rule
+    analysis_data analysis_description
+    analysis_job analysis_job_file
+    analysis_job_error
+    analysis_stats analysis_stats_monitor
+    dataflow_rule
+    hive
+    monitor
+    resource_description
+    ^;
   map {
     print "$_\n";
     eval { $dba->dbc->do("truncate table $_"); }
   } @truncate_tables;
 }
 
-
-
 sub combine_hashes {
-  my $self = shift;
+  my $self   = shift;
   my @hashes = @_;
 
   my $new_hash = {};
   foreach my $hash (@hashes) {
-    foreach my $key (keys %{$hash}) {
+    foreach my $key ( keys %{$hash} ) {
       $new_hash->{$key} = $hash->{$key};
     }
   }

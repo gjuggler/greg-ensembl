@@ -19,11 +19,11 @@ CREATE TABLE IF NOT EXISTS hive (
   host	           varchar(40) DEFAULT '' NOT NULL,
   process_id       varchar(40) DEFAULT '' NOT NULL,
   work_done        int(11) DEFAULT '0' NOT NULL,
-  status           enum('READY','GET_INPUT','RUN','WRITE_OUTPUT','DEAD') DEFAULT 'READY' NOT NULL,
+  status           enum('READY','COMPILATION','GET_INPUT','RUN','WRITE_OUTPUT','DEAD') DEFAULT 'READY' NOT NULL,
   born	           datetime NOT NULL,
   last_check_in    datetime NOT NULL,
   died             datetime DEFAULT NULL,
-  cause_of_death   enum('', 'NO_WORK', 'JOB_LIMIT', 'HIVE_OVERLOAD', 'LIFESPAN', 'FATALITY') DEFAULT '' NOT NULL,
+  cause_of_death   enum('', 'NO_WORK', 'JOB_LIMIT', 'HIVE_OVERLOAD', 'LIFESPAN', 'CONTAMINATED', 'KILLED_BY_USER', 'MEMLIMIT', 'RUNLIMIT', 'FATALITY') DEFAULT '' NOT NULL,
   PRIMARY KEY (worker_id),
   INDEX analysis_status (analysis_id, status)
 ) ENGINE=InnoDB;
@@ -54,15 +54,17 @@ CREATE TABLE IF NOT EXISTS hive (
 --   from_analysis_id     - foreign key to analysis table analysis_id
 --   to_analysis_url      - foreign key to net distributed analysis logic_name reference
 --   branch_code          - joined to analysis_job.branch_code to allow branching
+--   input_id_template    - a template for generating a new input_id (not necessarily a hashref) in this dataflow; if undefined is kept original
 
 CREATE TABLE IF NOT EXISTS dataflow_rule (
   dataflow_rule_id    int(10) unsigned not null auto_increment,
   from_analysis_id    int(10) unsigned NOT NULL,
   to_analysis_url     varchar(255) default '' NOT NULL,
   branch_code         int(10) default 1 NOT NULL,
+  input_id_template   TEXT DEFAULT NULL,
 
   PRIMARY KEY (dataflow_rule_id),
-  UNIQUE (from_analysis_id, to_analysis_url)
+  UNIQUE KEY (from_analysis_id, to_analysis_url, branch_code, input_id_template(512))
 );
 
 
@@ -98,7 +100,7 @@ CREATE TABLE IF NOT EXISTS analysis_ctrl_rule (
 -- Table structure for table 'analysis_job'
 --
 -- overview:
---   The analysis_job is the heart of this sytem.  It is the kiosk or blackboard
+--   The analysis_job is the heart of this system.  It is the kiosk or blackboard
 --   where workers find things to do and then post work for other works to do.
 --   The job_claim is a UUID set with an UPDATE LIMIT by worker as they fight
 --   over the work.  These jobs are created prior to work being done, are claimed
@@ -127,7 +129,7 @@ CREATE TABLE IF NOT EXISTS analysis_job (
   input_id                  char(255) not null,
   job_claim                 char(40) NOT NULL DEFAULT '', #UUID
   worker_id                 int(10) NOT NULL,
-  status                    enum('READY','BLOCKED','CLAIMED','GET_INPUT','RUN','WRITE_OUTPUT','DONE','FAILED') DEFAULT 'READY' NOT NULL,
+  status                    enum('READY','BLOCKED','CLAIMED','COMPILATION','GET_INPUT','RUN','WRITE_OUTPUT','DONE','FAILED','PASSED_ON') DEFAULT 'READY' NOT NULL,
   retry_count               int(10) default 0 not NULL,
   completed                 datetime NOT NULL,
   runtime_msec              int(10) default 0 NOT NULL, 
@@ -138,9 +140,43 @@ CREATE TABLE IF NOT EXISTS analysis_job (
 
   PRIMARY KEY                  (analysis_job_id),
   UNIQUE KEY input_id_analysis (input_id, analysis_id),
-  INDEX claim_analysis_status  (job_claim, analysis_id, status),
+  INDEX claim_analysis_status  (job_claim, analysis_id, status, semaphore_count),
   INDEX analysis_status        (analysis_id, status, semaphore_count),
   INDEX worker_id              (worker_id)
+) ENGINE=InnoDB;
+
+
+-- ---------------------------------------------------------------------------------
+--
+-- Table structure for table 'job_message'
+--
+-- overview:
+--      In case a job throws a message (via die/throw), this message is registered in this table.
+--      It may or may not indicate that the job was unsuccessful via is_error flag.
+--
+-- semantics:
+--      analysis_job_id     - the id of the job that threw the message
+--            worker_id     - the worker in charge of the job at the moment
+--          analysis_id     - analysis_id of both the job and the worker (it is indeed redundant, but very convenient)
+--               moment     - when the message was thrown
+--          retry_count     - of the job when the message was thrown
+--               status     - of the job when the message was thrown
+--                  msg     - string that contains the message
+--             is_error     - binary flag
+
+CREATE TABLE IF NOT EXISTS job_message (
+  analysis_job_id           int(10) NOT NULL,
+  worker_id                 int(10) NOT NULL,
+  analysis_id               int(10) NOT NULL,
+  moment                    timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  retry_count               int(10) DEFAULT 0 NOT NULL,
+  status                    enum('UNKNOWN', 'COMPILATION', 'GET_INPUT', 'RUN', 'WRITE_OUTPUT') DEFAULT 'UNKNOWN',
+  msg                       text,
+  is_error                  boolean,
+
+  PRIMARY KEY               (analysis_job_id, worker_id, moment),
+  INDEX worker_id           (worker_id),
+  INDEX analysis_job_id     (analysis_job_id)
 ) ENGINE=InnoDB;
 
 
@@ -194,38 +230,6 @@ CREATE TABLE IF NOT EXISTS analysis_data (
   KEY data (data(100))
 );
 
--- ---------------------------------------------------------------------------------
---
--- Table structure for table 'analysis_job_error'
---
--- overview:
---   	Table which holds information about a job instance on the Hive. As aposed
---		to the way analysis_job works this records how a job died. It is stored
---		as a separate table so to reduce the pressure exerted on analysis_job.
---
--- semantics:
---   	analysis_job_error_id -	primary id; created because InnoDB has no 
---														overhead for this
---		analysis_job_id				- ID of the analysis_job we are holding information
---														about
---		status								- status of the job when this was recorded
---		worker_id							- worker which ran this job
---		retry_count						- iteration of the job the error occured on
---		error									-	text which holds the detected error message
-
--- ----------------------------------------------------------------------------
-CREATE TABLE analysis_job_error (
-	analysis_job_error_id	int(10) NOT NULL AUTO_INCREMENT,
-	analysis_job_id				int(10) NOT NULL,
-	status                enum('READY','BLOCKED','CLAIMED','GET_INPUT','RUN','WRITE_OUTPUT','DONE','FAILED') DEFAULT 'READY' NOT NULL,
-	worker_id             int(10) NOT NULL,
-	retry_count						int(10) NOT NULL,
-	error									text,
-
-	PRIMARY KEY (analysis_job_error_id),	
-	INDEX aje_ajid_idx(analysis_job_id),
-	INDEX aje_wid_idx(worker_id)
-) ENGINE=InnoDB;
 
 -- ---------------------------------------------------------------------------------
 --
@@ -419,10 +423,11 @@ CREATE TABLE IF NOT EXISTS analysis_description (
 ) COLLATE=latin1_swedish_ci ENGINE=MyISAM;
 
 
-# Auto add schema version to database (should be overridden by Compara's table.sql)
+-- Auto add schema version to database (should be overridden by Compara's table.sql)
 INSERT IGNORE INTO meta (species_id, meta_key, meta_value) VALUES (NULL, "schema_version", "57");
 
-
+-- Gives a nice simple overview of the current pipeline status, as well as example job_id numbers
+-- so you can quickly test failing jobs.
 DROP PROCEDURE IF EXISTS hive_overview;
 DELIMITER //
 CREATE PROCEDURE hive_overview()
@@ -434,3 +439,77 @@ BEGIN
   ;
 END //
 DELIMITER ;
+
+-- Searches for a given string in analysis_job.input_id or analysis_data.data, and returns the  matching jobs.
+DROP PROCEDURE IF EXISTS job_search;
+DELIMITER //
+CREATE PROCEDURE job_search(IN srch CHAR(20))
+READS SQL DATA
+BEGIN
+  SELECT a.analysis_id AS id, a.logic_name AS name,
+    aj.analysis_job_id AS job_id, aj.status AS status, aj.retry_count AS retry, 
+    aj.input_id AS input, ad.data AS data
+  FROM analysis_job aj JOIN analysis a on aj.analysis_id=a.analysis_id
+    LEFT JOIN analysis_data ad on aj.input_id=concat('_ext_input_analysis_data_id ',ad.analysis_data_id)
+  WHERE aj.input_id LIKE concat('%',srch,'%') OR ad.data LIKE concat('%',srch,'%')
+  ;
+END //
+DELIMITER ;
+
+##########################################################################################
+#
+# Some stored functions and procedures used in hive:
+#
+
+############ make it more convenient to convert logic_name into analysis_id: #############
+
+DROP FUNCTION IF EXISTS analysis_name2id;
+DELIMITER |
+CREATE FUNCTION analysis_name2id(param_logic_name CHAR(64))
+RETURNS INT
+DETERMINISTIC
+BEGIN
+    DECLARE var_analysis_id INT;
+    SELECT analysis_id INTO var_analysis_id FROM analysis WHERE logic_name=param_logic_name;
+    RETURN var_analysis_id;
+END
+|
+DELIMITER ;
+
+
+############## show hive progress for all analyses: #######################################
+
+DROP PROCEDURE IF EXISTS show_progress;
+CREATE PROCEDURE show_progress()
+    SELECT CONCAT(a.logic_name,'(',a.analysis_id,')') analysis_name_and_id, j.status, j.retry_count, count(*)
+    FROM analysis_job j, analysis a
+    WHERE a.analysis_id=j.analysis_id
+    GROUP BY a.analysis_id, j.status, j.retry_count
+    ORDER BY a.analysis_id, j.status;
+
+############## show hive progress for a particular analysis (given by name) ###############
+
+DROP PROCEDURE IF EXISTS show_progress_analysis;
+CREATE PROCEDURE show_progress_analysis(IN param_logic_name char(64))
+    SELECT CONCAT(a.logic_name,'(',a.analysis_id,')') analysis_name_and_id, j.status, j.retry_count, count(*)
+    FROM analysis_job j, analysis a
+    WHERE a.analysis_id=j.analysis_id
+    AND   a.logic_name=param_logic_name
+    GROUP BY j.status, j.retry_count;
+
+############## reset failed jobs for analysis #############################################
+
+DROP PROCEDURE IF EXISTS reset_failed_jobs_for_analysis;
+CREATE PROCEDURE reset_failed_jobs_for_analysis(IN param_logic_name char(64))
+    UPDATE analysis_job j, analysis a
+    SET j.status='READY', j.retry_count=0, j.job_claim=''
+    WHERE a.logic_name=param_logic_name
+    AND   a.analysis_id=j.analysis_id
+    AND   j.status='FAILED';
+
+############## drop hive tables ###########################################################
+
+DROP PROCEDURE IF EXISTS drop_hive_tables;
+CREATE PROCEDURE drop_hive_tables()
+    DROP TABLE hive, dataflow_rule, analysis_ctrl_rule, analysis_job, analysis_job_file, analysis_data, analysis_stats, resource_description, analysis_stats_monitor, monitor;
+

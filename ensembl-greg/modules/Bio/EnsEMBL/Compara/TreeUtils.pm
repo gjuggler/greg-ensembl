@@ -28,14 +28,21 @@ sub copy_tree {
   }
   
   foreach my $node ($tree->nodes) {
-    print "$node\n";
     my $new_n = $node_hash->{$node->node_id};
 
     # Add node ID, name, and distance.
     $new_n->node_id($node->node_id);
     $new_n->name($node->name);
     $new_n->distance_to_parent($node->distance_to_parent);
-
+    if ($node->isa("Bio::EnsEMBL::Compara::Member")) {
+      $new_n->genome_db($node->genome_db);
+      $new_n->taxon_id($node->taxon_id);
+      $new_n->{core_transcript} = $node->{core_transcript};
+      $new_n->{core_gene} = $node->{core_gene};
+      $new_n->gene_member($node->gene_member);
+      $new_n->gene_member_id($node->gene_member_id);
+    }
+    
     my $parent = $node_hash->{$node->_parent_id};
     if ($parent) {
       $parent->add_child($new_n);
@@ -127,22 +134,6 @@ sub k_tree_dist {
   system($cmd);
   
 }
-
-sub translate_ids {
-  my $class = shift;
-  my $tree = shift;
-  my $map = shift;
-  
-  foreach my $leaf ($tree->leaves) {
-    my $id = $leaf->stable_id;
-    if (defined $id && defined $map->{$id}) {
-      $leaf->stable_id($map->{$id});
-    }
-  }
-
-  return $tree;
-}
-
 
 # Root a tree at its midpoint.
 sub midpoint_root {
@@ -535,6 +526,9 @@ sub distance_to_root {
 sub to_newick {
   my $class = shift;
   my $tree = shift;
+  my $params = shift || {};
+
+  my $hide_internal_ids = $params->{hide_internal_ids} || 0;
 
   my $ref = ref $tree;
   if ($ref =~ /Bio::Tree/i) {
@@ -548,6 +542,9 @@ sub to_newick {
     $string =~ s/\n//g; # Remove newlines.
     return $string;
   } elsif ($ref =~ /Bio::EnsEMBL/i) {
+    if ($hide_internal_ids) {
+      return $tree->newick_format('full hide_internal_ids');
+    }
     return $tree->newick_format();
   } elsif (-e $tree) {
     my $treeI = $class->treeI_from_file($tree);
@@ -824,7 +821,7 @@ sub prune_leaves_outside_taxon {
 sub extract_subtree_from_leaf_objects {
   my $class = shift;
   my $tree = shift;
-  my $leaf_objs = shift;	# Array ref of node_ids.
+  my $leaf_objs = shift;
 
   die("Object not a NestedSet!") unless ($tree->isa("Bio::EnsEMBL::Compara::NestedSet"));
 
@@ -906,7 +903,7 @@ sub extract_subtree_from_leaves {
   my @copy_remove_me = map {$copy->find_node_by_node_id($_->node_id)} @remove_me;
 
   $copy = $copy->remove_nodes(\@copy_remove_me);
-  $copy = $copy->minimize_tree;
+  $copy = $copy->minimize_tree if (defined $copy);
   return $copy;
 }
 
@@ -986,6 +983,43 @@ sub subtree {
   $tree = $tree->copy;
   my $subtree = $class->keep_members_by_method_call($tree,$stable_id_arrayref,'stable_id');
   return $subtree;
+}
+
+sub translate_ids {
+  my $class = shift;
+  my $tree = shift;
+  my $map = shift;
+  my $params = shift;
+
+
+  #$tree = $tree->copy;
+  $tree = $class->copy_tree($tree); # Important!!
+  
+  my $ensure_unique = 1;
+  $ensure_unique = $params->{ensure_unique} if (defined $params->{ensure_unique});
+
+  my $used_ids;
+  foreach my $node ($tree->nodes) {
+    my $id = $node->name;
+    if (defined $id && defined $map->{$id}) {
+      my $new_id = $map->{$id};
+      if ($ensure_unique) {
+        while ($used_ids->{$new_id}) {
+          $new_id =~ m/_(\d+)$/;
+          my $num = $1;
+          #print "ID in use: [$new_id]\n";
+          $new_id =~ s/_\d+$//;
+          my $new_int = $num + 1;
+          $new_id .= "_$new_int";
+          #print "going to use [$new_id]\n";
+        }
+      }
+
+      $node->name($new_id);
+      $used_ids->{$new_id} = 1;
+    }
+  }
+  return $tree;
 }
 
 1; # Keep perl happy.

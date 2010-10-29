@@ -25,23 +25,23 @@ our @ISA = ('Exporter');
 
 our @EXPORT = qw($APIVERSION $TFDBHOST $TFDBNAME $TFDBUSER $TFDBPASS $TFDBPORT $TFSEQDIR $NJTREE);
 
-our $APIVERSION=7;
+our $APIVERSION = 7;
 
 # Treefam database
-our $TFDBNAME='treefam_7';
-our $TFDBUSER='anonymous';
-our $TFDBHOST='vegasrv.sanger.ac.uk';
-our $TFDBPASS='';
-our $TFDBPORT=3308;
+our $TFDBNAME = 'treefam_7';
+our $TFDBUSER = 'anonymous';
+our $TFDBHOST = 'vegasrv.sanger.ac.uk';
+our $TFDBPASS = '';
+our $TFDBPORT = 3308;
 
 # path to TFSEQ
-our $TFSEQDIR='';
+our $TFSEQDIR = '';
 
 # njtree program
-our $NJTREE='/nfs/faculty/jkh1/programs/njtree';
+our $NJTREE = '/nfs/faculty/jkh1/programs/njtree';
 
 # HMMER
 our $HMMER_HOST = 'cbi4';
-our $HMMER = '';
+our $HMMER      = '';
 
 1;

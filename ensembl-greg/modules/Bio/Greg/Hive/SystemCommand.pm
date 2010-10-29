@@ -23,13 +23,13 @@ sub run {
   my $self = shift;
 
   my $orig_cwd = cwd();
-  my $cwd = $self->param('cwd');
-  if (defined $cwd) {
+  my $cwd      = $self->param('cwd');
+  if ( defined $cwd ) {
     chdir($tmpdir);
   }
 
   my $cmd = $self->param('cmd');
-  if (defined $cmd) {
+  if ( defined $cmd ) {
     system($cmd);
   }
 

@@ -10,46 +10,46 @@ use Bio::EnsEMBL::Compara::ComparaUtils;
 use Bio::EnsEMBL::Compara::DBSQL::DBAdaptor;
 use Bio::EnsEMBL::Hive::Process;
 
-use base ('Bio::Greg::Hive::Process','Bio::Greg::StatsCollectionUtils');
+use base ( 'Bio::Greg::Hive::Process', 'Bio::Greg::StatsCollectionUtils' );
 
 my $gene_stats_def = {
   parameter_set_name => 'string',
-  
-  tree_length      => 'float',
-  tree_max_path    => 'float',
-  tree_mean_path    => 'float',
-  leaf_count       => 'int',
-  tree_newick => 'string',
 
-  'gor.tree.pattern' => 'string',
-  'gor.synonymous' => 'int',
+  tree_length    => 'float',
+  tree_max_path  => 'float',
+  tree_mean_path => 'float',
+  leaf_count     => 'int',
+  tree_newick    => 'string',
+
+  'gor.tree.pattern'  => 'string',
+  'gor.synonymous'    => 'int',
   'gor.nonsynonymous' => 'int',
 
-  seq_length_mean     => 'float',
-  gc_content_mean     => 'float',
-  cpg_obs_exp_mean    => 'float',
+  seq_length_mean  => 'float',
+  gc_content_mean  => 'float',
+  cpg_obs_exp_mean => 'float',
 
   human_protein => 'string',
   human_gene    => 'string',
-  gor_gene => 'string',
-  gor_protein => 'string',
+  gor_gene      => 'string',
+  gor_protein   => 'string',
 
   chr_name => 'string',
-  start => 'int',
-  end => 'int',
-  strand => 'int',
-  
-  duplication_count => 'int',
+  start    => 'int',
+  end      => 'int',
+  strand   => 'int',
+
+  duplication_count    => 'int',
   duplication_fraction => 'int',
 
-  psc_count            => 'int',
-  weak_psc_count       => 'int',
-  
-  'hyphy.dnds' => 'float',
+  psc_count      => 'int',
+  weak_psc_count => 'int',
+
+  'hyphy.dnds'    => 'float',
   'hyphy.dnds.lo' => 'float',
   'hyphy.dnds.hi' => 'float',
-  'slr.dnds' => 'float',
-  
+  'slr.dnds'      => 'float',
+
   mean_copy_count => 'float',
 };
 
@@ -76,7 +76,7 @@ sub fetch_input {
   my ($self) = @_;
 
   my $params = {
-    omega_table                       => 'sitewise_omega',
+    omega_table                      => 'sitewise_omega',
     collect_gor_stats_parameter_sets => 'all',
     collect_gor_stats_sites_table    => 'stats_sites',
     collect_gor_stats_genes_table    => 'stats_genes',
@@ -85,11 +85,12 @@ sub fetch_input {
 
   $self->load_all_params($params);
 
-
   # Create tables if necessary.
-  $self->create_table_from_params( $self->compara_dba, $self->param('collect_gor_stats_genes_table'),
+  $self->create_table_from_params( $self->compara_dba,
+    $self->param('collect_gor_stats_genes_table'),
     $gene_stats_def );
-  $self->create_table_from_params( $self->compara_dba, $self->param('collect_gor_stats_sites_table'),
+  $self->create_table_from_params( $self->compara_dba,
+    $self->param('collect_gor_stats_sites_table'),
     $site_stats_def );
 }
 
@@ -99,8 +100,8 @@ sub run {
   my $node_id          = $self->param('node_id');
   my $parameter_set_id = $self->param('parameter_set_id');
 
-  $self->get_gene_data( $node_id, $parameter_set_id);
-  $self->get_sites_data( $node_id, $parameter_set_id);
+  $self->get_gene_data( $node_id, $parameter_set_id );
+  $self->get_sites_data( $node_id, $parameter_set_id );
 }
 
 sub get_gene_data {
@@ -113,8 +114,8 @@ sub get_gene_data {
   my $pta = $self->compara_dba->get_ProteinTreeAdaptor;
   $pta->protein_tree_member("protein_tree_member");
   my ( $tree, $sa_aln, $cdna_aln );
-    ( $tree, $sa_aln, $cdna_aln ) =
-      Bio::EnsEMBL::Compara::ComparaUtils->tree_aln_cdna( $self->compara_dba, $cur_params );
+  ( $tree, $sa_aln, $cdna_aln ) =
+    Bio::EnsEMBL::Compara::ComparaUtils->tree_aln_cdna( $self->compara_dba, $cur_params );
 
   print $tree->newick_format . "\n";
 
@@ -126,19 +127,18 @@ sub get_gene_data {
   #Bio::EnsEMBL::Compara::AlignUtils->pretty_print($sa_nogap);
 
   # Collect gene tag values into the params hash.
-  $cur_params->{'tree_length'}      = $self->tree_length($tree);
-  $cur_params->{'tree_max_path'}    = $self->max_path($tree);
-  $cur_params->{'tree_mean_path'}   = $self->mean_path($tree);
-  $cur_params->{'leaf_count'}       = scalar( $tree->leaves );
+  $cur_params->{'tree_length'}    = $self->tree_length($tree);
+  $cur_params->{'tree_max_path'}  = $self->max_path($tree);
+  $cur_params->{'tree_mean_path'} = $self->mean_path($tree);
+  $cur_params->{'leaf_count'}     = scalar( $tree->leaves );
 
   $cur_params->{'tree_newick'} = $tree->newick_format;
 
   # Stuff coming from the counts_genes table.
   my $format = "SELECT %s FROM counts_genes WHERE node_id=$node_id";
-  $cur_params->{'gor.tree.pattern'} = $self->mysql_getval($tree,sprintf $format,'tree_pattern');
-  $cur_params->{'gor.synonymous'} = $self->mysql_getval($tree,sprintf $format,'synon');
-  $cur_params->{'gor.nonsynonymous'} = $self->mysql_getval($tree,sprintf $format,'nonsynon');
-  
+  $cur_params->{'gor.tree.pattern'} = $self->mysql_getval( $tree, sprintf $format, 'tree_pattern' );
+  $cur_params->{'gor.synonymous'}   = $self->mysql_getval( $tree, sprintf $format, 'synon' );
+  $cur_params->{'gor.nonsynonymous'} = $self->mysql_getval( $tree, sprintf $format, 'nonsynon' );
 
   $cur_params->{'seq_length_mean'}  = $self->seq_length_mean($tree);
   $cur_params->{'gc_content_mean'}  = $self->gc_content_mean($tree);
@@ -156,15 +156,15 @@ sub get_gene_data {
   # Collect gorilla protein.
   my @gor_proteins = grep { $_->taxon_id == 9593 } $tree->leaves;
   my @gor_genes    = map  { $_->get_Gene } @gor_proteins;
-  if ( scalar @gor_proteins > 0) {
+  if ( scalar @gor_proteins > 0 ) {
     my $member = $gor_proteins[0];
     $cur_params->{'gor_protein'} = $member->stable_id;
     $cur_params->{'gor_gene'}    = $member->get_Gene->stable_id;
   }
 
   # Collect gorilla protein coords.
-  if ( scalar @gor_proteins > 0) {
-    my $member = $gor_proteins[0];
+  if ( scalar @gor_proteins > 0 ) {
+    my $member    = $gor_proteins[0];
     my $tscr_orig = $member->get_Transcript;
     my $tscr      = $tscr_orig->transform("chromosome");
     if ( defined $tscr ) {
@@ -172,16 +172,16 @@ sub get_gene_data {
       my $strand = $tscr->strand;
       my $start  = $tscr->coding_region_start;
       my $end    = $tscr->coding_region_end;
-      $cur_params->{chr_name}    = $chr;
-      $cur_params->{start}  = $start;
-      $cur_params->{end}    = $end;
-      $cur_params->{strand} = $strand;
+      $cur_params->{chr_name} = $chr;
+      $cur_params->{start}    = $start;
+      $cur_params->{end}      = $end;
+      $cur_params->{strand}   = $strand;
     }
   }
 
   $cur_params->{'mean_copy_count'} = $self->mean_copy_count($tree);
 
-  $cur_params->{'duplication_count'} = $self->duplication_count($tree);
+  $cur_params->{'duplication_count'}    = $self->duplication_count($tree);
   $cur_params->{'duplication_fraction'} = $self->duplication_fraction($tree);
 
   my $psc_hash = $self->get_psc_hash( $self->compara_dba->dbc, $cur_params );
@@ -192,8 +192,8 @@ sub get_gene_data {
 
   my $ps = $cur_params->{'parameter_set_id'};
 
-  $cur_params->{'slr.dnds'} = $cur_params->{ 'slr_omega_' . $ps };
-  $cur_params->{'hyphy.dnds'} = $cur_params->{ 'hyphy_omega_' . $ps };
+  $cur_params->{'slr.dnds'}      = $cur_params->{ 'slr_omega_' . $ps };
+  $cur_params->{'hyphy.dnds'}    = $cur_params->{ 'hyphy_omega_' . $ps };
   $cur_params->{'hyphy.dnds.lo'} = $cur_params->{ 'hyphy_omega_lo_' . $ps };
   $cur_params->{'hyphy.dnds.hi'} = $cur_params->{ 'hyphy_omega_hi_' . $ps };
 

@@ -8,7 +8,7 @@ use Data::UUID;
 use Digest::MD5 qw(md5_hex);
 
 use Bio::EnsEMBL::Hive;
-use Bio::EnsEMBL::Hive::Utils 'stringify';  # import 'stringify()'
+use Bio::EnsEMBL::Hive::Utils 'stringify';    # import 'stringify()'
 
 use Bio::EnsEMBL::Compara::ComparaUtils;
 use Bio::EnsEMBL::Compara::DBSQL::DBAdaptor;
@@ -18,100 +18,107 @@ use POSIX qw(strftime mktime);
 
 use Bio::Greg::EslrUtils;
 
-use base ('Bio::EnsEMBL::Hive::ProcessWithParams');
+use base ('Bio::EnsEMBL::Hive::Process');
 
 sub get_tree {
-  my $self = shift;
+  my $self   = shift;
   my $params = shift;
 
-  $params = $self->params unless (defined $params);
-  
-  my $tree = Bio::EnsEMBL::Compara::ComparaUtils->get_tree_for_comparative_analysis($self->compara_dba,$params);
+  $params = $self->params unless ( defined $params );
+
+  my $tree =
+    Bio::EnsEMBL::Compara::ComparaUtils->get_tree_for_comparative_analysis( $self->compara_dba,
+    $params );
   return $tree;
 }
 
 sub get_aln {
-  my $self = shift;
+  my $self   = shift;
   my $params = shift;
 
-  return $self->_get_aln($params,0);
+  return $self->_get_aln( $params, 0 );
 }
 
 sub get_cdna_aln {
-  my $self = shift;
+  my $self   = shift;
   my $params = shift;
 
-  return $self->_get_aln($params,1);
+  return $self->_get_aln( $params, 1 );
 }
 
 sub get_orig_aln {
   my $self = shift;
 
-  $self->get_aln if (!defined $self->param('full_aln_aa'));
+  $self->get_aln if ( !defined $self->param('full_aln_aa') );
   return $self->param('full_aln_aa');
 }
 
 sub get_orig_aln_position {
-  my $self = shift;
-  my $aln = shift;
+  my $self         = shift;
+  my $aln          = shift;
   my $aln_position = shift;
 
   my $orig_aln = $self->get_orig_aln;
-  return Bio::EnsEMBL::Compara::AlignUtils->map_alignment_position($aln,$aln_position,$orig_aln);
+  return Bio::EnsEMBL::Compara::AlignUtils->map_alignment_position( $aln, $aln_position,
+    $orig_aln );
 }
 
 sub _get_aln {
-  my $self = shift;
+  my $self   = shift;
   my $params = shift;
-  my $cdna = shift;
+  my $cdna   = shift;
 
-  $params = $self->params unless (defined $params);
+  $params = $self->params unless ( defined $params );
 
-  $params->{remove_blank_columns} = 1 unless (defined $params->{remove_blank_columns});
+  $params->{remove_blank_columns} = 1
+    unless ( defined $params->{remove_blank_columns} );
 
   my $tree;
-  if (defined $params->{tree}) {
+  if ( defined $params->{tree} ) {
     $tree = $params->{tree};
   } else {
     $tree = $self->get_tree($params);
   }
 
   my $aa_aln = $tree->get_SimpleAlign();
-  my $cdna_aln = $tree->get_SimpleAlign(-cdna => 1, -hide_positions => 1);
-  my $aln = Bio::EnsEMBL::Compara::ComparaUtils->fetch_masked_alignment($aa_aln,$cdna_aln,$tree,$params,$cdna);
+  my $cdna_aln = $tree->get_SimpleAlign( -cdna => 1, -hide_positions => 1 );
+  my $aln =
+    Bio::EnsEMBL::Compara::ComparaUtils->fetch_masked_alignment( $aa_aln, $cdna_aln, $tree, $params,
+    $cdna );
 
   # Remove blank columns here. Don't forget to store the 'full' alignment as a parameter.
-  if ($params->{remove_blank_columns}) {
+  if ( $params->{remove_blank_columns} ) {
     if ($cdna) {
-      $self->param('full_aln_cdna',$aln);
+      $self->param( 'full_aln_cdna', $aln );
       ($aln) = Bio::EnsEMBL::Compara::AlignUtils->remove_blank_columns_in_threes($aln);
     } else {
-      $self->param('full_aln_aa',$aln);
+      $self->param( 'full_aln_aa', $aln );
       ($aln) = Bio::EnsEMBL::Compara::AlignUtils->remove_blank_columns($aln);
     }
   }
 
   # Here's where we'll split up alignments by slice.
-  if ($params->{alignment_slice}) {
+  if ( $params->{alignment_slice} ) {
     my $slice_string = $params->{alignment_slice};
-    my ($lo,$hi) = split("-",$slice_string);
+    my ( $lo, $hi ) = split( "-", $slice_string );
+
     #$lo = 1;
     #$hi = 10;
     if ($cdna) {
-      $lo = ($lo) * 3-2;
+      $lo = ($lo) * 3 - 2;
       $hi = ($hi) * 3;
     }
     print "$lo $hi\n";
-    print "Length: ".$aln->length."\n";
-    $aln = $aln->slice($lo,$hi,1);
-    print "Length: ".$aln->length."\n";
+    print "Length: " . $aln->length . "\n";
+    $aln = $aln->slice( $lo, $hi, 1 );
+    print "Length: " . $aln->length . "\n";
   }
- 
+
   return $aln;
 }
 
 sub fail {
-  my $self = shift;
+  my $self    = shift;
   my $message = shift;
 
   $self->input_job->update_status('FAILED');
@@ -119,7 +126,7 @@ sub fail {
 }
 
 sub fail_and_die {
-  my $self = shift;
+  my $self    = shift;
   my $message = shift;
 
   $self->input_job->update_status('FAILED');
@@ -129,66 +136,70 @@ sub fail_and_die {
 sub check_tree_aln {
   my $self = shift;
   my $tree = shift;
-  my $aln = shift;
+  my $aln  = shift;
 
-  if (!defined $tree) {
+  if ( !defined $tree ) {
     $tree = $self->get_tree;
   }
+
   # Look at the tree size.
-  if (scalar $tree->leaves <= 1) {
+  if ( scalar $tree->leaves <= 1 ) {
     return -1;
   }
 
-  if (!defined $aln) {
+  if ( !defined $aln ) {
     $aln = $self->get_aln;
   }
+
   # Look at the alignment size.
-  if (scalar $aln->each_seq <= 1 || $aln->length == -1) {
+  if ( scalar $aln->each_seq <= 1 || $aln->length == -1 ) {
     return -1;
   }
 
   # More complicated stuff -- look for alignments where only one sequence isn't entirely X'ed out.
   my $good_seq_count = 0;
-  foreach my $seq ($aln->each_seq) {
+  foreach my $seq ( $aln->each_seq ) {
     my $seq_str = $seq->seq;
-    $good_seq_count++ if ($seq_str =~ m/[^NX-]/i);
+    $good_seq_count++ if ( $seq_str =~ m/[^NX-]/i );
   }
   print "Good seq count: $good_seq_count\n";
-  if ($good_seq_count < 2) {
+  if ( $good_seq_count < 2 ) {
     return -1;
   }
   return 1;
 }
 
 sub pretty_print {
-  my $self = shift;
-  my $aln = shift;
+  my $self   = shift;
+  my $aln    = shift;
   my $params = shift || {};
 
-  Bio::EnsEMBL::Compara::AlignUtils->pretty_print($aln,$params);
+  Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $aln, $params );
 }
-
 
 sub compara_dba {
   my $self = shift;
 
-  if (!defined $self->{_compara_dba}) {
-    print " >> Getting new DBA!!!!\n";
+  if ( !defined $self->{_compara_dba} ) {
+    print " >> Getting new DBA!!!!\n" if ($self->debug);
     my $compara_dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new( -DBCONN => $self->db->dbc );
     eval {
       $compara_dba->dbc->do("select * from member limit 1;");
       1;
-    } or do {
+      }
+      or do {
       print "ERROR: $@\n";
       print " >> No compara in hive DB -- falling back to ens-livemirror!!\n";
-      Bio::EnsEMBL::Registry->load_registry_from_multiple_dbs({
-                                                               -host => 'ens-livemirror',
-                                                               -user => 'ensro',
-#                                                               -verbose => 1
-                                                              });
-      $compara_dba = Bio::EnsEMBL::Registry->get_DBAdaptor('multi','compara');
-#      $compara_dba->disconnect_when_inactive(1);
-    };
+      Bio::EnsEMBL::Registry->load_registry_from_multiple_dbs( {
+          -host => 'ens-livemirror',
+          -user => 'ensro',
+          #-verbose => 1,
+        }
+      );
+      $compara_dba = Bio::EnsEMBL::Registry->get_DBAdaptor( 'multi', 'compara' );
+
+      #      $compara_dba->disconnect_when_inactive(1);
+      };
     $self->{_compara_dba} = $compara_dba;
   }
   return $self->{_compara_dba};
@@ -197,8 +208,8 @@ sub compara_dba {
 sub hive_dba {
   my $self = shift;
 
-  if (!defined $self->{_hive_dba}) {
-    print " >>>> Getting new Hive DBA!!!!\n";
+  if ( !defined $self->{_hive_dba} ) {
+    #print " >>>> Getting new Hive DBA!!!!\n";
     my $hive_dba = Bio::EnsEMBL::Hive::DBSQL::DBAdaptor->new( -DBCONN => $self->db->dbc );
     $self->{_hive_dba} = $hive_dba;
   }
@@ -208,13 +219,13 @@ sub hive_dba {
 sub pta {
   my $self = shift;
 
-#  return $self->compara_dba->get_ProteinTreeAdaptor;
+  #  return $self->compara_dba->get_ProteinTreeAdaptor;
 
-  if (!defined $self->param('_pta')) {
-    print " >>>> Getting new PTA!!!!\n";
+  if ( !defined $self->param('_pta') ) {
+    #print " >>>> Getting new PTA!!!!\n";
     my $compara_dba = $self->compara_dba;
-    my $pta = $compara_dba->get_ProteinTreeAdaptor;
-    $self->param('_pta',$pta);
+    my $pta         = $compara_dba->get_ProteinTreeAdaptor;
+    $self->param( '_pta', $pta );
   }
   return $self->param('_pta');
 }
@@ -224,42 +235,43 @@ sub mba {
 
   #return $self->compara_dba->get_MemberAdaptor;
 
-  if (!defined $self->param('_mba')) {
-    print " >>>> Getting new MBA!!!!\n";
+  if ( !defined $self->param('_mba') ) {
+    #print " >>>> Getting new MBA!!!!\n";
     my $compara_dba = $self->compara_dba;
-    my $pta = $compara_dba->get_MemberAdaptor;
-    $self->param('_mba',$pta);
+    my $pta         = $compara_dba->get_MemberAdaptor;
+    $self->param( '_mba', $pta );
   }
   return $self->param('_mba');
 }
 
 sub db_handle {
-  my $self = shift;
+  my $self  = shift;
   my $force = shift;
 
   warn('Shouldn\'t be accessing db_handle directly -- use $dbc->do and $dbc->prepare');
 
-  if (!defined $self->param('_compara_dbh') || $force == 1) {
-    print " >>>> Getting new Compara DBH!!!!\n";
+  if ( !defined $self->param('_compara_dbh') || $force == 1 ) {
+    #print " >>>> Getting new Compara DBH!!!!\n";
     my $dbc = $self->dbc;
     my $dbh = $dbc->db_handle;
-    $self->param('_compara_dbh',$dbh);
-    print $dbh."\n";
+    $self->param( '_compara_dbh', $dbh );
+    print $dbh. "\n";
   }
 
   my $dbh = $self->param('_compara_dbh');
 
   my $ping = $dbh->ping;
-  print "PING: $ping\n";
-#  if (!$ping) {
-#    $dbh = $dbh->clone;
-#    $self->param('_compara_dbh',$dbh);
-#  }
+  #print "PING: $ping\n";
+
+  #  if (!$ping) {
+  #    $dbh = $dbh->clone;
+  #    $self->param('_compara_dbh',$dbh);
+  #  }
   return $dbh;
 }
 
 sub disconnect_when_inactive {
-  my $self = shift;
+  my $self   = shift;
   my $discon = shift;
 
   $self->dbc->disconnect_when_inactive($discon);
@@ -270,16 +282,17 @@ sub dbc {
 
   return $self->db->dbc;
 
-  if (!defined $self->param('_compara_dbc')) {
-    print " >>>> Getting new Compara DBC!!!!\n";
+  if ( !defined $self->param('_compara_dbc') ) {
+    #print " >>>> Getting new Compara DBC!!!!\n";
     my $compara_dba = $self->compara_dba;
-    my $dbc = $compara_dba->dbc;
+    my $dbc         = $compara_dba->dbc;
+
     # It's apparently important to turn off the inactive disconnect here, since we'll
     # be sharing this DBC throughout the lifetime of this Process.
     # TODO: Think of how to handle the case when a Process wants to let a connection
     # run idle...
     $dbc->disconnect_when_inactive(1);
-    $self->param('_compara_dbc',$dbc);
+    $self->param( '_compara_dbc', $dbc );
   }
   return $self->param('_compara_dbc');
 }
@@ -288,7 +301,7 @@ sub node_id {
   my $self = shift;
 
   my $node_id = 0;
-  $node_id = $self->param('node_id') if (defined $self->param('node_id'));
+  $node_id = $self->param('node_id') if ( defined $self->param('node_id') );
 
   return $node_id;
 }
@@ -297,7 +310,7 @@ sub data_id {
   my $self = shift;
 
   my $data_id = 0;
-  $data_id = $self->param('data_id') if (defined $self->param('data_id'));
+  $data_id = $self->param('data_id') if ( defined $self->param('data_id') );
   return $data_id;
 }
 
@@ -305,7 +318,8 @@ sub parameter_set_id {
   my $self = shift;
 
   my $id = 0;
-  $id = $self->param('parameter_set_id') if (defined $self->param('parameter_set_id'));
+  $id = $self->param('parameter_set_id')
+    if ( defined $self->param('parameter_set_id') );
   return $id;
 }
 
@@ -323,26 +337,27 @@ sub worker_temp_directory {
   return $wtd;
 }
 
-
 sub breadcrumb_param {
-  my $self = shift;
+  my $self  = shift;
   my $param = shift;
 
   my $breadcrumb = $self->param('breadcrumb') || '';
+
   #print "bc: $breadcrumb\n";
 
-  if ($breadcrumb ne '') {
-    my @crumbs = split("\\.",$breadcrumb);
+  if ( $breadcrumb ne '' ) {
+    my @crumbs = split( "\\.", $breadcrumb );
     my $key_prefix = shift @crumbs;
     foreach my $crumb (@crumbs) {
       $key_prefix .= '.' . $crumb;
-      
+
       #print "Searching for param $param with breadcrumb $key_prefix...\n";
-      my $key = $key_prefix.".".$param;
+      my $key   = $key_prefix . "." . $param;
       my $value = $self->{_param_hash}->{$key};
-      if (defined $value) {
-	#print "Got it! $value\n";
-	return $value;
+      if ( defined $value ) {
+
+        #print "Got it! $value\n";
+        return $value;
       }
     }
   }
@@ -350,23 +365,23 @@ sub breadcrumb_param {
 }
 
 sub add_breadcrumb {
-  my $self = shift;
+  my $self   = shift;
   my $params = shift;
-  my $crumb = shift;
+  my $crumb  = shift;
 
   my $breadcrumb = $params->{breadcrumb} || 'bcrmb';
 
-  $breadcrumb .= '.' unless ($breadcrumb eq '');
+  $breadcrumb .= '.' unless ( $breadcrumb eq '' );
   $breadcrumb .= $crumb;
-  
+
   $params->{breadcrumb} = $breadcrumb;
 }
 
 sub store_meta {
-  my $self = shift;
+  my $self   = shift;
   my $params = shift;
 
-  foreach my $key (keys %$params) {
+  foreach my $key ( keys %$params ) {
     my $value = $params->{$key};
     $self->dbc->do("DELETE from meta where meta_key='$key';");
     $self->dbc->do("REPLACE into meta (meta_key,meta_value) VALUES ('$key','$value');");
@@ -379,49 +394,50 @@ sub get_parameter_sets {
 
   my $sth = $self->dbc->prepare("SELECT * from ${dbname}.parameter_set;");
   $sth->execute;
-  
+
   my $hash;
-  while (my $obj = $sth->fetchrow_hashref) {
+  while ( my $obj = $sth->fetchrow_hashref ) {
     my $id = $obj->{parameter_set_id};
-    $hash->{$id} = {} unless (defined $hash->{$id});
-    my $param_name = $obj->{parameter_name};
+    $hash->{$id} = {} unless ( defined $hash->{$id} );
+    my $param_name  = $obj->{parameter_name};
     my $param_value = $obj->{parameter_value};
     $hash->{$id}->{$param_name} = $param_value;
     $hash->{$id}->{parameter_set_id} = $id;
   }
 
   my @sets;
-  foreach my $pset (1 .. scalar(keys %$hash)) {
-    push @sets,$hash->{$pset};
+  foreach my $pset ( 1 .. scalar( keys %$hash ) ) {
+    push @sets, $hash->{$pset};
   }
   return @sets;
 }
 
 sub new_data_id {
-  my $self = shift;
+  my $self   = shift;
   my $params = shift;
 
-  my $ug = new Data::UUID;
+  my $ug   = new Data::UUID;
   my $uuid = $ug->create();
-  
 
   my $dbc = $self->dbc;
-  $dbc->do("LOCK TABLES protein_tree_tag WRITE");
+  $dbc->do("LOCK TABLES meta WRITE");
 
-  my $sth = $self->dbc->prepare("SELECT value from protein_tree_tag WHERE node_id=0 AND tag='data_id_counter';");
+  my $sth = $self->dbc->prepare(
+    "SELECT meta_value from meta WHERE meta_key='data_id_counter';");
   $sth->execute;
   my @row = $sth->fetchrow_array;
   $sth->finish;
-  my $data_id=1;
+  my $data_id = 1;
   if (@row) {
     $data_id = $row[0];
   }
 
   $data_id++;
-  $self->dbc->do("REPLACE into protein_tree_tag (node_id,tag,value) VALUES (0,'data_id_counter',$data_id);");
-  $self->add_breadcrumb($params,$data_id);
+  $self->dbc->do(
+    "REPLACE into meta (meta_key,meta_value) VALUES ('data_id_counter',$data_id);");
+  $self->add_breadcrumb( $params, $data_id );
 
-  $self->param('data_id',$data_id);
+  $self->param( 'data_id', $data_id );
   $params->{data_id} = $data_id;
 
   $dbc->do("UNLOCK TABLES");
@@ -430,30 +446,34 @@ sub new_data_id {
 }
 
 sub param {
-  my $self = shift;
+  my $self  = shift;
   my $param = shift;
 
+  my $param_value;
   if (@_) {
-    $self->SUPER::param($param,shift @_);
+    $self->SUPER::param( $param, shift @_ );
+    $param_value = $self->SUPER::param($param);
+    if ($self->debug) {
+      print "Set $param => [$param_value]\n";
+    }
+  } else {
+    $param_value = $self->SUPER::param($param);
   }
-
-  my $param_value = $self->SUPER::param($param);
-
+  
   #print "$param value: $param_value\n" if ($param =~ m/slr/);
-  if (!defined $param_value && $param ne 'breadcrumb') {
+  if ( !defined $param_value && $param ne 'breadcrumb' ) {
     $param_value = $self->breadcrumb_param($param);
   }
   return $param_value;
 }
 
 sub params {
-  my $self = shift;  
-  $self->param_init();
+  my $self = shift;
 
   # Make a copy!
-  my $param_hash = $self->{_param_hash};
+  my $param_hash = $self->input_job->{_param_hash};
   my $new_params = {};
-  foreach my $key (keys %$param_hash) {
+  foreach my $key ( keys %$param_hash ) {
     $new_params->{$key} = $param_hash->{$key};
   }
   return $new_params;
@@ -461,36 +481,36 @@ sub params {
 
 sub load_all_params {
   my $self = shift;
-  my $default_params = shift || {};
 
-  $self->param_init(%$default_params);
-
-  my $node_id  = $self->param('node_id');
-  my $parameter_set_id  = $self->param('parameter_set_id');
+  my $node_id          = $self->param('node_id');
+  my $parameter_set_id = $self->param('parameter_set_id');
 
   my $tree_tag_params = {};
-  if (defined $node_id) {
-    $tree_tag_params = $self->get_params_from_tree_tags( $self->compara_dba, $node_id ) || {};
+  if ( defined $node_id ) {
+    $tree_tag_params = $self->get_params_from_tree_tags( $self->compara_dba, $node_id );
+    $self->set_params($tree_tag_params) if ($tree_tag_params);
   }
 
   my $param_set_params = {};
-  if (defined $parameter_set_id) {
-    $param_set_params = $self->get_params_from_param_set($parameter_set_id) || {};
-  }
-  
-  my $old_param_hash = $self->{'_param_hash'};
-  $self->{'_param_hash'} = { %$old_param_hash, %$param_set_params, %$tree_tag_params };
-
-  if (!defined $self->param('data_id') || $self->param('data_id') eq '') {
-    $self->param('data_id',$node_id);
-  }
-  if (!defined $self->param('parameter_set_id')) {
-    $self->param('parameter_set_id',0);
+  if ( defined $parameter_set_id ) {
+    $param_set_params = $self->get_params_from_param_set($parameter_set_id);
+    $self->set_params($param_set_params) if ($param_set_params);
   }
 
-  print "Bio::Greg::Hive::Process.pm - load all params\n";
-  $self->hash_print($self->params);
+  if ( !defined $self->param('data_id') ) {
+    $self->param( 'data_id', $node_id );
+  }
+  if ( !defined $self->param('parameter_set_id') ) {
+    $self->param( 'parameter_set_id', 0 );
+  }
+  if ( !defined $self->param('job_id')) {
+    $self->param('job_id',$self->input_job->dbID);
+  }
 
+  if ($self->debug) {
+    print "Bio::Greg::Hive::Process.pm - load all params\n";
+    $self->hash_print( $self->params );
+  }
 }
 
 sub get_params_from_tree_tags {
@@ -526,6 +546,13 @@ sub load_params_from_tag {
   return $self->string_to_hash($tag_string);
 }
 
+sub store_message {
+  my $self = shift;
+  my $msg = shift;
+
+  $self->db()->get_JobMessageAdaptor()->register_message($self->input_job->dbID, $msg, 0 );
+}
+
 # Eval a hashref from a string.
 sub string_to_hash {
   my $self   = shift;
@@ -540,11 +567,11 @@ sub string_to_hash {
 sub hash_print {
   my $class   = shift;
   my $hashref = shift;
-  my $HANDLE = shift;
+  my $HANDLE  = shift;
 
-  select($HANDLE) if (defined $HANDLE);
+  select($HANDLE) if ( defined $HANDLE );
 
-  print  "  {\n";
+  print "  {\n";
   foreach my $key ( sort keys %{$hashref} ) {
     printf "    %-40.40s => %-40s\n", $key, $hashref->{$key};
   }
@@ -554,10 +581,10 @@ sub hash_print {
 }
 
 sub clone {
-  my $self = shift;
+  my $self   = shift;
   my $params = shift;
 
-  return $self->replace($params,{});
+  return $self->replace( $params, {} );
 }
 
 sub replace {
@@ -591,8 +618,17 @@ sub replace_params {
 
 sub get_params {
   my $self = shift;
-  
+
   return $self->params;
+}
+
+sub set_params {
+  my $self = shift;
+  my $params = shift;
+
+  foreach my $key (keys %$params) {
+    $self->param($key,$params->{$key});
+  }
 }
 
 sub get_params_from_string {
@@ -608,30 +644,32 @@ sub get_params_from_string {
 }
 
 sub get_params_from_param_set {
-  my $self = shift;
+  my $self         = shift;
   my $param_set_id = shift;
 
   my $dba = $self->hive_dba;
   my $dbc = $dba->dbc;
 
-  throw "Undefined parameter_set_id!" unless (defined $param_set_id);
+  throw "Undefined parameter_set_id!" unless ( defined $param_set_id );
 
   my $params;
 
-  my $cmd = qq^SELECT parameter_value FROM parameter_set WHERE parameter_set_id=$param_set_id AND parameter_name="params";  ^;
+  my $cmd =
+    qq^SELECT parameter_value FROM parameter_set WHERE parameter_set_id=$param_set_id AND parameter_name="params";  ^;
   my $sth = $dbc->prepare($cmd);
   $sth->execute();
   my @row;
-  while (@row = $sth->fetchrow_array) {
-    $params = eval($row[0]);
+  while ( @row = $sth->fetchrow_array ) {
+    $params = eval( $row[0] );
   }
   $sth->finish;
 
-  my $cmd = qq^SELECT parameter_value FROM parameter_set WHERE parameter_set_id=$param_set_id AND parameter_name="name";  ^;
+  my $cmd =
+    qq^SELECT parameter_value FROM parameter_set WHERE parameter_set_id=$param_set_id AND parameter_name="name";  ^;
   $sth = $dbc->prepare($cmd);
   $sth->execute();
   my @row;
-  while (@row = $sth->fetchrow_array) {
+  while ( @row = $sth->fetchrow_array ) {
     $params->{parameter_set_name} = $row[0];
   }
   $sth->finish;
@@ -659,48 +697,50 @@ sub create_table_from_params {
     );
   };
   if ($@) {
-    print "TABLE $table_name EXISTS!!\n";
+    if ($self->debug) {
+      print "TABLE $table_name EXISTS!!\n";
+    }
     return;
   }
   print "Creating new table $table_name ...\n";
 
   my $unique_keys = delete $params->{'unique_keys'};
-  my $extra_keys   = delete $params->{'extra_keys'};
+  my $extra_keys  = delete $params->{'extra_keys'};
   eval {
 
     foreach my $key ( sort keys %$params ) {
-      next if ($key eq 'data_id' || $key eq 'parameter_set_id');
+      next if ( $key eq 'data_id' || $key eq 'parameter_set_id' );
       print "Creating column $key\n";
       my $type = $params->{$key};
 
       my $not_null = 0;
-      if ($type =~ m/not null/gi) {
-	$type =~ s/\s*not null\s*//gi;
-	$not_null = 1;
+      if ( $type =~ m/not null/gi ) {
+        $type =~ s/\s*not null\s*//gi;
+        $not_null = 1;
       }
 
       my $type_map = {
-	'uuid' => 'BINARY(16)',
-	'timestamp' => 'DATETIME',
-        'tinyint' => 'TINYINT',
-        'smallint'    => 'SMALLINT',
-        'int'    => 'INT',
-        'string' => 'TEXT',
-        'char8' => 'CHAR(8)',
-        'char16' => 'CHAR(16)',
-        'char32' => 'CHAR(32)',
+        'uuid'      => 'BINARY(16)',
+        'timestamp' => 'DATETIME',
+        'tinyint'   => 'TINYINT',
+        'smallint'  => 'SMALLINT',
+        'int'       => 'INT',
+        'string'    => 'TEXT',
+        'char8'     => 'CHAR(8)',
+        'char16'    => 'CHAR(16)',
+        'char32'    => 'CHAR(32)',
         'char64' => 'CHAR(64)',
-        'float'  => 'FLOAT'
+        'float'     => 'FLOAT'
       };
       $type = $type_map->{$type};
-      
-      $type = $type .'NOT NULL ' if ($not_null == 1);
+
+      $type = $type . 'NOT NULL ' if ( $not_null == 1 );
 
       my $create_cmd = qq^ALTER TABLE $table_name ADD COLUMN `$key` $type^;
       $dbc->do($create_cmd);
     }
 
-    my $unique_cmd = ""; #qq^ALTER TABLE $table_name ADD UNIQUE (data_id)^;
+    my $unique_cmd = "";    #qq^ALTER TABLE $table_name ADD UNIQUE (data_id)^;
     if ($unique_keys) {
       print "Creating UNIQUE $unique_keys\n";
       $unique_cmd = qq^ALTER TABLE $table_name ADD UNIQUE ($unique_keys)^;
@@ -708,11 +748,11 @@ sub create_table_from_params {
     }
 
     if ($extra_keys) {
-      my @keys = split(',',$extra_keys);
+      my @keys = split( ',', $extra_keys );
       foreach my $key (@keys) {
-	print "Creating KEY $key\n";
-	my $key_cmd = qq^ALTER TABLE $table_name ADD KEY (`$key`)^;
-	$dbc->do($key_cmd);
+        print "Creating KEY $key\n";
+        my $key_cmd = qq^ALTER TABLE $table_name ADD KEY (`$key`)^;
+        $dbc->do($key_cmd);
       }
     }
   };
@@ -726,7 +766,7 @@ sub store_params_in_table {
   my $params     = shift;
 
   my @fields;
-  my $cache_key = '_fields_arrayref_'.$table_name;
+  my $cache_key = '_fields_arrayref_' . $table_name;
   if ( !defined $self->{$cache_key} ) {
     my $sth = $dbc->prepare("SHOW FIELDS FROM $table_name");
     $sth->execute;
@@ -748,9 +788,9 @@ sub store_params_in_table {
   my @values = map {
     if ( defined $params->{$_} && $params->{$_} ne '' ) {
       $params->{$_};
-    } elsif ($_ eq 'parameter_set_id') {
+    } elsif ( $_ eq 'parameter_set_id' ) {
       0;
-} else {
+    } else {
       undef;
     }
   } @fields;
@@ -758,21 +798,20 @@ sub store_params_in_table {
   $sth2->finish;
 }
 
-
 sub store_tag {
-  my $self = shift;
-  my $tag = shift;
+  my $self  = shift;
+  my $tag   = shift;
   my $value = shift;
 
   my $node_id = $self->param('node_id') || 1;
   my $tree = $self->pta->fetch_node_by_node_id($node_id);
 
-  if ($self->param('breadcrumb')) {
+  if ( $self->param('breadcrumb') ) {
     $tag = $self->param('breadcrumb') . "." . $tag;
   }
 
-  print "  -> Storing tag [$tag] => [$value]\n";
-  $tree->store_tag($tag,$value);
+  print "  -> Storing tag [$tag] => [$value]\n" if ($self->debug);
+  $tree->store_tag( $tag, $value );
 }
 
 sub base {
@@ -782,109 +821,136 @@ sub base {
 }
 
 sub get_output_folder {
-  my $self = shift;
-  my $output_base = shift;
+  my $self        = shift;
 
-  if (defined $self->param('output_folder')) {
+  if ( defined $self->param('output_folder') ) {
     my $folder = $self->param('output_folder');
-    print "Output folder: $folder\n";
-    if (!-e $folder) {
-      print "Warning: Output folder was already stored in the database, but the folder did not exist.\n";
+
+    print "Output folder: $folder\n" if ($self->debug);
+    if ( !-e $folder ) {
+      print
+        "Warning: Output folder was already stored in the database, but the folder did not exist.\n";
       print " -> Creating folder: $folder\n";
-      mkpath([$folder]);
+      mkpath( [$folder] );
     }
     return $folder;
   }
 
-  die("No output base folder specified!") unless ($output_base);
-    
-  my $date_string = strftime("%Y-%m-%d",localtime);
-  my $i=0;
+  my $output_base = Bio::Greg::EslrUtils->scratchDirectory.'/'.$self->hive_dba->dbname;
+
+  print "output_base: $output_base\n";
+
+  my $date_string = strftime( "%Y-%m-%d", localtime );
+  my $i = 0;
 
   my $filename;
   do {
     $i++;
-    $filename = sprintf("%s/%s/%s_%.2d",$output_base,$date_string,$date_string,$i);
-  } while (-e $filename);
-  
-  print "Output folder: $filename\n";
-  mkpath([$filename]);
-  $self->param('output_folder',$filename);
-  
-  # We'll store this output folder in the meta table, so it will be re-used if this module is run again w/ the same database.
-  $self->store_meta({output_folder => $filename});
-  mkpath([$filename]);
+    $filename = sprintf( "%s/%s_%.2d", $output_base, $date_string, $i );
+  } while ( -e $filename );
+
+  mkpath( [$filename] );
+  $self->param( 'output_folder', $filename );
+
+# We'll store this output folder in the meta table, so it will be re-used if this module is run again w/ the same database.
+  $self->store_meta( { output_folder => $filename } );
+  mkpath( [$filename] );
 
   return $filename;
 }
 
 sub save_aln {
-  my $self = shift;
-  my $aln = shift;
+  my $self   = shift;
+  my $aln    = shift;
   my $params = shift;
+
+  $params->{extension} = 'fasta';
+
+  my $file_obj = $self->save_file($params);
   
-  my @seqs = $aln->each_seq;
-  my $first = @seqs[0];
-  my $filename = $first->id;
-  my $id = $filename;
-  $filename = $params->{filename} if (defined $params->{filename});
-  $id = $params->{id} if (defined $params->{id});
+  my $full_file = $file_obj->{full_file};
+
+  Bio::EnsEMBL::Compara::AlignUtils->to_file( $aln, $full_file );
+
+  return $file_obj;
+}
+
+sub save_file {
+  my $self = shift;
+  my $params = shift;
+
+  my $hash_subfolders = 1;
+  my $hash_subfolders = $params->{hash_subfolders} if (defined $params->{hash_subfolders});
+
+  my $filename = "[unnamed_file]";
+  $filename = $params->{filename} if ( defined $params->{filename} );
+
+  my $id       = $filename;
+  $id       = $params->{id}       if ( defined $params->{id} );
 
   my $subfolder = '';
-  $subfolder = $params->{subfolder} if (defined $params->{subfolder});
-  
+  $subfolder = $params->{subfolder} if ( defined $params->{subfolder} );
+
   my $output_base = $self->get_output_folder;
 
-  my $lo = 0;
-  my $hi = 0;
-  my (@md5) = md5_hex($id) =~ /\G(..)/g;
-  my $hash_subfolder = join('/',@md5[$lo .. $hi]);
+  my $extension = $params->{extension} || 'txt';
 
-  my $full_dir = "$output_base/$subfolder/$hash_subfolder";
-  mkpath([$full_dir]);
+  my $full_dir;
+  my $full_file;
+  my $rel_file;
+  if ($hash_subfolders) {
+    my $lo = 0;
+    my $hi = 0;
+    my (@md5) = md5_hex($id) =~ /\G(..)/g;
+    my $hash_subfolder = join( '/', @md5[ $lo .. $hi ] );
+    
+    $full_dir = "$output_base/$subfolder/$hash_subfolder";
+    $full_file = "$full_dir/$filename.$extension";
+    $rel_file = "$hash_subfolder/$filename.$extension";
+  } else {
+    $full_dir = "$output_base/$subfolder";
+    $full_file = "$full_dir/$filename.$extension";
+    $rel_file = "$filename.$extension";
+  }
+  mkpath( [$full_dir] );
 
-  my $full_file = "$full_dir/$filename.fasta";
-  print $full_file."\n";
-
-  my $rel_file = "$hash_subfolder/$filename.fasta";
-
-  # TODO: Output the aln.
-  Bio::EnsEMBL::Compara::AlignUtils->to_file($aln,$full_file);
-
-  return $rel_file;
+  return {
+    full_file => $full_file,
+    rel_file => $rel_file,
+    full_dir => $full_dir
+  };
 }
 
 sub get_hashed_file {
-  my $self = shift;
+  my $self      = shift;
   my $subfolder = shift;
-  my $filename = shift;
+  my $filename  = shift;
 
   my $output_base = $self->get_output_folder;
 
   my $lo = 0;
   my $hi = 1;
   my (@md5) = md5_hex($filename) =~ /\G(..)/g;
-  my $hash_subfolder = join('/',@md5[$lo .. $hi]);
-  
+  my $hash_subfolder = join( '/', @md5[ $lo .. $hi ] );
+
   my $full_dir = "$output_base/$subfolder/$hash_subfolder";
-  mkpath([$full_dir]);
+  mkpath( [$full_dir] );
 
   my $full_file = "$full_dir/$filename";
-  print "$full_file\n";
+  print "$full_file\n" if ($self->debug);
   return $full_file;
 }
-
 
 sub get_r_dbc_string {
   my $self = shift;
   my $dbname = shift || $self->compara_dba->dbc->dbname;
 
-  my $dbc = $self->compara_dba->dbc;
-  my $u = $dbc->username;
-  my $p = $dbc->password;
-  my $h = $dbc->host;
+  my $dbc  = $self->compara_dba->dbc;
+  my $u    = $dbc->username;
+  my $p    = $dbc->password;
+  my $h    = $dbc->host;
   my $port = $dbc->port;
-  
+
   return qq^
 dbname='$dbname'
 host = '$h'
@@ -903,20 +969,20 @@ sub cleanup_temp {
 }
 
 sub get_taxon_ids_from_keepers_list {
-  my $self = shift;
+  my $self        = shift;
   my $list_string = shift;
 
-  return Bio::EnsEMBL::Compara::ComparaUtils->get_taxon_ids_from_keepers_list($self->compara_dba,$list_string);
+  return Bio::EnsEMBL::Compara::ComparaUtils->get_taxon_ids_from_keepers_list( $self->compara_dba,
+    $list_string );
 }
 
 sub DESTROY {
-    my $self = shift;
+  my $self = shift;
 
-    $self->cleanup_temp;
+#  $self->cleanup_temp;
 
-    delete $self->{_param_hash};
-    $self->SUPER::DESTROY if $self->can("SUPER::DESTROY");
+  delete $self->{_param_hash};
+  $self->SUPER::DESTROY if $self->can("SUPER::DESTROY");
 }
-
 
 1;

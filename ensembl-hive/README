@@ -12,9 +12,230 @@ Summary:
   data-flow graphs and block-branch diagrams which should allow it to codify
   any program, algorithm, or parallel processing job control system.  It is
   not bound to any processing 'farm' system and can be adapted to any GRID.
-  It builds on the design of the Ensembl Pipeline/Analysis and presently uses 
-  Bio::EnsEMBL::Analysis::RunnableDB perl wrapper objects as nodes/blocks in 
-  the graphs but could be adapted more generally.
+
+
+21-22 Sept, 2010 : Leo Gordon
+
+* a new switch -worker_output_dir allows a particular worker to send its stdout/stderr into the given directory
+    bypassing the -hive_output_dir if specified.
+
+* streamlining runWorker.pl-Queen.pm communication so that runWorker.pl is now a very lightweight script
+    (only manages the parameters and output, but no longer runs actual unique functionality)
+
+20 Sept, 2010 : Leo Gordon
+
+* big change: added gc_dataflow (jobs dying because of MEMLIMIT or RUNLIMIT can now be automatically sent
+    to another analysis with more memory or longer runtime limit. Schema change + multiple code changes.
+
+16 Sept, 2010 : Leo Gordon
+
+* code cleanup and unification of parameter names (older names still supported but not encouraged)
+
+13-14 Sept, 2010 : Leo Gordon
+
+* big change: creating a separate Params class, making it a base class for AnalysisJob,
+  and removing parameter parsing/reading/setting functionality from the Process. No need in ProcessWithParams now.
+  This is a big preparation for post-mortem dataflow for resource-overusing jobs.
+
+11 Sept, 2010 : Leo Gordon
+
+* schema change: we are producing release 60!
+
+* bugfix: -alldead did not set 'cause_of_death', now it always sets 'FATALITY' (should we invoke proper GarbageCollection?)
+
+7-9 Sept, 2010 : Leo Gordon
+
+* autoflow() should be a property of a job, not the process. Moved and optimized.
+
+* avoiding filename/pid collisions in Worker::worker_temp_directory, improved reliability.
+
+* removed some Extensions by creating proper hive adaptors (AnalysisAdaptor and MetaContainer)
+
+* changed the way a RunnableDB declares its module defaults. NB!
+
+2-3 Sept, 2010 : Leo Gordon
+
+* optimizing the reliability and the time spent on finding out why LSF killed the jobs
+
+* let MEMLIMIT jobs go into 'FAILED' state from the first attempt (don't waste time retrying)
+
+31 Aug - 1 Sept, 2010 : Leo Gordon
+
+* Added support for finding out WHY a worker is killed by the LSF (MEMLIMIT, RUNLIMIT, KILLED_BY_USER),
+  the schema is extended to allow this information to be recorded in the 'hive' table.
+
+24 Aug, 2010 : Leo Gordon
+
+* experimental: Queen, Meadow, Meadow::LOCAL and Meadow::LSF changed to make it possible to run several beekeepers
+  owned by different users over the same database.  They _should_not_ collide, but it has not been very thoroughly tested.
+
+23 Aug, 2010 : Leo Gordon
+
+* Worker now reports the reason why it decides to die + good working example (FailureTest framework)
+
+20 Aug, 2010 : Leo Gordon
+
+* Added a generic Stopwatch.pm module to allow for fine timing to be done in a cleaner way
+
+* Added the ability for Runnables to throw messages (which will be recorded in 'job_error' table)
+  not to be necessarily associated with the job's failure. This change involved schema change as well.
+
+* 'job_error' table is renamed to 'job_message' with the extra field (is_error=0|1) added
+
+13 Aug, 2010 : Javier Herrero
+
+* scripts/cmd_hive.pl: Better support for adding new jobs to an existing analysis. Also, supports adding one single job
+
+13 Aug, 2010 : Leo Gordon
+
+* AnalysisJob and Worker were changed to allow jobs to decide whether it makes any sense to restart them or not.
+
+* a command line switch -retry_throwing_jobs and a corresponding getter/setter method was added to
+    beekeeper.pl, runWorker.pl and Worker.pm to let the user decide whether to restart failing jobs or not.
+
+11-12 Aug, 2010 : Leo Gordon
+
+* A new table 'job_error' was added to keep track of jobs' termination messages (thrown via 'throw' or 'die'),
+  this involved schema change and lots of changes in the modules.
+
+* Another big new change is that the Workers no longer die when a Job dies. At least, not by default.
+  If a Worker managed to catch a dying Job, this fact is registered in the database, but the Worker keeps on taking other jobs.
+
+9-10 Aug, 2010 : Leo Gordon
+
+* RunnableDB::Test renamed into RunnableDB::FailureTest and extended, PipeConfig::FailureTest_conf added to drive this module.
+(this was testing ground preparation for job_error introduction)
+
+16 July, 2010 : Leo Gordon
+
+* added -hive_output_dir to beekeeper.pl so that it could be set/overridden from the command line
+
+* dir_revhash is now an importable Util subroutine that is used by both Worker and JobFactory
+
+14 July, 2010 : Leo Gordon
+
+* fixed Meadow::LOCAL so that MacOS's ps would also be supported. eHive now runs locally on Macs :)
+
+13 July, 2010 : Leo Gordon
+
+* added ability to compute complex expressions while doing parameter substitution
+
+12 July, 2010 : Leo Gordon
+
+* added the slides of my HiveTalk_12Jul2010 into docs/
+
+* changed the ambiguous 'output_dir' getter/setter into two methods:
+    worker_output_dir (if you set it - it will output directly into the given directory) and
+    hive_output_dir (if you set it, it will perform *reverse_decimal* hashing of the worker_id and create a directory for that particular worker)
+
+2 July, 2010 : Leo Gordon
+
+* [Bugfix] Process::dataflow_output_id() is simplified and generalized
+
+* [Feature/experimental] ProcessWithParams::param_substitute() can now understand #stringifier:param_name# syntax,
+    several stringifiers added (the syntax is not final, and the stringifiers will probably move out of the module)
+
+* [Feature] TableDumperZipper_conf can now understand negative patterns:
+    it is an example how to emulate the inexistent in MySQL 5.1 syntax "SHOW TABLES NOT LIKE "%abc%"
+    my using queries from information_schema.tables
+
+* [Cleanup] the 'did' parameter was finally removed from SystemCmd and SqlCmd to avoid confusion
+    (the same functionality is already incapsulated into AnalysisJobAdaptor)
+
+* [Feature] SqlCmd can now produce mysql_insert_ids and pass them on as params.
+    This allows us to grab auto-incremented values on PipeConfig level (see Compara/PipeConfig for examples)
+
+* [Convenience] beekeeper.pl and runWorker.pl can take dbname as a "naked" command line option
+    (which makes the option's syntax even closer to that of mysql/mysqldump)
+
+* [Convenience] -job_id is now the standard option name understood by beekeeper.pl and runWorker.pl
+    (older syntax is kept for compatibility)
+
+* [Cleanup] Some unused scripts have been removed from sql/ directory,
+    drop_hive_tables() added to procedures.sql
+
+* [Bugfix] claim_analysis_status index on analysis_job table has been fixed in tables.sql
+    and a corresponding patch file added
+
+
+13 June, 2010 : Leo Gordon
+
+* Added support for dataflow-into-tables, see LongMult example.
+
+10 June, 2010 : Leo Gordon
+
+* A bug preventing users from setting hive_output_dir via pipeline_wide_parameters has been fixed.
+
+3 June, 2010 : Leo Gordon
+
+* one important workaround for LSF command line parsing bug
+    (the LSF was unable to create job arrays where pipeline name started from certain letters)
+
+* lots of new documentation added and old docs removed (POD documentation in modules as well as eHive initialization/running manuals).
+    Everyone is encouraged to use the new init_pipeline.pl and PipeConfig-style configuration files.
+
+* a schema change that makes it possible to have multiple input_id_templates per dataflow branch
+    (this feature is already accessible via API, but not yet implemented in init_pipeline.pl)
+
+* JobFactory now understands multi-column input and intput_id templates can be written to refer to individual columns.
+    The 'inputquery' mode has been tested and it works.
+    Both 'inputfile' and 'inputcmd' should be able to split their input on param('delmiter'), but this has not yet been tested.
+
+
+12 May, 2010 : Leo Gordon
+
+* init_pipeline.pl can be given a PipeConfig file name instead of full module name.
+
+* init_pipeline.pl has its own help that displays pod documentation (same mechanism as other eHive scripts)
+
+* 3 pipeline initialization modes supported:
+    full (default), -analysis_topup (pipeline development mode) and -job_topup (add more data to work with)
+
+
+11 May, 2010 : Leo Gordon
+
+* We finally have a universal framework for commandline-configurable pipelines' setup/initialization.
+    Each pipeline is defined by a Bio::EnsEMBL::Hive::PipeConfig module
+    that derives from Bio::EnsEMBL::Hive::PipeConfig::HiveGeneric_conf .
+    Compara pipelines derive from Bio::EnsEMBL::Compara::PipeConfig::ComparaGeneric_conf .
+    These configuration modules are driven by ensembl-hive/scripts/init_pipeline.pl script.
+
+    Having set up what is an 'option' in your config file, you can then supply values for it
+    from the command line. Option interdependency rules are also supported to a certain extent,
+    so you can supply *some* options, and rely on the rules to compute the rest.
+
+* Several example PipeConfig files have been written to show how to build pipelines both 'standard blocks'
+    (SystemCmd, SqlCmd, JobFactory, Dummy, etc) and from RunnableDBs written specifically for the task
+    (components of LongMult pipeline).
+
+* Both eHive RunnableDB::* and PipeConfig::* modules have been POD-documented.
+
+* A new 'input_id_template' feature has been added to the dataflow mechanism to allow for more flexibility
+    when integrating external scripts or unsupported software into eHive pipelines.
+    You can now dataflow from pretty much anything, even if the Runnable did not support dataflow natively.
+    The corresponding schema patch is in ensembl-hive/sql
+
+* pipeline-wide parameters (kept in 'meta' table) no longer have to be scalar.
+    Feel free to use arrays or hashes if you need them. init_pipeline.pl also supports multilevel options.
+
+* SqlCmd now has a concept of 'sessions': you can supply several queries in a list that will be executed
+    one after another. If a query creates a temporary table, all the following ones down the list
+    will be able to use it.
+
+* SqlCmd can run queries against any database - not necessarily the eHive one. You have to supply a hashref
+    of connection parameters via $self->param('db_conn') to make it work. It still runs against the eHive
+    database by default.
+
+* JobFactory now supports 4 sources: inputlist, inputfile, inputquery and inputcmd.
+    *All* of them now support deep param_substitution. Enjoy.
+
+* NB! JobFactory's substituted parameter syntax changed:
+    it no longer understands '$RangeStart', '$RangeEnd' and '$RangeCount'.
+    But it understands '#_range_start#', '#_range_end#' and '#_range_count#' - should be pretty easy to fix.
+
+* several smaller bug fixes and optimizations of the code have also been done.
+    A couple of utility methods have moved places, but it looks like they were mostly used internally. 
+    Shout if you have lost anything and we'll try to find it together.
 
 
 26 March, 2010 : Leo Gordon

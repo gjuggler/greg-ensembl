@@ -267,6 +267,7 @@ sub get_available_adaptors {
       "SyntenyRegion"   => "Bio::EnsEMBL::Compara::DBSQL::SyntenyRegionAdaptor",
       "DnaAlignFeature" => "Bio::EnsEMBL::Compara::DBSQL::DnaAlignFeatureAdaptor",
       "GenomeDB"        => "Bio::EnsEMBL::Compara::DBSQL::GenomeDBAdaptor",
+      "SpeciesSet"      => "Bio::EnsEMBL::Compara::DBSQL::SpeciesSetAdaptor",
       "DnaFrag" => "Bio::EnsEMBL::Compara::DBSQL::DnaFragAdaptor",
       "DnaFragRegion" => "Bio::EnsEMBL::Compara::DBSQL::DnaFragRegionAdaptor",
       "GenomicAlignBlock" => "Bio::EnsEMBL::Compara::DBSQL::GenomicAlignBlockAdaptor",
@@ -286,8 +287,12 @@ sub get_available_adaptors {
       "Sequence" => "Bio::EnsEMBL::Compara::DBSQL::SequenceAdaptor",
       "NestedSet" => "Bio::EnsEMBL::Compara::DBSQL::NestedSetAdaptor",
       "ProteinTree" => "Bio::EnsEMBL::Compara::DBSQL::ProteinTreeAdaptor",
+      "SuperProteinTree" => "Bio::EnsEMBL::Compara::DBSQL::SuperProteinTreeAdaptor",
+      "NCTree" => "Bio::EnsEMBL::Compara::DBSQL::NCTreeAdaptor",
+      "ProteinTreeStableId" => "Bio::EnsEMBL::Compara::DBSQL::ProteinTreeStableIdAdaptor",
       "Analysis" => "Bio::EnsEMBL::DBSQL::AnalysisAdaptor",
       "ConservationScore" => "Bio::EnsEMBL::Compara::DBSQL::ConservationScoreAdaptor",
+      "ConstrainedElement" => "Bio::EnsEMBL::Compara::DBSQL::ConstrainedElementAdaptor",
       "SitewiseOmega" => "Bio::EnsEMBL::Compara::DBSQL::SitewiseOmegaAdaptor"
         );
   return (\%pairs);

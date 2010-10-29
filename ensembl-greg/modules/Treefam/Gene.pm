@@ -36,9 +36,7 @@
 
 =cut
 
-
 package Treefam::Gene;
-
 
 use strict;
 use Carp;
@@ -56,15 +54,15 @@ use Scalar::Util qw(weaken);
 
 sub new {
 
-  my ($class,$dbc,$geneID) = @_;
+  my ( $class, $dbc, $geneID ) = @_;
   my $self = {};
   $self->{'DBConnection'} = $dbc;
-  weaken($self->{'DBConnection'});
+  weaken( $self->{'DBConnection'} );
   my $dbh = $dbc->{'database_handle'};
 
   $self->{'ID'} = $geneID;
 
-  bless ($self, $class);
+  bless( $self, $class );
 
   return $self;
 
@@ -98,13 +96,13 @@ sub symbol {
 
   my $self = shift;
   $self->{'symbol'} = shift if @_;
-  if (!defined $self->{'symbol'}) {
+  if ( !defined $self->{'symbol'} ) {
     my $geneID = $self->{'ID'};
-    my $dbc = $self->{'DBConnection'};
-    my $dbh = $dbc->{'database_handle'};
-    my $sth = $dbh->prepare("SELECT DISTINCT g.symbol FROM genes g WHERE g.GID = ?");
+    my $dbc    = $self->{'DBConnection'};
+    my $dbh    = $dbc->{'database_handle'};
+    my $sth    = $dbh->prepare("SELECT DISTINCT g.symbol FROM genes g WHERE g.GID = ?");
     $sth->execute($geneID);
-    ($self->{'symbol'}) = $sth->fetchrow_array();
+    ( $self->{'symbol'} ) = $sth->fetchrow_array();
     $sth->finish();
   }
 
@@ -126,35 +124,40 @@ sub sequence_id {
 
   my $self = shift;
   $self->{'sequence_id'} = shift if @_;
-  my $dbc = $self->{'DBConnection'};
-  my $dbh = $dbc->{'database_handle'};
+  my $dbc    = $self->{'DBConnection'};
+  my $dbh    = $dbc->{'database_handle'};
   my $family = $self->family;
   if ($family) {
-    if (!defined $self->{'sequence_id'}) {
-      my $AC = $family->AC;
+    if ( !defined $self->{'sequence_id'} ) {
+      my $AC     = $family->AC;
       my $geneID = $self->{'ID'};
-      my $sth = $dbh->prepare("SELECT DISTINCT g.ID
+      my $sth    = $dbh->prepare(
+        "SELECT DISTINCT g.ID
                                FROM genes g, aa_full_align al
                                WHERE g.GID = ?
                                AND g.ID = al.ID
-                               AND al.AC = ?");
-      $sth->execute($geneID,$AC);
-      ($self->{'sequence_id'}) = $sth->fetchrow_array();
+                               AND al.AC = ?"
+      );
+      $sth->execute( $geneID, $AC );
+      ( $self->{'sequence_id'} ) = $sth->fetchrow_array();
+
       # in some cases, sequence is only in seed (because of curation in older release)
-      if (!$self->{'sequence_id'}) {
-	$sth = $dbh->prepare("SELECT DISTINCT g.ID
+      if ( !$self->{'sequence_id'} ) {
+        $sth = $dbh->prepare(
+          "SELECT DISTINCT g.ID
                               FROM genes g, aa_seed_align al
                               WHERE g.GID = ?
                               AND g.ID = al.ID
-                              AND al.AC = ?");
-	$sth->execute($geneID,$AC);
-	($self->{'sequence_id'}) = $sth->fetchrow_array();
+                              AND al.AC = ?"
+        );
+        $sth->execute( $geneID, $AC );
+        ( $self->{'sequence_id'} ) = $sth->fetchrow_array();
       }
       $sth->finish();
     }
-  }
-  else {
-    if (!$self->{'sequence_id'}) {
+  } else {
+    if ( !$self->{'sequence_id'} ) {
+
       # for orphan genes, use longest protein
       my $query = qq(SELECT s.ID
                      FROM aa_seq s LEFT JOIN genes g
@@ -163,8 +166,8 @@ sub sequence_id {
                      ORDER BY LENGTH DESC
                      LIMIT 1);
       my $sth = $dbh->prepare($query);
-      $sth->execute($self->ID);
-      ($self->{'sequence_id'}) = $sth->fetchrow_array();
+      $sth->execute( $self->ID );
+      ( $self->{'sequence_id'} ) = $sth->fetchrow_array();
     }
   }
 
@@ -188,26 +191,25 @@ sub sequence {
 
   my $self = shift;
   my $type = shift if @_;
-  $type ||='aa';
+  $type ||= 'aa';
   $self->{'sequence'}{$type} = shift if @_;
-  if (!defined $self->{'sequence'}{$type}) {
+  if ( !defined $self->{'sequence'}{$type} ) {
     my $seqID = $self->sequence_id;
-    my $dbc = $self->{'DBConnection'};
-    my $dbh = $dbc->{'database_handle'};
+    my $dbc   = $self->{'DBConnection'};
+    my $dbh   = $dbc->{'database_handle'};
     my $query = "";
-    if (lc($type) eq 'nt' || lc($type) eq 'nucleotide') {
+    if ( lc($type) eq 'nt' || lc($type) eq 'nucleotide' ) {
       $query = qq(SELECT DISTINCT s.SEQ
                   FROM nt_seq s
                   WHERE s.ID = ?);
-    }
-    else {
+    } else {
       $query = qq(SELECT DISTINCT s.SEQ
                   FROM aa_seq s
                   WHERE s.ID = ?);
     }
     my $sth = $dbh->prepare($query);
     $sth->execute($seqID);
-    ($self->{'sequence'}{$type}) = $sth->fetchrow_array();
+    ( $self->{'sequence'}{$type} ) = $sth->fetchrow_array();
     $sth->finish();
   }
 
@@ -225,17 +227,19 @@ sub sequence {
 
 sub names {
 
-  my ($self,$names) = @_;
+  my ( $self, $names ) = @_;
   $self->{'names'} = $names if $names;
-  if (!defined $self->{'names'}) {
+  if ( !defined $self->{'names'} ) {
     my $geneID = $self->{'ID'};
-    my $dbc = $self->{'DBConnection'};
-    my $dbh = $dbc->{'database_handle'};
-    my $sth = $dbh->prepare("SELECT DISTINCT g.desc
+    my $dbc    = $self->{'DBConnection'};
+    my $dbh    = $dbc->{'database_handle'};
+    my $sth    = $dbh->prepare(
+      "SELECT DISTINCT g.desc
                              FROM genes g
-                             WHERE g.gid= ?");
+                             WHERE g.gid= ?"
+    );
     $sth->execute($geneID);
-    ($self->{'names'})=$sth->fetchrow_array();
+    ( $self->{'names'} ) = $sth->fetchrow_array();
     $sth->finish();
   }
   return $self->{'names'};
@@ -252,21 +256,23 @@ sub names {
 
 sub transcripts {
 
-  my ($self,@transcripts) = @_;
-  push (@{$self->{'transcripts'}},@transcripts) if @transcripts;
-  if (!defined @{$self->{'transcripts'}}) {
+  my ( $self, @transcripts ) = @_;
+  push( @{ $self->{'transcripts'} }, @transcripts ) if @transcripts;
+  if ( !defined @{ $self->{'transcripts'} } ) {
     my $geneID = $self->{'ID'};
-    my $dbc = $self->{'DBConnection'};
-    my $dbh = $dbc->{'database_handle'};
-    my $sth = $dbh->prepare("SELECT DISTINCT TID
+    my $dbc    = $self->{'DBConnection'};
+    my $dbh    = $dbc->{'database_handle'};
+    my $sth    = $dbh->prepare(
+      "SELECT DISTINCT TID
                              FROM genes
-                             WHERE gid= ?");
+                             WHERE gid= ?"
+    );
     $sth->execute($geneID);
-    while (my ($transcript)=$sth->fetchrow_array()) {
-      push (@{$self->{'transcripts'}},$transcript);
+    while ( my ($transcript) = $sth->fetchrow_array() ) {
+      push( @{ $self->{'transcripts'} }, $transcript );
     }
   }
-  return @{$self->{'transcripts'}};
+  return @{ $self->{'transcripts'} };
 
 }
 
@@ -285,27 +291,36 @@ sub species {
 
   my $self = shift;
   my $type = shift if @_;
-  $type ||='latin';
+  $type ||= 'latin';
   $self->{'species'} = shift if @_;
-  if (!defined $self->{'species'} || (defined $self->{'species_name_type'} && defined $type && lc($type) ne lc($self->{'species_name_type'}))) {  # first request or request for a different name type e.g. latin name when we previously had swcode
+  if (
+    !defined $self->{'species'}
+    || ( defined $self->{'species_name_type'}
+      && defined $type
+      && lc($type) ne lc( $self->{'species_name_type'} ) )
+    )
+  { # first request or request for a different name type e.g. latin name when we previously had swcode
     my $geneID = $self->{'ID'};
-    my $dbc = $self->{'DBConnection'};
-    my $dbh = $dbc->{'database_handle'};
+    my $dbc    = $self->{'DBConnection'};
+    my $dbh    = $dbc->{'database_handle'};
     my $sth;
-    if (defined($type) && lc($type) eq 'swcode') {
-      $sth = $dbh->prepare("SELECT DISTINCT s.swcode
+    if ( defined($type) && lc($type) eq 'swcode' ) {
+      $sth = $dbh->prepare(
+        "SELECT DISTINCT s.swcode
                             FROM species s, genes g
                             WHERE g.GID = ?
-                            AND g.tax_id=s.tax_id");
-    }
-    else {
-      $sth = $dbh->prepare("SELECT DISTINCT s.taxname
+                            AND g.tax_id=s.tax_id"
+      );
+    } else {
+      $sth = $dbh->prepare(
+        "SELECT DISTINCT s.taxname
                             FROM species s, genes g
                             WHERE g.GID = ?
-                            AND g.tax_id=s.tax_id");
+                            AND g.tax_id=s.tax_id"
+      );
     }
     $sth->execute($geneID);
-    ($self->{'species'}) = $sth->fetchrow_array();
+    ( $self->{'species'} ) = $sth->fetchrow_array();
     $sth->finish();
   }
   $self->{'species_name_type'} = defined($type) && lc($type) eq 'swcode' ? 'SWCODE' : 'LATIN';
@@ -326,8 +341,8 @@ sub family {
 
   my $self = shift;
   $self->{'family'} = shift if @_;
-  if (!defined $self->{'family'}) {
-    my $dbc = $self->{'DBConnection'};
+  if ( !defined $self->{'family'} ) {
+    my $dbc  = $self->{'DBConnection'};
     my $famh = $dbc->get_FamilyHandle();
     $self->{'family'} = $famh->get_by_gene($self);
   }
@@ -348,30 +363,32 @@ sub family {
 
 sub hmmer_score {
 
-  my $self = shift;
+  my $self   = shift;
   my $family = shift;
-  my $score = shift if @_;
-  if (!$family) {
+  my $score  = shift if @_;
+  if ( !$family ) {
     $family = $self->family();
     return undef unless $family;
   }
-  my $familyID = ref($family)? $family->ID : $family;
-  if ($familyID && $score) {
+  my $familyID = ref($family) ? $family->ID : $family;
+  if ( $familyID && $score ) {
     $self->{'hmmer_score'}{$familyID} = $score;
   }
-  if ($familyID && !defined($self->{'hmmer_score'}{$familyID})) {
-    my $dbc = $self->{'DBConnection'};
-    my $dbh = $dbc->{'database_handle'};
+  if ( $familyID && !defined( $self->{'hmmer_score'}{$familyID} ) ) {
+    my $dbc    = $self->{'DBConnection'};
+    my $dbh    = $dbc->{'database_handle'};
     my $geneID = $self->ID;
-    my $sth = $dbh->prepare("SELECT h.score
+    my $sth    = $dbh->prepare(
+      "SELECT h.score
                              FROM hmmer_matches h, genes g
                              WHERE g.gid = ?
                              AND g.id = h.id
                              AND h.ac = ?
                              ORDER BY h.score
-                             DESC");
-    $sth->execute($geneID,$familyID);
-    ($self->{'hmmer_score'}{$familyID}) = $sth->fetchrow_array();
+                             DESC"
+    );
+    $sth->execute( $geneID, $familyID );
+    ( $self->{'hmmer_score'}{$familyID} ) = $sth->fetchrow_array();
     $sth->finish();
   }
 
@@ -391,29 +408,31 @@ sub hmmer_score {
 
 sub hmmer_evalue {
 
-  my $self = shift;
+  my $self   = shift;
   my $family = shift;
   my $evalue = shift if @_;
-  if (!$family) {
+  if ( !$family ) {
     $family = $self->family();
     return undef unless $family;
   }
-  my $familyID = ref($family)? $family->ID : $family;
-  if ($familyID && $evalue) {
+  my $familyID = ref($family) ? $family->ID : $family;
+  if ( $familyID && $evalue ) {
     $self->{'hmmer_evalue'}{$familyID} = $evalue;
   }
-  if ($familyID && !defined $self->{'hmmer_evalue'}) {
-    my $dbc = $self->{'DBConnection'};
-    my $dbh = $dbc->{'database_handle'};
+  if ( $familyID && !defined $self->{'hmmer_evalue'} ) {
+    my $dbc    = $self->{'DBConnection'};
+    my $dbh    = $dbc->{'database_handle'};
     my $geneID = $self->ID;
-    my $sth = $dbh->prepare("SELECT h.evalue
+    my $sth    = $dbh->prepare(
+      "SELECT h.evalue
                              FROM hmmer_matches h, genes g
                              WHERE g.gid = ?
                              AND g.id = h.id
                              AND h.ac = ?
-                             ORDER BY h.evalue");
-    $sth->execute($geneID,$familyID);
-    ($self->{'hmmer_evalue'}{$familyID}) = $sth->fetchrow_array();
+                             ORDER BY h.evalue"
+    );
+    $sth->execute( $geneID, $familyID );
+    ( $self->{'hmmer_evalue'}{$familyID} ) = $sth->fetchrow_array();
     $sth->finish();
   }
 
@@ -434,13 +453,14 @@ sub get_orthologs {
 
   my $self = shift;
   my @species = @_ if @_;
-  if (!defined $self->{'orthologs'}) {
-    my $dbc = $self->{'DBConnection'};
-    my $dbh = $dbc->{'database_handle'};
-    my $geneID = $self->ID;
-    my $spec = $self->species();
+  if ( !defined $self->{'orthologs'} ) {
+    my $dbc       = $self->{'DBConnection'};
+    my $dbh       = $dbc->{'database_handle'};
+    my $geneID    = $self->ID;
+    my $spec      = $self->species();
     my $genequery = qq(SELECT IDX FROM genes WHERE GID= ?);
-    my $sth0 = $dbh->prepare($genequery);
+    my $sth0      = $dbh->prepare($genequery);
+
     # get all orthologs/paralogs
     my $orthoquery1 = qq (SELECT DISTINCT g.GID, sp.taxname, o.bootstrap
                           FROM genes g, ortholog o, species sp
@@ -455,33 +475,33 @@ sub get_orthologs {
     my $sth2 = $dbh->prepare($orthoquery2);
 
     $sth0->execute($geneID);
-    while (my ($idx) = $sth0->fetchrow_array()) {
-      foreach my $tmpsth($sth1,$sth2) {
-	$tmpsth->execute($idx);
-	while (my($orthologID,$species,$bootstrap) = $tmpsth->fetchrow_array()) {
-	  next if ($species eq $spec); # discard paralogs
-	  my $gh = $dbc->get_GeneHandle();
-	  my $ortholog = $gh->get_by_id($orthologID);
-	  if ($ortholog) {
-	    push @{$self->{'orthologs'}},$ortholog;
-	    $ortholog->species('latin',$species);
-	    $ortholog->bootstrap($bootstrap);
-	  }
-	}
+    while ( my ($idx) = $sth0->fetchrow_array() ) {
+      foreach my $tmpsth ( $sth1, $sth2 ) {
+        $tmpsth->execute($idx);
+        while ( my ( $orthologID, $species, $bootstrap ) = $tmpsth->fetchrow_array() ) {
+          next if ( $species eq $spec );    # discard paralogs
+          my $gh       = $dbc->get_GeneHandle();
+          my $ortholog = $gh->get_by_id($orthologID);
+          if ($ortholog) {
+            push @{ $self->{'orthologs'} }, $ortholog;
+            $ortholog->species( 'latin', $species );
+            $ortholog->bootstrap($bootstrap);
+          }
+        }
       }
     }
   }
-  if (defined($self->{'orthologs'})) {
+  if ( defined( $self->{'orthologs'} ) ) {
     my %wanted;
+
     # reduce list to the requested species
     if (@species) {
       @wanted{@species} = (1) x @species;
-      @{$self->{'orthologs'}} = grep { $wanted{$_->species} } @{$self->{'orthologs'}};
+      @{ $self->{'orthologs'} } = grep { $wanted{ $_->species } } @{ $self->{'orthologs'} };
     }
 
-    return @{$self->{'orthologs'}};
-  }
-  else {
+    return @{ $self->{'orthologs'} };
+  } else {
     return ();
   }
 }
@@ -497,13 +517,14 @@ sub get_orthologs {
 sub get_paralogs {
 
   my $self = shift;
-  if (!defined $self->{'paralogs'}) {
-    my $dbc = $self->{'DBConnection'};
-    my $dbh = $dbc->{'database_handle'};
-    my $geneID = $self->ID;
-    my $spec = $self->species();
+  if ( !defined $self->{'paralogs'} ) {
+    my $dbc       = $self->{'DBConnection'};
+    my $dbh       = $dbc->{'database_handle'};
+    my $geneID    = $self->ID;
+    my $spec      = $self->species();
     my $genequery = qq(SELECT IDX FROM genes WHERE GID= ?);
-    my $sth0 = $dbh->prepare($genequery);
+    my $sth0      = $dbh->prepare($genequery);
+
     # get all orthologs/paralogs
     my $orthoquery1 = qq (SELECT DISTINCT g.GID, sp.taxname, o.bootstrap
                           FROM genes g, ortholog o, species sp
@@ -518,25 +539,24 @@ sub get_paralogs {
     my $sth2 = $dbh->prepare($orthoquery2);
 
     $sth0->execute($geneID);
-    while(my ($idx) = $sth0->fetchrow_array()) {
-      foreach my $tmpsth($sth1,$sth2) {
-	$tmpsth->execute($idx);
-	while (my($paralogID,$species,$bootstrap) = $tmpsth->fetchrow_array()) {
-	  next if ($species ne $spec || $paralogID eq $geneID); # discard orthologs and self
-	  my $gh = $dbc->get_GeneHandle();
-	  my $paralog = $gh->get_by_id($paralogID);
-	  if ($paralog) {
-	    push @{$self->{'paralogs'}},$paralog;
-	    $paralog->bootstrap($bootstrap);
-	  }
-	}
+    while ( my ($idx) = $sth0->fetchrow_array() ) {
+      foreach my $tmpsth ( $sth1, $sth2 ) {
+        $tmpsth->execute($idx);
+        while ( my ( $paralogID, $species, $bootstrap ) = $tmpsth->fetchrow_array() ) {
+          next if ( $species ne $spec || $paralogID eq $geneID );    # discard orthologs and self
+          my $gh      = $dbc->get_GeneHandle();
+          my $paralog = $gh->get_by_id($paralogID);
+          if ($paralog) {
+            push @{ $self->{'paralogs'} }, $paralog;
+            $paralog->bootstrap($bootstrap);
+          }
+        }
       }
     }
   }
-  if (defined($self->{'paralogs'})) {
-    return @{$self->{'paralogs'}};
-  }
-  else {
+  if ( defined( $self->{'paralogs'} ) ) {
+    return @{ $self->{'paralogs'} };
+  } else {
     return ();
   }
 
@@ -557,12 +577,12 @@ sub get_domains {
 
   my $self = shift;
   my $cutoff = shift if @_;
-  if(!$cutoff) {
+  if ( !$cutoff ) {
     $cutoff = 1e-2;
   }
-  if (!$self->{'domains'}) {
-    my $dbc = $self->{'DBConnection'};
-    my $dbh = $dbc->{'database_handle'};
+  if ( !$self->{'domains'} ) {
+    my $dbc    = $self->{'DBConnection'};
+    my $dbh    = $dbc->{'database_handle'};
     my $geneID = $self->sequence_id;
     my %seen;
     my $query = qq(SELECT DISTINCT PFAM_ID
@@ -572,14 +592,16 @@ sub get_domains {
                    ORDER BY SEQ_START,EVALUE);
     my $sth = $dbh->prepare($query);
     $sth->execute($geneID);
-    while (my ($pfamid) = $sth->fetchrow_array()) {
-      push @{$self->{'domains'}},$pfamid if ($pfamid && !$seen{$pfamid}++);
+
+    while ( my ($pfamid) = $sth->fetchrow_array() ) {
+      push @{ $self->{'domains'} }, $pfamid if ( $pfamid && !$seen{$pfamid}++ );
     }
   }
-  # remove undefined values
-  @{$self->{'domains'}} = grep { $_ } @{$self->{'domains'}};
 
-  return @{$self->{'domains'}} if (defined($self->{'domains'}));
+  # remove undefined values
+  @{ $self->{'domains'} } = grep { $_ } @{ $self->{'domains'} };
+
+  return @{ $self->{'domains'} } if ( defined( $self->{'domains'} ) );
 
 }
 
@@ -597,12 +619,12 @@ sub get_domain_sequence {
 
   my $self = shift;
   my $cutoff = shift if @_;
-  if(!$cutoff) {
+  if ( !$cutoff ) {
     $cutoff = 1e-2;
   }
-  if (!$self->{'domains'}) {
-    my $dbc = $self->{'DBConnection'};
-    my $dbh = $dbc->{'database_handle'};
+  if ( !$self->{'domains'} ) {
+    my $dbc    = $self->{'DBConnection'};
+    my $dbh    = $dbc->{'database_handle'};
     my $geneID = $self->sequence_id;
     my %seen;
     my $query = qq(SELECT DISTINCT PFAM_ID,SEQ_START
@@ -612,14 +634,16 @@ sub get_domain_sequence {
                    ORDER BY SEQ_START,EVALUE);
     my $sth = $dbh->prepare($query);
     $sth->execute($geneID);
-    while (my ($pfamid,$seq_start) = $sth->fetchrow_array()) {
-      push @{$self->{'domains'}},$pfamid;
+
+    while ( my ( $pfamid, $seq_start ) = $sth->fetchrow_array() ) {
+      push @{ $self->{'domains'} }, $pfamid;
     }
   }
-  # remove undefined values
-  @{$self->{'domains'}} = grep { $_ } @{$self->{'domains'}};
 
-  return @{$self->{'domains'}} if (defined($self->{'domains'}));
+  # remove undefined values
+  @{ $self->{'domains'} } = grep { $_ } @{ $self->{'domains'} };
+
+  return @{ $self->{'domains'} } if ( defined( $self->{'domains'} ) );
 
 }
 
@@ -636,45 +660,47 @@ sub get_domain_sequence {
 
 sub position {
 
-  my ($self,$pos) = @_;
+  my ( $self, $pos ) = @_;
   $self->{'position'} = $pos if $pos;
-  if (!defined $self->{'position'}) {
-    my $dbc = $self->{'DBConnection'};
-    my $dbh = $dbc->{'database_handle'};
+  if ( !defined $self->{'position'} ) {
+    my $dbc         = $self->{'DBConnection'};
+    my $dbh         = $dbc->{'database_handle'};
     my @transcripts = $self->transcripts;
     my $position;
-    my $sth = $dbh->prepare("SELECT m.C_START, m.C_STOP, m.STRAND
+    my $sth = $dbh->prepare(
+      "SELECT m.C_START, m.C_STOP, m.STRAND
                              FROM map m, genes g
                              WHERE g.TID = ?
-                             AND g.ID = m.ID");
-    foreach my $transcript(@transcripts) {
+                             AND g.ID = m.ID"
+    );
+    foreach my $transcript (@transcripts) {
       $sth->execute($transcript);
-      while ((my @array) = $sth->fetchrow_array) {
-	# Note that if a transcript is on the - strand, eg. if it is from
-	# 1000-2000 on the - strand, then start=1000 stop=2000.
-	my $start = $array[0] + 1; # The coordinates are counted from 0.
-	my $end = $array[1] + 1;
-	my $strand = $array[2];
-	if ($strand eq '-') {
-	  ($start,$end) = ($end,$start);
-	}
-	if (!(defined($position))) {
-	  $position =$start;
-	}
-	else {
-	  # If the gene is on the - strand, we want the coding start,
-	  # eg. 2000 for a gene on the - strand from 1000-2000.
-	  if    ($strand eq '+') {
-	    if ($start < $position) {
-	      $position = $start;
-	    }
-	  }
-	  elsif ($strand eq '-') {
-	    if ($start > $position) {
-	      $position = $start;
-	    }
-	  }
-	}
+      while ( ( my @array ) = $sth->fetchrow_array ) {
+
+        # Note that if a transcript is on the - strand, eg. if it is from
+        # 1000-2000 on the - strand, then start=1000 stop=2000.
+        my $start  = $array[0] + 1;    # The coordinates are counted from 0.
+        my $end    = $array[1] + 1;
+        my $strand = $array[2];
+        if ( $strand eq '-' ) {
+          ( $start, $end ) = ( $end, $start );
+        }
+        if ( !( defined($position) ) ) {
+          $position = $start;
+        } else {
+
+          # If the gene is on the - strand, we want the coding start,
+          # eg. 2000 for a gene on the - strand from 1000-2000.
+          if ( $strand eq '+' ) {
+            if ( $start < $position ) {
+              $position = $start;
+            }
+          } elsif ( $strand eq '-' ) {
+            if ( $start > $position ) {
+              $position = $start;
+            }
+          }
+        }
       }
       $sth->finish();
       $self->{'position'} = $position;
@@ -682,7 +708,6 @@ sub position {
   }
   return $self->{'position'};
 }
-
 
 =head2 chromosome
 
@@ -694,16 +719,18 @@ sub position {
 
 sub chromosome {
 
-   my ($self,$chrom) = @_;
-   $self->{'chromosome'} = $chrom if $chrom;
-   if (!defined $self->{'chromosome'}) {
+  my ( $self, $chrom ) = @_;
+  $self->{'chromosome'} = $chrom if $chrom;
+  if ( !defined $self->{'chromosome'} ) {
     my $seqID = $self->sequence_id;
-    my $dbc = $self->{'DBConnection'};
-    my $dbh = $dbc->{'database_handle'};
-    my $sth = $dbh->prepare("SELECT m.TARGET
-                             FROM map m WHERE m.ID = ?");
+    my $dbc   = $self->{'DBConnection'};
+    my $dbh   = $dbc->{'database_handle'};
+    my $sth   = $dbh->prepare(
+      "SELECT m.TARGET
+                             FROM map m WHERE m.ID = ?"
+    );
     $sth->execute($seqID);
-    ($self->{'chromosome'})=$sth->fetchrow_array();
+    ( $self->{'chromosome'} ) = $sth->fetchrow_array();
     $sth->finish();
   }
   return $self->{'chromosome'};
@@ -721,12 +748,11 @@ sub chromosome {
 
 sub AUTOLOAD {
 
-  my $self = shift;
+  my $self      = shift;
   my $attribute = our $AUTOLOAD;
-  $attribute =~s/.*:://;
+  $attribute =~ s/.*:://;
   $self->{$attribute} = shift if @_;
   return $self->{$attribute};
 }
-
 
 1;

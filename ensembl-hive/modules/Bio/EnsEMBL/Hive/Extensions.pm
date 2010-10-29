@@ -32,7 +32,7 @@ use strict;
 use Bio::EnsEMBL::Utils::Exception;
 use Bio::EnsEMBL::Analysis;
 use Bio::EnsEMBL::DBSQL::DBConnection;
-use Bio::EnsEMBL::DBSQL::AnalysisAdaptor;
+use Bio::EnsEMBL::Hive::URLFactory;
 #use Bio::EnsEMBL::Pipeline::RunnableDB;
 #use Bio::EnsEMBL::Analysis::RunnableDB;
 
@@ -48,9 +48,8 @@ use Bio::EnsEMBL::DBSQL::AnalysisAdaptor;
 
 =cut
 
-sub Bio::EnsEMBL::Analysis::process
-{
-  my $self = shift;  #self is an Analysis object
+sub Bio::EnsEMBL::Analysis::process {
+    my $self = shift;  #self is an Analysis object
 
   return undef unless($self);
   die("self must be a [Bio::EnsEMBL::Analysis] not a [$self]")
@@ -66,12 +65,6 @@ sub Bio::EnsEMBL::Analysis::process
   require "$file.pm";
   print STDERR "creating runnable ".$file."\n" if($self->{'verbose'});
 
-  #make copy of analysis ($self) to pass into the Process
-  #to insulate the infrastructure from any modification the Process may
-  #do to the analysis object
-  my $copy_self = new Bio::EnsEMBL::Analysis;
-  %$copy_self = %$self;
-  
   $process_class =~ s/\//::/g;
   my $runobj = "$process_class"->new(
                                 -db       => $self->adaptor->db,
@@ -134,29 +127,6 @@ sub Bio::EnsEMBL::Analysis::url
   $url = $self->adaptor->db->dbc->url;
   $url .= "/analysis?logic_name=" . $self->logic_name;
   return $url;  
-}
-
-
-sub Bio::EnsEMBL::DBSQL::AnalysisAdaptor::fetch_by_url_query
-{
-  my $self = shift;
-  my $query = shift;
-
-  return undef unless($query);
-  #print("Bio::EnsEMBL::DBSQL::AnalysisAdaptor::fetch_by_url_query : $query\n");
-
-  if((my $p=index($query, "=")) != -1) {
-    my $type = substr($query,0, $p);
-    my $value = substr($query,$p+1,length($query));
-
-    if($type eq 'logic_name') {
-      return $self->fetch_by_logic_name($value);
-    }
-    if($type eq 'dbID') {
-      return $self->fetch_by_dbID($value);
-    }
-  }
-  return undef;
 }
 
 

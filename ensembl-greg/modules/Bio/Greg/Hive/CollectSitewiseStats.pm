@@ -51,8 +51,9 @@ sub get_gene_data {
   my $gene_data = $self->data_for_gene;
 
   print " -> Storing gene data...\n";
-  $self->hash_print($gene_data);
-  $self->store_params_in_table( $self->compara_dba->dbc->db_handle, $self->param('genes_table'), $gene_data );
+  #$self->hash_print($gene_data);
+  $self->store_params_in_table( $self->compara_dba->dbc->db_handle,
+    $self->param('genes_table'), $gene_data );
 }
 
 sub data_for_gene {
@@ -67,8 +68,9 @@ sub data_for_gene {
   ( $tree, $sa_aln, $cdna_aln ) =
     Bio::EnsEMBL::Compara::ComparaUtils->tree_aln_cdna( $self->compara_dba, $cur_params );
 
-  if ($self->compara_dba->dbname eq 'gj1_2x_57') {
-  # Temporary hack for 2xmammals data output: store node_id as data_id.
+  if ( $self->compara_dba->dbname eq 'gj1_2x_57' ) {
+
+    # Temporary hack for 2xmammals data output: store node_id as data_id.
     $cur_params->{'data_id'} = $self->node_id;
   } else {
     $cur_params->{'data_id'} = $self->data_id;
@@ -96,17 +98,17 @@ sub data_for_gene {
   my $psc_hash = $self->get_psc_hash( $self->compara_dba->dbc, $self->params );
   $cur_params->{'sitewise_value_count'} = $self->sitewise_count($psc_hash);
   if ( scalar( keys(%$psc_hash) ) > 0 ) {
-    foreach my $i (1 .. 4) {
-      $cur_params->{'positive_'.$i} = $self->psc_count( $psc_hash, $i );
-      $cur_params->{'negative_'.$i} = $self->psc_count( $psc_hash, -$i );
+    foreach my $i ( 1 .. 4 ) {
+      $cur_params->{ 'positive_' . $i } = $self->psc_count( $psc_hash, $i );
+      $cur_params->{ 'negative_' . $i } = $self->psc_count( $psc_hash, -$i );
     }
   }
 
   # Combine p-values for an aggregate p-value for positive selection.
-  my $pval_stouffer = $self->combined_pval($psc_hash,'stouffer');
-  my $pval_fisher = $self->combined_pval($psc_hash,'fisher');
+  my $pval_stouffer = $self->combined_pval( $psc_hash, 'stouffer' );
+  my $pval_fisher   = $self->combined_pval( $psc_hash, 'fisher' );
   $cur_params->{pval_stouffer} = $pval_stouffer;
-  $cur_params->{pval_fisher} = $pval_fisher;
+  $cur_params->{pval_fisher}   = $pval_fisher;
 
   my $ps = $cur_params->{'parameter_set_id'};
   $cur_params->{'slr_dnds'}      = $self->param('slr_omega');
@@ -116,7 +118,7 @@ sub data_for_gene {
   $cur_params->{'hyphy_dnds_hi'} = $self->param('hyphy_dnds_hi');
 
   # Get the SLR-inferred tree.
-  my $newick = $self->param('slr_tree');
+  my $newick   = $self->param('slr_tree');
   my $slr_tree = Bio::EnsEMBL::Compara::TreeUtils->from_newick($newick);
   $cur_params->{'slr_tree_length'} = $self->tree_length($slr_tree);
 
@@ -126,7 +128,7 @@ sub data_for_gene {
 sub get_sites_data {
   my $self = shift;
 
-  return; # Temporary 2xmammals speed-up. Don't store sites for now, this worked OK the last time.
+#  return;   # Temporary 2xmammals speed-up. Don't store sites for now, this worked OK the last time.
 
   my $tree = $self->get_tree;
   my $aln  = $tree->get_SimpleAlign;
@@ -184,8 +186,8 @@ sub data_for_site {
   $site_data->{'chr_start'} = $site->{chr_start};
   $site_data->{'chr_end'}   = $site->{chr_end};
 
-  $site_data->{'node_id'} = $self->node_id;
-  $site_data->{'data_id'} = $self->data_id;
+  $site_data->{'node_id'}          = $self->node_id;
+  $site_data->{'data_id'}          = $self->data_id;
   $site_data->{'parameter_set_id'} = $self->parameter_set_id;
 
   # TODO: Add p-value.
@@ -197,8 +199,8 @@ sub get_gene_table_structure {
   my $self = shift;
 
   my $structure = {
-    'data_id'                 => 'int',
-    'node_id' => 'int',
+    'data_id'      => 'int',
+    'node_id'      => 'int',
     'orig_node_id' => 'int',
 
     'parameter_set_id'   => 'tinyint',
@@ -228,17 +230,17 @@ sub get_gene_table_structure {
     'negative_4'           => 'int',
 
     'pval_stouffer' => 'float',
-    'pval_fisher' => 'float',
+    'pval_fisher'   => 'float',
 
-    'slr_dnds'      => 'float',
-    'slr_kappa'     => 'float',
+    'slr_dnds'        => 'float',
+    'slr_kappa'       => 'float',
     'slr_tree_length' => 'float',
-    'hyphy_dnds'    => 'float',
-    'hyphy_dnds_lo' => 'float',
-    'hyphy_dnds_hi' => 'float',
+    'hyphy_dnds'      => 'float',
+    'hyphy_dnds_lo'   => 'float',
+    'hyphy_dnds_hi'   => 'float',
 
     unique_keys => 'parameter_set_id,node_id,data_id',
-    extra_keys => 'data_id,parameter_set_id,node_id,orig_node_id'
+    extra_keys  => 'data_id,parameter_set_id,node_id,orig_node_id'
   };
 
   return $structure;
@@ -248,9 +250,9 @@ sub get_sites_table_structure {
   my $self = shift;
 
   my $structure = {
-    data_id               => 'int',
-    node_id => 'int',
-    orig_node_id => 'int',
+    data_id          => 'int',
+    node_id          => 'int',
+    orig_node_id     => 'int',
     parameter_set_id => 'tinyint',
 
     omega       => 'float',
@@ -265,7 +267,7 @@ sub get_sites_table_structure {
     aln_position_fraction => 'float',
 
     unique_keys => 'parameter_set_id,node_id,data_id,aln_position',
-    extra_keys => 'data_id,parameter_set_id,node_id,orig_node_id'
+    extra_keys  => 'data_id,parameter_set_id,node_id,orig_node_id'
   };
 
   return $structure;

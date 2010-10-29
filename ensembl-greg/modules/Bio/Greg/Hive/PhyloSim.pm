@@ -87,7 +87,7 @@ sub fetch_input {
 sub run {
   my $self = shift;
 
-  $self->param('alignment_table','');
+  $self->param( 'alignment_table', '' );
   print "Simulation tree: " . $self->get_tree->newick_format . "\n";
 
   my $aln;
@@ -97,7 +97,7 @@ sub run {
     $aln = $self->simulate_alignment_phylosim( $self->get_tree, $self->params );
   }
 
-  $self->param('aln',$aln);
+  $self->param( 'aln', $aln );
 }
 
 sub write_output {
@@ -110,10 +110,11 @@ sub write_output {
 
   my $out_table = "protein_tree_member";
   print "STORING ALIGNMENT\n";
-  Bio::EnsEMBL::Compara::ComparaUtils->store_SimpleAlign_into_table( $out_table, $self->get_tree, $final_aa,
-    $final_cdna );
+  Bio::EnsEMBL::Compara::ComparaUtils->store_SimpleAlign_into_table( $out_table, $self->get_tree,
+    $final_aa, $final_cdna );
   print "STORING OMEGAS\n";
-  $self->_store_sitewise_omegas( "sitewise_omega", $self->param('sitewise_omegas'), $final_aa, $self->params );
+  $self->_store_sitewise_omegas( "sitewise_omega", $self->param('sitewise_omegas'),
+    $final_aa, $self->params );
 
   Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $final_aa, { length => 200 } );
 }
@@ -175,7 +176,7 @@ sub simulate_alignment_indelible {
   $randomseed_string .= $params->{slrsim_rep};
   my $randomseed = crc32($randomseed_string);
 
-  $self->store_tag('random_seed',$randomseed);
+  $self->store_tag( 'random_seed', $randomseed );
 
   my $ctrl_str = qq^
 [TYPE] CODON 1
@@ -209,14 +210,14 @@ $models_trees_partitions
   #    close(LOG);
   #  }
 
-print "HEY HEY\n";
+  print "HEY HEY\n";
   print "output:\n<<<<@output>>>>\n";
 
   my $aln = Bio::EnsEMBL::Compara::AlignUtils->from_file($aln_f);
 
-my @sitewise_omegas;
-my $class_to_omega = $self->param('class_to_omega');
-      Bio::EnsEMBL::Compara::ComparaUtils->hash_print($class_to_omega);
+  my @sitewise_omegas;
+  my $class_to_omega = $self->param('class_to_omega');
+  Bio::EnsEMBL::Compara::ComparaUtils->hash_print($class_to_omega);
 
   # Collect the omega values.
   my $rate_f = $output_f . "_RATES.txt";
@@ -240,8 +241,8 @@ my $class_to_omega = $self->param('class_to_omega');
   unlink $output_f;
   chdir($cwd);
 
-print "Omegas: ". @sitewise_omegas."\n";
-$self->param('sitewise_omegas',\@sitewise_omegas);
+  print "Omegas: " . @sitewise_omegas . "\n";
+  $self->param( 'sitewise_omegas', \@sitewise_omegas );
 
   return $aln;
 }
@@ -256,7 +257,7 @@ sub get_submodel_string {
   my @final_probs;
   for ( my $i = 0 ; $i < scalar(@probs) ; $i++ ) {
     my $prob = $probs[$i];
-    next unless ($prob > 0); # I think this works...
+    next unless ( $prob > 0 );    # I think this works...
     push @final_bins,  $bins[$i];
     push @final_probs, $prob;
   }
@@ -270,7 +271,7 @@ sub get_submodel_string {
   for ( my $i = 0 ; $i < scalar(@bins) ; $i++ ) {
     $class_to_omega->{$i} = $bins[$i];
   }
-  $self->param('class_to_omega',$class_to_omega);
+  $self->param( 'class_to_omega', $class_to_omega );
 
   my $kappa = $params->{phylosim_kappa};
   my $submodel_str = $kappa . "\n\t" . join( " ", @probs ) . "\n\t" . join( " ", @bins );
@@ -378,51 +379,53 @@ sub _store_sitewise_omegas {
   my $node_id          = $self->node_id;
   my $parameter_set_id = $self->parameter_set_id;
 
-#  eval {
+  #  eval {
 
   my @insert_strings = ();
   foreach my $hr ( @{$sitewise_ref} ) {
-    
+
     Bio::EnsEMBL::Compara::ComparaUtils->hash_print($hr);
+
     #print "hr: $hr\n";
     #printf "%d %d\n",$hr->{aln_position},$hr->{omega};
-    
+
     my $type;
     if ( $hr->{omega} <= 1 ) {
       $type = "negative1";
     } else {
       $type = "positive1";
     }
-    
+
     my $aln_position_fraction = $hr->{aln_position} / $sa->length;
-    my $ncod =
-      Bio::EnsEMBL::Compara::AlignUtils->get_nongaps_at_column( $sa, $hr->{aln_position} );
-    
+    my $ncod = Bio::EnsEMBL::Compara::AlignUtils->get_nongaps_at_column( $sa, $hr->{aln_position} );
+
     push @insert_strings,
-    sprintf(
+      sprintf(
       '(%d,%.5f,%d,%d,%d,%.5f,%.5f,%.5f,"%s",%d)',
-      $hr->{aln_position}, $aln_position_fraction, $node_id, $data_id,
-      $parameter_set_id,   $hr->{omega},           $hr->{omega},
-      $hr->{omega},        $type,                  $ncod
+      $hr->{aln_position}, $aln_position_fraction, $node_id,     $data_id,
+      $parameter_set_id,   $hr->{omega},           $hr->{omega}, $hr->{omega},
+      $type,               $ncod
       );
-    
-    if (scalar(@insert_strings) >= 1000) {
+
+    if ( scalar(@insert_strings) >= 1000 ) {
       my $insert = join( ",", @insert_strings );
-      my $cmd = "INSERT INTO $output_table (aln_position,aln_position_fraction,node_id,data_id,parameter_set_id,omega,omega_lower,omega_upper,type,ncod) values $insert;";
+      my $cmd =
+        "INSERT INTO $output_table (aln_position,aln_position_fraction,node_id,data_id,parameter_set_id,omega,omega_lower,omega_upper,type,ncod) values $insert;";
       print "$cmd\n";
       $self->dbc->do($cmd);
       @insert_strings = ();
     }
   }
-  
-  if (scalar(@insert_strings) > 0) {
+
+  if ( scalar(@insert_strings) > 0 ) {
     my $insert = join( ",", @insert_strings );
-    my $cmd = "INSERT INTO $output_table (aln_position,aln_position_fraction,node_id,data_id,parameter_set_id,omega,omega_lower,omega_upper,type,ncod) values $insert;";
+    my $cmd =
+      "INSERT INTO $output_table (aln_position,aln_position_fraction,node_id,data_id,parameter_set_id,omega,omega_lower,omega_upper,type,ncod) values $insert;";
     print "$cmd\n";
-    $self->dbc->do($cmd);        
+    $self->dbc->do($cmd);
   }
-    
-#  };
+
+  #  };
 }
 
 sub get_m3_bins {
@@ -473,10 +476,10 @@ sub get_equally_spaced_bins {
 
 sub get {
   my $self = shift;
-  my $key = shift;
+  my $key  = shift;
 
-  my $value = $self->param('phylosim_'.$key);
-  if (!defined $value) {
+  my $value = $self->param( 'phylosim_' . $key );
+  if ( !defined $value ) {
     warn("No value for key phylosim_$key found! Looking for $key...");
     $value = $self->param($key);
   }

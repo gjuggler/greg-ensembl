@@ -20,13 +20,13 @@ sub run {
   my $base = '/nfs/users/nfs_g/gj1/scratch/gorilla/output';
   $self->get_output_folder($base);
 
-  $self->genomic_align_test;
+  $self->export_likelihoods('lnl','lnl_human.Rdata','human');
+  $self->export_likelihoods('lnl_chimp','lnl_chimp.Rdata','chimp');
+  $self->export_likelihoods('lnl_grantham','lnl_grantham_human.Rdata','human');
+  $self->export_likelihoods('lnl_grantham_chimp','lnl_grantham_chimp.Rdata','chimp');
 
-  #$self->export_likelihoods('stats_branch','stats_branch_human.Rdata','human');
-  #$self->export_likelihoods('stats_chimp_branch','stats_branch_chimp.Rdata','chimp');
-
-  #$self->branch_enrichments('stats_branch','stats_branch_human.Rdata','human');
-  #$self->branch_enrichments('stats_chimp_branch','stats_branch_chimp.Rdata','chimp');
+  #$self->branch_enrichments('lnl','lnl.Rdata','human');
+  #$self->branch_enrichments('lnl_chimp','lnl_chimp.Rdata','chimp');
 
   #$self->bryndis_enrichments;
   #$self->bryndis_dup_counts;
@@ -36,32 +36,12 @@ sub run {
   #$self->get_enriched_genes;
 }
 
-sub genomic_align_test {
-  my $self = shift;
-  
-  my $node_id = 1686351;
-
-  my $tree = $self->pta->fetch_node_by_node_id($node_id);
-
-  my ($gen_cdna,$gen_aa) = Bio::EnsEMBL::Compara::ComparaUtils->genomic_align_for_tree($tree,9606);
-
-  my $params = $self->params;
-  $params->{tree} = $tree;
-  my $hom_cdna = $self->get_cdna_aln($params);
-  my $hom_aa = $self->get_aln($params);
-  ($hom_aa) = Bio::EnsEMBL::Compara::AlignUtils->remove_blank_columns($hom_aa);
-
-  Bio::EnsEMBL::Compara::AlignUtils->pretty_print($gen_aa);
-  Bio::EnsEMBL::Compara::AlignUtils->pretty_print($hom_aa);
-
-}
-
 sub bryndis_dup_counts {
   my $self = shift;
 
-  my $folder = $self->get_output_folder;
-  my $base = Bio::Greg::EslrUtils->baseDirectory;
-  my $eslr_script = $self->base."/scripts/collect_sitewise.R";
+  my $folder         = $self->get_output_folder;
+  my $base           = Bio::Greg::EslrUtils->baseDirectory;
+  my $eslr_script    = $self->base . "/scripts/collect_sitewise.R";
   my $bryndis_output = "$folder/gene_copy_counts.csv";
 
   my $cmd = qq^
@@ -71,18 +51,17 @@ source("${eslr_script}",echo=F)
 stats.dups <- get.vector(con,"SELECT * from stats_dups;")
 write.csv(stats.dups,file="$bryndis_output")
 ^;
-  Bio::Greg::EslrUtils->run_r($cmd,{});
+  Bio::Greg::EslrUtils->run_r( $cmd, {} );
 }
-
 
 sub bryndis_enrichments {
   my $self = shift;
 
-  my $folder = $self->get_output_folder;
-  my $base = Bio::Greg::EslrUtils->baseDirectory;
+  my $folder       = $self->get_output_folder;
+  my $base         = Bio::Greg::EslrUtils->baseDirectory;
   my $bryndis_list = "${base}/projects/gorilla/bryndis_genes.txt";
-  my $go_script = Bio::Greg::EslrUtils->baseDirectory."/scripts/go_enrichments.R";
-  my $eslr_script = Bio::Greg::EslrUtils->baseDirectory."/scripts/collect_sitewise.R";
+  my $go_script    = Bio::Greg::EslrUtils->baseDirectory . "/scripts/go_enrichments.R";
+  my $eslr_script  = Bio::Greg::EslrUtils->baseDirectory . "/scripts/collect_sitewise.R";
 
   my $cmd = qq^
 dbname = 'gj1_gor_58'
@@ -142,30 +121,31 @@ write.csv(enrichment.table,file="${folder}/bryndis_enrichments.csv",row.names=F)
 
 ^;
 
-    my $params = {};
-    Bio::Greg::EslrUtils->run_r($cmd,$params);
+  my $params = {};
+  Bio::Greg::EslrUtils->run_r( $cmd, $params );
 }
 
 sub export_likelihoods {
-  my $self = shift;
-  my $table = shift;
+  my $self            = shift;
+  my $table           = shift;
   my $output_filename = shift;
-  my $short_prefix = shift;
+  my $short_prefix    = shift;
 
   my $data_file = $self->get_output_folder . "/$output_filename";
+  my $dbname = $self->dbc->dbname;
 
   my $folder = $self->get_output_folder;
-  mkpath([$folder]);
+  mkpath( [$folder] );
   print "FOLDER: $folder\n";
 
-  my $collect_script = Bio::Greg::EslrUtils->baseDirectory."/scripts/collect_sitewise.R";
-  my $lrt_script = Bio::Greg::EslrUtils->baseDirectory."/projects/gorilla/lrt_analysis.R";
-  my $go_script = Bio::Greg::EslrUtils->baseDirectory."/scripts/go_enrichments.R";
-  
+  my $collect_script = Bio::Greg::EslrUtils->baseDirectory . "/scripts/collect_sitewise.R";
+  my $lrt_script     = Bio::Greg::EslrUtils->baseDirectory . "/projects/gorilla/lrt_analysis.R";
+  my $go_script      = Bio::Greg::EslrUtils->baseDirectory . "/scripts/go_enrichments.R";
+
   my $force = 1;
-  if (!-e $data_file || $force) {
+  if ( !-e $data_file || $force ) {
     my $cmd = qq^
-dbname="gj1_gor_58"
+dbname="${dbname}"
 source("${collect_script}");
 
 stats.lnl <- get.vector(con,"SELECT * from $table;")
@@ -173,12 +153,16 @@ stats.dups <- get.vector(con,"SELECT * from stats_dups;")
 
 stats.lnl = merge(stats.lnl,stats.dups[,c('data_id','name')],by='data_id')
 
-# Likelihoods key:
-# a: (H, G, others)
-# b: (H#1, G, others)
-# c: (H, G#1, others)
-# d: (H#1, G#2, others)
-# e: (H#1, G#1, others)
+  # Branch models summary:
+  # a: (H, G, others)
+  # b: (H#1, G, others)
+  # c: (H, G#1, others)
+  # d: (H#1, G#2, others)
+  # e: (H#1, G#1, others)
+  # f: (((H,C),G)#1, others)
+  # g: (((H,C),G)$1, others)
+  # h: (((H,C),G), others)
+# f: (H
 # Which omegas are which for each test?
 # pval.1: fg=b_omega_1, bg=b_omega_0 # human
 # pval.2: fg=c_omega_1, bg=c_omega_0 # gorilla
@@ -209,30 +193,31 @@ stats.lnl[,'pval.8.bh'] = with(stats.lnl,p.adjust(pval.8,method=method))
 # Save the data
 save(stats.lnl,file="${data_file}")
 ^;
-#    print "$cmd\n";
+
+    #    print "$cmd\n";
     my $params = {};
-    Bio::Greg::EslrUtils->run_r($cmd,$params);
+    Bio::Greg::EslrUtils->run_r( $cmd, $params );
   }
 }
 
 sub branch_enrichments {
-  my $self = shift;
-  my $table = shift;
+  my $self            = shift;
+  my $table           = shift;
   my $output_filename = shift;
-  my $short_prefix = shift;
+  my $short_prefix    = shift;
 
   my $data_file = $self->get_output_folder . "/$output_filename";
 
   my $folder = $self->get_output_folder . "/$short_prefix";
-  mkpath([$folder]);
+  mkpath( [$folder] );
   print "FOLDER: $folder\n";
 
-  my $collect_script = Bio::Greg::EslrUtils->baseDirectory."/scripts/collect_sitewise.R";
-  my $lrt_script = Bio::Greg::EslrUtils->baseDirectory."/projects/gorilla/lrt_analysis.R";
-  my $go_script = Bio::Greg::EslrUtils->baseDirectory."/scripts/go_enrichments.R";
-  
+  my $collect_script = Bio::Greg::EslrUtils->baseDirectory . "/scripts/collect_sitewise.R";
+  my $lrt_script     = Bio::Greg::EslrUtils->baseDirectory . "/projects/gorilla/lrt_analysis.R";
+  my $go_script      = Bio::Greg::EslrUtils->baseDirectory . "/scripts/go_enrichments.R";
+
   my $force = 1;
-  if (!-e $data_file || $force) {
+  if ( !-e $data_file || $force ) {
     my $cmd = qq^
 dbname="gj1_gor_58"
 source("${collect_script}");
@@ -284,7 +269,7 @@ save(stats.lnl,file="${data_file}")
 
 source("${lrt_script}",echo=T)
 
-q()
+#q()
 source("${go_script}")
 
 t = 0.05 # pval / FDR threshold.
@@ -338,7 +323,9 @@ get.go.data = function() {
 }
 
 GOdata = get.go.data()
-save(GOdata,file="${folder}/go_data.Rdata")
+go.vec = strsplit(go.df[,'go'],split=",",fixed=T)
+names(go.vec) = go.df[,'stable_id']
+save(GOdata,go.vec,file="${folder}/go_data.Rdata")
 
 # Useful things to do with the GOdata object:
 
@@ -347,7 +334,7 @@ save(GOdata,file="${folder}/go_data.Rdata")
 #annotated.genes <- genesInTerm(GOdata,term)[[1]]
 #sig.genes <- sigGenes(GOdata) # Get the significant genes according to the score threshold.
 
-#q()
+q()
 
 `1.up`   = subset(stats.lnl,pval.1.bh < t & b_omega_1 > b_omega_0)
 `2.up`     = subset(stats.lnl,pval.2.bh < t & c_omega_1 > c_omega_0)
@@ -457,23 +444,23 @@ tbl.both.up.scores = get.df.scores('pval.x',stats.lnl)
 write.csv(tbl.both.up,file="${folder}/both.up.csv",row.names=F)
 write.csv(tbl.both.up.scores,file="${folder}/both.up.ks.csv",row.names=F)
 
-^;    
-#    print "$cmd\n";
-    my $params = {};
-    Bio::Greg::EslrUtils->run_r($cmd,$params);
-    
-  }   
-}
+^;
 
+    #    print "$cmd\n";
+    my $params = {};
+    Bio::Greg::EslrUtils->run_r( $cmd, $params );
+
+  }
+}
 
 sub export_counts {
   my $self = shift;
 
   my $counts_file = $self->get_output_folder . "/gorilla_counts.Rdata";
-  my $test_file = $self->get_output_folder . "/gorilla_counts_test.Rdata";
-  my $folder = $self->get_output_folder;
+  my $test_file   = $self->get_output_folder . "/gorilla_counts_test.Rdata";
+  my $folder      = $self->get_output_folder;
 
-  if (!-e $counts_file || !-e $test_file) {
+  if ( !-e $counts_file || !-e $test_file ) {
     my $cmd = qq^
 dbname="gj1_gor_58"
 source("../../scripts/collect_sitewise.R");
@@ -488,11 +475,11 @@ save(counts.sites,counts.genes,stats.genes,file="${test_file}")
 ^;
     print "$cmd\n";
     my $params = {};
-    Bio::Greg::EslrUtils->run_r($cmd,$params);
+    Bio::Greg::EslrUtils->run_r( $cmd, $params );
   }
 
   my $genes_file = $self->get_output_folder . "/genes_merged.Rdata";
-  if (!-e $genes_file) {
+  if ( !-e $genes_file ) {
     my $cmd = qq^
 dbname="gj1_gor_58"
 source("../../scripts/collect_sitewise.R");
@@ -501,7 +488,7 @@ save(genes.merged,file="${genes_file}")
 ^;
     print "$cmd\n";
     my $params = {};
-    Bio::Greg::EslrUtils->run_r($cmd,$params);
+    Bio::Greg::EslrUtils->run_r( $cmd, $params );
   }
 
 }
@@ -509,10 +496,10 @@ save(genes.merged,file="${genes_file}")
 sub analyze_counts {
   my $self = shift;
 
-  my $counts_file = $self->get_output_folder . "/gorilla_counts.Rdata";
+  my $counts_file  = $self->get_output_folder . "/gorilla_counts.Rdata";
   my $output_table = $self->get_output_folder . "/top_genes.csv";
-  my $output_data = $self->get_output_folder . "/top_genes.Rdata";
-  
+  my $output_data  = $self->get_output_folder . "/top_genes.Rdata";
+
   my $cmd = qq^
 gcinfo(TRUE)
 source("analyze_gorilla.R")
@@ -565,19 +552,18 @@ write.csv(top.genes,file="${output_table}",row.names=F)
 ^;
   print "$cmd\n";
   my $params = {};
-  Bio::Greg::EslrUtils->run_r($cmd,$params);
+  Bio::Greg::EslrUtils->run_r( $cmd, $params );
 
 }
-
 
 sub get_enriched_genes {
   my $self = shift;
 
-  my $f = $self->get_output_folder;
-  my $genes_csv = $f . "/top_genes.csv";
-  my $genes_merged = $f ."/genes_merged.Rdata";
-  my $scripts_dir = $self->base . "/scripts";
-  my $enrich_file = $f . "/enriched.csv";
+  my $f            = $self->get_output_folder;
+  my $genes_csv    = $f . "/top_genes.csv";
+  my $genes_merged = $f . "/genes_merged.Rdata";
+  my $scripts_dir  = $self->base . "/scripts";
+  my $enrich_file  = $f . "/enriched.csv";
 
   my $cmd = qq^
 dbname="gj1_gor_58"
@@ -598,7 +584,7 @@ write.csv(enriched,file="${enrich_file}")
 ^;
   print "$cmd\n";
   my $params = {};
-  Bio::Greg::EslrUtils->run_r($cmd,$params);
+  Bio::Greg::EslrUtils->run_r( $cmd, $params );
 
 }
 

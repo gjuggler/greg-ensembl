@@ -40,7 +40,6 @@ package Bio::EnsEMBL::Hive::DBSQL::AnalysisJobAdaptor;
 
 use strict;
 use Data::UUID;
-use Sys::Hostname;
 use Bio::EnsEMBL::DBSQL::BaseAdaptor;
 use Bio::EnsEMBL::Utils::Argument;
 use Bio::EnsEMBL::Utils::Exception;
@@ -49,8 +48,6 @@ use Bio::EnsEMBL::Hive::AnalysisJob;
 use Bio::EnsEMBL::Hive::Utils 'stringify';  # import 'stringify()'
 
 use base ('Bio::EnsEMBL::DBSQL::BaseAdaptor');
-
-# our $max_retry_count = 7;
 
 ###############################################################################
 #
@@ -164,37 +161,6 @@ sub fetch_by_dbID {
 }
 
 
-=head2 fetch_by_claim_analysis
-
-  Arg [1]    : string job_claim (the UUID used to claim jobs)
-  Arg [2]    : int analysis_id  
-  Example    : $jobs = $adaptor->fetch_by_claim_analysis('c6658fde-64ab-4088-8526-2e960bd5dd60',208);
-  Description: Returns a list of jobs for a claim id
-  Returntype : Bio::EnsEMBL::Hive::AnalysisJob
-  Exceptions : thrown if claim_id or analysis_id is not defined
-  Caller     : general
-
-=cut
-
-sub fetch_by_claim_analysis {
-  my ($self,$claim,$analysis_id) = @_;
-
-  throw("fetch_by_claim_analysis must have claim ID") unless($claim);
-  throw("fetch_by_claim_analysis must have analysis_id") unless($analysis_id);
-  my $constraint = "a.status='CLAIMED' AND a.job_claim='$claim' AND a.analysis_id='$analysis_id'";
-  return $self->_generic_fetch($constraint);
-}
-
-sub fetch_by_run_analysis {
-  my ($self,$worker_id,$analysis_id) = @_;
-
-  throw("fetch_by_run_analysis must have worker_id") unless($worker_id);
-  throw("fetch_by_run_analysis must have analysis_id") unless($analysis_id);
-  my $constraint = "a.status='RUN' AND a.worker_id=$worker_id AND a.analysis_id='$analysis_id'";
-  return $self->_generic_fetch($constraint);
-}
-
-
 =head2 fetch_all
 
   Arg        : None
@@ -234,23 +200,26 @@ sub fetch_all_failed_jobs {
 }
 
 
-sub fetch_by_url_query
-{
-  my $self = shift;
-  my $query = shift;
+sub fetch_all_incomplete_jobs_by_worker_id {
+    my ($self, $worker_id) = @_;
 
-  return undef unless($query);
-  #print("Bio::EnsEMBL::DBSQL::AnalysisAdaptor::fetch_by_url_query : $query\n");
+    my $constraint = "a.status IN ('COMPILATION','GET_INPUT','RUN','WRITE_OUTPUT') AND a.worker_id='$worker_id'";
+    return $self->_generic_fetch($constraint);
+}
 
-  if((my $p=index($query, "=")) != -1) {
-    my $type = substr($query,0, $p);
-    my $value = substr($query,$p+1,length($query));
 
-    if($type eq 'dbID') {
-      return $self->fetch_by_dbID($value);
+sub fetch_by_url_query {
+    my ($self, $field_name, $field_value) = @_;
+
+    if($field_name eq 'dbID' and $field_value) {
+
+        return $self->fetch_by_dbID($field_value);
+
+    } else {
+
+        return;
+
     }
-  }
-  return undef;
 }
 
 #
@@ -359,26 +328,26 @@ sub _objs_from_sth {
   my @jobs = ();
     
   while ($sth->fetch()) {
-    my $job = new Bio::EnsEMBL::Hive::AnalysisJob;
 
-    $job->dbID($column{'analysis_job_id'});
-    $job->analysis_id($column{'analysis_id'});
-    $job->input_id($column{'input_id'});
-    $job->job_claim($column{'job_claim'});
-    $job->worker_id($column{'worker_id'});
-    $job->status($column{'status'});
-    $job->retry_count($column{'retry_count'});
-    $job->completed($column{'completed'});
-    $job->runtime_msec($column{'runtime_msec'});
-    $job->query_count($column{'query_count'});
-    $job->semaphore_count($column{'semaphore_count'});
-    $job->semaphored_job_id($column{'semaphored_job_id'});
-    $job->adaptor($self);
-    
-    if($column{'input_id'} =~ /_ext_input_analysis_data_id (\d+)/) {
-      #print("input_id was too big so stored in analysis_data table as dbID $1 -- fetching now\n");
-      $job->input_id($self->db->get_AnalysisDataAdaptor->fetch_by_dbID($1));
-    }
+    my $input_id = ($column{'input_id'} =~ /_ext_input_analysis_data_id (\d+)/)
+            ? $self->db->get_AnalysisDataAdaptor->fetch_by_dbID($1)
+            : $column{'input_id'};
+
+    my $job = Bio::EnsEMBL::Hive::AnalysisJob->new(
+        -DBID               => $column{'analysis_job_id'},
+        -ANALYSIS_ID        => $column{'analysis_id'},
+        -INPUT_ID           => $input_id,
+        -JOB_CLAIM          => $column{'job_claim'},
+        -WORKER_ID          => $column{'worker_id'},
+        -STATUS             => $column{'status'},
+        -RETRY_COUNT        => $column{'retry_count'},
+        -COMPLETED          => $column{'completed'},
+        -RUNTIME_MSEC       => $column{'runtime_msec'},
+        -QUERY_COUNT        => $column{'query_count'},
+        -SEMAPHORE_COUNT    => $column{'query_count'},
+        -SEMAPHORED_JOB_ID  => $column{'semaphored_job_id'},
+        -ADAPTOR            => $self,
+    );
 
     push @jobs, $job;    
   }
@@ -433,14 +402,19 @@ sub update_status {
   my ($self,$job) = @_;
 
   my $sql = "UPDATE analysis_job SET status='".$job->status."' ";
+
   if($job->status eq 'DONE') {
     $sql .= ",completed=now()";
     $sql .= ",runtime_msec=".$job->runtime_msec;
     $sql .= ",query_count=".$job->query_count;
-  }
-  if($job->status eq 'READY') {
+
+  } elsif($job->status eq 'READY') {
     $sql .= ",job_claim=''";
+
+  } elsif($job->status eq 'PASSED_ON') {
+    $sql .= ",job_claim='', completed=now()";
   }
+
   $sql .= " WHERE analysis_job_id='".$job->dbID."' ";
   
   my $sth = $self->prepare($sql);
@@ -501,22 +475,34 @@ sub store_out_files {
 }
 
 
-sub claim_jobs_for_worker {
-  my $self     = shift;
-  my $worker   = shift;
+=head2 grab_jobs_for_worker
 
-  throw("must define worker") unless($worker);
+  Arg [1]           : Bio::EnsEMBL::Hive::Worker object $worker
+  Example: 
+    my $jobs  = $job_adaptor->grab_jobs_for_worker( $worker );
+  Description: 
+    For the specified worker, it will search available jobs, 
+    and using the workers requested batch_size, claim/fetch that
+    number of jobs, and then return them.
+  Returntype : 
+    reference to array of Bio::EnsEMBL::Hive::AnalysisJob objects
+  Caller     : Bio::EnsEMBL::Hive::Worker::run
 
+=cut
+
+sub grab_jobs_for_worker {
+    my ($self, $worker) = @_;
+  
   my $ug    = new Data::UUID;
   my $uuid  = $ug->create();
   my $claim = $ug->to_string( $uuid );
-  #print("claiming jobs for worker_id=", $worker->worker_id, " with uuid $claim\n");
+  my $analysis_id = $worker->analysis->dbID();
 
   my $sql_base = "UPDATE analysis_job SET job_claim='$claim'".
                  " , worker_id='". $worker->worker_id ."'".
                  " , status='CLAIMED'".
                  " WHERE job_claim='' AND status='READY' AND semaphore_count<=0 ". 
-                 " AND analysis_id='" .$worker->analysis->dbID. "'"; 
+                 " AND analysis_id='$analysis_id'"; 
 
   my $sql_virgin = $sql_base .  
                    " AND retry_count=0".
@@ -529,18 +515,20 @@ sub claim_jobs_for_worker {
   if($claim_count == 0) {
     $claim_count = $self->dbc->do($sql_any);
   }
-  return $claim;
+
+  my $constraint = "a.status='CLAIMED' AND a.job_claim='$claim' AND a.analysis_id='$analysis_id'";
+  return $self->_generic_fetch($constraint);
 }
 
 
-=head2 reset_dead_jobs_for_worker
+=head2 release_undone_jobs_from_worker
 
   Arg [1]    : Bio::EnsEMBL::Hive::Worker object
   Example    :
   Description: If a worker has died some of its jobs need to be reset back to 'READY'
                so they can be rerun.
                Jobs in state CLAIMED as simply reset back to READY.
-               If jobs was in a 'working' state (GET_INPUT, RUN, WRITE_OUTPUT)) 
+               If jobs was in a 'working' state (COMPILATION, GET_INPUT, RUN, WRITE_OUTPUT) 
                the retry_count is increased and the status set back to READY.
                If the retry_count >= $max_retry_count (3 by default) the job is set
                to 'FAILED' and not rerun again.
@@ -549,117 +537,117 @@ sub claim_jobs_for_worker {
 
 =cut
 
-sub reset_dead_jobs_for_worker {
-  my $self = shift;
-  my $worker = shift;
-  throw("must define worker") unless($worker);
+sub release_undone_jobs_from_worker {
+    my ($self, $worker) = @_;
 
-  #added worker_id index to analysis_job table which made this operation much faster
+    my $max_retry_count = $worker->analysis->stats->max_retry_count();
+    my $worker_id       = $worker->worker_id();
 
-  my ($sql, $sth);
-  my $max_retry_count = $worker->analysis->stats->max_retry_count();
-  #first just reset the claimed jobs, these don't need a retry_count index increment
-  $sql = "UPDATE analysis_job SET job_claim='', status='READY'".
-         " WHERE status='CLAIMED'".
-         " AND worker_id='" . $worker->worker_id ."'";
-  $sth = $self->prepare($sql);
-  $sth->execute();
-  $sth->finish;
-  #print("  done update CLAIMED\n");
+        #first just reset the claimed jobs, these don't need a retry_count index increment:
+    $self->dbc->do( qq{
+        UPDATE analysis_job
+           SET job_claim='', status='READY'
+         WHERE status='CLAIMED'
+           AND worker_id='$worker_id'
+    } );
 
-  # an update with select on status and worker_id took 4seconds per worker to complete,
-  # while doing a select followed by update on analysis_job_id returned almost instantly
-  
-  $sql = "UPDATE analysis_job SET job_claim='', status='READY'".
-         " ,retry_count=retry_count+1".
-         " WHERE status in ('GET_INPUT','RUN','WRITE_OUTPUT')".
-	 " AND retry_count<$max_retry_count".
-         " AND worker_id='" . $worker->worker_id ."'";
-  #print("$sql\n");
-  $sth = $self->prepare($sql);
-  $sth->execute();
-  $sth->finish;
+    my $sth = $self->prepare( qq{
+        SELECT analysis_job_id
+          FROM analysis_job
+         WHERE worker_id='$worker_id'
+           AND status in ('COMPILATION','GET_INPUT','RUN','WRITE_OUTPUT')
+    } );
+    $sth->execute();
 
-  $sql = "UPDATE analysis_job SET status='FAILED'".
-         " ,retry_count=retry_count+1".
-         " WHERE status in ('GET_INPUT','RUN','WRITE_OUTPUT')".
-	 " AND retry_count>=$max_retry_count".
-         " AND worker_id='" . $worker->worker_id ."'";
-  #print("$sql\n");
-  $sth = $self->prepare($sql);
-  $sth->execute();
-  $sth->finish;
+    my $cod = $worker->cause_of_death();
+    my $msg = "GarbageCollector: The worker died because of $cod";
+    while(my ($job_id, $retry_count) = $sth->fetchrow_array()) {
+        my $resource_overusage = ($cod eq 'MEMLIMIT') || ($cod eq 'RUNLIMIT' and $worker->work_done()==0);
 
-  #print(" done update BROKEN jobs\n");
+        my $passed_on = 0;  # the flag indicating that the garbage_collection was attempted and was successful
+
+        if( $resource_overusage ) {
+
+            my $branch_code = {
+                'MEMLIMIT' => '-1',
+                'RUNLIMIT' => '-2',
+            }->{$cod};
+
+            $passed_on = $self->gc_dataflow( $worker->analysis->dbID(), $job_id, $branch_code );
+        }
+
+        if($passed_on) {
+            $msg .= ', performing gc_dataflow';
+        }
+        $self->db()->get_JobMessageAdaptor()->register_message($job_id, $msg, not $passed_on );
+
+        unless($passed_on) {
+            $self->release_and_age_job( $job_id, $max_retry_count, not $resource_overusage );
+        }
+    }
+    $sth->finish();
 }
 
 
-sub reset_dead_job_by_dbID {
-  my $self = shift;
-  my $job_id = shift;
+sub release_and_age_job {
+    my ($self, $job_id, $max_retry_count, $may_retry) = @_;
+    $may_retry ||= 0;
 
-  #added worker_id index to analysis_job table which made this operation much faster
+        # NB: The order of updated fields IS important. Here we first find out the new status and then increment the retry_count:
+    $self->dbc->do( qq{
+        UPDATE analysis_job
+           SET worker_id=0, job_claim='', status=IF( $may_retry AND (retry_count<$max_retry_count), 'READY', 'FAILED'), retry_count=retry_count+1
+         WHERE status in ('COMPILATION','GET_INPUT','RUN','WRITE_OUTPUT')
+           AND analysis_job_id=$job_id
+    } );
+}
 
-  my $sql;
-  #first just reset the claimed jobs, these don't need a retry_count index increment
-  $sql = "UPDATE analysis_job SET job_claim='', status='READY'".
-         " WHERE status='CLAIMED'".
-         " AND analysis_job_id=$job_id";
-  $self->dbc->do($sql);
-  #print("  done update CLAIMED\n");
+=head2 gc_dataflow
 
-  # an update with select on status and worker_id took 4seconds per worker to complete,
-  # while doing a select followed by update on analysis_job_id returned almost instantly
-  
-  $sql = "
-    UPDATE analysis_job, analysis_stats
-    SET job_claim='', analysis_job.status='READY', retry_count=retry_count+1
-    WHERE
-      analysis_job.status in ('GET_INPUT','RUN','WRITE_OUTPUT')
-      AND analysis_job.analysis_id = analysis_stats.analysis_id
-      AND retry_count < max_retry_count
-      AND analysis_job_id=$job_id";
-  #print("$sql\n");
-  $self->dbc->do($sql);
+    Description:    perform automatic dataflow from a dead job that overused resources if a corresponding dataflow rule was provided
+                    Should only be called once during garbage collection phase, when the job is definitely 'abandoned' and not being worked on.
 
-  $sql = "
-    UPDATE analysis_job, analysis_stats
-    SET job_claim='', analysis_job.status='FAILED', retry_count=retry_count+1
-    WHERE
-      analysis_job.status in ('GET_INPUT','RUN','WRITE_OUTPUT')
-      AND analysis_job.analysis_id = analysis_stats.analysis_id
-      AND retry_count >= max_retry_count
-      AND analysis_job_id=$job_id";
-  #print("$sql\n");
-  $self->dbc->do($sql);
+=cut
 
-  #print(" done update BROKEN jobs\n");
+sub gc_dataflow {
+    my ($self, $analysis_id, $job_id, $branch_code) = @_;
+
+    unless(@{ $self->db->get_DataflowRuleAdaptor->fetch_from_analysis_id_branch_code($analysis_id, $branch_code) }) {
+        return 0;   # no corresponding gc_dataflow rule has been defined
+    }
+
+    my $job = $self->fetch_by_dbID($job_id);
+
+    $job->param_init( 0, $job->input_id() );    # input_id_templates still supported, however to a limited extent
+
+    $job->dataflow_output_id( $job->input_id() , $branch_code );
+
+    $job->update_status('PASSED_ON');
+    
+    return 1;
 }
 
 
 =head2 reset_job_by_dbID
 
-  Arg [1]    : int $analysis_job_id
+  Arg [1]    : int $job_id
   Example    :
   Description: Forces a job to be reset to 'READY' so it can be run again.
                Will also reset a previously 'BLOCKED' jobs to READY.
-  Exceptions : $job must be defined
+  Exceptions : $job_id must not be false or zero
   Caller     : user process
 
 =cut
 
 sub reset_job_by_dbID {
-  my $self = shift;
-  my $analysis_job_id   = shift;
-  throw("must define job") unless($analysis_job_id);
+    my $self   = shift;
+    my $job_id = shift or throw("job_id of the job to be reset is undefined");
 
-  my ($sql, $sth);
-  #first just reset the claimed jobs, these don't need a retry_count index increment
-  $sql = "UPDATE analysis_job SET worker_id=0, job_claim='', status='READY', retry_count=0 WHERE analysis_job_id=?";
-  $sth = $self->prepare($sql);
-  $sth->execute($analysis_job_id);
-  $sth->finish;
-  #print("  done update CLAIMED\n");
+    $self->dbc->do( qq{
+        UPDATE analysis_job
+           SET worker_id=0, job_claim='', status='READY', retry_count=0
+         WHERE analysis_job_id=$job_id
+    } );
 }
 
 
@@ -687,7 +675,7 @@ sub reset_all_jobs_for_analysis_id {
   throw("must define analysis_id") unless($analysis_id);
 
   my ($sql, $sth);
-  $sql = "UPDATE analysis_job SET job_claim='', status='READY', retry_count=0 WHERE status!='BLOCKED' and analysis_id=?";
+  $sql = "UPDATE analysis_job SET job_claim='', status='READY' WHERE status!='BLOCKED' and analysis_id=?";
   $sth = $self->prepare($sql);
   $sth->execute($analysis_id);
   $sth->finish;

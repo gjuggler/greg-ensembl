@@ -8,12 +8,7 @@ use base ('Bio::Greg::Hive::Process');
 sub fetch_input {
   my $self = shift;
 
-  ### DEFAULT PARAMETERS ###
-  my $defaults = {
-  };
-  ##########################
-
-  $self->load_all_params($defaults);
+  $self->load_all_params();
 }
 
 sub run {

@@ -30,9 +30,7 @@
 
 =cut
 
-
 package Treefam::Family;
-
 
 use strict;
 use Treefam::DBConnection;
@@ -51,16 +49,16 @@ use Scalar::Util qw(weaken);
 
 sub new {
 
-  my ($class,$dbc,$familyID,$type) = @_;
+  my ( $class, $dbc, $familyID, $type ) = @_;
   my $self = {};
   $self->{'DBConnection'} = $dbc;
-  weaken($self->{'DBConnection'});
+  weaken( $self->{'DBConnection'} );
   my $dbh = $dbc->{'database_handle'};
 
-  $self->{'ID'} = $familyID;
+  $self->{'ID'}   = $familyID;
   $self->{'type'} = $type;
 
-  bless ($self, $class);
+  bless( $self, $class );
 
   return $self;
 
@@ -127,13 +125,13 @@ sub symbol {
 
   my $self = shift;
   $self->{'symbol'} = shift if @_;
-  if (!defined $self->{'symbol'}) {
+  if ( !defined $self->{'symbol'} ) {
     my $familyID = $self->{'ID'};
-    my $dbc = $self->{'DBConnection'};
-    my $dbh = $dbc->{'database_handle'};
-    my $sth = $dbh->prepare("SELECT symbol FROM familyA WHERE AC = ?");
+    my $dbc      = $self->{'DBConnection'};
+    my $dbh      = $dbc->{'database_handle'};
+    my $sth      = $dbh->prepare("SELECT symbol FROM familyA WHERE AC = ?");
     $sth->execute($familyID);
-    ($self->{'symbol'}) = $sth->fetchrow_array();
+    ( $self->{'symbol'} ) = $sth->fetchrow_array();
     $sth->finish();
   }
 
@@ -154,20 +152,19 @@ sub description {
 
   my $self = shift;
   $self->{'description'} = shift if @_;
-  if (!defined $self->{'description'}) {
+  if ( !defined $self->{'description'} ) {
     my $familyID = $self->{'ID'};
-    my $dbc = $self->{'DBConnection'};
-    my $dbh = $dbc->{'database_handle'};
-    my $sth = $dbh->prepare("SELECT f.desc FROM familyA f WHERE f.AC = ?");
+    my $dbc      = $self->{'DBConnection'};
+    my $dbh      = $dbc->{'database_handle'};
+    my $sth      = $dbh->prepare("SELECT f.desc FROM familyA f WHERE f.AC = ?");
     $sth->execute($familyID);
-    ($self->{'description'}) = $sth->fetchrow_array();
+    ( $self->{'description'} ) = $sth->fetchrow_array();
     $sth->finish();
   }
 
   return $self->{'description'};
 
 }
-
 
 =head2 creation_date
 
@@ -181,14 +178,14 @@ sub creation_date {
 
   my $self = shift;
   $self->{'creation_date'} = shift if @_;
-  if (!defined $self->{'creation_date'}) {
+  if ( !defined $self->{'creation_date'} ) {
     my $familyID = $self->{'ID'};
-    my $type = $self->{'type'};
-    my $dbc = $self->{'DBConnection'};
-    my $dbh = $dbc->{'database_handle'};
-    my $sth = $dbh->prepare("SELECT created FROM $type WHERE AC = ?");
+    my $type     = $self->{'type'};
+    my $dbc      = $self->{'DBConnection'};
+    my $dbh      = $dbc->{'database_handle'};
+    my $sth      = $dbh->prepare("SELECT created FROM $type WHERE AC = ?");
     $sth->execute($familyID);
-    ($self->{'creation_date'}) = $sth->fetchrow_array();
+    ( $self->{'creation_date'} ) = $sth->fetchrow_array();
     $sth->finish();
   }
 
@@ -206,12 +203,12 @@ sub creation_date {
 
 sub get_tree {
 
-  my $self = shift;
+  my $self      = shift;
   my $tree_type = shift || 'FULL';
-  my $familyID = $self->{'ID'};
-  my $dbc = $self->{'DBConnection'};
-  my $th = $dbc->get_TreeHandle;
-  my $tree = $th->get_by_id($familyID,$tree_type);
+  my $familyID  = $self->{'ID'};
+  my $dbc       = $self->{'DBConnection'};
+  my $th        = $dbc->get_TreeHandle;
+  my $tree      = $th->get_by_id( $familyID, $tree_type );
 
   return $tree;
 
@@ -228,26 +225,27 @@ sub get_tree {
 
 sub get_genes {
 
-  my $self = shift;
+  my $self      = shift;
   my $tree_type = shift if @_;
-  my $dbc = $self->{'DBConnection'};
-  my $dbh = $dbc->{'database_handle'};
-  my $familyID = $self->ID;
+  my $dbc       = $self->{'DBConnection'};
+  my $dbh       = $dbc->{'database_handle'};
+  my $familyID  = $self->ID;
   my @genes;
-  if (!$tree_type) {
-    my $sth = $dbh->prepare("SELECT DISTINCT g.GID
+  if ( !$tree_type ) {
+    my $sth = $dbh->prepare(
+      "SELECT DISTINCT g.GID
                              FROM genes g, fam_genes t1
-                             WHERE t1.AC= ? AND t1.ID=g.ID");
+                             WHERE t1.AC= ? AND t1.ID=g.ID"
+    );
     $sth->execute($familyID);
-    while (my ($geneID) = $sth->fetchrow_array()) {
-      my $gh = $dbc->get_GeneHandle;
+    while ( my ($geneID) = $sth->fetchrow_array() ) {
+      my $gh   = $dbc->get_GeneHandle;
       my $gene = $gh->get_by_id($geneID);
       $gene->family($self);
-      push @genes,$gene;
+      push @genes, $gene;
     }
-  }
-  else {
-    my $tree = $self->get_tree(uc($tree_type));
+  } else {
+    my $tree = $self->get_tree( uc($tree_type) );
     @genes = $tree->get_genes;
   }
   return @genes;
@@ -267,26 +265,27 @@ sub get_genes {
 
 sub get_species {
 
-  my $self = shift;
-  my $type = shift if @_;
+  my $self      = shift;
+  my $type      = shift if @_;
   my $tree_type = shift if @_;
-  my $dbc = $self->{'DBConnection'};
-  my $dbh = $dbc->{'database_handle'};
-  my $familyID = $self->ID;
+  my $dbc       = $self->{'DBConnection'};
+  my $dbh       = $dbc->{'database_handle'};
+  my $familyID  = $self->ID;
   my @species;
   my $taxname = lc($type) eq 'swcode' ? 'SWCODE' : 'TAXNAME';
-  if (!$tree_type) {
-    my $sth = $dbh->prepare("SELECT DISTINCT s.$taxname
+  if ( !$tree_type ) {
+    my $sth = $dbh->prepare(
+      "SELECT DISTINCT s.$taxname
                              FROM genes g, species s, fam_genes t1
                              WHERE t1.AC= ? AND t1.ID=g.ID
-                             AND g.TAX_ID = s.TAX_ID");
+                             AND g.TAX_ID = s.TAX_ID"
+    );
     $sth->execute($familyID);
-    while (my ($species) = $sth->fetchrow_array()) {
-      push @species,$species;
+    while ( my ($species) = $sth->fetchrow_array() ) {
+      push @species, $species;
     }
-  }
-  else {
-    my $tree = $self->tree(uc($tree_type));
+  } else {
+    my $tree = $self->tree( uc($tree_type) );
     @species = $tree->get_species;
   }
 
@@ -309,84 +308,83 @@ sub get_species {
 
 sub get_species_tree {
 
-  my $self = shift;
-  my $type = shift if @_;
-  my $dbc = $self->{'DBConnection'};
-  my $species_tree = Treefam::Tree->new($dbc,undef,'species',undef);
-  @{$species_tree->{_nodes}} = ();
+  my $self         = shift;
+  my $type         = shift if @_;
+  my $dbc          = $self->{'DBConnection'};
+  my $species_tree = Treefam::Tree->new( $dbc, undef, 'species', undef );
+  @{ $species_tree->{_nodes} } = ();
   my %seen;
   my @node_names = $self->get_species('latin');
-  my $dbh = $dbc->{'database_handle'};
-  my $query = qq(SELECT t2.name FROM spec_nodes t1 LEFT JOIN spec_nodes t2 ON t1.parent_id=t2.taxon_id WHERE t1.name=?);
+  my $dbh        = $dbc->{'database_handle'};
+  my $query =
+    qq(SELECT t2.name FROM spec_nodes t1 LEFT JOIN spec_nodes t2 ON t1.parent_id=t2.taxon_id WHERE t1.name=?);
   my $sth = $dbh->prepare($query);
-  while (my $name = shift(@node_names)) {
+
+  while ( my $name = shift(@node_names) ) {
     my $node;
-    if ($seen{$name}) {
+    if ( $seen{$name} ) {
       $node = $seen{$name};
-    }
-    else {
+    } else {
       $node = Treefam::Node->new($dbc);
       $node->name($name);
       $node->branch_length(0.1);
       $seen{$name} = $node;
     }
-    push @{$species_tree->{_nodes}},$node;
+    push @{ $species_tree->{_nodes} }, $node;
     $sth->execute($name);
     my ($n) = $sth->fetchrow_array();
     if ($n) {
       my $parent;
-      if ($seen{$n}) {
-	$parent = $seen{$n};
-      }
-      else {
-	$parent = Treefam::Node->new($dbc);
-	$parent->name($n);
-	$parent->branch_length(0.1);
-	push @node_names,$n;
-	$seen{$n} = $parent;
+      if ( $seen{$n} ) {
+        $parent = $seen{$n};
+      } else {
+        $parent = Treefam::Node->new($dbc);
+        $parent->name($n);
+        $parent->branch_length(0.1);
+        push @node_names, $n;
+        $seen{$n} = $parent;
       }
       $node->parent($parent);
-      push @{$parent->{C}},$node;
-    }
-    else { # no parent, this is the root
+      push @{ $parent->{C} }, $node;
+    } else {    # no parent, this is the root
       $species_tree->{_root} = $node;
     }
   }
 
-  unless (defined($type) && (lc($type) eq 'complete' || lc($type) eq 'full')) { 
-    foreach my $node (@{$species_tree->{_nodes}}) {
+  unless ( defined($type) && ( lc($type) eq 'complete' || lc($type) eq 'full' ) ) {
+    foreach my $node ( @{ $species_tree->{_nodes} } ) {
+
       # delete node if it has only 1 child,
       # child becomes child of grand-parent keeping its original distance from it
-      if ($node->children && scalar($node->children)==1) {
-	my ($child) = $node->children;
-	my $parent = $node->parent;
-	my $nodeID = $node->internalID;
-	my @chldrn;
-	if ($parent) {
-	  foreach my $n ($parent->children) {
-	    if ($n->internalID eq $nodeID) {
-	      push @chldrn,$child;
-	      $child->{P} = $parent;
-	      weaken($child->{P});
-	      undef %{$n};
-	      undef $n;
-	    }
-	    else {
-	      push @chldrn,$n;
-	    }
-	  }
-	  $parent->children(@chldrn);
-	}
+      if ( $node->children && scalar( $node->children ) == 1 ) {
+        my ($child) = $node->children;
+        my $parent  = $node->parent;
+        my $nodeID  = $node->internalID;
+        my @chldrn;
+        if ($parent) {
+          foreach my $n ( $parent->children ) {
+            if ( $n->internalID eq $nodeID ) {
+              push @chldrn, $child;
+              $child->{P} = $parent;
+              weaken( $child->{P} );
+              undef %{$n};
+              undef $n;
+            } else {
+              push @chldrn, $n;
+            }
+          }
+          $parent->children(@chldrn);
+        }
       }
     }
 
     # remove root if it has one child
-    while (scalar($species_tree->{_root}->children) ==1) {
+    while ( scalar( $species_tree->{_root}->children ) == 1 ) {
       my ($child) = $species_tree->{_root}->children;
       $species_tree->{_root} = $child;
     }
   }
-  @{$species_tree->{_nodes}} = grep { $_->internalID } @{$species_tree->{_nodes}};
+  @{ $species_tree->{_nodes} } = grep { $_->internalID } @{ $species_tree->{_nodes} };
   return $species_tree;
 
 }
@@ -405,26 +403,26 @@ sub get_domains {
 
   my $self = shift;
   my $cutoff = shift if @_;
-  if(!$cutoff) {
+  if ( !$cutoff ) {
     $cutoff = 1e-2;
   }
-  if (!$self->{'domains'}) {
-    my $dbc = $self->{'DBConnection'};
-    my $dbh = $dbc->{'database_handle'};
+  if ( !$self->{'domains'} ) {
+    my $dbc   = $self->{'DBConnection'};
+    my $dbh   = $dbc->{'database_handle'};
     my @genes = $self->get_genes;
     my %seen;
-    foreach my $gene(@genes) {
+    foreach my $gene (@genes) {
       my $geneID = $gene->sequence_id;
-      my $query = qq(SELECT DISTINCT PFAM_ID FROM pfam WHERE ID= ? AND EVALUE<$cutoff);
-      my $sth = $dbh->prepare($query);
+      my $query  = qq(SELECT DISTINCT PFAM_ID FROM pfam WHERE ID= ? AND EVALUE<$cutoff);
+      my $sth    = $dbh->prepare($query);
       $sth->execute($geneID);
-      while (my ($pfamid) = $sth->fetchrow_array()) {
-	push @{$self->{'domains'}},$pfamid unless $seen{$pfamid}++;
+      while ( my ($pfamid) = $sth->fetchrow_array() ) {
+        push @{ $self->{'domains'} }, $pfamid unless $seen{$pfamid}++;
       }
     }
   }
 
-  return @{$self->{'domains'}} if (defined($self->{'domains'}));
+  return @{ $self->{'domains'} } if ( defined( $self->{'domains'} ) );
 
 }
 
@@ -441,12 +439,12 @@ sub get_domains {
 sub get_hclusters {
 
   my $self = shift;
-  my @geneIDs = map { $_->sequence_id} $self->get_genes;
+  my @geneIDs = map { $_->sequence_id } $self->get_genes;
   my %seen;
   @seen{@geneIDs} = (1) x @geneIDs;
-  my $list = "'".join("','",@geneIDs)."'";
-  my $dbc = $self->{'DBConnection'};
-  my $dbh = $dbc->{'database_handle'};
+  my $list  = "'" . join( "','", @geneIDs ) . "'";
+  my $dbc   = $self->{'DBConnection'};
+  my $dbh   = $dbc->{'database_handle'};
   my $query = qq( SELECT DISTINCT AC
                   FROM fam_genes
                   WHERE ID IN ($list)
@@ -455,21 +453,23 @@ sub get_hclusters {
   $sth->execute();
   my @hclusters;
   my $famh = $dbc->get_FamilyHandle;
-  while ( my ($familyID) = $sth->fetchrow_array()) {
-    push @hclusters,$famh->get_by_id($familyID);
+
+  while ( my ($familyID) = $sth->fetchrow_array() ) {
+    push @hclusters, $famh->get_by_id($familyID);
   }
   $sth->finish();
+
   # order hclusters by number of genes in common with the family
   my %count;
-  foreach my $hcl(@hclusters) {
+  foreach my $hcl (@hclusters) {
     my %intersect;
     my @IDs = map { $_->sequence_id } $hcl->get_genes;
-    foreach my $id(@IDs) {
+    foreach my $id (@IDs) {
       $intersect{$id}++ if $seen{$id};
     }
-    $count{$hcl->ID} = scalar(keys %intersect);
+    $count{ $hcl->ID } = scalar( keys %intersect );
   }
-  @hclusters = sort { $count{$b->ID}<=>$count{$a->ID} } @hclusters;
+  @hclusters = sort { $count{ $b->ID } <=> $count{ $a->ID } } @hclusters;
 
   return @hclusters;
 
@@ -489,7 +489,7 @@ sub hmm {
   my $self = shift;
   my $tree_type = shift || 'FULL';
   $self->{'hmm'} = shift if @_;
-  if (!defined $self->{'hmm'}) {
+  if ( !defined $self->{'hmm'} ) {
     my $tree = $self->get_tree($tree_type);
     $self->{'hmm'} = $tree->hmm();
   }

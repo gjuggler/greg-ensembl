@@ -430,12 +430,12 @@ sub slrsim_all {
   my @all_sets;
   my @cur_set;
 
-  foreach my $sub_experiment ('slrsim_one_d') {
-    @cur_set = @{$self->$sub_experiment()};
-    $self->apply_experiment_name_to_sets(\@cur_set,$sub_experiment);
+  foreach my $sub_experiment ('slrsim_one_c') {
+    @cur_set = @{ $self->$sub_experiment() };
+    $self->apply_experiment_name_to_sets( \@cur_set, $sub_experiment );
     push @all_sets, @cur_set;
   }
-  
+
   return \@all_sets;
 }
 
@@ -568,10 +568,6 @@ sub fig_two {
   }
   return \@sets;
 }
-
-####
-####
-####
 
 sub apply_experiment_name_to_sets {
   my $selft           = shift;

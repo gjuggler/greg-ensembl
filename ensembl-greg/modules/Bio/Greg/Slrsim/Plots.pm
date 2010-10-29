@@ -25,6 +25,7 @@ sub run {
 
   $self->output_params_file;
   $self->dump_sql;
+
   # Tricky Perl: Call the method corresponding to the current experiment.
   eval {
     $self->$experiment_name();
@@ -37,16 +38,16 @@ sub _output_folder {
 }
 
 sub dump_sql {
-  my $self = shift;
+  my $self     = shift;
   my $filename = $self->param('output_folder') . '/slrsim.sqldata';
-  my $gzip = $self->param('output_folder') . '/slrsim.sqldata.gz';
+  my $gzip     = $self->param('output_folder') . '/slrsim.sqldata.gz';
 
-  my $dbc = $self->compara_dba->dbc;
-  my $u = $dbc->username;
-  my $p = $dbc->password;
-  my $h = $dbc->host;
+  my $dbc  = $self->compara_dba->dbc;
+  my $u    = $dbc->username;
+  my $p    = $dbc->password;
+  my $h    = $dbc->host;
   my $port = $dbc->port;
-  my $db = $dbc->dbname;
+  my $db   = $dbc->dbname;
 
   print "Mysqldumping...\n";
   if (!-e $filename && !-e $gzip) {
@@ -71,12 +72,11 @@ sub dump_data {
   my $self = shift;
 
   my $filename = $self->param('output_folder') . '/slrsim_sites.Rdata';
-  my $script = $self->script;
+  my $script   = $self->script;
 
   my $dbname = $self->dbc->dbname;
- 
 
-  if (!-e $filename) {
+  if ( !-e $filename ) {
     my $rcmd = qq^
 dbname="$dbname"
 source("$script")
@@ -85,9 +85,9 @@ save(data,file="${filename}");
 ^;
     print "$rcmd\n";
     my $params = {};
-    Bio::Greg::EslrUtils->run_r($rcmd,$params);
+    Bio::Greg::EslrUtils->run_r( $rcmd, $params );
   }
-  
+
 }
 
 sub slrsim_all {
@@ -129,8 +129,8 @@ for (df in df.list) {
 ^;
   print "$rcmd\n";
   my $params = {};
-  Bio::Greg::EslrUtils->run_r($rcmd,$params);
-  
+  Bio::Greg::EslrUtils->run_r( $rcmd, $params );
+
 }
 
 sub fig_two {
@@ -208,11 +208,11 @@ sub output_params_file {
 
   my $filename = $self->param('output_folder') . '/params.txt';
 
-  if (!-e $filename) {
+  if ( !-e $filename ) {
     print "$filename\n";
     my $out;
-    open($out,">$filename");
-    $self->hash_print($self->params,$out);
+    open( $out, ">$filename" );
+    $self->hash_print( $self->params, $out );
     close($out);
   }
 }
