@@ -79,7 +79,12 @@ sub print_node {
 
 sub name {
   my $self = shift;
-  return $self->stable_id(@_);
+  my $value = shift;
+
+  $self->SUPER::name($value) if (defined $value);
+  my $name = $self->SUPER::name;
+  return $name if ($name ne '');
+  return $self->stable_id;
 }
 
 sub cigar_line {
