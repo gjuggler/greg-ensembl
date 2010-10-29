@@ -231,8 +231,6 @@ sub to_treeI {
 #    print $newick."\n";
   }
   
-  #print "CONVERING TO TREEI: $newick\n";
-
   open(my $fake_fh, "+<", \$newick);
   my $treein = new Bio::TreeIO
     (-fh => $fake_fh,
@@ -511,10 +509,13 @@ sub max_distance {
   my $class = shift;
   my $tree = shift;
 
-  die ("$tree not a $TREEI!") unless ($tree->isa($TREEI));
+  my $treeI = $tree;
+  if (!$tree->isa($TREEI)) {
+    $treeI = $class->to_treeI($tree);
+  }
   
   my $max_dist = 0;
-  foreach my $node ($tree->get_leaf_nodes()) {
+  foreach my $node ($treeI->get_leaf_nodes()) {
     my $dist = $class->distance_to_root($tree,$node);
     $max_dist = $dist if ($dist > $max_dist);
   }
@@ -528,7 +529,10 @@ sub distance_to_root {
   my $tree = shift;
   my $node = shift;
 
-  die ("$tree not a $TREEI!") unless ($tree->isa($TREEI));
+  my $treeI = $tree;
+  if (!$tree->isa($TREEI)) {
+    $treeI = $class->to_treeI($tree);
+  }
 
   my $branch_length_sum = 0;
   while (defined $node) {

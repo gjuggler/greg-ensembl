@@ -66,15 +66,16 @@ sub run {
 
   if ( $self->param('output_aln_cdna') ) {
     print " -> $output_aln_cdna\n";
-    Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $cdna_aln, { length => 200 } );
-    Bio::EnsEMBL::Compara::AlignUtils->to_file( $cdna_aln, $output_aln_cdna )
-      ;    # Write the alignment out to file.
+    Bio::EnsEMBL::Compara::AlignUtils->pretty_print($cdna_aln, { length => 200 } );
+    Bio::EnsEMBL::Compara::AlignUtils->to_file($cdna_aln,$output_aln_cdna); # Write the alignment out to file.
+    $self->store_tag("cdna_aln_file",$output_aln_cdna);
   }
 
   if ( $self->param('output_tree') ) {
     print " -> $output_tree\n";
     my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
-    Bio::EnsEMBL::Compara::TreeUtils->to_file( $treeI, $output_tree );
+    Bio::EnsEMBL::Compara::TreeUtils->to_file($treeI,$output_tree);
+    $self->store_tag("tree_file",$output_tree);
   }
 }
 

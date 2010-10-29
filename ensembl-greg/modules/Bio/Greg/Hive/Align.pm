@@ -25,10 +25,7 @@ use base ('Bio::Greg::Hive::Process');
 
 sub debug { 1; }
 
-sub fetch_input {
-  my ($self) = @_;
-
-  ### DEFAULT PARAMETERS ###
+sub param_defaults {
   my $params = {
     alignment_table               => 'protein_tree_member',
     alignment_score_table         => 'protein_tree_member_score',
@@ -41,10 +38,12 @@ sub fetch_input {
     alignment_prank_codon_model => 0,
     alignment_prank_f           => 0
   };
+  return $params;
+}
+sub fetch_input {
+  my ($self) = @_;
 
-  #########################
-
-  $self->load_all_params($params);
+  $self->load_all_params();
 
   # Load the tree.
   my $out_table = $self->param('alignment_table');

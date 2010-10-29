@@ -22,12 +22,9 @@ use String::CRC32;
 
 use base ('Bio::Greg::Hive::Process');
 
-sub fetch_input {
+sub param_defaults {
   my $self = shift;
-
-  delete $self->{_param_hash};
-
-  my $params = {
+  return {
     ### Omega Distribution Parameters ###
     # For lognormal model.
     #phylosim_meanlog => -4.079,
@@ -79,9 +76,12 @@ sub fetch_input {
     phylosim_insertmodel        => 'NB 0.2 2',
     phylosim_deletemodel        => 'NB 0.2 2',
   };
+}
 
-  $self->load_all_params($params);
+sub fetch_input {
+  my $self = shift;
 
+  $self->load_all_params;
 }
 
 sub run {
@@ -119,10 +119,28 @@ sub write_output {
   Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $final_aa, { length => 200 } );
 }
 
+sub get_indelible_multiplier {
+  my $self = shift;
+  my $tree = shift;
+  my $params = shift;
+
+  my $average_omega = 0.3;
+  my $proportion_synonymous = 0.3;
+
+  my $mult = 3*($average_omega*(1-$proportion_synonymous) + $proportion_synonymous);
+  print "INDELIBLE TREE MULTIPLIER: $mult\n";
+  return $mult;
+}
+
 sub simulate_alignment_indelible {
   my $self   = shift;
   my $tree   = shift;
   my $params = shift;
+
+  my $mult = $self->get_indelible_multiplier($tree,$params);
+  print "Before scaling: [".$tree->newick_format."]\n";
+  $tree = Bio::EnsEMBL::Compara::TreeUtils->scale($tree,$mult);
+  print "After scaling: [".$tree->newick_format."]\n";
 
   my $models_trees_partitions = '';
 

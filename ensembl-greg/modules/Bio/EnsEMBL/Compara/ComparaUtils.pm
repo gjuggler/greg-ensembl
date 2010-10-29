@@ -332,6 +332,36 @@ sub fetch_masked_aa {
   return $class->fetch_masked_alignment( $aa_aln, undef, $tree, $params, 0 );
 }
 
+sub fetch_score_aln {
+  my $class = shift;
+  my $aa_aln = shift;
+  my $tree = shift;
+  my $params = shift;
+
+  my $table = $params->{'alignment_score_table'};
+  my $pta = $tree->adaptor;
+
+  my $new_aln = new $aa_aln;
+  foreach my $leaf ($tree->leaves) {
+
+    # Grab the score line for each leaf node.
+    my $id = $leaf->stable_id;
+    my $member_id = $leaf->member_id;
+    my $cmd = "SELECT cigar_line FROM $table where member_id=$member_id;";
+    my $sth = $pta->prepare($cmd);
+    $sth->execute();
+    my $data = $sth->fetchrow_hashref();
+    $sth->finish();
+    my $cigar = $data->{'cigar_line'};
+    
+    $cigar = $leaf->alignment_string unless ($cigar);
+    my $new_seq = new Bio::LocatableSeq(-seq => $cigar, -id => $id);
+    $new_aln->add_seq(-seq => $new_seq, -id => $id);
+  }
+
+  return $new_aln;
+}
+
 # Returns a masked alignment, either amino acid or DNA-level.
 sub fetch_masked_alignment {
   my $class       = shift;
@@ -361,6 +391,8 @@ sub fetch_masked_alignment {
     alignment_score_table               => 'protein_tree_member_score',
     alignment_score_mask_character_aa   => 'X',
     alignment_score_mask_character_cdna => 'N',
+   
+    maximum_mask_fraction => 0.5,
 
     cdna => $cdna_option
   };
@@ -411,57 +443,37 @@ sub fetch_masked_alignment {
       if ($cdna_option) {
         @arr = map { ( $_ . '' ) x 3 } @arr;
       }
-      $aln_score_string = join( "", @arr );
-
-#printf "%20s %10s  aln:%d  score:%d\n", $leaf->stable_id, $leaf->member_id,length($leaf->alignment_string),length($aln_score_string);
-#print $leaf->alignment_string."\n";
-#print $aln_score_string . "\n";
-
+      $aln_score_string = join("",@arr);      
       $hash_ref->{$id} = $aln_score_string;
     }
 
-    # Find a reasonable threshold based on the average scores in the alignment.
-    my $threshold_param = $params->{'alignment_score_threshold'};
-
-    my $threshold;
-    if ( $threshold_param eq 'auto' ) {
-      my %id_to_avg;
-      my $score_sum      = 0;
-      my $score_residues = 0;
-      foreach my $key ( keys %{$hash_ref} ) {
-        my $cigar = $hash_ref->{$key};
-        $cigar =~ s/\D//g;
-        my @chars = split( //, $cigar );
-        my $nchars = scalar @chars;
-        last if ( $nchars == 0 );    # Early exit if we don't have any chars
-        my $sum = 0;
-        map { $score_sum += $_; $sum += $_ } @chars;
-
-        $score_residues += $nchars;
-        my $avg = $sum / $nchars;
-        $id_to_avg{$key} = $avg;
-      }
-      $threshold = 6;
-      my $total_avg = 0;
-      if ( !$use_alignment_scores ) {
-        $threshold = 6;
-      } elsif ( $score_residues != 0 ) {
-        $total_avg = $score_sum / $score_residues;
-        $threshold =
-          int( $total_avg - 1.5 );    # takes the integer value of the average, and subtracts 2.
-        $threshold = 3 if ( $threshold < 3 );    # Minimum threshold of 3 seems OK.
-      }
-    } else {
-      $threshold = $params->{'alignment_score_threshold'};
-    }
-
-    #printf " -> Filtering table: %s  threshold: %d)\n",$table,$threshold;
-    printf " -> Masking sequences at alignment score threshold: >= %d\n",
-      $params->{'alignment_score_threshold'};
-
     my $mask_character = $params->{'alignment_score_mask_character_aa'};
     $mask_character = $params->{'alignment_score_mask_character_cdna'} if ($cdna_option);
-    $aln = $ALN->mask_below_score( $aln, $threshold, $hash_ref, $mask_character );
+    my $threshold = $params->{'alignment_score_threshold'};    
+
+    # Respect the maximum masked fraction if needed.
+    if ($params->{'maximum_mask_fraction'}) {
+      my $orig_threshold = $threshold;
+      my $max_fraction = $params->{'maximum_mask_fraction'};
+      my $unmasked_n = $ALN->count_residues($aln);
+      my $masked_fraction = 1.1;
+      my $tmp_threshold = $threshold + 1;
+      
+      while ($masked_fraction > $max_fraction) {
+        $tmp_threshold--;
+        my $tmp_masked_aln = $ALN->mask_below_score($aln,$tmp_threshold,$hash_ref,$mask_character);
+        my $masked_n = $ALN->count_residues($tmp_masked_aln,$cdna_option);
+
+        $masked_fraction = 1 - ($masked_n / $unmasked_n);
+        #print "$tmp_threshold $masked_fraction\n";
+      }
+      $threshold = $tmp_threshold;
+      my $masked_str = sprintf("%.3f",$masked_fraction);
+      print "Respecting maximum fraction of $max_fraction... reduced threshold from ${orig_threshold} to ${threshold} (masked fraction: ${masked_str}!\n";
+    }
+    
+    printf " -> Masking sequences at alignment score threshold: >= %d\n",$threshold;
+    $aln = $ALN->mask_below_score($aln,$threshold,$hash_ref,$mask_character);
   }
 
   #
@@ -936,7 +948,42 @@ sub tree_aln_cdna {
   my $filtered_cdna =
     Bio::EnsEMBL::Compara::ComparaUtils->fetch_masked_alignment( $aa, $cdna, $tree, $params, 1 );
 
-  return ( $tree, $filtered_aa, $filtered_cdna );
+  my $score_aln = Bio::EnsEMBL::Compara::ComparaUtils->fetch_score_aln($aa,$tree,$params);
+
+  Bio::EnsEMBL::Compara::AlignUtils->pretty_print($score_aln,{full=>1,length=>150});
+
+  return ($tree,$filtered_aa,$filtered_cdna,$score_aln);
+}
+
+sub get_all_as_obj {
+  my $class = shift;
+  my $dba = shift;
+  my $params = shift;
+
+  my $tree = $class->get_tree_for_comparative_analysis($dba,$params);
+  $tree->minimize_tree;
+
+  my $aa = $tree->get_SimpleAlign;
+  my $cdna = $tree->get_SimpleAlign(-cdna => 1);
+
+  my $filtered_aa = Bio::EnsEMBL::Compara::ComparaUtils->fetch_masked_alignment($aa,$cdna,$tree,$params,0);
+  my $filtered_cdna = Bio::EnsEMBL::Compara::ComparaUtils->fetch_masked_alignment($aa,$cdna,$tree,$params,1);
+
+  my $unfiltered_aa = $aa;
+  my $unfiltered_cdna = $cdna;
+
+  my $score_aln = Bio::EnsEMBL::Compara::ComparaUtils->fetch_score_aln($aa,$tree,$params);
+
+  Bio::EnsEMBL::Compara::AlignUtils->pretty_print($score_aln,{full=>1});
+
+  return {
+    tree => $tree,
+    aln => $filtered_aa,
+    cdna_aln => $filtered_cdna,
+    unfiltered_aln => $unfiltered_aa,
+    unfiltered_cdna_aln => $unfiltered_cdna,
+    score_aln => $score_aln
+  };
 }
 
 sub get_taxon_ids_from_keepers_list {

@@ -14,17 +14,19 @@ use Bio::EnsEMBL::Hive::Process;
 
 use base ('Bio::Greg::Hive::Process');
 
-sub fetch_input {
-  my ($self) = @_;
-
-  delete $self->{_param_hash};
+sub param_defaults {
   my $params = {
     alignment_table       => 'protein_tree_member',
     alignment_score_table => 'protein_tree_member_score',
     alignment_scores_action => 'prank'    # Options: 'gblocks', 'prank', 'trimal', 'indelign'
   };
+  return $params;
+}
 
-  $self->load_all_params($params);
+sub fetch_input {
+  my ($self) = @_;
+
+  $self->load_all_params();
 
   my $no_filter_param = $self->replace_params( $self->params, { alignment_score_filtering => 0 } );
 
@@ -72,9 +74,11 @@ sub run {
   } elsif ( $action =~ m/(coffee|score)/i ) {
     print " -> RUN TCOFFEE [$action]\n";
     $score_hash = $self->run_tcoffee( $tree, $aln, $params );
-  } elsif ( $action =~ m/oracle/i ) {
-    $score_hash = $self->run_oracle( $tree, $aln, $params );
-  } elsif ( $action =~ m/none/i ) {
+  } elsif ( $action =~ m/oracle/i) {
+    $score_hash = $self->run_oracle($tree,$aln,$params);
+  } elsif ($action =~ m/columns/i) {
+    $score_hash = $self->run_columns($tree,$aln,$params);
+  } elsif ($action =~ m/none/i) {
     return;
   } else {
     $self->throw("Alignment score action not recognized: [$action]!");
@@ -102,6 +106,38 @@ sub store_scores {
     sleep(0.1);
   }
   $sth->finish;
+}
+
+sub run_columns {
+  my $self = shift;
+  my $tree = shift;
+  my $aln = shift;
+  my $params = shift;
+
+  my $num_sequences = scalar($tree->leaves);
+
+  my @column_scores;
+  foreach my $i (1 .. $aln->length) {
+    my $col_string = Bio::EnsEMBL::Compara::AlignUtils->get_column_string($aln,$i);
+    $col_string =~ s/[^-]//g;
+    my $num_gaps = length($col_string);
+    my $gap_fraction = $num_gaps / $num_sequences;
+    my $score = $gap_fraction * 10;
+    $score = 9 if ($score > 9);
+    $score = 0 if ($score < 0);
+    $score = sprintf("%1d",$score);
+
+    push @column_scores,$score;
+  }
+
+  my %scores_hash;
+  
+  foreach my $leaf ( $tree->leaves ) {
+    my $aln_string = _apply_columns_to_leaf( \@column_scores, $leaf );
+    $scores_hash{ $leaf->stable_id } = $aln_string;
+  }
+
+  return \%scores_hash;
 }
 
 sub run_oracle {
@@ -151,6 +187,7 @@ sub run_oracle {
   print "Indexing pairs...\n";
   my $ALNU     = 'Bio::EnsEMBL::Compara::AlignUtils';
   my $true_obj = $ALNU->to_arrayrefs($sa_true);
+  print "test_obj\n";
   my $test_obj = $ALNU->to_arrayrefs($sa_aln);
 
   # Add all aligned pairs to the index hashtable.
@@ -196,10 +233,12 @@ sub run_oracle {
       }
       my $correct_bl = $self->get_subtree_bl( $tree, \@correctly_aligned_ids, $tree_bl_hash );
 
-      my $score = $correct_bl / $total_nongap_bl * 10.0;
-      $score = 9 if ( $score > 9 );
-      $score = 0 if ( $score < 0 );
-      $score = sprintf( "%1d", $score );
+      # Spread out a little bit towards lower scores...
+      my $score = -5 + ($correct_bl/$total_nongap_bl * 15.0);
+
+      $score = 9 if ($score > 9);
+      $score = 0 if ($score < 0);
+      $score = sprintf("%1d",$score);
       $scores_hash->{$this_seq_id} .= $score;
       $column_score_string .= $score;
 
@@ -217,13 +256,13 @@ sub get_subtree_bl {
   my $bl_hash = shift;
 
   my @id_array = @$seq_ids;
-
-  #    @id_array = sort {$a <=> $b} @id_array;
-  my $key = join( '_', @id_array );
+  @id_array = sort {$a cmp $b} @id_array;
+  my $key = join('_',@id_array);
   my $existing_value = $bl_hash->{$key};
-  return $existing_value if ( defined $existing_value );
-
-  my $subtree = Bio::EnsEMBL::Compara::TreeUtils->extract_subtree_from_leaves( $tree, \@id_array );
+  return $existing_value if (defined $existing_value);
+    
+  print "No existing value! $key\n";
+  my $subtree = Bio::EnsEMBL::Compara::TreeUtils->extract_subtree_from_leaves($tree,\@id_array);
   my $total = Bio::EnsEMBL::Compara::TreeUtils->total_distance($subtree);
   $bl_hash->{$key} = $total;
   return $total;
@@ -295,13 +334,13 @@ sub run_tcoffee {
   $tmpfile->close;
 
   my $tmp = $tmpdir;
-  $tmp = substr( $tmp, 0, -1 );
-  my $prefix = "export HOME_4_TCOFFEE=\"$tmp\";";
-  $prefix = "export DIR_4_TCOFFEE=\"${tmp}\";";
+  $tmp = substr($tmp,0,-1);
+  my $prefix = "export HOME_4_TCOFFEE=\"${tmp}\";";
+  $prefix .= "export DIR_4_TCOFFEE=\"${tmp}\";";
   $prefix .= "export METHODS_4_TCOFFEE=\"${tmp}\";";
   $prefix .= "export MCOFFEE_4_TCOFFEE=\"${tmp}\";";
-  $prefix .= "export TMP_4_TCOFFEE=\"$tmp\";";
-  $prefix .= "export CACHE_4_TCOFFEE=\"$tmp\";";
+  $prefix .= "export TMP_4_TCOFFEE=\"${tmp}\";";
+  $prefix .= "export CACHE_4_TCOFFEE=\"${tmp}\";";
   $prefix .= "export NO_ERROR_REPORT_4_TCOFFEE=1;";
   $prefix .= "export NUMBER_OF_PROCESSORS_4_TCOFFEE=1;";
   $prefix .= "export MAFFT_BINARIES=/ebi/research/software/Linux_x86_64/bin/mafft;";

@@ -16,6 +16,8 @@ use Bio::EnsEMBL::Compara::DBSQL::DBAdaptor;
 use File::Path;
 use POSIX qw(strftime mktime);
 
+use Bio::Greg::EslrUtils;
+
 use base ('Bio::EnsEMBL::Hive::Process');
 
 sub get_tree {
@@ -730,6 +732,7 @@ sub create_table_from_params {
         'char8'     => 'CHAR(8)',
         'char16'    => 'CHAR(16)',
         'char32'    => 'CHAR(32)',
+        'char64' => 'CHAR(64)',
         'float'     => 'FLOAT'
       };
       $type = $type_map->{$type};
@@ -846,7 +849,7 @@ sub get_output_folder {
   my $filename;
   do {
     $i++;
-    $filename = sprintf( "%s/%s/%s_%.2d", $output_base, $date_string, $date_string, $i );
+    $filename = sprintf( "%s/%s_%.2d", $output_base, $date_string, $i );
   } while ( -e $filename );
 
   mkpath( [$filename] );
