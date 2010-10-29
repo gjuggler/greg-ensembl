@@ -14,17 +14,19 @@ use Bio::EnsEMBL::Hive::Process;
 
 use base ('Bio::Greg::Hive::Process');
 
-sub fetch_input {
-  my ($self) = @_;
-
-  delete $self->{_param_hash};
+sub param_defaults {
   my $params = {
     alignment_table       => 'protein_tree_member',
     alignment_score_table => 'protein_tree_member_score',
     alignment_scores_action => 'prank'    # Options: 'gblocks', 'prank', 'trimal', 'indelign'
   };
+  return $params;
+}
 
-  $self->load_all_params($params);
+sub fetch_input {
+  my ($self) = @_;
+
+  $self->load_all_params();
 
   my $no_filter_param = $self->replace_params( $self->params, { alignment_score_filtering => 0 } );
 

@@ -22,12 +22,9 @@ use String::CRC32;
 
 use base ('Bio::Greg::Hive::Process');
 
-sub fetch_input {
+sub param_defaults {
   my $self = shift;
-
-  delete $self->{_param_hash};
-
-  my $params = {
+  return {
     ### Omega Distribution Parameters ###
     # For lognormal model.
     #phylosim_meanlog => -4.079,
@@ -79,9 +76,12 @@ sub fetch_input {
     phylosim_insertmodel        => 'NB 0.2 2',
     phylosim_deletemodel        => 'NB 0.2 2',
   };
+}
 
-  $self->load_all_params($params);
+sub fetch_input {
+  my $self = shift;
 
+  $self->load_all_params;
 }
 
 sub run {

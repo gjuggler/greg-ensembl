@@ -12,20 +12,19 @@ use File::Path;
 
 use base ('Bio::Greg::Hive::Process');
 
+sub param_defaults {
+  my $self = shift;
+  return {
+    experiment_name => 'filter_sweeps',
+    tree_root_dir   => $self->base . '/projects/slrsim/trees'
+  };
+}
 
 
 sub fetch_input {
   my $self = shift;
 
-  ### DEFAULT PARAMETERS ###
-  my $defaults = {
-    experiment_name => 'filter_sweeps',
-    tree_root_dir   => $self->base . '/projects/slrsim/trees'
-  };
-  ##########################
-
-  $self->load_all_params($defaults);
-
+  $self->load_all_params();
   $self->load_simulation_params();
 
   $self->_output_folder();

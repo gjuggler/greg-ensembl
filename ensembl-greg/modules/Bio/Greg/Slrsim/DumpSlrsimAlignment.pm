@@ -17,7 +17,7 @@ use base ('Bio::Greg::Slrsim::SlrsimProcess');
 sub fetch_input {
   my($self) = @_;
     
-  $self->load_all_params({});
+  $self->load_all_params;
 }
 
 sub run {

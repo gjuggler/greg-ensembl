@@ -5,6 +5,11 @@ use Bio::EnsEMBL::Utils::Exception;
 
 use base ('Bio::Greg::Hive::Process');
 
+sub param_defaults {
+  return {
+  };
+}
+
 sub fetch_input {
   my $self = shift;
 
