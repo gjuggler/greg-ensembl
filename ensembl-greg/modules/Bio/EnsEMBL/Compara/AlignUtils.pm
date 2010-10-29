@@ -518,6 +518,25 @@ sub count_residues_at_column {
   return $char_count;
 }
 
+sub count_residues {
+  my $class = shift;
+  my $aln = shift;
+  my $cdna_option = shift;
+
+  my $n = 0;
+  foreach my $seq ($aln->each_seq) {
+    my $str = $seq->seq;
+    if ($cdna_option) {
+      $str =~ s/[-n]//gi;
+    } else {
+      $str =~ s/[-x]//gi
+    }
+    
+    $n += length($str);
+  }
+  return $n;
+}
+
 sub get_ungapped_branchlength {
   my $class = shift;
   my $aln = shift;
@@ -972,6 +991,8 @@ sub get_prank_filter_matrices {
     'prank_filtering_scheme' => 'prank_minimum'
   };
   $params = Bio::EnsEMBL::Compara::ComparaUtils->replace_params($defaults,$params);  
+
+  $params->{prank_filtering_scheme} = 'prank_mean' if ($params->{prank_filtering_scheme} eq 'prank');
 
   my $dna_aln = $tree->get_SimpleAlign(-cdna => 1);
 
@@ -1507,7 +1528,7 @@ sub pretty_print {
   my $params = shift;
 
   my $full = $params->{'full'} || 0;
-  my $length = $params->{'length'} || 50;
+  my $length = $params->{'length'} || $params->{'width'} || 150;
 
   $full = 1 if (!$full && $length > $aln->length + 10);
   

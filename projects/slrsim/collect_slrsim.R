@@ -64,10 +64,16 @@ get.all.data = function(sites.cols=NULL,genes.cols=NULL,where=NULL) {
   }
 
   for (necessary in c(
-    'g.experiment_name','g.slrsim_label',
-    'g.data_id','g.node_id',
-    'g.phylosim_insertrate','g.phylosim_insertmodel',
+    'g.experiment_name',
+    'g.slrsim_label',
+    'g.data_id',
+    'g.node_id',
+    'g.phylosim_insertrate',
     'g.alignment_name',
+    'g.alignment_score_threshold',
+    'g.filtering_name',
+    'g.slrsim_tree_file',
+    'g.slrsim_rep',
     'g.tree_mean_path'
     )) {
     if (!necessary %in% genes.cols) {
@@ -76,16 +82,14 @@ get.all.data = function(sites.cols=NULL,genes.cols=NULL,where=NULL) {
   }
 
   for (necessary in c(
-    's.aln_dnds','s.aln_type','s.aln_note','s.aln_lrt',
-    's.true_dnds','s.true_type','s.seq_position'
+    's.aln_dnds','s.aln_lrt',
+    's.true_dnds','s.true_type'
     )) {
     if (!necessary %in% sites.cols) {
       sites.cols = paste(sites.cols,necessary,sep=',')
     }
   }
 
-  print(genes.cols)
-  print(sites.cols)
   query = sprintf("select %s,%s from stats_genes g JOIN stats_sites s ON g.data_id=s.data_id %s",genes.cols,sites.cols,where.statement)
   all = get.vector(con,query,columns='all')
  
@@ -99,7 +103,7 @@ get.all.by.experiment = function() {
   data.list = list()
   i=1
   for (experiment in experiments) {
-    print(experiment)
+    print(paste("Getting experiment",experiment))
     cur.data = get.all.data(where=paste('WHERE experiment_name="',experiment,'"',sep=''))
     data.list[[i]] = cur.data
     i = i + 1

@@ -16,6 +16,8 @@ use Bio::EnsEMBL::Compara::DBSQL::DBAdaptor;
 use File::Path;
 use POSIX qw(strftime mktime);
 
+use Bio::Greg::EslrUtils;
+
 use base ('Bio::EnsEMBL::Hive::ProcessWithParams');
 
 sub get_tree {
@@ -479,7 +481,7 @@ sub load_all_params {
   my $old_param_hash = $self->{'_param_hash'};
   $self->{'_param_hash'} = { %$old_param_hash, %$param_set_params, %$tree_tag_params };
 
-  if (!defined $self->param('data_id')) {
+  if (!defined $self->param('data_id') || $self->param('data_id') eq '') {
     $self->param('data_id',$node_id);
   }
   if (!defined $self->param('parameter_set_id')) {
@@ -687,6 +689,7 @@ sub create_table_from_params {
         'char8' => 'CHAR(8)',
         'char16' => 'CHAR(16)',
         'char32' => 'CHAR(32)',
+        'char64' => 'CHAR(64)',
         'float'  => 'FLOAT'
       };
       $type = $type_map->{$type};
@@ -784,7 +787,7 @@ sub get_output_folder {
 
   if (defined $self->param('output_folder')) {
     my $folder = $self->param('output_folder');
-    #print "Output folder: $folder\n";
+    print "Output folder: $folder\n";
     if (!-e $folder) {
       print "Warning: Output folder was already stored in the database, but the folder did not exist.\n";
       print " -> Creating folder: $folder\n";

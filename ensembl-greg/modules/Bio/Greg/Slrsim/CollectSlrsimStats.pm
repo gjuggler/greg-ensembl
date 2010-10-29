@@ -18,13 +18,14 @@ sub get_gene_table_structure {
   my $self = shift;
 
   my $added_structure = {
-    experiment_name => 'char16',
+    experiment_name => 'char64',
 
     slrsim_label                        => 'string',
     alignment_score_threshold           => 'float',
     alignment_score_mask_character_cdna => 'char8',
     filtering_name                      => 'string',
     alignment_name                      => 'string',
+    alignment_type                      => 'string',
     sitewise_action                     => 'string',
     sitewise_filter_order               => 'string',
 
@@ -240,22 +241,17 @@ sub data_for_site {
   #printf("t:%.3f a:%.3f\n",$obj->{true_dnds},$obj->{aln_dnds});
   if ( !( defined $obj->{aln_dnds} && defined $obj->{true_dnds} ) ) {
     if ( $data->{'analysis_action'} eq '' || $data->{'analysis_action'} eq 'none' ) {
-
       # Do nothing.
       $obj->{aln_dnds}  = 0;
       $obj->{true_dnds} = 0;
     } else {
       if ( !defined $obj->{true_dnds} ) {
-        printf "No true dnds! aln:%s  %s  true:%s  %s\n", $aln_col, $obj->{aln}, $true_col,
-          $obj->{true_dnds} = undef;
+        my $str = sprintf("No true dnds! aln:%s  %s  true:%s\n", $aln_col, $obj->{aln}, $true_col);
+        die($str);
         next;
       } elsif ( !defined $obj->{aln_dnds} ) {
         print "No aln dnds!\n";
-
-# Comment out this 'next' to  maintain the rows without 'aln' scores (i.e. to count the false-negative in our results)
-# With the 'next' in place, rows that don't have a corresponding 'aln_dnds' value will be lost from the collected stats,
-# and so the total number of captured rows will differ between sets of different alignment / filtering parameters.
-#next;
+        #next;
       }
     }
   }

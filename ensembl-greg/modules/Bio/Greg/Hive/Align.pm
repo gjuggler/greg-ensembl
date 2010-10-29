@@ -35,6 +35,7 @@ sub fetch_input {
       alignment_max_gene_count         => 10000,
       alignment_use_exon_boundaries    => 0,
       alignment_executable             => '',
+      alignment_provide_tree           => 1,
       t_coffee_executable => '',
       
       alignment_prank_codon_model => 0,
@@ -219,10 +220,14 @@ sub align_with_prank {
   rmtree([$aln_file]) if (-e $aln_file);
   Bio::EnsEMBL::Compara::AlignUtils->dump_ungapped_seqs($aln,$aln_file); # Write the alignment out to file.
   
-  my $tree_file = $tmp . "tree.nh";
-  rmtree([$tree_file]) if (-e $tree_file);
-  my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
-  Bio::EnsEMBL::Compara::TreeUtils->to_file($treeI,$tree_file);
+  my $tree_line = "";
+  if ($self->param('alignment_provide_tree')) {
+    my $tree_file = $tmp . "tree.nh";
+    rmtree([$tree_file]) if (-e $tree_file);
+    my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
+    Bio::EnsEMBL::Compara::TreeUtils->to_file($treeI,$tree_file);
+    $tree_line = "-t=${tree_file}";
+  }
 
   my $output_file = $tmp . "output";
   
@@ -231,7 +236,7 @@ sub align_with_prank {
   $extra_params .= ' -codon ' if ($params->{'alignment_prank_codon_model'});
   $extra_params .= ' +F ' if ($params->{'alignment_prank_f'});
   
-  my $cmd = qq^$executable $extra_params -d=$aln_file -t=$tree_file -o=$output_file^;
+  my $cmd = qq^$executable $extra_params -d=$aln_file $tree_line -o=$output_file^;
   
   $output_file .= '.1.fas';
 
@@ -264,17 +269,21 @@ sub align_with_papaya {
   # Output alignment.
   my $aln_file = $tmp . "aln.fasta";
   Bio::EnsEMBL::Compara::AlignUtils->dump_ungapped_seqs($aln,$aln_file); # Write the alignment out to file.
-  
-  my $tree_file = $tmp . "tree.nh";
-  my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
-  Bio::EnsEMBL::Compara::TreeUtils->to_file($treeI,$tree_file);
+
+  my $tree_line;
+  if ($self->param('alignment_provide_tree')) {
+    my $tree_file = $tmp . "tree.nh";
+    my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
+    Bio::EnsEMBL::Compara::TreeUtils->to_file($treeI,$tree_file);
+    $tree_line = "--treefile ${tree_file}";
+  }
 
   my $output_file = $tmp . "output";
   
   my $executable = $params->{'alignment_executable'} || 'papaya';
   my $extra_params = '';
   
-  my $cmd = qq^$executable $extra_params --seqfile $aln_file --treefile $tree_file --outfile $output_file^;
+  my $cmd = qq^$executable $extra_params --seqfile $aln_file ${tree_line} --outfile $output_file^;
 
   # Run the command.
   $self->compara_dba->dbc->disconnect_when_inactive(1);
@@ -310,10 +319,6 @@ sub align_with_muscle {
   my $aln_file = $tmp . "aln.fasta";
   Bio::EnsEMBL::Compara::AlignUtils->dump_ungapped_seqs($aln,$aln_file); # Write the alignment out to file.
   
-  my $tree_file = $tmp . "tree.nh";
-  my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
-  Bio::EnsEMBL::Compara::TreeUtils->to_file($treeI,$tree_file);
-
   my $output_file = $tmp . "output.fa";
   
   my $executable = $params->{'alignment_executable'} || 'muscle';
@@ -330,10 +335,6 @@ sub align_with_muscle {
   print "OUTPUT!!!\n";
   print join('\n',@stdout);
 
-#  unless($rc == 0) {
-#    die("Muscle error: $?\n");
-#  }
-  
   use Bio::AlignIO;
   my $alignio = Bio::AlignIO->new(-file => $output_file,
                                   -format => "fasta");
@@ -435,17 +436,21 @@ sub align_with_clustalw {
   # Output alignment.
   my $aln_file = $tmp . "aln.fasta";
   Bio::EnsEMBL::Compara::AlignUtils->dump_ungapped_seqs( $aln,$aln_file); # Write raw sequences to file.
-  
-  my $tree_file = $tmp . "tree.nh";
-  my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
-  Bio::EnsEMBL::Compara::TreeUtils->to_file($treeI,$tree_file);
+
+  my $tree_line;
+  if ($self->param('alignment_provide_tree')) {
+    my $tree_file = $tmp . "tree.nh";
+    my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
+    Bio::EnsEMBL::Compara::TreeUtils->to_file($treeI,$tree_file);
+    $tree_line = "-USETREE=${tree_file}";
+  }    
 
   my $output_file = $tmp . "output.fa";
   
   my $executable = $params->{'alignment_executable'} || 'clustalw';
   my $extra_params = '';
   
-  my $cmd = qq^$executable $extra_params -INFILE=$aln_file -USETREE=$tree_file -OUTFILE=$output_file -OUTPUT=GCG -align^;
+  my $cmd = qq^$executable $extra_params -INFILE=$aln_file ${tree_line} -OUTFILE=$output_file -OUTPUT=GCG -align^;
 
   # Run the command.
   $self->compara_dba->dbc->disconnect_when_inactive(1);
