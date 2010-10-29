@@ -3,122 +3,228 @@ source("aln-tools/phylo.tools.R")
 source("aln-tools/plot.phylo.greg.R")
 library(ape)
 
-plot.aln.detail = function(base) {
-  t_f = paste(base,".nh",sep="")
-  a_f = paste(base,".fa",sep="")
-  csv_f = paste(base,".csv",sep="")
-
-  tree = read.tree(t_f)
-  aln = read.aln(a_f,seqType='protein')
-  csv = read.csv(csv_f)
-
-  sort.aln.by.tree(aln,tree)
-
-  num_rows = 3
-
-  par(mfrow=c(num_rows+1,1),
-  mar=c(5,4,0,0))
-  xl=c(0,3000)
-  xs = csv$aln_position
-
-  plot(y=csv$ncod,x=xs,xlim=xl,type="s")
-  plot(y=csv$true_entropy,x=xs,xlim=xl,type="s")
-
-  plot.new()
-  plot.window(xlim=xl,ylim=c(0,aln$num_seqs))
-  plot.aln(aln,overlay=T)
-
-  return(csv)
+subplot <- function(x, y) viewport(layout.pos.col=x, layout.pos.row=y)
+vplayout <- function(x, y) {
+  grid.newpage()
+  pushViewport(viewport(layout=grid.layout(y,x)))
 }
 
-plot.aln.overview = function(base,len=2000) {
-  t_f = paste(base,".nh",sep="")
-  a_f = paste(base,".fa",sep="")
-  csv_f = paste(base,".csv",sep="")
+dump.protein = function(node_id,base=node_id,tree_file=NA,aln_file=NA,sw_file=NA,params_file=NA,sw_table=NA,dbname=NA) {
+  if (is.na(tree_file)) {
+    tree_file = paste(base,'/',node_id,".nh",sep="")
+  }
+  if (is.na(aln_file)) {
+    aln_file = paste(base,'/',node_id,".fa",sep="")
+  }
+  if (is.na(sw_file)) {
+    sw_file = paste(base,'/',node_id,".csv",sep="")
+  }
+  if (is.na(params_file)) {
+    params_file = paste(base,'/',node_id,".txt",sep="")
+  }
+  if (is.na(sw_table)) {
+    sw_table = "stats_sites"
+  }
+
+  url = paste("mysql://slrsim:slrsim@mysql-greg.ebi.ac.uk:4134/",
+    dbname,sep="")
+  print(paste("URL:",url))
+  system(paste("perl ~/lib/greg-ensembl/scripts/tree_dump.pl",
+    " --url=",url,
+    " --id=",node_id,
+    " --tree=",tree_file,
+    " --aln=",aln_file,
+    " --sw=",sw_file,
+    " --sw_table=",sw_table,
+    " --params=",params_file,
+    sep="")
+  )  
+}
+
+plot.indel.distribution <- function(indel_label) {
+  library(VGAM)
+  toks <- unlist(strsplit(indel_label,' '))
+  if (toks[1] == 'NB') {
+    # for NB .5 1, a=1 and b=1 - .5
+    distr <- dnbinom
+    a <- toks[3]
+    b <- 1-as.numeric(toks[2])
+  } else {
+    # for POW 4 30, a=30 and b=4
+    distr <- dzipf
+    a <- toks[3]
+    b <- toks[2]
+  }
+  a <- as.numeric(a)
+  b <- as.numeric(b)  
+
+  xs <- seq(from=1,to=20)
+  ys <- distr(xs,a,b)
+  df <- data.frame(x=xs,y=ys)
+  p <- ggplot(df,aes(x=x,y=y)) + geom_bar(stat='identity')
+  return(p)
+}
+
+no.margins <- function(p) {
+  p <- p + opts(
+      plot.margin=unit(c(0,0,0,0),'lines'),
+      panel.grid.minor=theme_blank(),
+      panel.grid.major=theme_blank(),
+      legend.position='none',
+      axis.title.x=theme_blank(),
+      axis.title.y=theme_blank()
+    )
+  p <- p + scale_x_continuous(breaks=NA)
+  p <- p + scale_y_continuous(breaks=NA)
+  return(p)
+}
+
+plot.aln.overview = function(node_id,base,len=1000) {
+  t_f = paste(base,'/',node_id,".nh",sep="")
+  a_f = paste(base,'/',node_id,".fa",sep="")
+  csv_f = paste(base,'/',node_id,".csv",sep="")
 
   tree = read.tree(t_f)
   aln = read.aln(a_f,seqType='protein')
-  csv = read.csv(csv_f)
   aln = sort.aln.by.tree(aln,tree)
 
-  row = csv[1,]
-
-  xl = c(-500,len)
-  plot.new()
-  plot.window(xlim=xl,ylim=c(0,aln$num_seqs))
-  plot.aln(aln,overlay=T)
-
-  tx = xl[2]
-  ty = aln$num_seqs/2
-
-  txt = paste(
-#   "model: ",row$phylosim_insertmodel,"\t",
-#   "rate: ",row$phylosim_insertrate,"\t",
-#   "root_len: ",row$phylosim_seq_length,"\t",
-  "file: ",row$slrsim_file,"\t",
-  "aln: ",row$alignment_name,"\t",
-  "node: ",row$node_id,
-
-"\n",
-
-#  "size: ",row$leaf_count,"\t",
-#  "len: ",row$tree_length,"\t",
-  "filter: ",row$filtering_name,"\t",
-  "thr: ",row$alignment_score_threshold,"\t",
-  "%:",sprintf("%.2f",row$unfiltered_site_fraction),"\t",
-  "tcs:",sprintf("%.2f",row$total_column_score),"\t",
-  "sps:",sprintf("%.2f",row$sum_of_pairs_score),"\t",
-   sep="")
-
-  text(tx,ty,txt,adj=c(1,0.5))
-
-  par(new=T)
-  len = tree_length(tree)
-  plot.phylo.greg2(tree,x.lim=c(-1,30),y.lim=c(.5,aln$num_seqs+.5),edge.width=0.5)
+  return(plot.aln.gg(aln,do.plot=F))
 }
 
-plot.all.tiled = function(dir,len=2000,width=NA,height=NA) {
-  files = list.files(path=dir,pattern="fa")
-  files = as.numeric(gsub("\\.fa","",files))
-  files = sort(files)
+aln.df <- function(aln) {
+  arr <- matrix(unlist(aln$seqs),nrow=aln$num_seqs,ncol=aln$length,byrow=TRUE) 
+  df <- data.frame()
+  for (i in 1:aln$num_seqs)
+  {
+    list <- arr[i,]
+    name <- aln$names[i]
 
-  if (is.na(width)) {
-    width = 1600
+    # Store the indices where the gaps are.
+    ids <- list == '-'
+    seq.pos <- seq(1,aln$length)
+
+    pos.nogaps <- seq.pos[ids==FALSE]
+    char.nogaps <- list[ids==FALSE]
+    df <- rbind(df,data.frame(
+      id=rep(name,length(pos.nogaps)),
+      seq_index=rep(i,length(pos.nogaps)),
+      pos=pos.nogaps,
+      char=char.nogaps
+    ))
   }
-  if (is.na(height)) {
-    height = 64 * length(files)
-  }
-
-  png(filename=paste(dir,"overview.png",sep=""),width=width,height=height,pointsize=14)
-  print(c(dir,width,height))
-
-  n = length(files)
-
-  par(mar=c(0,0,0,0))
-  par(mfrow=c(n+1,1))
-  for (i in 1:length(files)) {
-    f = files[i]
-    print(f)
-    plot.aln.overview(paste(dir,f,sep=""),len=len)
-  }
-
-  dev.off()    
+  df$id <- factor(df$id,levels=aln$name)
+  return(df)
 }
 
-plot.all.details = function(dir='.') {
-  files = list.files(path=dir,pattern="fa")
-  for (i in 1:length(files)) {
-    f = files[i]
-    f = gsub("\\.fa","",f)
-    print(f)
+plot.aln.gg <- function(aln,do.plot=T) {
+  df <- aln.df(aln)
 
-    png(filename=paste(dir,f,".png",sep=""),width=1200,height=2400)
-    a = plot.file(paste(dir,f,sep=""))
-    dev.off()
+  p <- ggplot(df,aes(x=pos,y=id))
+  p <- p + geom_tile(aes(fill=char))
+  p <- p + scale_fill_manual(values=protein.colors())
+#  p <- p + coord_equal(ratio=5)
+  p <- p + opts(legend.position='none')
+  if(do.plot == TRUE) {
+    print(p)
+  } else {
+    return(p)
   }
 }
 
-# Example usage
-#base = "NO.backup/2010-03-17/indel_models/"
-#plot.all.tiled(base)
-#plot.all.details(base)
+plot.at.threshold = function(p,data,threshold) {
+
+}
+
+plot.roc = function(data,plot.x='tn',plot.y='tp',plot.at.threshold=c(3.84,6.64),plot=T) {
+  data$roc.x = data[,plot.x]
+  data$roc.y = data[,plot.y]
+
+  require(ggplot2)
+  require(grid)
+  #print(paste("Plot.roc row count: ",nrow(data)))
+
+  p <- ggplot(data,aes(x=roc.x,y=roc.y,colour=slrsim_label))
+  p <- p + geom_line()
+  p <- p + xlab(plot.x)
+  p <- p + ylab(plot.y)
+
+  if (any(!is.na(plot.at.threshold))) {
+    for (lbl in unique(data$slrsim_label)) {
+      data.sub <- subset(data,slrsim_label==lbl)
+
+      for (threshold in plot.at.threshold) {
+        t <- threshold
+        row.index <- min(which(data.sub$score <= t))
+        row <- data.sub[row.index,]
+        #print(row)
+        p <- p + geom_point(data=row,colour=I('black'),shape=I(1)) + scale_shape(solid=FALSE)
+      }
+    }
+  }
+
+  if (plot) {
+    print(p)
+  }
+  return(p)
+}
+
+
+protein.colors <- function(scheme='Taylor') {
+  if (scheme == 'Taylor') {
+    cols <- c(
+       'A' = "#CCFF00",       'a' = "#CCFF00",
+       'C' = "#FFFF00",       'c' = "#FFFF00",
+       'D' = "#FF0000",       'd' = "#FF0000",
+       'E' = "#FF0066",       'e' = "#FF0066",
+       'F' = "#00FF66",       'f' = "#00FF66",
+       'G' = "#FF9900",       'g' = "#FF9900",
+       'H' = "#0066FF",       'h' = "#0066FF",
+       'I' = "#66FF00",       'i' = "#66FF00",
+       'K' = "#6600FF",       'k' = "#6600FF",
+       'L' = "#33FF00",       'l' = "#33FF00",
+       'M' = "#00FF00",       'm' = "#00FF00",
+       'N' = "#CC00FF",       'n' = "#CC00FF",
+       'P' = "#FFCC00",       'p' = "#FFCC00",
+       'Q' = "#FF00CC",       'q' = "#FF00CC",
+       'R' = "#0000FF",       'r' = "#0000FF",
+       'S' = "#FF3300",       's' = "#FF3300",
+       'T' = "#FF6600",       't' = "#FF6600",
+       'V' = "#99FF00",       'v' = "#99FF00",
+       'W' = "#00CCFF",       'w' = "#00CCFF",
+       'Y' = "#00FFCC",       'y' = "#00FFCC",
+       '2' = "#888888",       '2' = "#888888",
+       'O' = "#424242",       'o' = "#424242",
+       'B' = "#7D7D7D",       'b' = "#7D7D7D",
+       'Z' = "#EEEEEE",       'z' = "#EEEEEE",
+       'X' = "#000000",       'x' = "#000000"
+    )
+  } else {
+    cols <- c(
+       'A' = "#B8B8B8",       'a' = "#B8B8B8",
+       'C' = "#E6E600",       'c' = "#E6E600",
+       'D' = "#E60A0A",       'd' = "#E60A0A",
+       'E' = "#E60A0A",       'e' = "#E60A0A",
+       'F' = "#3232AA",       'f' = "#3232AA",
+       'G' = "#C8C8C8",       'g' = "#C8C8C8",
+       'H' = "#8282D2",       'h' = "#8282D2",
+       'I' = "#0F820F",       'i' = "#0F820F",
+       'K' = "#145AFF",       'k' = "#145AFF",
+       'L' = "#0F820F",       'l' = "#0F820F",
+       'M' = "#E6E600",       'm' = "#E6E600",
+       'N' = "#00DCDC",       'n' = "#00DCDC",
+       'P' = "#DC9682",       'p' = "#DC9682",
+       'Q' = "#E60A0A",       'q' = "#E60A0A",
+       'R' = "#145AFF",       'r' = "#145AFF",
+       'S' = "#FA9600",       's' = "#FA9600",
+       'T' = "#FA9600",       't' = "#FA9600",
+       'V' = "#C8C8C8",       'v' = "#C8C8C8",
+       'W' = "#C8C8C8",       'w' = "#C8C8C8",
+       'Y' = "#C8C8C8",       'y' = "#C8C8C8",
+       '2' = "#888888",       '2' = "#888888",
+       'O' = "#424242",       'o' = "#424242",
+       'B' = "#7D7D7D",       'b' = "#7D7D7D",
+       'Z' = "#EEEEEE",       'z' = "#EEEEEE"
+    )
+  }
+  return(cols)
+}

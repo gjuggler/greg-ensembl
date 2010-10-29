@@ -131,18 +131,37 @@ plot.aln.gg <- function(aln,do.plot=T) {
   }
 }
 
-plot.roc = function(data,plot.x='tn',plot.y='tp',plot.unity=F,fill.below=F,plot=T) {
+plot.at.threshold = function(p,data,threshold) {
+
+}
+
+plot.roc = function(data,plot.x='tn',plot.y='tp',plot.at.threshold=c(3.84,6.64),plot=T) {
   data$roc.x = data[,plot.x]
   data$roc.y = data[,plot.y]
 
   require(ggplot2)
   require(grid)
-  print(paste("Plot.roc row count: ",nrow(data)))
+  #print(paste("Plot.roc row count: ",nrow(data)))
 
   p <- ggplot(data,aes(x=roc.x,y=roc.y,colour=slrsim_label))
   p <- p + geom_line()
   p <- p + xlab(plot.x)
   p <- p + ylab(plot.y)
+
+  if (any(!is.na(plot.at.threshold))) {
+    for (lbl in unique(data$slrsim_label)) {
+      data.sub <- subset(data,slrsim_label==lbl)
+
+      for (threshold in plot.at.threshold) {
+        t <- threshold
+        row.index <- min(which(data.sub$score <= t))
+        row <- data.sub[row.index,]
+        #print(row)
+        p <- p + geom_point(data=row,colour=I('black'),shape=I(1)) + scale_shape(solid=FALSE)
+      }
+    }
+  }
+
   if (plot) {
     print(p)
   }

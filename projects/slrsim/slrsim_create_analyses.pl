@@ -42,36 +42,47 @@ if ($clean) {
 }
 #output_dir();
 
-load();
+load_trees();
+load_tree();
 simulate();
 align();
 scores();
+dump_alignments();
 omegas();
 collect_stats();
 plots();
 
-$h->connect_analysis( "LoadTrees",   "PhyloSim" );
+$h->connect_analysis( "LoadTrees",   "LoadTree" );
+$h->connect_analysis( "LoadTree",   "PhyloSim" );
 $h->connect_analysis( "PhyloSim",    "Align" );
 $h->connect_analysis( "Align",       "AlignScores" );
+$h->connect_analysis( "AlignScores", "DumpAlignments" );
 $h->connect_analysis( "AlignScores", "Omegas" );
 $h->connect_analysis( "Omegas",      "CollectStats" );
 
 $h->wait_for("Plots",["Omegas","CollectStats"]);
-$h->wait_for("PhyloSim",["LoadTrees"]);
-$h->wait_for("Align",["PhyloSim"]);
-$h->wait_for("AlignScores",["PhyloSim","Align"]);
+$h->wait_for("PhyloSim",["LoadTrees","LoadTree"]);
+#$h->wait_for("Align",["PhyloSim"]);
+$h->wait_for("AlignScores",["PhyloSim"]);
 
 sub output_dir {
   $h->dba->dbc->do("insert into meta(meta_key,meta_value) VALUES ('hive_output_dir','/homes/greg/hive_temp');");
 }
 
-sub load {
+sub load_trees {
   my $logic_name  = "LoadTrees";
   my $module      = "Bio::Greg::Slrsim::LoadTrees";
   my $params      = { experiment_name => $experiment_name };
   $h->create_analysis( $logic_name, $module, $params, 1, 1 );
 
   $h->add_job_to_analysis( "LoadTrees", {} );    # Add a dummy job to run and load the trees.
+}
+
+sub load_tree {
+  my $logic_name  = "LoadTree";
+  my $module      = "Bio::Greg::Slrsim::LoadTree";
+  my $params      = { experiment_name => $experiment_name };
+  $h->create_analysis( $logic_name, $module, $params, 10, 1 );
 }
 
 sub simulate {
@@ -98,6 +109,13 @@ sub scores {
     # These params will be filled in by the LoadTree simulation definitions.
   };
   $h->create_analysis( $logic_name, $module, $params, 200, 1 );
+}
+
+sub dump_alignments {
+  my $logic_name = "DumpAlignments";
+  my $module     = "Bio::Greg::Slrsim::DumpSlrsimAlignment";
+  my $params     = {};
+  $h->create_analysis( $logic_name, $module, $params, 80, 1 );
 }
 
 sub omegas {

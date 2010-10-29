@@ -2,18 +2,12 @@ library(ggplot2)
 library(fields)
 library(RColorBrewer)
 
-# Call this to put a ggplot panel into a specified layout position [for example: print(p,vp=subplot(1,2)) ]
-subplot <- function(x, y) viewport(layout.pos.col=x, layout.pos.row=y)
 
-# Call this to create a layout with x and y rows and columns, respectively
-vplayout <- function(x, y) {
-  grid.newpage()
-  pushViewport(viewport(layout=grid.layout(y,x)))
-}
-
-plot.f = function(data,palette="Spectral",field='fdr',limits=c(0,1),x.lim=c(0,4),y.lim=c(0,0.1),label.species=T,do.plot=T) {
+plot.f = function(data,palette="Spectral",field='fdr',rev.colors=F,limits=c(0,1),x.lim=c(0,4),y.lim=c(0,0.1),label.species=T,do.plot=T) {
   data$z_vals = data[,field]
-  p <- ggplot(data,aes(x=tree_mean_path,y=phylosim_insertrate,z=z_vals))
+  p <- ggplot(data,aes(x=tree_mean_path,y=phylosim_insertrate*2,z=z_vals))
+  p <- p + scale_x_continuous('Mean Path Length')
+  p <- p + scale_y_continuous('Indel Rate')
 
   if (!is.null(x.lim)) {
     p <- p + coord_cartesian(xlim = x.lim,ylim=y.lim)
@@ -26,9 +20,13 @@ plot.f = function(data,palette="Spectral",field='fdr',limits=c(0,1),x.lim=c(0,4)
   }
   n <- 10
   breaks <- seq(from=limits[1],to=limits[2],length.out=n+1)
-  p <- p + scale_fill_gradientn(colours=rev(brewer.pal(n=n,palette)),limits=limits)
-#  p <- p + scale_x_continuous(limits=c(0,2),expand=c(0,0))
-  p <- p + coord_equal(ratio=20)
+  if (rev.colors) {
+    p <- p + scale_fill_gradientn(colours=rev(brewer.pal(n=n,palette)),limits=limits)
+  } else {
+    p <- p + scale_fill_gradientn(colours=brewer.pal(n=n,palette),limits=limits)
+  }
+
+  p <- p + coord_equal(ratio=10)
 
   if (label.species) {
     lbls <- data.frame(x=NULL,y=NULL,str=NULL)
@@ -66,8 +64,11 @@ plot.f = function(data,palette="Spectral",field='fdr',limits=c(0,1),x.lim=c(0,4)
 source("slrsim.functions.R")
 source("slrsim.plots.R")
 
-series <- 'NO.backup/2010-10-06/fig_1_plots'
-all.df.file <- 'NO.backup/2010-10-06/df.list.Rdata'
+
+folder <- 'NO.backup/2010-10-06/'
+#folder <- '~/lib/greg-ensembl/projects/slrsim/NO.backup/output/2010-10-21/2010-10-21_03/'
+series <- paste(folder,'/slrsim_one_new',sep='')
+all.df.file <- paste(folder,'/df.list.Rdata',sep='')
 if(!exists("df.list")) {
   load(all.df.file)
 }
@@ -86,7 +87,7 @@ if(!exists("summary.df")) {
 bg <- 'anisimova_01_bglobin.nh'
 art <- 'anisimova_01_artificial.nh'
 mam <- '44mammals.nh'
-df <- data.frame(
+stupid.df <- data.frame(
   slrsim_tree_file = c(bg,bg,art,art,mam),
   length = c(0.11,0.64,0.025,0.25,1.569),
   z_vals = ''
@@ -94,25 +95,40 @@ df <- data.frame(
 
 sub.df <- summary.df
 
+tree.files <- unique(sub.df$slrsim_tree_file)
+tree.labels <- c('6 artificial','17 bglobin', '44 vertebrate')
+sub.df[sub.df$slrsim_tree_file == art,]$slrsim_tree_file = 0
+sub.df[sub.df$slrsim_tree_file == bg,]$slrsim_tree_file = 1
+sub.df[sub.df$slrsim_tree_file == mam,]$slrsim_tree_file = 2
+sub.df$slrsim_tree_file <- factor(sub.df$slrsim_tree_file,labels=tree.labels)
+
+str(sub.df)
+
+pdf(file=paste(series,"_auc.pdf",sep=""),width=10,height=5)
+p <- plot.f(sub.df,field='auc',do.plot=F,label.species=F,rev.colors=F,limits=c(0.4,1))
+p <- p + facet_grid(slrsim_tree_file ~ alignment_name)
+print(p)
+dev.off()
+
 pdf(file=paste(series,"_fdr.pdf",sep=""),width=10,height=5)
-p <- plot.f(sub.df,field='fdr',do.plot=F,label.species=T)
+p <- plot.f(sub.df,field='fdr',do.plot=F,label.species=F,rev.colors=T)
 p <- p + facet_grid(slrsim_tree_file ~ alignment_name)
 print(p)
 dev.off()
 
 pdf(file=paste(series,"_sens.pdf",sep=""),width=10,height=5)
-p <- plot.f(sub.df,field='sens',do.plot=F,label.species=F)
+p <- plot.f(sub.df,field='sens',do.plot=F,label.species=F,rev.colors=F)
 p <- p + facet_grid(slrsim_tree_file ~ alignment_name)
 print(p)
 dev.off()
 
-pdf(file=paste(series,"_labels.pdf"),width=12,height=4)
-vplayout(3,1)
-i <- 1
-for (aln in c('44mammals.nh','anisimova_01_artificial.nh','anisimova_01_bglobin.nh')) {
-  sub.df <- subset(summary.df,slrsim_tree_file==aln & alignment_name=='prank_codon')
-  p <- plot.f(sub.df,field='fdr',do.plot=F,label.species=T)
-  print(p,vp=subplot(i,1))
-  i <- i + 1
-}
-dev.off()
+#pdf(file=paste(series,"_labels.pdf"),width=12,height=4)
+#vplayout(3,1)
+#i <- 1
+#for (aln in c('44mammals.nh','anisimova_01_artificial.nh','anisimova_01_bglobin.nh')) {
+#  sub.df <- subset(summary.df,slrsim_tree_file==aln & alignment_name=='prank_codon')
+#  p <- plot.f(sub.df,field='fdr',do.plot=F,label.species=T)
+#  print(p,vp=subplot(i,1))
+#  i <- i + 1
+#}
+#dev.off()
