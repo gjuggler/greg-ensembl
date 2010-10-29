@@ -166,6 +166,9 @@ sub clean_compara_analysis_tables {
   eval { $dba->dbc->do("drop table stats_genes") };
   print "Dropping brcmb tags...\n";
   eval { $dba->dbc->do("delete from protein_tree_tag where tag like 'bcrmb%';") };
+
+  eval { $dba->dbc->do("delete from meta where meta_key='output_folder';") };
+
 }
 
 sub clean_compara_tree_tables {

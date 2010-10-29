@@ -14,16 +14,21 @@ use Bio::EnsEMBL::Compara::ComparaUtils;
 
 use base ('Bio::Greg::Hive::Process');
 
+sub param_defaults {
+  return {};
+}
+
 sub run {
   my $self = shift;
 
-  my $base = '/nfs/users/nfs_g/gj1/scratch/gorilla/output';
-  $self->get_output_folder($base);
-
-  $self->export_likelihoods('lnl','lnl_human.Rdata','human');
-  $self->export_likelihoods('lnl_chimp','lnl_chimp.Rdata','chimp');
-  $self->export_likelihoods('lnl_grantham','lnl_grantham_human.Rdata','human');
-  $self->export_likelihoods('lnl_grantham_chimp','lnl_grantham_chimp.Rdata','chimp');
+  $self->export_likelihoods('lnl_c_Hsap','lnl_c_Hsap.Rdata','h');
+  $self->export_likelihoods('lnl_c_Ptro','lnl_c_Ptro.Rdata','c');
+  $self->export_likelihoods('lnl_p_Hsap','lnl_p_Hsap.Rdata','h');
+  $self->export_likelihoods('lnl_p_Ptro','lnl_p_Ptro.Rdata','c');
+  $self->export_likelihoods('lnl_m_Hsap','lnl_m_Hsap.Rdata','h');
+  $self->export_likelihoods('lnl_m_Ptro','lnl_m_Ptro.Rdata','c');
+  $self->export_likelihoods('lnl_mp_Hsap','lnl_mp_Hsap.Rdata','h');
+  $self->export_likelihoods('lnl_mp_Ptro','lnl_mp_Ptro.Rdata','c');
 
   #$self->branch_enrichments('lnl','lnl.Rdata','human');
   #$self->branch_enrichments('lnl_chimp','lnl_chimp.Rdata','chimp');
@@ -162,7 +167,7 @@ stats.lnl = merge(stats.lnl,stats.dups[,c('data_id','name')],by='data_id')
   # f: (((H,C),G)#1, others)
   # g: (((H,C),G)$1, others)
   # h: (((H,C),G), others)
-# f: (H
+# 
 # Which omegas are which for each test?
 # pval.1: fg=b_omega_1, bg=b_omega_0 # human
 # pval.2: fg=c_omega_1, bg=c_omega_0 # gorilla

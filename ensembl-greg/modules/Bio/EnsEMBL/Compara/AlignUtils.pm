@@ -25,7 +25,7 @@ sub translate_ids {
   $ensure_unique = $params->{ensure_unique} if (defined $params->{ensure_unique});
 
   $aln->set_displayname_flat;  
-  my $new_aln = new $aln;
+  my $new_aln = $aln->new;
 
   my $used_ids;
 
@@ -145,7 +145,7 @@ sub indelign{
   # Write the input file.
   # Annoyingly, the parameters have to be in a certain order for Indelign to work (!@$!@$).
   # Use a numerical prefix to sort, and then remove it before writing the control file.
-  my $params = {
+  my $indelign_params = {
     '0_NumSeq' => $num_seqs,
     '1_Tree' => Bio::EnsEMBL::Compara::TreeUtils->to_newick($tree),
     '2_Out1' => $out_aln,
@@ -159,8 +159,8 @@ sub indelign{
 #    '10_prT' => 0.25,
   };
   open(OUT,">$control_file");
-  foreach my $param (sort {$a <=> $b} keys %{$params}) {
-    my $val = $params->{$param};
+  foreach my $param (sort {$a <=> $b} keys %{$indelign_params}) {
+    my $val = $indelign_params->{$param};
     $param =~ s/(\d+)_//g;
     printf OUT "%s = %s\n",$param,$val;
   }
@@ -613,7 +613,7 @@ sub translate {
   my $class = shift;
   my $aln = shift;
 
-  my $sa = new Bio::SimpleAlign;
+  my $sa = $aln->new;
   foreach my $seq ($aln->each_seq) {
     my $tx = $seq->translate();
     die "Translation for ".$seq->id." contains stop codon!\n" if ($tx =~ m/\*/);
@@ -637,17 +637,28 @@ sub cigar_lines {
   return $lines;
 }
 
-
 sub filter_stop_codons {
   my $class = shift;
   my $aln = shift;
 
-  my $new_aln = new $aln;
+  my $new_aln = $aln->new;
   foreach my $seq ($aln->each_seq) {
     $new_aln->add_seq($class->_filter_seq_stops($seq));
   }
 
   return $new_aln;
+}
+
+sub ensure_multiple_of_three {
+  my $class = shift;
+  my $aln = shift;
+
+  if ($aln->length % 3 != 0) {
+    my $diff = $aln->length % 3;
+    print "Alignment not the right length! diff[$diff]\n";
+    $aln = $aln->slice(1,$aln->length - $diff);
+  }
+  return $aln;
 }
 
 sub _filter_seq_stops {
@@ -672,6 +683,7 @@ sub _filter_seq_stops {
     #print "  Masking stop $1 at $i\n"  if (substr($seq_str,$i-1,3) =~ m/(tag|tga|taa)/gi);
     $seq->seq($seq_str);
   }
+
   return $seq;
 }
 
@@ -689,7 +701,6 @@ sub flatten_to_sequence {
   my $id = shift;
   
   my $ref_seq = $aln->get_seq_by_id($id);
-#  my $ref_seq = $aln->get_seq_by_pos($pos);
   my $display_id = $ref_seq->display_id;
   my $seq_str = $ref_seq->seq;
     
@@ -713,9 +724,14 @@ sub combine_alns {
 
   my $seq_hash;
 
-  # Collect all species from all alignments into a hash.
+  my $genomic_coords = {};
+
   foreach my $aln (@alns) {
+    # Collect all species from all alignments into a hash.
     map {$seq_hash->{$_->id} = [] if (!defined $seq_hash->{$_->id});} $aln->each_seq;
+
+    # Copy over the new genomic coords.
+    $genomic_coords = Bio::EnsEMBL::Compara::ComparaUtils->replace_params( $genomic_coords, $aln->annotation->{_genomic_coords} );
   }
 
   foreach my $aln (@alns) {
@@ -740,6 +756,8 @@ sub combine_alns {
     $aln->add_seq(Bio::LocatableSeq->new(-seq => $seq,
 					 -id => $id));
   }
+
+  $aln->annotation->{_genomic_coords} = $genomic_coords;
   return $aln;
 }
 
@@ -1450,7 +1468,7 @@ sub mask_below_score {
   my $alphabet = 'protein'; # Default to a protein alphabet.
 
   # Create a new shell SimpleAlign object.
-  my $new_aln = new $aln;
+  my $new_aln = $aln->new;
 
   # Go through each sequence in the alignment and mask accordingly.
   foreach my $seq ( $aln->each_seq ) {
@@ -1568,7 +1586,7 @@ sub remove_seq_from_aln {
 
   my $seq = $class->get_seq_with_id($aln,$seq_id);
 
-  my $new_aln = new $aln;
+  my $new_aln = $aln->new;
 
   foreach my $old_seq ($aln->each_seq) {
     $new_aln->add_seq($old_seq) if ($old_seq != $seq);
@@ -1693,7 +1711,7 @@ sub peptide_to_cdna_alignment {
   my $aln = shift;
   my $tree = shift;
 
-  my $cdna_aln = new $aln;
+  my $cdna_aln = $aln->new;
 
   my @leaves = $tree->leaves;
   foreach my $seq ($aln->each_seq) {
@@ -1816,7 +1834,7 @@ sub keep_by_id {
   my $aln = shift;
   my $seq_id_arrayref = shift;
 
-  my $new_aln = new $aln;
+  my $new_aln = $aln->new;
   my @ids = @{$seq_id_arrayref};
   foreach my $id (@ids) {
     my $seq = $class->get_seq_with_id($aln,$id);

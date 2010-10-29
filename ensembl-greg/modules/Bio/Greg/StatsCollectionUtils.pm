@@ -176,6 +176,64 @@ sub seq_length_mean {
   return $seq_len / scalar( $tree->leaves );
 }
 
+sub genomic_gc_content {
+  my $self = shift;
+  my $member = shift;
+
+  my $gene = $member->get_Gene;
+  my $slice = $gene->slice;
+
+  my $seq = $slice->seq;
+
+  $seq =~ s/[-nx]//gi;
+  my $total_len = length($seq);
+  my $at = $seq;
+  my $gc = $seq;
+
+  $at =~ s/[gc]//gi;
+  $gc =~ s/[at]//gi;
+
+  #die("Error!") if ($seq =~ m/[^gc]/i);
+  my $gc_content = length($gc) / (length($gc) + length($at));
+  
+  return $gc_content;
+}
+
+sub gc3_content {
+  my $self = shift;
+  my $member = shift;
+
+  my $seq = $member->sequence_cds;
+
+  # Get 3rd position nucleotides.
+  $seq =~ s/..(.)/$1/gi;
+
+  # Remove nonexistent seqs.
+  $seq =~ s/[nx]//gi;
+
+  my $total_len = length($seq);
+  $seq =~ s/[at]//gi;
+  my $gc_content = length($seq) / $total_len;
+
+  return $gc_content;
+}
+
+sub gc_content {
+  my $self = shift;
+  my $member = shift;
+
+  my $seq = $member->sequence_cds;
+
+  $seq =~ s/[nx]//gi;
+
+  my $total_len = length($seq);
+  $seq =~ s/[at]//gi;
+  my $gc_content = length($seq) / $total_len;
+ 
+  return $gc_content;
+}
+
+
 sub gc_content_mean {
   my $class = shift;
   my $tr    = shift;
