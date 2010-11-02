@@ -470,8 +470,21 @@ sub fig_one {
 
   my @array;
   foreach my $scheme ($self->man_a,$self->man_b,$self->man_c) {
-    foreach my $aln ('true','clustalw','muscle','mafft','prank','prank_codon') {
-      push @array,@{$self->_fig_one_indel_sweep($scheme,$aln)};
+    foreach my $aln ('true','clustalw','muscle','mafft','prank','prank_codon','prank_codon_filter') {
+#    foreach my $aln ('true', 'clustalw') {
+      my $p = {};
+      if ($aln eq 'prank_codon_filter') {
+        my $aln_p = $self->aln_param('prank_codon');
+        my $filter_p = $self->filter_param('tcoffee');
+        my $filter_thresh = $self->filter_thresh_param(9);
+        $p = $self->replace($scheme,$aln_p,$filter_p,$filter_thresh);
+        $p->{alignment_name} = 'prank_codon_filt';
+      } else {
+        my $aln_p = $self->aln_param($aln);
+        $p = $self->replace($scheme,$aln_p);
+      }
+
+      push @array,@{$self->_fig_one_indel_sweep($p)};
     }
   }
   return \@array;
@@ -480,14 +493,18 @@ sub fig_one {
 sub _fig_one_indel_sweep {
   my $self             = shift;
   my $scheme = shift;
-  my $aln = shift;
 
-  my $aln_params = $self->aln_param($aln);
   my $reps        = $self->reps_param(20);
-  my $base_params = $self->replace( $scheme, $reps, $aln_params );
+  my $base_params = $self->replace( $scheme, $reps);
 
   my $tree = $base_params->{tree_name};
-  $base_params->{experiment_name} = "1_${tree}_${aln}";
+  my $aln = $base_params->{alignment_name};
+  my $filt = $base_params->{filtering_name};
+  if ($filt) {
+    $base_params->{experiment_name} = "1_${tree}_${aln}_${filt}";
+  } else {
+    $base_params->{experiment_name} = "1_${tree}_${aln}";
+  }
 
   my $tree_obj;
   if ( ref $tree && $tree->isa('Bio::EnsEMBL::Compara::NestedSet') ) {
@@ -528,10 +545,9 @@ sub fig_two {
   my $self = shift;
 
   my @sets;
-#  foreach my $scheme ($self->man_a, $self->man_b, $self->man_c) {
-  foreach my $scheme ($self->man_a) {
+  foreach my $scheme ($self->man_a, $self->man_b, $self->man_c) {
     foreach my $aln ('clustalw','prank') {
-      foreach my $filter ('true','none','gblocks','prank_treewise','prank_mean','oracle','tcoffee') {
+      foreach my $filter ('true','none','gblocks','prank','optimal','tcoffee') {
         foreach my $filter_threshold (9) {
           my $tree = $scheme->{tree_name};
 
@@ -555,7 +571,7 @@ sub fig_two {
 
           $params = $self->replace(
             $params,
-            $self->reps_param(20),
+            $self->reps_param(40),
             {experiment_name => 'fig_two'}
             );
           push @sets, $params;

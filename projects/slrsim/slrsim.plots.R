@@ -1,6 +1,6 @@
-source("aln-tools/aln.tools.R")
-source("aln-tools/phylo.tools.R")
-source("aln-tools/plot.phylo.greg.R")
+#source("aln-tools/aln.tools.R")
+#source("aln-tools/phylo.tools.R")
+#source("aln-tools/plot.phylo.greg.R")
 library(ape)
 
 subplot <- function(x, y) viewport(layout.pos.col=x, layout.pos.row=y)

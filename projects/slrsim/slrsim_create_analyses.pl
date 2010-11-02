@@ -82,14 +82,14 @@ sub load_tree {
   my $logic_name  = "LoadTree";
   my $module      = "Bio::Greg::Slrsim::LoadTree";
   my $params      = { experiment_name => $experiment_name };
-  $h->create_analysis( $logic_name, $module, $params, 10, 1 );
+  $h->create_analysis( $logic_name, $module, $params, 150, 1 );
 }
 
 sub simulate {
   my $logic_name = "PhyloSim";
   my $module     = "Bio::Greg::Hive::PhyloSim";
   my $params     = {};
-  $h->create_analysis( $logic_name, $module, $params, 100, 1 );
+  $h->create_analysis( $logic_name, $module, $params, 200, 1 );
 }
 
 sub align {
@@ -98,7 +98,7 @@ sub align {
   my $params     = {
     # These params will be filled in by the LoadTree simulation definitions.
   };
-  $h->create_analysis( $logic_name, $module, $params, 200, 1 );
+  $h->create_analysis( $logic_name, $module, $params, 500, 1 );
 }
 
 sub scores {
@@ -108,7 +108,7 @@ sub scores {
 
     # These params will be filled in by the LoadTree simulation definitions.
   };
-  $h->create_analysis( $logic_name, $module, $params, 200, 1 );
+  $h->create_analysis( $logic_name, $module, $params, 500, 1 );
 }
 
 sub dump_alignments {
@@ -125,14 +125,14 @@ sub omegas {
 
     # These params will be filled in by the LoadTree simulation definitions.
   };
-  $h->create_analysis( $logic_name, $module, $params, 300, 1 );
+  $h->create_analysis( $logic_name, $module, $params, 500, 1 );
 }
 
 sub collect_stats {
   my $logic_name = "CollectStats";
   my $module     = "Bio::Greg::Slrsim::CollectSlrsimStats";
   my $params     = {};
-  $h->create_analysis( $logic_name, $module, $params, 80, 1 );
+  $h->create_analysis( $logic_name, $module, $params, 100, 1 );
 }
 
 sub plots {

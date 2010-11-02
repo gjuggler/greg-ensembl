@@ -97,6 +97,12 @@ sub run {
     $aln = $self->simulate_alignment_phylosim( $self->get_tree, $self->params );
   }
 
+  my $length;
+  foreach my $seq ($aln->each_seq) {
+    $length = $seq->length unless (defined $length);
+    die("Phylosim aln not all the same length!") unless ($length == $seq->length);
+  }
+
   $self->param( 'aln', $aln );
 }
 
@@ -105,7 +111,7 @@ sub write_output {
 
   my $final_cdna = $self->param('aln');
 
-  Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $final_cdna, { length => 200 } );
+  Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $final_cdna, { length => 150, full => 1 } );
   my $final_aa = Bio::EnsEMBL::Compara::AlignUtils->translate($final_cdna);
 
   my $out_table = "protein_tree_member";
@@ -116,8 +122,27 @@ sub write_output {
   $self->_store_sitewise_omegas( "sitewise_omega", $self->param('sitewise_omegas'),
     $final_aa, $self->params );
 
-  Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $final_aa, { length => 200 } );
+  Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $final_aa, { length => 150, full => 1 } );
+
+  my $new_tree = $self->get_tree();
+  my $sa = $new_tree->get_SimpleAlign();
+  if (!Bio::EnsEMBL::Compara::ComparaUtils->aligned_members_equal_length($new_tree)) {
+      Bio::EnsEMBL::Compara::AlignUtils->pretty_print($new_tree->get_SimpleAlign(),{full=>1,width=>150});
+      throw("PhyloSim: alignment strings not same length!");
+  }  
+
+  $new_tree->release_tree;
 }
+
+sub DESTROY {
+  my $self = shift;
+  
+  $self->param('aln','');
+  delete $self->input_job->{_param_hash};
+
+  $self->SUPER::DESTROY if $self->can("SUPER::DESTROY");
+}
+
 
 sub get_indelible_multiplier {
   my $self = shift;
@@ -384,7 +409,7 @@ sub _store_sitewise_omegas {
   my @insert_strings = ();
   foreach my $hr ( @{$sitewise_ref} ) {
 
-    Bio::EnsEMBL::Compara::ComparaUtils->hash_print($hr);
+#    Bio::EnsEMBL::Compara::ComparaUtils->hash_print($hr);
 
     #print "hr: $hr\n";
     #printf "%d %d\n",$hr->{aln_position},$hr->{omega};
@@ -411,7 +436,7 @@ sub _store_sitewise_omegas {
       my $insert = join( ",", @insert_strings );
       my $cmd =
         "INSERT INTO $output_table (aln_position,aln_position_fraction,node_id,data_id,parameter_set_id,omega,omega_lower,omega_upper,type,ncod) values $insert;";
-      print "$cmd\n";
+ #     print "$cmd\n";
       $self->dbc->do($cmd);
       @insert_strings = ();
     }
@@ -421,7 +446,7 @@ sub _store_sitewise_omegas {
     my $insert = join( ",", @insert_strings );
     my $cmd =
       "INSERT INTO $output_table (aln_position,aln_position_fraction,node_id,data_id,parameter_set_id,omega,omega_lower,omega_upper,type,ncod) values $insert;";
-    print "$cmd\n";
+#    print "$cmd\n";
     $self->dbc->do($cmd);
   }
 

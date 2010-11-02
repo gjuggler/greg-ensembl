@@ -40,6 +40,7 @@ sub param_defaults {
   };
   return $params;
 }
+
 sub fetch_input {
   my ($self) = @_;
 
@@ -68,26 +69,7 @@ sub fetch_input {
     }
   }
 
-  # Auto-switch to fmcoffee on single failure.
-
-  #    my @prank_order = qw(prank_f cmcoffee fmcoffee muscle);
-  #    my @mcoffee_order = qw(cmcoffee fmcoffee muscle);
-
   my $retry_count = $self->input_job->retry_count;
-
-  #if ($retry_count > 0) {
-  #  my $index = $retry_count;
-  #  my @array;
-  #  if ($self->param('alignment_method') =~ 'prank') {
-  #	@array = @prank_order;
-  #      } elsif ($self->param('alignment_method') =~ 'mcoffee') {
-  #	@array = @mcoffee_order;
-  #      }
-  #      $index = scalar(@array) -1 if ($index > scalar(@array) - 1);
-  #      if (defined $array[$index] && $array[$index] ne '') {
-  #        $self->param('alignment_method',$array[$index]);
-  #      }
-  #    }
 
   print "Alignment method: " . $self->param('alignment_method') . "\n";
 
@@ -96,6 +78,11 @@ sub fetch_input {
   if ( $num_leaves > $self->param('alignment_max_gene_count') ) {
     $self->DESTROY;
     throw("Mcoffee job too big: try something else and FAIL it");
+  }
+
+  if (!Bio::EnsEMBL::Compara::ComparaUtils->aligned_members_equal_length($tree)) {
+      Bio::EnsEMBL::Compara::AlignUtils->pretty_print($tree->get_SimpleAlign(),{full=>1,width=>150});
+      throw("Alignment strings not same length!");
   }
 
   my $sa = $tree->get_SimpleAlign;
@@ -155,10 +142,10 @@ sub run {
   }
 
   print "BEFORE: \n";
-  Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $sa, { full => 1} );
+  Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $sa, { full => 0} );
 
   print "AFTER: \n";
-  Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $sa_aligned, { full => 1} );
+  Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $sa_aligned, { full => 0} );
 
   $self->param( 'sa_aligned', $sa_aligned );
 }
@@ -178,7 +165,10 @@ sub write_output {
 sub DESTROY {
   my $self = shift;
 
-  #    $self->SUPER::DESTROY if $self->can("SUPER::DESTROY");
+  $self->param('tree',undef);
+  $self->param('sa_aligned',undef);
+
+  $self->SUPER::DESTROY if $self->can("SUPER::DESTROY");
 }
 
 ##########################################
@@ -196,7 +186,7 @@ sub no_align {
   my $tmp = $self->worker_temp_directory;
 
   # Output alignment.
-  my $aln_file = $tmp . "aln.fasta";
+  my $aln_file = $tmp . "/aln.fasta";
 
   Bio::EnsEMBL::Compara::AlignUtils->to_file( $aln, $aln_file );  # Write the alignment out to file.
 
@@ -665,6 +655,7 @@ sub parse_and_store_alignment_into_proteintree {
   # Convert alignment strings into cigar_lines
   my $alignment_length;
   foreach my $id ( keys %align_hash ) {
+    print "$id\n";
     next if ( $id eq 'cons' );
     my $alignment_string = $align_hash{$id};
     unless ( defined $alignment_length ) {
@@ -705,8 +696,8 @@ sub parse_and_store_alignment_into_proteintree {
     my $member_sequence = $member->sequence;
     $member_sequence =~ s/\*//g;
     if ( $seq_cigar_length != length($member_sequence) ) {
-#      print "MC  " . $member->cigar_line . "\n";
-#      print "MS  " . $member_sequence . "\n";
+      print "MC  " . $member->cigar_line . "\n";
+      print "MS  " . $member->stable_id."  ".$member_sequence . "\n";
       die(
         "While storing the cigar line, the returned cigar length did not match the sequence length\n"
       );

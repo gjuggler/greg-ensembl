@@ -188,6 +188,13 @@ sub store_SimpleAlign_into_table {
 
   $pta->protein_tree_member($output_table);
 
+  # Make sure everything's the same length.
+  my $length;
+  foreach my $seq ($aa_aln->each_seq) {
+    $length = $seq->length unless (defined $length);
+    die("Aa_aln not all the same length!") unless ($length == $seq->length);
+  }
+
   #
   # Align cigar_lines to members and store
   #
@@ -198,18 +205,18 @@ sub store_SimpleAlign_into_table {
 
     if ( defined $aa_aln ) {
 
-      #print "membr: ".$node->member_id."\n";
-      #print "seq id: ".$node->sequence_id."\n";
+      print "membr: ".$node->member_id."\n";
+      print "seq id: ".$node->sequence_id."\n";
       $pta->dbc->do(
         "UPDATE member set sequence_id=NULL where member_id=" . $node->member_id . ";" );
 
-      #if ($node->sequence_id) {
-      #  $pta->dbc->do("DELETE FROM sequence WHERE sequence_id=".$node->sequence_id.";");
-      #}
+      if ($node->sequence_id) {
+        $pta->dbc->do("DELETE FROM sequence WHERE sequence_id=".$node->sequence_id.";");
+      }
+      
       my $seq_obj = $ALN->get_seq_with_id( $aa_aln, $name );
       if ( !defined $seq_obj ) {
-        warn("No sequence with ID $name found in the alignment!");
-        next;
+        throw("No sequence with ID $name found in the alignment!");
       }
       my $aa_seq     = $seq_obj->seq;
       my $cigar_line = $class->cigar_line($aa_seq);
@@ -217,31 +224,19 @@ sub store_SimpleAlign_into_table {
       $aa_seq =~ s/-//g;
       $node->sequence($aa_seq);
     }
-    if ( defined $cdna_aln ) {
 
-    #print "CDNA ID:".$node->cdna_sequence_id."\n";
-    #$pta->dbc->do("UPDATE member set cdna_sequence_id=NULL where member_id=".$node->member_id.";");
-    #if ($node->cdna_sequence_id) {
-    #  my $cmd = "DELETE FROM sequence WHERE sequence_id=".$node->cdna_sequence_id.";";
-    #  $pta->dbc->do($cmd);
-    #}
+    if ( defined $cdna_aln ) {
       my $cdna_seq = $ALN->get_seq_with_id( $cdna_aln, $name )->seq;
       $cdna_seq =~ s/-//g;
       $node->sequence_cds($cdna_seq);
     }
-
+    
     $node->sequence_id(0);
-
+    
     # Call the ProteinTreeAdaptor method to do the actual database dirty work.
-    $pta->store($node);
     $mba->store($node);
+    $pta->lock_store($node);
   }
-
-  # Clean up 'hanging' sequences not referenced by any member:
-  #  $pta->dbc->do(qq^delete s.* FROM sequence s LEFT JOIN member m
-  #    ON (m.sequence_id=s.sequence_id OR m.cdna_sequence_id=s.sequence_id)
-  #    WHERE (m.sequence_id IS NULL OR m.cdna_sequence_id IS NULL);
-  #    ^);
 }
 
 # Reads the MCoffee scores from $mcoffee_scores file and stores them into $output_table.
@@ -323,6 +318,21 @@ sub remove_empty_seq_leaves {
   }
 }
 
+sub aligned_members_equal_length {
+  my $class = shift;
+  my $tree = shift;
+
+  my $length;
+  foreach my $leaf ($tree->leaves) {
+    my $aln_str = $leaf->alignment_string;
+    $length = length($aln_str) if (!defined $length);
+    if ($length != length($aln_str)) {
+      return 0;
+    }
+  }  
+  return 1;
+}
+
 sub fetch_masked_aa {
   my $class  = shift;
   my $aa_aln = shift;
@@ -392,7 +402,7 @@ sub fetch_masked_alignment {
     alignment_score_mask_character_aa   => 'X',
     alignment_score_mask_character_cdna => 'N',
    
-    maximum_mask_fraction => 0.5,
+    maximum_mask_fraction => 0.67,
 
     cdna => $cdna_option
   };

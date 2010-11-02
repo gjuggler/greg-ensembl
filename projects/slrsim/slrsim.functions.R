@@ -25,7 +25,11 @@ slr.roc = function(df,na.rm=F) {
   if (na.rm) {
     n.na = nrow(subset(df,is.na(aln_lrt)))
     df = subset(df,!is.na(aln_lrt))
-#    print(sprintf("Removed %d NA rows",n.na))
+    n.left <- nrow(df)
+    print(sprintf("Removed %d NA rows (%d remaining)",n.na,n.left))
+    if(n.left == 0) {
+
+    }
   }
 
   if (!is.paml(df)) {
@@ -54,8 +58,10 @@ slr.roc = function(df,na.rm=F) {
     df <- subset(df,aln_lrt != 1000)
   }
 
-  auc <- area.under.curve(df)
-  df$auc <- auc
+  if (nrow(df) > 1) {
+    auc <- area.under.curve(df)
+    df$auc <- auc
+  }
 
   return(df)
 }
@@ -81,13 +87,6 @@ area.under.curve <- function(roc,x.field='tn',y.field='tp',x.lim=1) {
 summarize.by.labels = function(data,fn,thresh=3.8) {
   library(plyr)
   a = ddply(data,.(slrsim_label),fn,thresh=thresh)
-  if (!is.null(a$`tpr.at.0.1`)) {
-    #levels(a$slrsim_label) <- 
-#    print("Ordering!")
-#    print(unique(a$`tpr.at.0.1`))
-#    a <- orderBy(~-`tpr.at.0.1`,data=a)
-#    print(unique(a$`tpr.at.0.1`))
-  }
   return(a)
 }
 
@@ -130,7 +129,11 @@ df.stats = function(df,
 
   all = nrow(df)
 
-  cor = cor(df$true_dnds,df$aln_dnds,method='spearman',use='complete.obs')
+  if (nrow(subset(df,!is.na(true_dnds) & !is.na(aln_dnds))) > 0) {
+    cor = cor(df$true_dnds,df$aln_dnds,method='spearman',use='complete.obs')
+  } else {
+    cor = 0
+  }
 
   # see http://en.wikipedia.org/wiki/Receiver_operating_characteristic
   sens = pos_pos/pos_all  # also: tpr, power, hit rate, recall (anisimova 2002 as power)

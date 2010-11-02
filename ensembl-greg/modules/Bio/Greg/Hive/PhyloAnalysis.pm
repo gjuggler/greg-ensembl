@@ -21,8 +21,8 @@ use base ('Bio::Greg::Hive::Process');
 
 sub debug { 1; }
 
-sub default_params {
-  my $class = shift;
+sub param_defaults {
+  my $self = shift;
   my $params = {
     alignment_table  => 'protein_tree_member',
     omega_table      => 'sitewise_omega',
@@ -69,10 +69,7 @@ sub default_params {
 sub fetch_input {
   my ($self) = @_;
 
-  ### DEFAULT PARAMETERS ###
-  my $params = $self->default_params;
-  $self->load_all_params($params);
-
+  $self->load_all_params;
 }
 
 use base ('Bio::Greg::Hive::CollectSitewiseStats', 'Bio::Greg::StatsCollectionUtils');
@@ -171,7 +168,6 @@ sub run_with_params {
   }
 
   my $input_aa   = $self->get_aln;
-  $self->save_aln($input_aa,{filename => 'trim5_compara'});
   my $input_cdna = $self->get_cdna_aln;
 
 
@@ -576,7 +572,8 @@ sub run_sitewise_dNdS {
   my $freqtype     = $params->{slr_freqtype};
   my $skipsitewise = $params->{slr_skipsitewise};
 
-  $slrexe = "/nfs/users/nfs_g/gj1/bin/Slr_gj1" if ( !-e $slrexe );
+  $slrexe = "Slr" if (!-e $slrexe);
+  $slrexe = "/nfs/users/nfs_g/gj1/bin/Slr_Linux_shared" if ( !-e $slrexe );
   $slrexe = "/homes/greg/bin/Slr"              if ( !-e $slrexe );
   $slrexe = "Slr"                              if ( !-e $slrexe );
 

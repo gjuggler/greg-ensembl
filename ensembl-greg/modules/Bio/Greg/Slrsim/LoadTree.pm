@@ -38,10 +38,8 @@ sub load_tree_into_database {
 
   my $node = $tree->copy;
 
-  my $md5 = Digest::MD5->new;
-  $md5->add($params);
-  $md5->add($sim_rep);
-  my $unique_string = substr( $md5->hexdigest, 20 );
+  my $ug = new Data::UUID;
+  my $unique_string = $ug->create_str();
 
   my $tree_mult = $params->{'slrsim_tree_mult'};
   if ($tree_mult) {
@@ -66,10 +64,10 @@ sub load_tree_into_database {
 
   print "Final lenth: $final_length\n";
 
+  $self->dbc->do("LOCK TABLES protein_tree_node WRITE, member WRITE;");
+
   # Go through each leaf and store the member objects.
   foreach my $leaf ( $node->leaves ) {
-
-    #print "leaf: ".$leaf->name."\n";
     $leaf->stable_id( $leaf->name );
     $leaf->source_name($unique_string);
     $mba->store($leaf);
@@ -110,6 +108,8 @@ sub load_tree_into_database {
   print "  -> Created job: $job_id \n";
 
   $node->release_tree;
+
+  $self->dbc->do("UNLOCK TABLES;");
 }
 
 

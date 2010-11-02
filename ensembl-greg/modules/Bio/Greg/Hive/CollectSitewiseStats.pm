@@ -12,16 +12,19 @@ use Bio::EnsEMBL::Hive::Process;
 
 use base ( 'Bio::Greg::Hive::Process', 'Bio::Greg::StatsCollectionUtils' );
 
-sub fetch_input {
-  my ($self) = @_;
-
+sub param_defaults {
   my $params = {
     omega_table => 'sitewise_omega',
     sites_table => 'stats_sites',
     genes_table => 'stats_genes'
   };
+  return $params;
+}
 
-  $self->load_all_params($params);
+sub fetch_input {
+  my ($self) = @_;
+
+  $self->load_all_params;
 
   # Create tables if necessary.
   $self->create_table_from_params(

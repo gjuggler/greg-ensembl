@@ -74,7 +74,7 @@ sub run {
   } elsif ( $action =~ m/(coffee|score)/i ) {
     print " -> RUN TCOFFEE [$action]\n";
     $score_hash = $self->run_tcoffee( $tree, $aln, $params );
-  } elsif ( $action =~ m/oracle/i) {
+  } elsif ( $action =~ m/(oracle|optimal)/i) {
     $score_hash = $self->run_oracle($tree,$aln,$params);
   } elsif ($action =~ m/columns/i) {
     $score_hash = $self->run_columns($tree,$aln,$params);
@@ -335,8 +335,8 @@ sub run_tcoffee {
 
   my $tmp = $tmpdir;
   $tmp = substr($tmp,0,-1);
-  my $prefix = "export HOME_4_TCOFFEE=\"${tmp}\";";
-  $prefix .= "export DIR_4_TCOFFEE=\"${tmp}\";";
+#  my $prefix = "export HOME_4_TCOFFEE=\"${tmp}\";";
+  my $prefix = "export DIR_4_TCOFFEE=\"${tmp}\";";
   $prefix .= "export METHODS_4_TCOFFEE=\"${tmp}\";";
   $prefix .= "export MCOFFEE_4_TCOFFEE=\"${tmp}\";";
   $prefix .= "export TMP_4_TCOFFEE=\"${tmp}\";";
@@ -349,10 +349,10 @@ sub run_tcoffee {
 
   my $outfile = $filename . ".score_ascii";
 
-  my $exec = $self->param('t_coffee_executable')
-    || "/homes/greg/src/T-COFFEE_distribution_Version_8.69/bin/binaries/linux/t_coffee";
+  my $bin = $self->param('t_coffee_executable');
+  $bin = $self->base . "/bin/linux64/t_coffee" if (!-e $bin);
   my $cmd =
-    qq^$exec -mode=evaluate -evaluate_mode t_coffee_slow -infile=$filename -outfile=$outfile -output=score_ascii -n_core=1 -multi_core=no^;
+    qq^$bin -mode=evaluate -evaluate_mode t_coffee_slow -infile=$filename -outfile=$outfile -output=score_ascii -n_core=1 -multi_core=no^;
   print $cmd. "\n";
   system( $prefix. $cmd );
 
@@ -543,6 +543,8 @@ sub run_prank {
   my $tree   = shift;
   my $aln    = shift;
   my $params = shift;
+
+  $params->{temp_dir} = $self->worker_temp_directory;
 
   my $threshold = $params->{'prank_filtering_threshold'} || 7;
   my ( $scores, $blocks ) =

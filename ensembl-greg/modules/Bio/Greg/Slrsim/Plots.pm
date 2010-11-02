@@ -27,9 +27,7 @@ sub run {
   $self->dump_sql;
 
   # Tricky Perl: Call the method corresponding to the current experiment.
-  eval {
-    $self->$experiment_name();
-  };
+  $self->$experiment_name();
 }
 
 sub _output_folder {
@@ -93,7 +91,7 @@ save(data,file="${filename}");
 sub slrsim_all {
   my $self = shift;
 
-  my $folder = $self->_output_folder;
+  my $folder = $self->get_output_folder;
   my $all_file = $self->param('output_folder') . '/df.list.Rdata';
   my $script = $self->script;
   my $dbname = $self->dbc->dbname;
@@ -102,9 +100,6 @@ sub slrsim_all {
 library(R.oo)
 library(ape)
 library(ggplot2)
-source("~/lib/phylosim/PhyloSimSource.R")
-source("~/lib/phylosim/examples/greg_scripts.R")
-#plot.all.in.dir("${folder}/alns");
 
 dbname="$dbname"
 source("$script")
@@ -133,31 +128,134 @@ for (df in df.list) {
 
 }
 
+sub fig_one {
+  my $self = shift;
+
+  $self->slrsim_all;
+  my $folder = $self->get_output_folder;
+  my $file = "${folder}/df.list.Rdata";
+  my $f_auc = "${folder}/auc.pdf";
+  my $f_fdr = "${folder}/fdr.pdf";
+  my $f_sens = "${folder}/sens.pdf";
+  my $functions = $self->base . "/projects/slrsim/slrsim.functions.R";
+  my $plots = $self->base . "/projects/slrsim/slrsim.plots.R";
+
+  my $phylosim_dir = $self->base . "/projects/phylosim";
+
+  my $rcmd = qq^
+library(ggplot2)
+library(fields)
+library(RColorBrewer)
+
+plot.f = function(data,palette="Spectral",field='fdr',rev.colors=F,limits=c(0,1),x.lim=c(0,4),y.lim=c(0,0.1),label.species=T,do.plot=T) {
+  data[,'z_vals'] = data[,field]
+  p <- ggplot(data,aes(x=tree_mean_path,y=phylosim_insertrate*2,z=z_vals))
+  p <- p + scale_x_continuous('Mean Path Length')
+  p <- p + scale_y_continuous('Indel Rate')
+  if (!is.null(x.lim)) {
+    p <- p + coord_cartesian(xlim = x.lim,ylim=y.lim)
+  }
+  p <- p + geom_tile(aes_string(fill=field))
+  if (is.null(limits)) {
+    limits <- c(min(data[,'z_vals']),max(data[,'z_vals']))
+  }
+  n <- 10
+  breaks <- seq(from=limits[1],to=limits[2],length.out=n+1)
+  if (rev.colors) {
+    p <- p + scale_fill_gradientn(colours=rev(brewer.pal(n=n,palette)),limits=limits)
+  } else {
+    p <- p + scale_fill_gradientn(colours=brewer.pal(n=n,palette),limits=limits)
+  }
+  p <- p + coord_equal(ratio=10)
+  if(do.plot) {
+    print(p)
+  } else {
+    return(p)
+  }
+}
+
+source("${functions}")
+source("${plots}")
+
+load("${file}")
+print(str(data))
+
+na.rm <- TRUE
+plot.x <- 'fpr'
+plot.y <- 'tpr'
+zoom.fpr <- 0.1
+
+df.f <- function(x) {
+  slr.threshold <- 3.84
+  a <- summarize.by.labels(x,fn=fig.1.summary,thresh=slr.threshold)
+  return(a)
+}
+summary.df <- ldply(df.list,df.f)
+sub.df <- summary.df
+
+art = 'artificial.nh'
+bg = 'bglobin.nh'
+enc = 'encode.nh'
+tree.files <- unique(sub.df[,'slrsim_tree_file'])
+tree.labels <- c('6 artificial','17 bglobin', '44 vertebrate')
+sub.df[sub.df[,'slrsim_tree_file'] == art,'slrsim_tree_file'] = 0
+sub.df[sub.df[,'slrsim_tree_file'] == bg,'slrsim_tree_file'] = 1
+sub.df[sub.df[,'slrsim_tree_file'] == enc,'slrsim_tree_file'] = 2
+sub.df[,'slrsim_tree_file'] <- factor(sub.df[,'slrsim_tree_file'],labels=tree.labels)
+
+#sub.df[sub.df[,'filtering_name'] == 'tcoffee','alignment_name'] = 'prank_codon_filt'
+
+str(sub.df)
+pdf(file="${f_auc}",width=10,height=5)
+p <- plot.f(sub.df,field='auc',do.plot=F,label.species=F,rev.colors=F,limits=c(0.4,1))
+p <- p + facet_grid(slrsim_tree_file ~ alignment_name)
+print(p)
+dev.off()
+
+pdf(file="${f_fdr}",width=10,height=5)
+p <- plot.f(sub.df,field='fdr',do.plot=F,label.species=F,rev.colors=T)
+p <- p + facet_grid(slrsim_tree_file ~ alignment_name)
+print(p)
+dev.off()
+
+pdf(file="${f_sens}",width=10,height=5)
+p <- plot.f(sub.df,field='sens',do.plot=F,label.species=F,rev.colors=F)
+p <- p + facet_grid(slrsim_tree_file ~ alignment_name)
+print(p)
+dev.off()
+
+^;
+  Bio::Greg::EslrUtils->run_r($rcmd,{});
+  
+}
+
 sub fig_two {
   my $self = shift;
 
   $self->slrsim_all;
-  my $folder = $self->_output_folder;
+  my $folder = $self->get_output_folder;
   my $file = "${folder}/fig_two.Rdata";
   my $roc_zoom = "${folder}/roc_zoom.pdf";
   my $functions = $self->base . "/projects/slrsim/slrsim.functions.R";
   my $plots = $self->base . "/projects/slrsim/slrsim.plots.R";
+
+  my $phylosim_dir = $self->base . "/projects/phylosim";
 
   my $rcmd = qq^
 library(ggplot2)
 source("${functions}")
 source("${plots}")
 
-library(R.oo)
-source("~/lib/phylosim/PhyloSimSource.R")
-source("~/lib/phylosim/examples/greg_scripts.R")
-plot.all.in.dir("${folder}/alns");
+#library(R.oo)
+#source("${phylosim_dir}/PhyloSimSource.R")
+#source("${phylosim_dir}/examples/greg_scripts.R")
+#plot.all.in.dir("${folder}/alns");
 
 load("${file}")
 print(str(data))
 na.rm <- TRUE
-plot.x <- 'fp'
-plot.y <- 'tp'
+plot.x <- 'fpr'
+plot.y <- 'tpr'
 zoom.fpr <- 0.1
 
 n.trees <- length(unique(data[,'slrsim_tree_file']))

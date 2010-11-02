@@ -195,7 +195,7 @@ sub clean_hive_tables {
     analysis_ctrl_rule
     analysis_data analysis_description
     analysis_job analysis_job_file
-    analysis_job_error
+    job_message
     analysis_stats analysis_stats_monitor
     dataflow_rule
     hive

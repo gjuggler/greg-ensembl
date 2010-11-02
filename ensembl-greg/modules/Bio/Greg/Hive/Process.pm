@@ -416,25 +416,23 @@ sub new_data_id {
   my $self   = shift;
   my $params = shift;
 
-  my $ug   = new Data::UUID;
-  my $uuid = $ug->create();
-
   my $dbc = $self->dbc;
   $dbc->do("LOCK TABLES meta WRITE");
 
-  my $sth = $self->dbc->prepare(
+  my $sth = $dbc->prepare(
     "SELECT meta_value from meta WHERE meta_key='data_id_counter';");
   $sth->execute;
   my @row = $sth->fetchrow_array;
   $sth->finish;
-  my $data_id = 1;
+  my $data_id = -1;
   if (@row) {
     $data_id = $row[0];
   }
 
   $data_id++;
-  $self->dbc->do(
-    "REPLACE into meta (meta_key,meta_value) VALUES ('data_id_counter',$data_id);");
+  $dbc->do(
+    "DELETE from meta where meta_key='data_id_counter'");
+  $dbc->do("REPLACE into meta (meta_key,meta_value) VALUES ('data_id_counter',$data_id);");
   $self->add_breadcrumb( $params, $data_id );
 
   $self->param( 'data_id', $data_id );

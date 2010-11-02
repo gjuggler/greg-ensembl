@@ -1091,7 +1091,7 @@ sub get_prank_filter_matrices {
 
   my $node_id = $tree->node_id;
 
-  my $dir = "/tmp/prank_temp";
+  my $dir = $params->{temp_dir};
   mkpath([$dir]);
   my $aln_f = $dir."/aln_${node_id}.fasta";
   my $tree_f = $dir."/tree_${node_id}.nh";
@@ -1102,7 +1102,10 @@ sub get_prank_filter_matrices {
   $class->to_file($aln,$aln_f);
   Bio::EnsEMBL::Compara::TreeUtils->to_file($tree,$tree_f);
 
-  my $cmd = qq^prank_fix -d=$aln_f -t=$tree_f -e -o=$out_f^;
+  my $prank_bin = "prank_fix";
+  $prank_bin = "prank" if (!-e $prank_bin);
+
+  my $cmd = qq^${prank_bin} -d=$aln_f -t=$tree_f -e -o=$out_f^;
     system($cmd);
 
   my $module = XML::LibXML;
@@ -1232,7 +1235,7 @@ sub get_prank_filter_matrices {
       }
       $leaf_scores->{$leaf->name} = $score_string;
     }
-  } elsif ($params->{'prank_filtering_scheme'} =~ m/prank_mean/i) {
+  } elsif ($params->{'prank_filtering_scheme'} eq 'prank' || $params->{'prank_filtering_scheme'} =~ m/prank_mean/i) {
     foreach my $leaf ($tree->leaves) {
       my $score_string = "";
       my $aln_string = $leaf->alignment_string;
