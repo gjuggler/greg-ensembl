@@ -186,7 +186,7 @@ plot.y <- 'tpr'
 zoom.fpr <- 0.1
 
 df.f <- function(x) {
-  slr.threshold <- 3.84
+  slr.threshold <- 0
   a <- summarize.by.labels(x,fn=fig.1.summary,thresh=slr.threshold)
   return(a)
 }

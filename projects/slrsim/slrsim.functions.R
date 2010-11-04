@@ -1,7 +1,7 @@
 fig.1.summary <- function(df,thresh) {
   
   stats <- df.stats(df,thresh=thresh)
-  roc <- slr.roc(df)
+  roc <- slr.roc(df,na.rm=TRUE)
   stats$auc <- roc[1,]$auc
   print(paste("summarizing",df[1,]$experiment_name,df[1,]$slrsim_label))
   return(cbind(df[1,],stats))

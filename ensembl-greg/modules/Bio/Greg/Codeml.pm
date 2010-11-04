@@ -821,6 +821,86 @@ sub extract_lnL {
   }
 }
 
+sub parse_params {
+  my $self = shift;
+  my $main_arrayref = shift;
+
+  my $seen_lnl = 0;
+  my $n_past_lnl = 0;
+
+  my @branches;
+  my @branch_lengths;
+  my @branch_standard_errors;
+  my @params;
+  my @standard_errors;
+
+  my @main = @{$main_arrayref};
+  foreach my $line (@main) {
+    chomp $line;
+    next if ( length($line) == 0 );    # skip blank lines.
+ 
+    if ($seen_lnl) {
+      $n_past_lnl++;
+    }
+    if ($n_past_lnl == 1) {
+      my $str = strip($line);
+      @branches = split(/\s+/,$str);
+    }
+    if ($n_past_lnl == 2) {
+      # We're in the parameters line.
+      my @tokens = split(/\s+/,strip($line));
+      my $divider = scalar(@branches) - 1;
+      @branch_lengths = @tokens[0..$divider];
+      my @param_tokens = @tokens[$divider+1..scalar(@tokens)-1];
+      @params = @param_tokens;
+    }
+    if ($n_past_lnl == 4) {
+      # We're in the parameters line.
+      my @tokens = split(/\s+/,strip($line));
+      my $divider = scalar(@branches) - 1;
+      @branch_standard_errors = @tokens[0..$divider];
+      my @param_tokens = @tokens[$divider+1..scalar(@tokens)-1];
+      @standard_errors = @param_tokens;
+    }
+    
+    $seen_lnl = 1 if ( $line =~ /lnL(.*):\s+(\S*?)\s+(\S*?)/ );
+  }
+
+  my $branch_map;
+  for (my $i=0; $i < scalar(@branches); $i++) {
+    my $key = $branches[$i];
+    my $length = $branch_lengths[$i];
+    my $se = $branch_standard_errors[$i];
+    $branch_map->{$key} = [$length,$se];
+  }
+
+  return {
+    branches => $branch_map,
+    params => \@params,
+    params_se => \@standard_errors
+  };
+}
+
+# GJ 2009-01-09 Extracting log-likelihoods from runs.
+sub extract_kappa {
+  my $self          = shift;
+  my $main_arrayref = shift;
+
+  my @main = @{$main_arrayref};
+  foreach my $line (@main) {
+    chomp $line;
+    next if ( length($line) == 0 );    # skip blank lines.
+
+    # Example line:
+    # lnL(ntime:  8  np: 13):  -4820.123143     +0.000000
+    if ( $line =~ /kappa.*=\s*(\S+?)\s*/ ) {
+      my $kappa = $1;
+      return $1;
+    }
+  }
+  return undef;
+}
+
 # GJ 2009-01-09 Extracting log-likelihoods from runs.
 sub extract_omegas {
   my $self          = shift;
@@ -892,7 +972,7 @@ sub get_tree {
   my $newick   = Bio::EnsEMBL::Compara::TreeUtils->to_newick($tree);
   my $new_tree = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($newick);
 
-  my $hash = $self->extract_branch_params();
+  my $hash = $self->parse_branch_params();
 
   #print join(",",keys(%$hash))."\n";
 
@@ -943,8 +1023,18 @@ sub parse_branch_params {
   my $class = shift;
   my $line_arrayref = shift;
 
+  my $param_objs = $class->parse_params($line_arrayref);
+  my $branches = $param_objs->{branches};
+
+  my @params = @{$param_objs->{params}};
+  my @params_se = @{$param_objs->{params_se}};
+
+  my $kappa = shift @params;
+  my $kappa_se = shift @params_se;
+
   my $values;
   my $looking = 0;
+  my $free_model = 0;
   foreach my $line ( @$line_arrayref ) {
     chomp $line;
     next if ( length($line) == 0 );    # skip blank lines.
@@ -955,6 +1045,10 @@ sub parse_branch_params {
     }
     if ($line =~ m/tree length for/i) {
       $looking = 0;
+    }
+
+    if ($line =~ m/Model: free dN\/dS Ratios for branches for branches/i) {
+      $free_model = 1;
     }
 
     if ($looking) {
@@ -971,17 +1065,27 @@ sub parse_branch_params {
         my $id = $child;
         my $parent_id = $parent;
 
+        my $branch_label = $tokens[0];
+        my $branch_bl_arrayref = $branches->{$branch_label};
+        my ($bl,$se) = @{$branch_bl_arrayref};
+
+        my $dnds_se = -1;
+        $dnds_se = shift @params_se if ($free_model);
+
         #	print "$child!!\n";
         my $obj = {
           't'      => $tokens[1],
+          't_se'   => $se,
           'N'      => $tokens[2],
           'S'      => $tokens[3],
           'dN/dS'  => $tokens[4],
+          'dN/dS_se' => $dnds_se,
           'dN'     => $tokens[5],
           'dS'     => $tokens[6],
           'node_a' => $parent,
           'node_b' => $child,
           'id' => $id,
+          'branch_label' => $branch_label,
           'parent' => $parent_id
         };
         $values->{$id} = $obj;
@@ -1255,7 +1359,8 @@ sub branch_model_likelihood {
   my $default_params = {
     fix_blength => 1,    # Use initial branch lengths as estimates.
     model       => 2,
-    cleandata   => 0
+    cleandata   => 0,
+    getSE => 1
   };
 
   my @variable_params = qw(model omega Mgene gene_codon_counts cleandata aaDist);
@@ -1285,6 +1390,7 @@ sub branch_model_likelihood {
 
   # Manually extract likelihood and omega values from the results files.
   my $lnL    = $class->extract_lnL($lines_ref);
+  my $kappa = $class->extract_kappa($lines_ref);
   my @omegas = $class->extract_omegas($lines_ref);
   #print "Omegas: @omegas\n";
   my $codeml_tree = $class->parse_codeml_results($lines_ref);
