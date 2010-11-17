@@ -154,6 +154,8 @@ dbname="${dbname}"
 source("${collect_script}");
 
 stats.lnl <- get.vector(con,"SELECT * from $table;")
+gor.subs <- get.vector(con,"SELECT * from ${table}_subs;")
+
 stats.dups <- get.vector(con,"SELECT * from stats_dups;")
 
 stats.lnl = merge(stats.lnl,stats.dups[,c('data_id','name')],by='data_id')
@@ -196,7 +198,7 @@ stats.lnl[,'pval.7.bh'] = with(stats.lnl,p.adjust(pval.7,method=method))
 stats.lnl[,'pval.8.bh'] = with(stats.lnl,p.adjust(pval.8,method=method))
 
 # Save the data
-save(stats.lnl,file="${data_file}")
+save(stats.lnl,gor.subs,file="${data_file}")
 ^;
 
     #    print "$cmd\n";

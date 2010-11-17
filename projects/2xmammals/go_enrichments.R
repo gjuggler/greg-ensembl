@@ -23,7 +23,7 @@ get.go.table.subset = function(int.symbols,all.symbols,symbols.to.go,ontology,no
  return(get.go.table(scores,symbols.to.go,ontology,nodeSize,description))
 }
 
-get.go.table = function(scores,symbols.to.go,ontology,nodeSize=5,description='',scoresAreBinary=FALSE) {
+get.go.table = function(scores,symbols.to.go,ontology,nodeSize=5,description='',scoresAreBinary=FALSE,p.adjust='none') {
   if (scoresAreBinary) {
     geneSelectionFun = function(score){return(score >= 1)}
   } else {
@@ -68,6 +68,10 @@ get.go.table = function(scores,symbols.to.go,ontology,nodeSize=5,description='',
     )
   }
 
+  print(str(test.df))
+  test.df$pval.fis.bonf = p.adjust(test.df$pval.fis,'bonferroni')
+  test.df$pval.fis.holm = p.adjust(test.df$pval.fis,'holm')
+  test.df$pval.fis.bh = p.adjust(test.df$pval.fis,'BH')
 
   return(test.df)
 }
@@ -100,52 +104,12 @@ get.enrich.by.subset = function(subset,all,go.df,go.field.name='node_id',nodeSiz
     ontology = 'BP',
     nodeSize = nodeSize,
     description = '',
-    scoresAreBinary = TRUE
+    scoresAreBinary = TRUE,
+    p.adjust='BH'
   )
   return(bp)
 }
 
-do.vizbi.enrichments = function() {
-  all.genes = get.all.merged()
-
-  hi.thresh = 0.3
-  psc.thresh = 1
-
-  p = subset(all.genes,p.psc.count >= psc.thresh)
-  g = subset(all.genes,g.psc.count >= psc.thresh)
-  l = subset(all.genes,l.psc.count >= psc.thresh)
-
-  print(nrow(p))
-  print(nrow(g))
-  print(nrow(l))
-
-  go.df = go.hs.iea
-  p.enriched = get.enrich.df(p$node_id,all.genes$node_id,go.df)
-  g.enriched = get.enrich.df(g$node_id,all.genes$node_id,go.df)
-  l.enriched = get.enrich.df(l$node_id,all.genes$node_id,go.df)
-
-  write.csv(p.enriched,file="p_psc.csv",row.names=F)
-  write.csv(g.enriched,file="g_psc.csv",row.names=F)
-  write.csv(l.enriched,file="l_psc.csv",row.names=F)
-
-  p = subset(all.genes,p.dnds.m0 >= hi.thresh)
-  g = subset(all.genes,g.dnds.m0 >= hi.thresh)
-  l = subset(all.genes,l.dnds.m0 >= hi.thresh)
-
-  print(nrow(p))
-  print(nrow(g))
-  print(nrow(l))
-  
-  go.df = go.hs.iea
-  p.enriched = get.enrich.df(p$node_id,all.genes$node_id,go.df)
-  g.enriched = get.enrich.df(g$node_id,all.genes$node_id,go.df)
-  l.enriched = get.enrich.df(l$node_id,all.genes$node_id,go.df)
-
-  write.csv(p.enriched,file="p_hi.csv",row.names=F)
-  write.csv(g.enriched,file="g_hi.csv",row.names=F)
-  write.csv(l.enriched,file="l_hi.csv",row.names=F)
-
-}
 
 do.enrichments = function() {
   all.genes = get.all.merged()

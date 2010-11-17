@@ -32,31 +32,25 @@ if ( $ENV{'USER'} =~ /gj1/ ) {
     {
       -host => 'ens-livemirror',
       -user => 'ensro',
-
-      #							    -verbose => 1
-    }, {
-      -host => 'ens-staging',
-      -user => 'ensro',
-
-      #							    -verbose => 1
-    }, {
-      -host => 'ens-staging1',
-      -user => 'ensro',
-
-      #							    -verbose => 1
-    }, {
-      -host => 'ens-staging2',
-      -user => 'ensro',
-
       #							    -verbose => 1
     },
-
-    #    {
-    #      -host => 'ensdb-archive',
-    #      -port => 5304,
-    #      -user => 'ensro',
-    #      -verbose => 1
-    #    }
+#    {
+#      -host => 'ens-staging',
+#      -user => 'ensro',
+#    },
+#    {
+#      -host => 'ens-staging1',
+#      -user => 'ensro',
+#    },
+#    {
+#      -host => 'ens-staging2',
+#      -user => 'ensro',
+#    },
+    {
+      -host => 'ensdb-archive',
+      -port => 5304,
+      -user => 'ensro',
+    }
   );
   Bio::EnsEMBL::Registry->set_disconnect_when_inactive(1);
 } else {
@@ -349,6 +343,7 @@ sub fetch_score_aln {
   my $params = shift;
 
   my $table = $params->{'alignment_score_table'};
+  $table = 'protein_tree_member_score' unless (defined $table);
   my $pta = $tree->adaptor;
 
   my $new_aln = new $aa_aln;
@@ -1286,7 +1281,7 @@ sub get_genome_taxonomy_below_level {
     my $tx_id = $tx->taxon_id;
 
     if ( !$TREE->has_ancestor_node_id( $tx, $root ) ) {
-      warn( "taxon not below tax level: [" . $tx->node_id . "]" );
+      #warn( "taxon not below tax level: [" . $tx->node_id . "]" );
       next;
     } else {
       print "Okay: " . $tx->name . "\n" if ($verbose);
@@ -1822,6 +1817,8 @@ sub restrict_tree_to_aln {
   my $tree  = shift;
   my $aln   = shift;
 
+  my $used_seqs;
+
   my @keepers;
   foreach my $leaf ( $tree->leaves ) {
 
@@ -1833,6 +1830,8 @@ sub restrict_tree_to_aln {
       if ( !defined $seq );
     $seq = Bio::EnsEMBL::Compara::AlignUtils->get_seq_with_id( $aln, $leaf->taxon->taxon_id )
       if ( !defined $seq );
+    next if ($used_seqs->{$seq});
+    $used_seqs->{$seq} = $seq;
     push @keepers, $leaf if ( defined $seq );
   }
   my $pruned_tree =
@@ -1902,7 +1901,7 @@ sub get_compara_or_genomic_aln {
     $aln = Bio::EnsEMBL::Compara::ComparaUtils->restrict_aln_to_tree( $aln, $tree );
 
     #print "Genomic align [$aln_type]:\n";
-    #Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $aln, { width => 150,full => 1});
+    Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $aln, { width => 150,full => 1});
     $tree = Bio::EnsEMBL::Compara::ComparaUtils->restrict_tree_to_aln( $tree, $aln );
 
     #map {print "   [".$_."]\n";} $tree->leaves;
@@ -1954,11 +1953,14 @@ sub get_compara_or_genomic_aln {
 
   my $trimmed_num_species = Bio::EnsEMBL::Compara::TreeUtils->species_count($tree);
   if ( $trimmed_num_species != $num_species ) {
-    warn("Tree didn't stay the same!!");
-    return;
+    warn("Tree didn't stay the same!! before: $num_species  after: $trimmed_num_species");
+    
+    if ($params->{'fail_on_altered_tree'}) {
+      return;
+    }
   }
 
-  #Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $aln, { width => 150, full => 1 } );
+  Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $aln, { width => 150, full => 1 } );
 
   # Compare the alignment pep sequence to the original transcript (sanity check).
   if (!Bio::EnsEMBL::Compara::AlignUtils->contains_sequence( $aln, $ref_member->sequence_cds )) {
@@ -1982,6 +1984,7 @@ sub get_compara_or_genomic_aln {
     print "After flattening: " . $aln->length . "\n";
   }
 
+  print $tree->newick_format."\n";
   $aln = Bio::EnsEMBL::Compara::AlignUtils->sort_by_tree( $aln, $tree );
 
   my $pep_aln = Bio::EnsEMBL::Compara::AlignUtils->translate($aln);
@@ -2019,9 +2022,7 @@ sub get_bases_for_slice {
   my $name     = $gdb->taxon->ensembl_alias;
   my ($match) =
     grep { $_ eq $gdb->taxon->short_name }
-
     ( 'Cjac', 'Ptro', 'Ppyg', 'Mmul', 'Tsyr', 'Ogar', 'Mmur' );
-#    ('asdf');
   return '' unless ($match);
   my $qual_base = "/nfs/users/nfs_g/gj1/scratch/2x_quality/assemblies";
 

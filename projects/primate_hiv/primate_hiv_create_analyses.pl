@@ -25,8 +25,7 @@ $h->init($url);
 if ($clean) {
   $h->clean_compara_analysis_tables;
   $h->clean_hive_tables;
-  my @truncate_tables = qw^stats_windows^;
-  $h->truncate_tables(\@truncate_tables);
+  $h->drop_tables(['stats_windows']);
 }
 
 # Define parameters (species sets, filtering options, etc).
@@ -44,10 +43,36 @@ $h->connect_analysis("SplitParams","WindowAnalysis");
 
 $h->wait_for("OutputData",["NodeSets","SplitParams","WindowAnalysis"]);
 
-my @genes = gene_list();
-#@genes = @genes[1..300];
+add_all_genes();
+
+#my @genes = gene_list();
+#@genes = @genes[1..30];
 #@genes = grep {$_ =~ m/(ENSG00000197123|ENSG00000119977)/gi} @genes;
-$h->add_genes_to_analysis("NodeSets",\@genes);
+#$h->add_genes_to_analysis("NodeSets",\@genes);
+#add_all_nodes();
+
+sub add_all_genes {
+  my $cmd = "SELECT stable_id FROM member m join protein_tree_member ptm USING(member_id) WHERE taxon_id=9606 and source_name='ENSEMBLPEP'";
+
+  my $dbc = $h->dbc;
+  my $sth = $dbc->prepare($cmd);
+  $sth->execute();
+  my $array_ref = $sth->fetchall_arrayref( [0] );
+  my @protein_ids = @{$array_ref};
+  @protein_ids =
+    map { @{$_}[0] } @protein_ids;    # Some weird mappings to unpack the numbers from the arrayrefs.
+  $sth->finish;
+
+  $h->add_genes_to_analysis("NodeSets",\@protein_ids);
+}
+
+sub add_all_nodes {
+  my $cmd = "SELECT node_id FROM protein_tree_node WHERE parent_id=1;";
+  my @nodes = _select_node_ids($cmd);
+  my $logic_name = "NodeSets";
+  _add_nodes_to_analysis($logic_name,\@nodes);
+}
+
 
 sub gene_list {
   open INPUT, "<scale_up_genes.txt";
@@ -76,31 +101,36 @@ sub parameter_sets {
   my $non_gorilla = join(",",subtract(\@hominidae_arr,[9593]));
   my $simiiformes = join(",",clade_taxon_ids("Simiiformes"));
   my $haplorrhini = join(",",clade_taxon_ids("Haplorrhini"));
-
   my $glires = join(",",clade_taxon_ids("Glires"));
   my $laurasiatheria = join(",",clade_taxon_ids("Laurasiatheria"));
   my $afrotheria = join(",",clade_taxon_ids("Afrotheria"));
-
   my $mammals = join(",",clade_taxon_ids("Eutheria"));
 
   my $non_primates = join(",",subtract(\@mammals_arr,\@primates_arr));
 
-  foreach my $aln_type ('compara','genomic_primates','genomic_mammals','genomic_all') {
-    $params = {
-      parameter_set_name => "Hominidae",
-      parameter_set_shortname => 'h',
-      keep_species => $hominidae,
-      aln_type => $aln_type,
-    };
-    $h->add_parameter_set($params);
-    
-    $params = {
-      parameter_set_name => "Primates",
-      parameter_set_shortname => 'p',
-      keep_species => $primates,
-      aln_type => $aln_type
-    };
-    $h->add_parameter_set($params);
+  foreach my $aln_type ('genomic_mammals') {
+    my $aln_short = 'gm';
+    $aln_short = 'c' if ($aln_type eq 'compara');
+    $aln_short = 'ga' if ($aln_type eq 'genomic_all');
+
+      $params = {
+        parameter_set_name => "Primates".' '.$aln_type,
+        parameter_set_shortname => 'p_'.$aln_short,
+        quality_threshold => 30,
+        keep_species => $primates,
+        aln_type => $aln_type
+      };
+      $h->add_parameter_set($params);
+
+#      $params = {
+#        parameter_set_name => "Mammals".' '.$aln_type,
+#        parameter_set_shortname => 'm_'.$aln_short,
+#        quality_threshold => 30,
+#        keep_species => $mammals,
+#        aln_type => $aln_type
+#      };
+#      $h->add_parameter_set($params);
+      
   }
 }
 

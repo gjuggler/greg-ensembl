@@ -46,6 +46,8 @@ sub fetch_input {
 sub run {
   my $self = shift;
 
+  $self->get_output_folder;
+
   my $tree = $self->param('tree');
 
   #print $tree->nhx_format('display_label') . "\n";

@@ -1,26 +1,33 @@
-load("evan_enrichments.Rdata")
+load("evan_enrichments_new.Rdata")
 source("go_enrichments.R")
 
 genes$stable_id = genes$human_protein
-for (list in c('list1','list2','list3','list4','list5','list6','list7','list8','list9')) {
-  print(list)
+for (iea in c('incl_iea')) {
+  for (list in c('list7','list8','list9')) {
+    print(list)
 
-  data = read.csv(paste("evan_",list,".txt",sep=""),header=F)
-  names(data) = 'name'
-  data$name = gsub("(ENSG.*)_(ENST.*)","\\1",data$name)
+    if (iea == 'incl_iea') {
+      go.data = get("go.hs.iea")
+    } else {
+      go.data = get("go.hs")
+    }   
 
-  merge.names = merge(genes,data,by='name')
-  merge.ensg = merge(genes,data,by.x='human_gene',by.y='name')
-  merged = rbind(merge.names,merge.ensg)
+    data = read.csv(paste("evan_",list,".txt",sep=""),header=F)
+    names(data) = 'name'
+    data$name = gsub("(ENSG.*)_(ENST.*)","\\1",data$name)
 
-  print(paste("before",nrow(data),"after",nrow(merged)))
+    merge.names = merge(genes,data,by='name')
+    merge.ensg = merge(genes,data,by.x='human_gene',by.y='name')
+    merged = rbind(merge.names,merge.ensg)
 
-  tbl = get.enrich.by.subset(
-    subset=merged$stable_id,
-    all=genes$stable_id,
-    go.df=go.hs.iea,
-    go.field.name='stable_id'
-  )
-  head(tbl)
-  write.csv(tbl,file=paste("evan_enrich_",list,".csv",sep=""),row.names=F)
+    print(paste("before",nrow(data),"after",nrow(merged)))
+
+    tbl = get.enrich.by.subset(
+      subset=merged$stable_id,
+      all=genes$stable_id,
+      go.df=go.data,
+      go.field.name='stable_id'
+    )
+    write.csv(tbl,file=paste("evan_enrich_",list,"_",iea,".csv",sep=""),row.names=F)
+  }
 }

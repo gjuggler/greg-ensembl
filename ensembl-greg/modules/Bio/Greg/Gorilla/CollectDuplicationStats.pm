@@ -9,6 +9,8 @@ use Bio::Greg::Gorilla::Utils;
 
 use base ( 'Bio::Greg::Hive::Process', 'Bio::Greg::StatsCollectionUtils' );
 
+sub get_gene_stats_def {
+  my $self = shift;
 my $gene_stats_def = {
   data_id       => 'int',
   node_id       => 'int',
@@ -21,25 +23,37 @@ my $gene_stats_def = {
   gor_names     => 'string',
   name          => 'string',
   desc          => 'string',
+
+  gc_cds => 'float',
+  'gc_3' => 'float',
+  gc_genomic => 'float',
+  job_id => 'int',
+
   unique_keys   => 'data_id,node_id'
 };
 foreach my $species ( 'H', 'G', 'C', 'O' ) {
   $gene_stats_def->{ $species . '_count' } = 'int';
 }
 
-sub fetch_input {
-  my ($self) = @_;
+  return $gene_stats_def;
+}
 
+sub param_defaults {
   my $params = {
     collect_duplication_species => '9606,9598,9593,9600',
     genes_table                 => 'stats_dups',
   };
+  return $params;
+}
 
-  $self->load_all_params($params);
+sub fetch_input {
+  my ($self) = @_;
+
+  $self->load_all_params();
 
   # Create tables if necessary.
   $self->create_table_from_params( $self->compara_dba, $self->param('genes_table'),
-    $gene_stats_def );
+    $self->get_gene_stats_def );
 }
 
 sub run {
@@ -56,13 +70,11 @@ sub get_gene_data {
   my $node_id          = shift;
   my $parameter_set_id = shift;
 
-  my $cur_params = $self->params;
-
   my $pta = $self->compara_dba->get_ProteinTreeAdaptor;
   $pta->protein_tree_member("protein_tree_member");
   my ( $tree, $sa_aln, $cdna_aln );
   ( $tree, $sa_aln, $cdna_aln ) =
-    Bio::EnsEMBL::Compara::ComparaUtils->tree_aln_cdna( $self->compara_dba, $cur_params );
+    Bio::EnsEMBL::Compara::ComparaUtils->tree_aln_cdna( $self->compara_dba, $self->params );
 
   print $tree->newick_format . "\n";
 
@@ -74,45 +86,59 @@ sub get_gene_data {
     my $count    = scalar @proteins;
     my $letter   = Bio::Greg::Gorilla::Utils->taxon_letter($taxon_id);
     $letter = $taxon_id if ( !defined $letter );
-    $cur_params->{ $letter . '_count' } = $count;
+    $self->param($letter . '_count', $count);
   }
+
+  my $ref_member;
 
   # Collect human protein.
   my @human_proteins = grep { $_->taxon_id == 9606 } $tree->leaves;
   my @human_genes    = map  { $_->gene_member } @human_proteins;
   if ( scalar @human_proteins > 0 ) {
     my $member = $human_proteins[0];
-    $cur_params->{'human_protein'} = $member->stable_id;
-    $cur_params->{'human_gene'}    = $member->gene_member->stable_id;
-    $cur_params->{'human_desc'}    = $member->get_Gene->description;
+    $ref_member= $member;
+    $self->param('human_protein',$member->stable_id);
+    $self->param('human_gene',$member->gene_member->stable_id);
+    $self->param('human_desc',$member->get_Gene->description);
   }
-  $cur_params->{'human_names'} = join( ", ", map { $_->get_Gene->external_name } @human_genes );
+  $self->param('human_names',join( ", ", map { $_->get_Gene->external_name } @human_genes));
 
   # Collect gorilla protein.
   my @gor_proteins = grep { $_->taxon_id == 9593 } $tree->leaves;
   my @gor_genes    = map  { $_->gene_member } @gor_proteins;
   if ( scalar @gor_proteins > 0 ) {
     my $member = $gor_proteins[0];
-    $cur_params->{'gor_protein'} = $member->stable_id;
-    $cur_params->{'gor_gene'}    = $member->gene_member->stable_id;
-    $cur_params->{'gor_desc'}    = $member->get_Gene->description;
+    $ref_member = $member if (!defined $ref_member);
+    $self->param('gor_protein',$member->stable_id);
+    $self->param('gor_gene',$member->gene_member->stable_id);
+    $self->param('gor_desc',$member->get_Gene->description);
   }
-  $cur_params->{'gor_names'} = join( ", ", map { $_->get_Gene->external_name } @gor_genes );
-
-  $cur_params->{'description'} = $cur_params->{'human_desc'} || $cur_params->{'gor_desc'};
-
+  $self->param('gor_names',join( ", ", map { $_->get_Gene->external_name } @gor_genes ));
+  
+  $self->param('description', $self->param('human_desc') || $self->param('gor_desc'));
+  
   my @all_proteins = ( @human_proteins, @gor_proteins );
   if ( scalar @all_proteins > 0 ) {
-    $cur_params->{'name'} = $all_proteins[0]->get_Gene->external_name;
+    $self->param('name', $all_proteins[0]->get_Gene->external_name);
   }
 
   # Collect gene tag values into the params hash.
-  $cur_params->{'tree_length'}   = $self->tree_length($tree);
-  $cur_params->{'tree_max_path'} = $self->max_path($tree);
+  $self->param('tree_length', $self->tree_length($tree));
+  $self->param('tree_max_path', $self->max_path($tree));
+
+  # Get GC Content and stuff.
+  if (defined $ref_member) {
+  my $gc = $self->gc_content($ref_member);
+  $self->param('gc_cds', sprintf( "%.3f", $gc ));
+  my $gc3 = $self->gc3_content($ref_member);
+  $self->param('gc_3', sprintf( "%.3f", $gc3 ));
+  my $genomic = $self->genomic_gc_content($ref_member);
+  $self->param( 'gc_genomic', sprintf( "%.3f", $genomic ) );
+  }
 
   # Store values in our output table.
-  my $table = $cur_params->{'genes_table'};
-  $self->store_params_in_table( $self->db_handle, $table, $cur_params );
+  my $table = $self->param('genes_table');
+  $self->store_params_in_table( $self->db_handle, $table, $self->params );
   $tree->release_tree;
 
 }

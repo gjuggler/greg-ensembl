@@ -17,7 +17,7 @@ for (pset in psets) {
   for (aln.type in aln.types) {
     data <- subset(all.data,parameter_set_shortname==pset & aln_type==aln.type)
 
-    file.name <- paste("~/scratch/primate_hiv/windows_",pset,"_",aln.type,sep="")
+    file.name <- paste(output_folder,"/windows_",pset,"_",aln.type,sep="")
     print(file.name)
     save(data,file=paste(file.name,".Rdata",sep=""))
     #write.csv(data,file=paste(file.name,".csv",sep=""),row.names=F)
@@ -25,4 +25,4 @@ for (pset in psets) {
 }
 
 data <- all.data
-save(data,file=paste("~/scratch/primate_hiv/windows_all.Rdata"))
+save(data,file=paste(output_folder,"/windows_all.Rdata",sep=""))

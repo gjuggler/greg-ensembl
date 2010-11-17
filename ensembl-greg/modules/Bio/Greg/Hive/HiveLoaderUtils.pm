@@ -187,6 +187,17 @@ sub truncate_tables {
   }
 }
 
+sub drop_tables {
+  my $self   = shift;
+  my $tables = shift;
+
+  my $dba = $self->dba;
+  foreach my $table (@$tables) {
+    print "$table\n";
+    eval { $dba->dbc->do("drop table $table"); };
+  }
+}
+
 sub clean_hive_tables {
   my $self            = shift;
   my $dba             = $self->dba;

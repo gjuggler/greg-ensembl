@@ -388,6 +388,17 @@ sub store_meta {
   }
 }
 
+sub get_meta {
+  my $self = shift;
+  my $key = shift;
+
+  my $sth = $self->dbc->prepare("SELECT * from meta where meta_key='$key' limit 1;");
+  $sth->execute;
+  while ( my $obj = $sth->fetchrow_hashref ) {
+    return $obj->{meta_value};
+  }
+}
+
 sub get_parameter_sets {
   my $self = shift;
   my $dbname = shift || $self->dbc->dbname;
@@ -824,6 +835,12 @@ sub base {
 sub get_output_folder {
   my $self        = shift;
 
+  # Double-check the meta table for a stored value.
+  my $db_value = $self->get_meta('output_folder');
+  if (defined $db_value) {
+    $self->param('output_folder',$db_value);
+  }
+
   if ( defined $self->param('output_folder') ) {
     my $folder = $self->param('output_folder');
 
@@ -850,13 +867,10 @@ sub get_output_folder {
     $filename = sprintf( "%s/%s_%.2d", $output_base, $date_string, $i );
   } while ( -e $filename );
 
+  $self->store_meta( { output_folder => $filename } );
+
   mkpath( [$filename] );
   $self->param( 'output_folder', $filename );
-
-# We'll store this output folder in the meta table, so it will be re-used if this module is run again w/ the same database.
-  $self->store_meta( { output_folder => $filename } );
-  mkpath( [$filename] );
-
   return $filename;
 }
 
