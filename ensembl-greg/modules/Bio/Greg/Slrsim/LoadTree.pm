@@ -64,8 +64,6 @@ sub load_tree_into_database {
 
   print "Final lenth: $final_length\n";
 
-  $self->dbc->do("LOCK TABLES protein_tree_node WRITE, member WRITE;");
-
   # Go through each leaf and store the member objects.
   foreach my $leaf ( $node->leaves ) {
     $leaf->stable_id( $leaf->name );
@@ -90,7 +88,7 @@ sub load_tree_into_database {
   my $sim_param_str = Bio::EnsEMBL::Compara::ComparaUtils->hash_to_string($params);
   foreach my $tag ( sort keys %{$params} ) {
     $self->store_tag( $tag, $params->{$tag} );
-    sleep(0.1);
+    sleep(0.05);
   }
 
   # Store the whole parameter set as a string.
@@ -108,8 +106,6 @@ sub load_tree_into_database {
   print "  -> Created job: $job_id \n";
 
   $node->release_tree;
-
-  $self->dbc->do("UNLOCK TABLES;");
 }
 
 

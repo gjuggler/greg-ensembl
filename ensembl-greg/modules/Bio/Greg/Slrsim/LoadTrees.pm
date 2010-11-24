@@ -469,16 +469,24 @@ sub fig_one {
   my $self = shift;
 
   my @array;
-  foreach my $scheme ($self->man_a,$self->man_b,$self->man_c) {
-    foreach my $aln ('true','clustalw','muscle','mafft','prank','prank_codon','prank_codon_filter') {
-#    foreach my $aln ('true', 'clustalw') {
+  foreach my $scheme ($self->man_b) {
+#  foreach my $scheme ($self->man_a,$self->man_b,$self->man_c) {
+#    foreach my $aln ('true','clustalw','muscle','mafft','prank','prank_codon','prank_codon_filter') {
+#    foreach my $aln ('true', 'clustalw','mafft','prank','prank_filter') {
+    foreach my $aln ('true','clustalw','mafft','prank','mafft_filter') {
       my $p = {};
-      if ($aln eq 'prank_codon_filter') {
-        my $aln_p = $self->aln_param('prank_codon');
+      if ($aln eq 'mafft_filter') {
+        my $aln_p = $self->aln_param('mafft');
         my $filter_p = $self->filter_param('tcoffee');
         my $filter_thresh = $self->filter_thresh_param(9);
         $p = $self->replace($scheme,$aln_p,$filter_p,$filter_thresh);
-        $p->{alignment_name} = 'prank_codon_filt';
+        $p->{alignment_name} = 'mafft_filter';
+      } elsif ($aln eq 'mafft_optimal') {
+        my $aln_p = $self->aln_param('mafft');
+        my $filter_p = $self->filter_param('oracle');
+        my $filter_thresh = $self->filter_thresh_param(9);
+        $p = $self->replace($scheme,$aln_p,$filter_p,$filter_thresh);
+        $p->{alignment_name} = 'mafft_optimal';
       } else {
         my $aln_p = $self->aln_param($aln);
         $p = $self->replace($scheme,$aln_p);
@@ -494,7 +502,7 @@ sub _fig_one_indel_sweep {
   my $self             = shift;
   my $scheme = shift;
 
-  my $reps        = $self->reps_param(20);
+  my $reps        = $self->reps_param(40);
   my $base_params = $self->replace( $scheme, $reps);
 
   my $tree = $base_params->{tree_name};
@@ -517,8 +525,10 @@ sub _fig_one_indel_sweep {
   my $params;
   my @lengths = map { $_ * 1 / 5 } 1 .. 10;
   my @indels  = map { $_ / 100 } 0 .. 10;
+#  my @lengths = (1.5);
+#  my @indels = (0.07);
   foreach my $path_length (@lengths) {
-    $params = $self->replace( $base_params, { slrsim_tree_mean_path => $path_length } );
+    $params = $self->replace( $base_params, $self->mean_path_param($path_length) );
     foreach my $indel (@indels) {
       $tree_obj = Bio::EnsEMBL::Compara::TreeUtils->scale_mean_to( $tree_obj, $path_length );
       my $total_length = Bio::EnsEMBL::Compara::TreeUtils->total_distance($tree_obj);
@@ -545,9 +555,10 @@ sub fig_two {
   my $self = shift;
 
   my @sets;
-  foreach my $scheme ($self->man_a, $self->man_b, $self->man_c) {
-    foreach my $aln ('clustalw','prank') {
-      foreach my $filter ('true','none','gblocks','prank','optimal','tcoffee') {
+  foreach my $scheme ($self->man_b) {
+#  foreach my $scheme ($self->man_a, $self->man_b, $self->man_c) {
+    foreach my $aln ('mafft','prank') {
+      foreach my $filter ('none','gblocks','prank','optimal','tcoffee') {
         foreach my $filter_threshold (9) {
           my $tree = $scheme->{tree_name};
 
@@ -571,7 +582,9 @@ sub fig_two {
 
           $params = $self->replace(
             $params,
-            $self->reps_param(40),
+            $self->reps_param(80),
+            $self->indel_rate_param(0.14),
+            $self->mean_path_param(1.5),
             {experiment_name => 'fig_two'}
             );
           push @sets, $params;
@@ -610,6 +623,13 @@ sub omega_param {
   my $distr_params = $self->param('omega_distributions')->{$omega_name};
   $self->hash_print($distr_params);
   return $distr_params;
+}
+
+sub mean_path_param {
+  my $self = shift;
+  my $path = shift;
+
+  return {slrsim_tree_mean_path => $path};
 }
 
 sub analysis_param {
@@ -708,6 +728,12 @@ sub filter_param {
       alignment_score_filtering => 0,
       alignment_score_threshold => 0
     };
+  }
+
+  if ($filter eq 'gblocks') {
+    $f->{maximum_mask_fraction} = 1;
+  } else {
+    $f->{maximum_mask_fraction} = 0.6;
   }
 
   if ( $filter =~ m/after/i ) {

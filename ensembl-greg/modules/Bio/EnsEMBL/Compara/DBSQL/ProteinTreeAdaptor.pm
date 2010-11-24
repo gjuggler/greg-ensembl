@@ -259,7 +259,7 @@ sub lock_store {
   my $node = shift;
 
   my $dbc = $self->dbc;
-  $dbc->do("LOCK TABLES protein_tree_node WRITE, protein_tree_member WRITE");
+  $dbc->do("LOCK TABLES protein_tree_member WRITE, protein_tree_node WRITE, protein_tree_node t WRITE, protein_tree_member tm WRITE, member m WRITE;");
 
   $self->store($node);
 
@@ -484,13 +484,13 @@ sub _store_tagvalue {
   
   $value="" unless(defined($value));
 
-  my $sql = "INSERT ignore into ".$self->protein_tree_tag." (node_id,tag) values ($node_id,\"$tag\")";
+  my $sql = "REPLACE into ".$self->protein_tree_tag." (node_id,tag) values ($node_id,\"$tag\")";
   #print("$sql\n");
   $self->dbc->do($sql);
 
-  $sql = "UPDATE ".$self->protein_tree_tag." set value=\"$value\" where node_id=$node_id and tag=\"$tag\"";
+#  $sql = "UPDATE ".$self->protein_tree_tag." set value=\"$value\" where node_id=$node_id and tag=\"$tag\"";
   #print("$sql\n");
-  $self->dbc->do($sql);
+#  $self->dbc->do($sql);
 }
 
 

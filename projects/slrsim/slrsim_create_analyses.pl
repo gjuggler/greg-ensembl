@@ -82,7 +82,7 @@ sub load_tree {
   my $logic_name  = "LoadTree";
   my $module      = "Bio::Greg::Slrsim::LoadTree";
   my $params      = { experiment_name => $experiment_name };
-  $h->create_analysis( $logic_name, $module, $params, 150, 1 );
+  $h->create_analysis( $logic_name, $module, $params, 100, 1 );
 }
 
 sub simulate {

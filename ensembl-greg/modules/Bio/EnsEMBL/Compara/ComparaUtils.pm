@@ -229,7 +229,7 @@ sub store_SimpleAlign_into_table {
     
     # Call the ProteinTreeAdaptor method to do the actual database dirty work.
     $mba->store($node);
-    $pta->lock_store($node);
+    $pta->store($node);
   }
 }
 
@@ -397,7 +397,7 @@ sub fetch_masked_alignment {
     alignment_score_mask_character_aa   => 'X',
     alignment_score_mask_character_cdna => 'N',
    
-    maximum_mask_fraction => 0.67,
+    maximum_mask_fraction => 1,
 
     cdna => $cdna_option
   };
