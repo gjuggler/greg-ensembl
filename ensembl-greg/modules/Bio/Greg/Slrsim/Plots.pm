@@ -26,7 +26,7 @@ sub run {
   $self->output_params_file;
   $self->dump_sql;
 
-  # Tricky Perl: Call the method corresponding to the current experiment.
+  # Call the method corresponding to the current experiment.
   $self->$experiment_name();
 }
 
@@ -131,8 +131,16 @@ for (df in df.list) {
 sub fig_one {
   my $self = shift;
 
-  $self->slrsim_all;
   my $folder = $self->get_output_folder;
+
+  # Call slrsim_all to dump the data.
+  $self->slrsim_all;
+
+  my $mafft_nofilter_file = "${folder}/1_bglobin_mafft_None.Rdata";
+  my $prank_filter_file = "${folder}/1_bglobin_prank_filter_tcoffee.Rdata";
+  my $prank_nofilter_file = "${folder}/1_bglobin_prank_None.Rdata";
+  my $true_aln_file = "${folder}/1_bglobin_True Alignment_None.Rdata";
+
   my $file = "${folder}/df.list.Rdata";
   my $f_auc = "${folder}/auc.pdf";
   my $f_fdr = "${folder}/fdr.pdf";
@@ -201,9 +209,7 @@ tree.labels <- c('6 artificial','17 bglobin', '44 vertebrate')
 sub.df[sub.df[,'slrsim_tree_file'] == art,'slrsim_tree_file'] = 0
 sub.df[sub.df[,'slrsim_tree_file'] == bg,'slrsim_tree_file'] = 1
 sub.df[sub.df[,'slrsim_tree_file'] == enc,'slrsim_tree_file'] = 2
-sub.df[,'slrsim_tree_file'] <- factor(sub.df[,'slrsim_tree_file'],labels=tree.labels)
-
-#sub.df[sub.df[,'filtering_name'] == 'tcoffee','alignment_name'] = 'prank_codon_filt'
+#sub.df[,'slrsim_tree_file'] <- factor(sub.df[,'slrsim_tree_file'],labels=tree.labels)
 
 str(sub.df)
 pdf(file="${f_auc}",width=10,height=5)
@@ -225,7 +231,64 @@ print(p)
 dev.off()
 
 ^;
-  Bio::Greg::EslrUtils->run_r($rcmd,{});
+
+my $rcmd2 = qq^
+source("${functions}")
+source("${plots}")
+
+na.rm <- TRUE
+plot.x <- 'fpr'
+plot.y <- 'tpr'
+zoom.fpr <- 0.1
+
+
+load("${true_aln_file}");
+df <- data
+load("${prank_nofilter_file}");
+df <- rbind(df,data);
+load("${prank_filter_file}");
+df <- rbind(df,data);
+
+d <- subset(df)
+#d <- subset(df, phylosim_insertrate==0.05 & tree_mean_path==1.0)
+
+d[,'slrsim_label'] <- paste(d[,'slrsim_tree_file'],d[,'alignment_name'],d[,'filtering_name'],d[,'alignment_score_threshold'])
+
+# ROC plot of alignments.
+f = function(df,thresh) {return(slr.roc(df,na.rm=na.rm))}
+comb.roc <- summarize.by.labels(d,f)
+max.x <- max(comb.roc[,plot.y]) * zoom.fpr
+
+#d[,'slrsim_label'] <- paste(d[,'slrsim_tree_file'],d[,'alignment_name'],d[,'filtering_name'],d[,'alignment_score_threshold'])
+
+sub.roc <- comb.roc
+# Remove the tree file name from the labels so the plots only group into align-filter-threshold
+sub.roc[,'slrsim_label'] <- paste(sub.roc[,'alignment_name'],sub.roc[,'filtering_name'],sub.roc[,'alignment_score_threshold'])
+
+p <- plot.roc(sub.roc,plot=F,plot.x=plot.x,plot.y=plot.y)
+#  p <- p + scale_colour_brewer("Filtering Scheme",palette="Set1")
+
+fdr.line <- 0.2
+p <- p + geom_abline(slope=2/fdr.line,colour='gray')
+fdr.line <- 0.1
+p <- p + geom_abline(slope=2/fdr.line,colour='black')
+
+p <- p + facet_grid(. ~ slrsim_tree_file )
+
+n.trees <- length(unique(d[,'slrsim_tree_file']))
+pdf(file=paste("${folder}/filter_roc.pdf",sep=""),width=10*n.trees,height=10)
+print(p)
+dev.off()
+
+pdf(file=paste("${folder}/filter_roc_zoom.pdf",sep=""),width=10*n.trees,height=10)
+p <- p + scale_x_continuous(limits=c(0,max.x))
+print(p)
+dev.off()
+
+^;
+
+#  Bio::Greg::EslrUtils->run_r($rcmd,{});
+  Bio::Greg::EslrUtils->run_r($rcmd2,{});
   
 }
 

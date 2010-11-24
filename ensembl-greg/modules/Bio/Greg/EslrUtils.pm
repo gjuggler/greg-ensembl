@@ -372,7 +372,7 @@ sub get_r_command {
   my $class = shift;
   my $params = shift || {};
 
-  my $r_cmd = "R-2.10.0";
+  my $r_cmd = "R-2.11.0";
   if ( $params->{'farm'} ) {
     $r_cmd = "/software/bin/R-2.11.1";
   } elsif ( $params->{'bigmem'} ) {

@@ -796,15 +796,15 @@ sub create_AlignedMember_from_member_attribute {
 
 sub lock_store {
   my ($self,$member) = @_;
+  
+  my $db_id;
 
   my $dbc = $self->dbc;
-  $dbc->do("LOCK TABLES protein_tree_member WRITE, member WRITE, sequence WRITE, sequence_cds WRITE");
-
-  $self->store($member);
-
+  $dbc->do("LOCK TABLES protein_tree_tag WRITE,  protein_tree_node WRITE, protein_tree_member WRITE, member WRITE, sequence WRITE, sequence_cds WRITE;");
+  $db_id = $self->store($member);
   $dbc->do("UNLOCK TABLES");
 
-  return $member->dbID;
+  return $db_id;
 }
 
 =head2 store
@@ -826,9 +826,6 @@ sub store {
       "member arg must be a [Bio::EnsEMBL::Compara::Member]"
     . "not a $member");
   }
-
-#   $self->dbc->do("LOCK TABLES member WRITE, sequence WRITE, sequence_cds WRITE");
-   #$self->dbc->do("LOCK TABLES sequence WRITE");
 
 #  $member->source_id($self->store_source($member->source_name));
 
@@ -902,7 +899,6 @@ sub store {
     }
   }
 
-#  $self->dbc->do("UNLOCK TABLES");
   return $member->dbID;
 }
 
