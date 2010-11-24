@@ -337,46 +337,6 @@ sub worker_temp_directory {
   return $wtd;
 }
 
-sub breadcrumb_param {
-  my $self  = shift;
-  my $param = shift;
-
-  my $breadcrumb = $self->param('breadcrumb') || '';
-
-  #print "bc: $breadcrumb\n";
-
-  if ( $breadcrumb ne '' ) {
-    my @crumbs = split( "\\.", $breadcrumb );
-    my $key_prefix = shift @crumbs;
-    foreach my $crumb (@crumbs) {
-      $key_prefix .= '.' . $crumb;
-
-      #print "Searching for param $param with breadcrumb $key_prefix...\n";
-      my $key   = $key_prefix . "." . $param;
-      my $value = $self->{_param_hash}->{$key};
-      if ( defined $value ) {
-
-        #print "Got it! $value\n";
-        return $value;
-      }
-    }
-  }
-  return undef;
-}
-
-sub add_breadcrumb {
-  my $self   = shift;
-  my $params = shift;
-  my $crumb  = shift;
-
-  my $breadcrumb = $params->{breadcrumb} || 'bcrmb';
-
-  $breadcrumb .= '.' unless ( $breadcrumb eq '' );
-  $breadcrumb .= $crumb;
-
-  $params->{breadcrumb} = $breadcrumb;
-}
-
 sub store_meta {
   my $self   = shift;
   my $params = shift;
@@ -444,7 +404,6 @@ sub new_data_id {
   $dbc->do(
     "DELETE from meta where meta_key='data_id_counter'");
   $dbc->do("REPLACE into meta (meta_key,meta_value) VALUES ('data_id_counter',$data_id);");
-  $self->add_breadcrumb( $params, $data_id );
 
   $self->param( 'data_id', $data_id );
   $params->{data_id} = $data_id;
@@ -469,10 +428,6 @@ sub param {
     $param_value = $self->SUPER::param($param);
   }
   
-  #print "$param value: $param_value\n" if ($param =~ m/slr/);
-  if ( !defined $param_value && $param ne 'breadcrumb' ) {
-    $param_value = $self->breadcrumb_param($param);
-  }
   return $param_value;
 }
 
@@ -817,10 +772,6 @@ sub store_tag {
 
   my $node_id = $self->param('node_id') || 1;
   my $tree = $self->pta->fetch_node_by_node_id($node_id);
-
-  if ( $self->param('breadcrumb') ) {
-    $tag = $self->param('breadcrumb') . "." . $tag;
-  }
 
   print "  -> Storing tag [$tag] => [$value]\n" if ($self->debug);
   $tree->store_tag( $tag, $value );
