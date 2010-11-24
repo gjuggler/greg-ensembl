@@ -71,6 +71,10 @@ sub run {
   $self->set_params($extra);
 
   Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $aln, { width => 150, full => 1 } ) if ($self->debug);
+
+  if (!defined $tree) {
+    $self->fail_and_die("Tree undefined: [$tree]\n");
+  }
   
   if (scalar($tree->leaves) < 2) {
     $self->fail_and_die("Tree too small!".' '.$self->param('aln_type').' '.$tree->newick_format);
@@ -142,21 +146,6 @@ sub run {
 
 sub write_output {
   my $self = shift;
-
-  # Sanity check.
-  my $found_anything = 0;
-  my $gn = $self->param('gene_name');
-  my $aln_type = $self->param('aln_type');
-  my $parameter_set_id = $self->param('parameter_set_id');
-  my $sth = $self->dbc->prepare("SELECT * from stats_windows where gene_name='${gn}' and aln_type='${aln_type}' and parameter_set_id=${parameter_set_id} limit 1;");
-  $sth->execute;
-
-  my $hash;
-  while ( my $obj = $sth->fetchrow_hashref ) {
-    $found_anything = 1;
-  }
-
-  $self->fail_and_die ("Didn't find any windows written to DB [$gn $aln_type $parameter_set_id]!") if (!$found_anything);
   
 }
 

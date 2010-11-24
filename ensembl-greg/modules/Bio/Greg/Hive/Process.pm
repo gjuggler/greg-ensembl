@@ -854,7 +854,7 @@ sub get_output_folder {
     return $folder;
   }
 
-  my $output_base = Bio::Greg::EslrUtils->scratchDirectory.'/'.$self->hive_dba->dbname;
+  my $output_base = Bio::Greg::EslrUtils->scratchDirectory.'/'.$self->hive_dba->dbc->dbname;
 
   print "output_base: $output_base\n";
 
