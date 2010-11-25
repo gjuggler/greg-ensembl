@@ -12,9 +12,9 @@ use base ('Bio::Greg::Hive::Process');
 sub fetch_input {
   my $self = shift;
 
-  my $defaults = {};
+  $self->load_all_params();
 
-  $self->load_all_params($defaults);
+  $self->hash_print($self->params);
   $self->_output_folder();
 }
 
@@ -32,7 +32,7 @@ sub run {
 
 sub _output_folder {
   my $self = shift;
-  return $self->get_output_folder('/homes/greg/lib/greg-ensembl/projects/slrsim/NO.backup/output');
+  return $self->get_output_folder;
 }
 
 sub dump_sql {
@@ -107,24 +107,51 @@ source("$script")
 if(!file.exists("${all_file}")) {
   df.list = get.all.by.experiment()
   save(df.list,file="${all_file}")
-} else {
-  load("${all_file}")
-}
 
-for (df in df.list) {
-  name = df[1,'experiment_name']
-  print(paste("Experiment name:",name))
-  data = df
-  this.file=paste("$folder",'/',name,'.Rdata',sep='')
-  if(!file.exists(this.file)) {
-    save(data,file=this.file)
+  for (df in df.list) {
+    name = df[1,'experiment_name']
+    print(paste("Experiment name:",name))
+    data = df
+    this.file=paste("$folder",'/',name,'.Rdata',sep='')
+    if(!file.exists(this.file)) {
+      save(data,file=this.file)
+    }
   }
 }
-
 ^;
   print "$rcmd\n";
   my $params = {};
   Bio::Greg::EslrUtils->run_r( $rcmd, $params );
+
+}
+
+sub slrsim_table {
+  my $self = shift;
+
+  my $folder = $self->get_output_folder;
+  my $file = "${folder}/df.list.Rdata";
+  my $functions = $self->base . "/projects/slrsim/slrsim.functions.R";
+  my $table_file = "${folder}/table.csv";
+  my $table_one_one = "${folder}/table_1_1.csv";
+
+my $rcmd = qq^
+source("${functions}")
+load("${file}")
+
+df.f <- function(x) {
+  x[,'slrsim_label'] <- paste(x[,'slrsim_tree_file'],x[,'alignment_name'],x[,'filtering_name'])
+  table.df <- ddply(x,.(slrsim_label,phylosim_insertrate,tree_mean_path),paper.table)
+  return(table.df)
+}
+paper.df <- ldply(df.list,df.f)
+write.csv(paper.df,file="${table_file}",row.names=F)
+
+paper.df <- subset(paper.df, indel == 0.1 & length == 1)
+write.csv(paper.df,file="${table_one_one}",row.names=F)
+
+^;
+  my $params = {};
+  Bio::Greg::EslrUtils->run_r( $rcmd );
 
 }
 
@@ -136,6 +163,9 @@ sub fig_one {
   # Call slrsim_all to dump the data.
   $self->slrsim_all;
 
+  # Call slrsim_table to dump the table.
+  $self->slrsim_table;
+
   my $mafft_nofilter_file = "${folder}/1_bglobin_mafft_None.Rdata";
   my $prank_filter_file = "${folder}/1_bglobin_prank_filter_tcoffee.Rdata";
   my $prank_nofilter_file = "${folder}/1_bglobin_prank_None.Rdata";
@@ -145,8 +175,11 @@ sub fig_one {
   my $f_auc = "${folder}/auc.pdf";
   my $f_fdr = "${folder}/fdr.pdf";
   my $f_sens = "${folder}/sens.pdf";
+  my $f_tpr = "${folder}/tpr_at_threshold.pdf";
   my $functions = $self->base . "/projects/slrsim/slrsim.functions.R";
   my $plots = $self->base . "/projects/slrsim/slrsim.plots.R";
+
+  my $table_file = "${folder}/table.csv";
 
   my $phylosim_dir = $self->base . "/projects/phylosim";
 
@@ -186,7 +219,6 @@ source("${functions}")
 source("${plots}")
 
 load("${file}")
-print(str(data))
 
 na.rm <- TRUE
 plot.x <- 'fpr'
@@ -230,6 +262,12 @@ p <- p + facet_grid(slrsim_tree_file ~ alignment_name)
 print(p)
 dev.off()
 
+pdf(file="${f_tpr}",width=10,height=5)
+p <- plot.f(sub.df,field='tpr_at_threshold',do.plot=F,label.species=F,rev.colors=F)
+p <- p + facet_grid(slrsim_tree_file ~ alignment_name)
+print(p)
+dev.off()
+
 ^;
 
 my $rcmd2 = qq^
@@ -259,7 +297,7 @@ f = function(df,thresh) {return(slr.roc(df,na.rm=na.rm))}
 comb.roc <- summarize.by.labels(d,f)
 max.x <- max(comb.roc[,plot.y]) * zoom.fpr
 
-#d[,'slrsim_label'] <- paste(d[,'slrsim_tree_file'],d[,'alignment_name'],d[,'filtering_name'],d[,'alignment_score_threshold'])
+d[,'slrsim_label'] <- paste(d[,'slrsim_tree_file'],d[,'alignment_name'],d[,'filtering_name'],d[,'alignment_score_threshold'])
 
 sub.roc <- comb.roc
 # Remove the tree file name from the labels so the plots only group into align-filter-threshold
@@ -287,8 +325,8 @@ dev.off()
 
 ^;
 
-#  Bio::Greg::EslrUtils->run_r($rcmd,{});
-  Bio::Greg::EslrUtils->run_r($rcmd2,{});
+#  Bio::Greg::EslrUtils->run_r($rcmd2,{});
+  Bio::Greg::EslrUtils->run_r($rcmd,{});
   
 }
 

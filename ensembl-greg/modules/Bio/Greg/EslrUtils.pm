@@ -2,6 +2,11 @@ package Bio::Greg::EslrUtils;
 
 use strict;
 
+sub is_ebi {
+  my $class = shift;
+  return ($ENV{'USER'} =~ /greg/);
+}
+
 sub baseDirectory {
   my $class = shift;
   if ( $ENV{'USER'} =~ /gj1/ ) {
@@ -341,11 +346,11 @@ sub run_r {
   my $rcmd   = shift;
   my $params = shift;
 
+  $params = {} if (!defined $params);
+
   my $temp_dir = "/tmp/eslr_rcmd";
   use File::Path;
   mkpath($temp_dir);
-
-  
 
   my $temp_in = $temp_dir . "/temp_in.txt";
 
@@ -355,7 +360,7 @@ sub run_r {
   print OUT $rcmd . "\n";
   close(OUT);
 
-  my $vanilla = "--vanilla";
+  my $vanilla = "--vanilla -q";
   $vanilla = "--slave" if ( $params->{'silent'} );
 
   my $r_cmd = $class->get_r_command($params);
