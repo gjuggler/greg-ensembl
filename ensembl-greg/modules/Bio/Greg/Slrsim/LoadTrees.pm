@@ -20,7 +20,6 @@ sub param_defaults {
   };
 }
 
-
 sub fetch_input {
   my $self = shift;
 
@@ -28,7 +27,7 @@ sub fetch_input {
   $self->load_simulation_params();
 
   $self->_output_folder();
-  mkpath([$self->_output_folder."/alns"]);
+  mkpath( [ $self->_output_folder . "/alns" ] );
 
 }
 
@@ -94,6 +93,7 @@ sub run {
     print "$tree_string\n";
 
     foreach my $sim_rep ( 1 .. $replicates ) {
+
       # Take the next tree length if we're provided with a list of lengths.
       if ( defined @tree_lengths ) {
         my $length = $tree_lengths[ $sim_rep - 1 ];
@@ -101,18 +101,18 @@ sub run {
       }
 
       my $p = {
-        slrsim_rep => $sim_rep,
-        tree_string => $tree_string,
+        slrsim_rep       => $sim_rep,
+        tree_string      => $tree_string,
         parameter_set_id => $self->parameter_set_id,
       };
       my $data_id = $self->new_data_id($p);
       $p->{data_id} = $data_id;
 
-      my $combined_params = $self->replace($params,$p);
+      my $combined_params = $self->replace( $params, $p );
 
       my ($job_id) = @{ $self->dataflow_output_id( $combined_params, 1 ) };
       print "  -> Created job: $job_id \n";
-      
+
       #$self->load_tree_into_database( $base_node, $sim_rep, $params );
       sleep(0.2);
     }
@@ -225,9 +225,9 @@ sub load_simulation_params {
 
   # Trees.
   my $trees = {
-    'bglobin' => 'bglobin.nh',
+    'bglobin'    => 'bglobin.nh',
     'artificial' => 'artificial.nh',
-    'encode' => 'encode.nh'
+    'encode'     => 'encode.nh'
   };
   $self->param( 'trees', $trees );
 
@@ -406,21 +406,24 @@ sub slrsim_defaults {
   my $tree = $self->tree_param('anisimova_bglobin');
   $tree->{slrsim_tree_mean_path} = 1;
 
-  my $indel_rate  = $self->indel_rate_param(0.1); # The *combined* total indel rate (half goes to insertions, half to deletions)
+  my $indel_rate = $self->indel_rate_param(0.1)
+    ;    # The *combined* total indel rate (half goes to insertions, half to deletions)
   my $indel_shape = $self->indel_shape_param('pow');
 
   my $reps   = $self->reps_param(20);
   my $length = $self->length_param(500);
-  
+
   my $aln      = $self->aln_param('muscle');
   my $omegas   = $self->omega_param('lognormal_high');
   my $analysis = $self->analysis_param('slr');
-  
-  my $filter = $self->filter_param('none');
+
+  my $filter        = $self->filter_param('none');
   my $filter_thresh = $self->filter_thresh_param(0);
-  
-  return $self->replace( $tree, $indel_rate, $indel_shape, $reps, $length, $aln, $omegas,
-                         $analysis, $filter, $filter_thresh );
+
+  return $self->replace(
+    $tree, $indel_rate, $indel_shape, $reps,   $length,
+    $aln,  $omegas,     $analysis,    $filter, $filter_thresh
+  );
 }
 
 sub slrsim_all {
@@ -441,27 +444,27 @@ sub slrsim_all {
 sub man_a {
   my $self = shift;
 
-  my $tree_param = $self->tree_param('artificial');
+  my $tree_param  = $self->tree_param('artificial');
   my $omega_param = $self->omega_param('anisimova_02_M3_hi');
-  my $params = $self->replace($self->slrsim_defaults,$tree_param,$omega_param);
+  my $params      = $self->replace( $self->slrsim_defaults, $tree_param, $omega_param );
   return $params;
 }
 
 sub man_b {
   my $self = shift;
 
-  my $tree_param = $self->tree_param('bglobin');
+  my $tree_param  = $self->tree_param('bglobin');
   my $omega_param = $self->omega_param('anisimova_02_M3');
-  my $params = $self->replace($self->slrsim_defaults,$tree_param,$omega_param);
+  my $params      = $self->replace( $self->slrsim_defaults, $tree_param, $omega_param );
   return $params;
 }
 
 sub man_c {
   my $self = shift;
 
-  my $tree_param = $self->tree_param('encode');
+  my $tree_param  = $self->tree_param('encode');
   my $omega_param = $self->omega_param('lognormal');
-  my $params = $self->replace($self->slrsim_defaults,$tree_param,$omega_param);
+  my $params      = $self->replace( $self->slrsim_defaults, $tree_param, $omega_param );
   return $params;
 }
 
@@ -469,44 +472,45 @@ sub fig_one {
   my $self = shift;
 
   my @array;
-  foreach my $scheme ($self->man_b) {
+  foreach my $scheme ( $self->man_b ) {
+
 #  foreach my $scheme ($self->man_a,$self->man_b,$self->man_c) {
 #    foreach my $aln ('true','clustalw','muscle','mafft','prank','prank_codon','prank_codon_filter') {
 #    foreach my $aln ('true', 'clustalw','mafft','prank','prank_filter') {
-    foreach my $aln ('true','clustalw','mafft','prank','mafft_filter') {
+    foreach my $aln ( 'true', 'clustalw', 'mafft', 'prank', 'mafft_filter' ) {
       my $p = {};
-      if ($aln eq 'mafft_filter') {
-        my $aln_p = $self->aln_param('mafft');
-        my $filter_p = $self->filter_param('tcoffee');
+      if ( $aln eq 'mafft_filter' ) {
+        my $aln_p         = $self->aln_param('mafft');
+        my $filter_p      = $self->filter_param('tcoffee');
         my $filter_thresh = $self->filter_thresh_param(9);
-        $p = $self->replace($scheme,$aln_p,$filter_p,$filter_thresh);
+        $p = $self->replace( $scheme, $aln_p, $filter_p, $filter_thresh );
         $p->{alignment_name} = 'mafft_filter';
-      } elsif ($aln eq 'mafft_optimal') {
-        my $aln_p = $self->aln_param('mafft');
-        my $filter_p = $self->filter_param('oracle');
+      } elsif ( $aln eq 'mafft_optimal' ) {
+        my $aln_p         = $self->aln_param('mafft');
+        my $filter_p      = $self->filter_param('oracle');
         my $filter_thresh = $self->filter_thresh_param(9);
-        $p = $self->replace($scheme,$aln_p,$filter_p,$filter_thresh);
+        $p = $self->replace( $scheme, $aln_p, $filter_p, $filter_thresh );
         $p->{alignment_name} = 'mafft_optimal';
       } else {
         my $aln_p = $self->aln_param($aln);
-        $p = $self->replace($scheme,$aln_p);
+        $p = $self->replace( $scheme, $aln_p );
       }
 
-      push @array,@{$self->_fig_one_indel_sweep($p)};
+      push @array, @{ $self->_fig_one_indel_sweep($p) };
     }
   }
   return \@array;
 }
 
 sub _fig_one_indel_sweep {
-  my $self             = shift;
+  my $self   = shift;
   my $scheme = shift;
 
-  my $reps        = $self->reps_param(40);
-  my $base_params = $self->replace( $scheme, $reps);
+  my $reps = $self->reps_param(40);
+  my $base_params = $self->replace( $scheme, $reps );
 
   my $tree = $base_params->{tree_name};
-  my $aln = $base_params->{alignment_name};
+  my $aln  = $base_params->{alignment_name};
   my $filt = $base_params->{filtering_name};
   if ($filt) {
     $base_params->{experiment_name} = "1_${tree}_${aln}_${filt}";
@@ -525,8 +529,9 @@ sub _fig_one_indel_sweep {
   my $params;
   my @lengths = map { $_ * 1 / 5 } 1 .. 10;
   my @indels  = map { $_ / 100 } 0 .. 10;
-#  my @lengths = (1.5);
-#  my @indels = (0.07);
+
+  #  my @lengths = (1.5);
+  #  my @indels = (0.07);
   foreach my $path_length (@lengths) {
     $params = $self->replace( $base_params, $self->mean_path_param($path_length) );
     foreach my $indel (@indels) {
@@ -555,42 +560,89 @@ sub fig_two {
   my $self = shift;
 
   my @sets;
-  foreach my $scheme ($self->man_b) {
-#  foreach my $scheme ($self->man_a, $self->man_b, $self->man_c) {
-    foreach my $aln ('mafft','prank') {
-      foreach my $filter ('none','gblocks','prank','optimal','tcoffee') {
-        foreach my $filter_threshold (9) {
-          my $tree = $scheme->{tree_name};
 
-          my $params;
-          if ($filter eq 'true') {
-            $params = $self->replace(
-              $scheme,
-              $self->aln_param('true'),
-              $self->filter_param('none'),
-              {slrsim_label => "${tree}_True Alignment_${filter}"}
-              );
-          } else {
-            $params = $self->replace(
-              $scheme,
-              $self->aln_param($aln),
-              $self->filter_param($filter),
-              $self->filter_thresh_param($filter_threshold),
-              {slrsim_label => "${tree}_${aln}_${filter}"}
-              );
-          }
+  my $subsets = [ {
+      aln    => 'mafft',
+      scheme => $self->man_a,
+      length => 0.6,
+      indel  => 0.10
+    }, {
+      aln    => 'mafft',
+      scheme => $self->man_a,
+      length => 1.0,
+      indel  => 0.08
+    }, {
+      aln    => 'mafft',
+      scheme => $self->man_a,
+      length => 1.6,
+      indel  => 0.04
+    }, {
+      aln    => 'clustalw',
+      scheme => $self->man_b,
+      length => 1.0,
+      indel  => 0.10
+    }, {
+      aln    => 'mafft',
+      scheme => $self->man_b,
+      length => 1.0,
+      indel  => 0.10
+    }, {
+      aln    => 'prank',
+      scheme => $self->man_b,
+      length => 1.0,
+      indel  => 0.10
+    }, {
+      aln    => 'prank',
+      scheme => $self->man_b,
+      length => 0.6,
+      indel  => 0.14
+    }, {
+      aln    => 'prank',
+      scheme => $self->man_b,
+      length => 1.6,
+      indel  => 0.08
+    },
+  ];
 
+  foreach my $subset ( @{$subsets} ) {
+    $self->hash_print($subset);
+
+    my $scheme = $subset->{scheme};
+    my $aln    = $self->aln_param( $subset->{aln} );
+    my $aln_s = $subset->{aln};
+    my $length = $self->mean_path_param( $subset->{length} );
+    my $indel  = $self->indel_rate_param( $subset->{indel} );
+
+    foreach my $filter ( 'true', 'none', 'gblocks', 'prank', 'optimal', 'tcoffee' ) {
+      foreach my $filter_threshold (9) {
+        my $tree = $scheme->{tree_name};
+
+        my $params;
+        if ( $filter eq 'true' ) {
           $params = $self->replace(
-            $params,
-            $self->reps_param(80),
-            $self->indel_rate_param(0.14),
-            $self->mean_path_param(1.5),
-            {experiment_name => 'fig_two'}
-            );
-          push @sets, $params;
-
-          $self->store_meta($params) if (scalar(@sets) == 1);
+            $scheme,
+            $self->aln_param('true'),
+            $self->filter_param('none'),
+            { slrsim_label => "${tree}_True Alignment_${filter}" }
+          );
+          $params->{filtering_name} = 'True Alignment';
+          $params->{alignment_name} = $aln->{alignment_name};
+        } else {
+          $params = $self->replace(
+            $scheme, $aln,
+            $self->filter_param($filter),
+            $self->filter_thresh_param($filter_threshold),
+            { slrsim_label => "${tree}_${aln_s}_${filter}" }
+          );
+          $params->{filtering_name} = 'No filter' if ($filter eq 'none');
         }
+
+        $params =
+          $self->replace( $params, $self->reps_param(100), $indel, $length,
+          { experiment_name => 'fig_two' } );
+        push @sets, $params;
+
+        $self->store_meta($params) if ( scalar(@sets) == 1 );
       }
     }
   }
@@ -612,8 +664,10 @@ sub tree_param {
 
   my $tree = $self->param('trees')->{$tree_name};
 
-  return { slrsim_tree_file => $tree,
-  tree_name => $tree_name};
+  return {
+    slrsim_tree_file => $tree,
+    tree_name        => $tree_name
+  };
 }
 
 sub omega_param {
@@ -629,7 +683,7 @@ sub mean_path_param {
   my $self = shift;
   my $path = shift;
 
-  return {slrsim_tree_mean_path => $path};
+  return { slrsim_tree_mean_path => $path };
 }
 
 sub analysis_param {
@@ -730,7 +784,7 @@ sub filter_param {
     };
   }
 
-  if ($filter eq 'gblocks') {
+  if ( $filter eq 'gblocks' ) {
     $f->{maximum_mask_fraction} = 1;
   } else {
     $f->{maximum_mask_fraction} = 0.6;

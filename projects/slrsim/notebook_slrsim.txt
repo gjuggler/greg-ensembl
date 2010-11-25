@@ -649,3 +649,56 @@ Parameters:
 Tree sizes:
  - Total lengths: 0.11, 1.1, 11
  - Mean paths: 0.025, 0.25, 2.5
+
+
+### 2010-11-24 ###
+
+Quotables:
+ [ICGS Chicken consortium Nature 2004] Human-chicken dS = 1.66
+ 
+PhastCons 44-way vertebrate:
+ftp://hgdownload.cse.ucsc.edu/goldenPath/hg18/phastCons44way/vertebrate.mod
+
+ENCODE tree:
+ftp://hgdownload.cse.ucsc.edu/goldenPath/hg18/encode/MSA/DEC-2007/tree_4d.tba.nh
+
+Neutral substitution tree from a GERP paper:
+http://genome.cshlp.org/content/15/7/901.full
+
+Nice figure summarizing selection efficiency -
+http://www.ncbi.nlm.nih.gov/pmc/articles/PMC2696314/figure/F1/
+
+http://www.sciencedirect.com/science?_ob=MiamiCaptionURL&_method=retrieve&_udi=B6TCY-4RRXJ60-1&_image=fig1&_ba=3&_user=776054&_coverDate=03/31/2008&_rdoc=1&_fmt=full&_orig=search&_cdi=5183&_issn=01689525&_pii=S0168952508000024&view=c&_acct=C000042238&_version=1&_urlVersion=0&_userid=776054&md5=94995c3681d0f55ecb79b7561b1b250f
+(on expression breadth and evo-constraint) from
+http://dx.doi.org/10.1016/j.tig.2007.12.001: 
+
+Ubiquitously expressed genes seem to experience both stronger
+purifying selection and less frequent positive selection than narrowly
+expressed genes. It is possible that ubiquitously expressed genes are
+involved in more cellular and physiological processes than narrowly
+expressed genes, leading to more extensive pleiotropy, as has been
+suggested previously [26]. Pleiotropy is expected to constrain the
+fixation of beneficial mutations, as well as increase the strength of
+purifying selection on a gene [47], consistent with the observation
+that broadly expressed genes evolve more slowly.
+
+from http://dx.doi.org/doi:10.1371/journal.pcbi.0030002.g002 -
+human-mouse distance is ~ 0.4-0.6
+
+from http://genome.cshlp.org/content/14/8/1610.full : 
+
+Evolutionary distance (ED) between two homologous DNA sequences is
+defined as the per nucleotide site number of mutations that have been
+fixed in the course of evolution of the sequences from their last
+common ancestor. For not-too-tightly related sequences, ED exceeds
+their dissimilarity (DS), the per site number of differences between
+the properly aligned sequences. This happens because several mutations
+can affect the same site. Different methods of inferring the number of
+such multiple hits from the observed DS often produce rather different
+estimates of ED (see Li 1997; Nei and Kumar 2000). For example,
+figures for Ks, the number of substitutions per synonymous site, range
+from 0.45 (Makalowski and Boguski 1998) to 0.60 (Waterston et
+al. 2002; Rat Genome Sequencing Project Consortium 2004), 0.65 (Cooper
+et al. 2004), 0.73 (Castresana 2002), and 0.74–0.80 (Smith and
+Eyre-Walker 2003; Table 1) for the evolutionary path between mouse and
+human.
