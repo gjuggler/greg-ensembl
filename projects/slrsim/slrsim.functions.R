@@ -25,13 +25,15 @@ paper.table <- function(df) {
     filter   = row$filtering_name,
 
     `05_fdr` = stats.05$fdr,
-    `05_tp`  = stats.05$true_pos_count,
+    `05_tp`  = stats.05$tp,
     `01_fdr` = stats.01$fdr,
-    `01_tp`  = stats.01$true_pos_count,
+    `01_tp`  = stats.01$tp,
     
     auc      = rrow$auc,
     `tpr`    = rrow$tpr_at_threshold,
-    `tpn`    = rrow$tpn_at_threshold
+    `tpn`    = rrow$tp_at_threshold,
+    `tpr_fdr`    = rrow$tpr_at_fdr,
+    `tp_fdr`    = rrow$tp_at_fdr
   )
   ret.df <- ret.df[with(ret.df, order(tree,aligner,length,indel,filter)),]
   #ret.df <- orderBy(~tree + aligner + length + indel + filter,data=ret.df)
@@ -112,12 +114,26 @@ slr.roc = function(df,na.rm=F) {
   }
 
   df$tpr_at_threshold <- -1
+  df$tp_at_threshold <- -1
   if (nrow(df) > 1) {
     fpr.sub <- subset(df,fpr > 0.05)
     if (nrow(fpr.sub) > 0) {
+      # Take the first (leftmost) row with fdr > 0.05
       row <- fpr.sub[1,]
       df$tpr_at_threshold <- row$tpr
-      df$tpn_at_threshold <- row$tp
+      df$tp_at_threshold <- row$tp
+    }
+  }
+
+  df$tpr_at_fdr <- -1
+  df$tp_at_fdr <- -1
+  if (nrow(df) > 1) {
+    fpr.sub <- subset(df,fdr < 0.1)
+    if (nrow(fpr.sub) > 0) {
+      # Take the last (rightmost) row with fdr < 0.1
+      row <- fpr.sub[nrow(fpr.sub),]
+      df$tpr_at_fdr <- row$tpr
+      df$tp_at_fdr <- row$tp
     }
   }
 
@@ -204,9 +220,6 @@ df.stats = function(df,
   pos_true = pos_all/all # proportion of true positives
   pos_inf = all_pos/all # proportion of inferred positives
 
-  true_pos_count = pos_pos
-  true_neg_count = neg_neg
-
   return(list(
     sens=sens,
     spec=spec,
@@ -217,10 +230,13 @@ df.stats = function(df,
 #    dlr=dlr,
     pos_true=pos_true,
     pos_aln=pos_inf,
+    pos_inf=pos_inf,
     true_pos_count = pos_all,
     true_neg_count = neg_all,
     aln_pos_count = all_pos,
     aln_neg_count = all_neg,
+    tp = pos_pos,
+    tn = neg_neg,
     cor = cor
   ))
 }

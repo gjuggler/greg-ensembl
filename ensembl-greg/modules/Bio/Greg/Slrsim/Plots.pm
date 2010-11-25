@@ -335,7 +335,11 @@ dev.off()
 sub fig_two {
   my $self = shift;
 
+  # Call slrsim_all to dump the data.
   $self->slrsim_all;
+
+  # Call slrsim_table to dump the table.
+  $self->slrsim_table;
 
   my $folder = $self->get_output_folder;
   my $file = "${folder}/fig_two.Rdata";
