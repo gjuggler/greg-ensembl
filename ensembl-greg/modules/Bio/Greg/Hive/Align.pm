@@ -410,9 +410,18 @@ sub align_with_mafft {
 
   my $output_file = "$tmp/output.fasta";
 
-  my $executable   = $params->{'alignment_executable'} || 'mafft';
+  my $executable   = $params->{'alignment_executable'} || 'mafft ';
   my $extra_params = '';
-  my $cmd          = qq^$executable $extra_params $aln_file > "$output_file"^;
+  my $cmd          = qq^${executable}${extra_params}${aln_file} > "$output_file"^;
+  
+  my $prefix = "export MAFFT_BINARIES=/homes/greg/lib/greg-ensembl/bin/linux64/mafft-libs;";
+  if (!Bio::Greg::EslrUtils->is_ebi) {
+    $prefix = "export MAFFT_BINARIES=/nfs/users/nfs_g/gj1/bin/mafft-bins/binaries;";
+  }  
+
+  $cmd = $prefix . $cmd;
+
+  print $cmd."\n";
 
   # Run the command.
   $self->dbc->disconnect_when_inactive(1);
@@ -593,8 +602,6 @@ sub align_with_mcoffee {
   $prefix .= "export NO_ERROR_REPORT_4_TCOFFEE=1;";
   $prefix .= "export NUMBER_OF_PROCESSORS_4_TCOFFEE=1;";
 
-#    $prefix .= "export MAFFT_BINARIES=/ebi/research/software/Linux_x86_64/bin/mafft;";
-#$prefix .= "export MAFFT_BINARIES=/nfs/users/nfs_g/gj1/bin/mafft-bins/binaries;";  # GJ 2008-11-04. What a hack!
 
   # Run the command.
   $self->compara_dba->dbc->disconnect_when_inactive(0);

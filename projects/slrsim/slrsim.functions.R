@@ -1,8 +1,53 @@
+library(plyr)
+library(doBy)
+
+paper.table <- function(df) {
+  row <- df[1,]
+
+  # Use the technique whereby the p-value can be doubled because we're just looking
+  # at positive selection. This gives thresholds of 2.71 and 5.41 for 5% and 1% FPR.
+  stats.05 <- df.stats(df,thresh=2.71)
+  stats.01 <- df.stats(df,thresh=5.41)
+  
+  stats.05 <- data.frame(stats.05)
+  stats.01 <- data.frame(stats.01)
+
+  roc <- slr.roc(df,na.rm=TRUE)
+  rrow <- roc[1,]
+
+  indel = row$phylosim_insertrate * 2
+
+  ret.df <- data.frame(
+    tree     = row$slrsim_tree_file,
+    aligner  = row$alignment_name,
+    length   = row$tree_mean_path,
+    indel    = indel,
+    filter   = row$filtering_name,
+
+    `05_fdr` = stats.05$fdr,
+    `05_tp`  = stats.05$true_pos_count,
+    `01_fdr` = stats.01$fdr,
+    `01_tp`  = stats.01$true_pos_count,
+    
+    auc      = rrow$auc,
+    `tpr`    = rrow$tpr_at_threshold,
+    `tpn`    = rrow$tpn_at_threshold
+  )
+  ret.df <- ret.df[with(ret.df, order(tree,aligner,length,indel,filter)),]
+  #ret.df <- orderBy(~tree + aligner + length + indel + filter,data=ret.df)
+
+  return(ret.df)
+}
+
 fig.1.summary <- function(df,thresh) {
   
   stats <- df.stats(df,thresh=thresh)
   roc <- slr.roc(df,na.rm=TRUE)
+
+  # Need to copy these ROC-derived summary stats over to the 'stats' object.
   stats$auc <- roc[1,]$auc
+  stats$tpr_at_threshold <- roc[1,]$tpr_at_threshold
+
   print(paste("summarizing",df[1,]$experiment_name,df[1,]$slrsim_label))
   return(cbind(df[1,],stats))
 }
@@ -28,7 +73,7 @@ slr.roc = function(df,na.rm=F) {
     n.left <- nrow(df)
     print(sprintf("Removed %d NA rows (%d remaining)",n.na,n.left))
     if(n.left == 0) {
-
+      # Think of something to do here. Return empty df?
     }
   }
 
@@ -58,9 +103,22 @@ slr.roc = function(df,na.rm=F) {
     df <- subset(df,aln_lrt != 1000)
   }
 
+  df$auc_full <- -1
   if (nrow(df) > 1) {
-    auc <- area.under.curve(df)
+    auc <- area.under.curve(df,x.lim=0.2)
     df$auc <- auc
+    auc_full <- area.under.curve(df,x.lim=1)
+    df$auc_full <- auc_full
+  }
+
+  df$tpr_at_threshold <- -1
+  if (nrow(df) > 1) {
+    fpr.sub <- subset(df,fpr > 0.05)
+    if (nrow(fpr.sub) > 0) {
+      row <- fpr.sub[1,]
+      df$tpr_at_threshold <- row$tpr
+      df$tpn_at_threshold <- row$tp
+    }
   }
 
   return(df)
@@ -77,7 +135,6 @@ area.under.curve <- function(roc,x.field='tn',y.field='tp',x.lim=1) {
   filled.area <- sum(areas)
 
   total.area <- max(roc[,x.field]) * max(roc[,y.field])
-
   total.rows <- nrow(roc)
 
   roc$tmp <- NULL
@@ -149,7 +206,6 @@ df.stats = function(df,
 
   true_pos_count = pos_pos
   true_neg_count = neg_neg
-
 
   return(list(
     sens=sens,

@@ -472,12 +472,11 @@ sub fig_one {
   my $self = shift;
 
   my @array;
-  foreach my $scheme ( $self->man_b ) {
-
+  foreach my $scheme ($self->man_a) {
 #  foreach my $scheme ($self->man_a,$self->man_b,$self->man_c) {
 #    foreach my $aln ('true','clustalw','muscle','mafft','prank','prank_codon','prank_codon_filter') {
 #    foreach my $aln ('true', 'clustalw','mafft','prank','prank_filter') {
-    foreach my $aln ( 'true', 'clustalw', 'mafft', 'prank', 'mafft_filter' ) {
+    foreach my $aln ('true','clustalw','mafft','prank') {
       my $p = {};
       if ( $aln eq 'mafft_filter' ) {
         my $aln_p         = $self->aln_param('mafft');
@@ -506,8 +505,8 @@ sub _fig_one_indel_sweep {
   my $self   = shift;
   my $scheme = shift;
 
-  my $reps = $self->reps_param(40);
-  my $base_params = $self->replace( $scheme, $reps );
+  my $reps        = $self->reps_param(50);
+  my $base_params = $self->replace( $scheme, $reps);
 
   my $tree = $base_params->{tree_name};
   my $aln  = $base_params->{alignment_name};
