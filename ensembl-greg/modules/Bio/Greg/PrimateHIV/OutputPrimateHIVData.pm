@@ -28,11 +28,14 @@ sub export_windows {
   my $genes_file = $self->get_output_folder . "/gene_windows.Rdata";
   my $genes_csv  = $self->get_output_folder . "/gene_windows.csv";
 
+  my $output_folder = $self->get_output_folder;
+
   my $sitewise_script = Bio::Greg::EslrUtils->baseDirectory . "/projects/primate_hiv/collect_primate_hiv.R";
 
   my $dbname = $self->compara_dba->dbc->dbname;
 
   my $cmd = qq^
+output_folder = "${output_folder}";
 dbname = "$dbname"
 source("$sitewise_script",echo=T);
 ^;

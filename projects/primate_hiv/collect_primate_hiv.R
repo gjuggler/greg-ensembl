@@ -9,20 +9,27 @@ query <- sprintf("SELECT * FROM %s",table.name)
 cur.df <- get.vector(con,query,columns='all')
 all.data <- rbind(all.data,cur.df)
 
+print(nrow(all.data))
+
 psets <- unique(all.data$parameter_set_shortname)
 aln.types <- unique(all.data$aln_type)
 print(psets)
 print(aln.types)
-for (pset in psets) {
-  for (aln.type in aln.types) {
-    data <- subset(all.data,parameter_set_shortname==pset & aln_type==aln.type)
 
-    file.name <- paste("~/scratch/primate_hiv/windows_",pset,"_",aln.type,sep="")
-    print(file.name)
-    save(data,file=paste(file.name,".Rdata",sep=""))
-    #write.csv(data,file=paste(file.name,".csv",sep=""),row.names=F)
+if (length(psets) > 1 || length(aln.types) > 1) {
+  for (pset in psets) {
+    print(pset)
+    for (aln.type in aln.types) {
+      print(aln.type)
+      data <- subset(all.data,parameter_set_shortname==pset & aln_type==aln.type)
+  
+      file.name <- paste(output_folder,"/windows_",pset,"_",aln.type,sep="")
+      print(file.name)
+      save(data,file=paste(file.name,".Rdata",sep=""))
+      #write.csv(data,file=paste(file.name,".csv",sep=""),row.names=F)
+    }
   }
 }
 
 data <- all.data
-save(data,file=paste("~/scratch/primate_hiv/windows_all.Rdata"))
+save(data,file=paste(output_folder,"/windows_all.Rdata",sep=""))

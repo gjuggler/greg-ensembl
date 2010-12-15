@@ -154,49 +154,20 @@ dbname="${dbname}"
 source("${collect_script}");
 
 stats.lnl <- get.vector(con,"SELECT * from $table;")
+stats.lnl[,'gc_3'] <- NULL
+stats.lnl[,'gc_cds'] <- NULL
+stats.lnl[,'gc_genomic'] <- NULL
 stats.dups <- get.vector(con,"SELECT * from stats_dups;")
+stats.dups <- subset(stats.dups,select=c('data_id','name','gc_3','gc_cds','gc_genomic'))
+stats.lnl = merge(stats.lnl,stats.dups,by='data_id')
 
-stats.lnl = merge(stats.lnl,stats.dups[,c('data_id','name')],by='data_id')
+gor.subs <- get.vector(con,"SELECT * from ${table}_subs;")
 
-  # Branch models summary:
-  # a: (H, G, others)
-  # b: (H#1, G, others)
-  # c: (H, G#1, others)
-  # d: (H#1, G#2, others)
-  # e: (H#1, G#1, others)
-  # f: (((H,C),G)#1, others)
-  # g: (((H,C),G)$1, others)
-  # h: (((H,C),G), others)
-# 
-# Which omegas are which for each test?
-# pval.1: fg=b_omega_1, bg=b_omega_0 # human
-# pval.2: fg=c_omega_1, bg=c_omega_0 # gorilla
-# pval.3: fg=d_omega_1, bg=d_omega_0 # gorilla
-# pval.4: fg=d_omega_2, bg=d_omega_0 # human
-# pval.5: fg=e_omega_1, bg=e_omega_0 # both
-
-# Add the p-values
-stats.lnl[,'pval.1'] = with(stats.lnl,1 - pchisq(2*(b_lnL-a_lnL),df=1))
-stats.lnl[,'pval.2'] = with(stats.lnl,1 - pchisq(2*(c_lnL-a_lnL),df=1))
-stats.lnl[,'pval.3'] = with(stats.lnl,1 - pchisq(2*(d_lnL-b_lnL),df=1))
-stats.lnl[,'pval.4'] = with(stats.lnl,1 - pchisq(2*(d_lnL-c_lnL),df=1))
-stats.lnl[,'pval.5'] = with(stats.lnl,1 - pchisq(2*(e_lnL-a_lnL),df=1))
-stats.lnl[,'pval.6'] = with(stats.lnl,1 - pchisq(2*(d_lnL-e_lnL),df=1))
-stats.lnl[,'pval.7'] = with(stats.lnl,1 - pchisq(2*(f_lnL-h_lnL),df=1))
-stats.lnl[,'pval.8'] = with(stats.lnl,1 - pchisq(2*(g_lnL-h_lnL),df=1))
-
-method = 'BH'
-stats.lnl[,'pval.1.bh'] = with(stats.lnl,p.adjust(pval.1,method=method))
-stats.lnl[,'pval.2.bh'] = with(stats.lnl,p.adjust(pval.2,method=method))
-stats.lnl[,'pval.3.bh'] = with(stats.lnl,p.adjust(pval.3,method=method))
-stats.lnl[,'pval.4.bh'] = with(stats.lnl,p.adjust(pval.4,method=method))
-stats.lnl[,'pval.5.bh'] = with(stats.lnl,p.adjust(pval.5,method=method))
-stats.lnl[,'pval.6.bh'] = with(stats.lnl,p.adjust(pval.6,method=method))
-stats.lnl[,'pval.7.bh'] = with(stats.lnl,p.adjust(pval.7,method=method))
-stats.lnl[,'pval.8.bh'] = with(stats.lnl,p.adjust(pval.8,method=method))
+print(str(stats.lnl))
+print(str(gor.subs))
 
 # Save the data
-save(stats.lnl,file="${data_file}")
+save(stats.lnl,gor.subs,file="${data_file}")
 ^;
 
     #    print "$cmd\n";

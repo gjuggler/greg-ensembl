@@ -12,7 +12,7 @@ my $TREE = 'Bio::EnsEMBL::Compara::TreeUtils';
 
 sub param_defaults {
   return {
-    aln_type                    => 'genomic_33',
+    aln_type                    => 'genomic_mammals',
     output_table => 'stats_windows'
   };
 }
@@ -31,7 +31,7 @@ sub fetch_input {
 sub data_label {
   my $self = shift;
   
-  return $self->param('aln_type') . '_'. $self->param('parameter_set_shortname');
+  return $self->param('parameter_set_shortname');
 }
 
 sub run {
@@ -39,6 +39,8 @@ sub run {
 
   my $params = $self->params;
   my $tree   = $self->get_tree;
+
+  $params->{'fail_on_altered_tree'} = 0;
 
   $self->param( 'reference_species', 9606 );
   my $ref_species = $self->param('reference_species');
@@ -57,74 +59,29 @@ sub run {
   my $gene_name = $ref_member->get_Gene->external_name || $ref_member->gene_member->stable_id;
   $self->param('gene_name',$gene_name);
 
-  my $aln;
-
-  my $aln_type = $self->param('aln_type');
-  if ( $aln_type =~ m/genomic/i ) {
-    my $c_dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new(
-      -url => 'mysql://ensadmin:ensembl@ens-livemirror:3306/ensembl_compara_58' );
-
-    my ( $cdna, $aa );
-    if ($aln_type eq 'genomic_primates') {
-      ( $cdna, $aa ) =
-        Bio::EnsEMBL::Compara::ComparaUtils->genomic_aln_for_member( $c_dba, $ref_member,
-        { mlss_type => 'epo',species_set => 'primates' } );
-    } elsif ( $aln_type eq 'genomic_mammals' ) {
-      ( $cdna, $aa ) =
-        Bio::EnsEMBL::Compara::ComparaUtils->genomic_aln_for_member( $c_dba, $ref_member,
-        { mlss_type => 'epo', species_set => 'mammals' } );
-    } elsif ( $aln_type eq 'genomic_all' ) {
-      ( $cdna, $aa ) =
-        Bio::EnsEMBL::Compara::ComparaUtils->genomic_aln_for_member( $c_dba, $ref_member,
-        { mlss_type => 'epo_low_coverage' } );
-    }
-    $aln  = $cdna;
-
-    Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $aln, { width => 150, full => 1 } ) if ($self->debug);
-
-    $aln = Bio::EnsEMBL::Compara::ComparaUtils->restrict_aln_to_tree( $aln, $tree );
-
-    my $map;
-    map {$map->{$_->taxon->binomial} = $_->taxon->taxon_id} $tree->leaves;
-    $aln = Bio::EnsEMBL::Compara::AlignUtils->translate_ids( $aln, $map );
-
-    $tree = Bio::EnsEMBL::Compara::ComparaUtils->get_species_tree_for_aln($self->compara_dba,$aln);
-    print "Species tree: [".$tree->newick_format."]\n" if ($self->debug);
-  } else {
-
-    # Align with Prank to try and de -align incorrectly called exons.
-    $self->param( 'alignment_score_filtering', 0 );
-    $self->param( 'sequence_quality_filtering', 0 );
-    $aln = $self->get_cdna_aln;
-
-    #my $pep_aln = Bio::EnsEMBL::Compara::AlignUtils->translate($aln);
-    #my $prank_params = { alignment_prank_f => 1 };
-    #$pep_aln = $self->align_with_prank( $pep_aln, $tree, $prank_params );
-    #$aln = Bio::EnsEMBL::Compara::AlignUtils->peptide_to_cdna_alignment( $pep_aln, $tree );
-    
-    my $map;
-    map { $map->{ $_->stable_id } = $_->taxon->taxon_id } $tree->leaves;
-    $aln = Bio::EnsEMBL::Compara::AlignUtils->translate_ids( $aln, $map );
-  }
-
-  my $tree_map;
-  map { $tree_map->{$_->name} = $_->taxon_id} $tree->leaves;
-  #$self->hash_print($tree_map);
-  $tree = Bio::EnsEMBL::Compara::TreeUtils->translate_ids($tree,$tree_map);
-  print "Tree: [".$tree->newick_format."]\n" if ($self->debug);
+  my $c_dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new(
+    -url => 'mysql://ensadmin:ensembl@ensdb-archive:5304/ensembl_compara_58' );
+  my $params = $self->params;
+  my $tree_aln_obj =
+    Bio::EnsEMBL::Compara::ComparaUtils->get_compara_or_genomic_aln( $c_dba, $tree, $ref_member,
+    $self->params );
+  my $aln = $tree_aln_obj->{aln};
+  $tree = $tree_aln_obj->{tree};
+  my $extra  = $tree_aln_obj->{extra};
+  $self->set_params($extra);
 
   Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $aln, { width => 150, full => 1 } ) if ($self->debug);
+
+  if (!defined $tree) {
+    $self->fail_and_die("Tree undefined: [$tree]\n");
+  }
   
   if (scalar($tree->leaves) < 2) {
     $self->fail_and_die("Tree too small!".' '.$self->param('aln_type').' '.$tree->newick_format);
   }
 
-  if ($aln_type =~ m/genomic/gi) {
-    $aln = Bio::EnsEMBL::Compara::AlignUtils->flatten_to_sequence($aln,'9606');
-    $aln = Bio::EnsEMBL::Compara::AlignUtils->filter_stop_codons($aln);
-    if (Bio::EnsEMBL::Compara::AlignUtils->has_stop_codon($aln)) {
-      $self->fail_and_die("STOP CODON!!!");
-    }
+  if ($aln->length < 50) {
+    $self->fail_and_die("Alignment too short!".' '.$self->param('aln_type').' '.$tree->newick_format.' '.$aln->length);
   }
 
   $aln = Bio::EnsEMBL::Compara::AlignUtils->sort_by_tree($aln,$tree);
@@ -134,34 +91,31 @@ sub run {
   Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $pep_aln, { width => 150, full => 1 } ) if ($self->debug);
 
   my $aln_type = $self->param('aln_type');
-  my $p_set_name = $self->param('parameter_set_shortname');
-  my $subfolder = "primate_hiv_alns/$p_set_name/$aln_type/";
+  my $p_set_id = $self->param('parameter_set_id');
+  my $subfolder = "primate_hiv_alns/$p_set_id/";
 
   # Output the tree and aln.
   my $aln_filename = $gene_name . "_" . $self->data_label;
   my $aln_file_obj =
     $self->save_aln( $aln,
-    { hash_subfolders => 0, subfolder => $subfolder, filename => $aln_filename } );
+    { hash_subfolders => 1, subfolder => $subfolder, filename => $aln_filename } );
   $self->param( 'aln_file', $aln_file_obj->{rel_file} );
 
   my $tree_filename = $gene_name . "_" . $self->data_label;
   my $tree_file_obj =
     $self->save_file(
-    { extension => 'nh', hash_subfolders => 0, subfolder => $subfolder, filename => $tree_filename } );
+    { extension => 'nh', hash_subfolders => 1, subfolder => $subfolder, filename => $tree_filename } );
   Bio::EnsEMBL::Compara::TreeUtils->to_file($tree,$tree_file_obj->{full_file});
   $self->param( 'tree_file', $tree_file_obj->{rel_file} );
-
-  # Compare the alignment pep sequence to the original transcript (sanity check).
-  $self->fail_and_die ("Alignment doesn't contain the exact ref member CDS sequence!") unless (Bio::EnsEMBL::Compara::AlignUtils->contains_sequence($aln,$ref_member->sequence_cds));
 
   # Get a file to save SLR results in.
   my $slr_filename = $gene_name . "_" . $self->data_label;
   my $slr_file_obj =
-    $self->save_file({ extension => 'out', hash_subfolders => 0, subfolder => $subfolder, filename => $tree_filename } );
+    $self->save_file({ extension => 'out', hash_subfolders => 1, subfolder => $subfolder, filename => $tree_filename } );
   $self->param( 'slr_file', $slr_file_obj->{rel_file} );
 
   # Run SLR.
-  my $slr_params = Bio::Greg::Hive::PhyloAnalysis->default_params;
+  my $slr_params = Bio::Greg::Hive::PhyloAnalysis->param_defaults;
   my $all_params = $self->replace($slr_params,$self->params);
   $all_params->{output_to_file} = $slr_file_obj->{full_file};
 
@@ -178,6 +132,9 @@ sub run {
     $results = $self->run_sitewise_dNdS($tree,$aln,$all_params);
   }
 
+  $self->param('slr_dnds',$results->{omega});
+  $self->param('slr_kappa',$results->{kappa});
+
   my $hash = $self->results_to_psc_hash($results,$pep_aln);
 
   # Store windowed p-values.
@@ -189,21 +146,6 @@ sub run {
 
 sub write_output {
   my $self = shift;
-
-  # Sanity check.
-  my $found_anything = 0;
-  my $gn = $self->param('gene_name');
-  my $aln_type = $self->param('aln_type');
-  my $parameter_set_id = $self->param('parameter_set_id');
-  my $sth = $self->dbc->prepare("SELECT * from stats_windows where gene_name='${gn}' and aln_type='${aln_type}' and parameter_set_id=${parameter_set_id} limit 1;");
-  $sth->execute;
-
-  my $hash;
-  while ( my $obj = $sth->fetchrow_hashref ) {
-    $found_anything = 1;
-  }
-
-  $self->fail_and_die ("Didn't find any windows written to DB [$gn $aln_type $parameter_set_id]!") if (!$found_anything);
   
 }
 
@@ -222,7 +164,7 @@ sub run_with_windows {
   print "REF: ".$ref_member->stable_id."\n" if ($self->debug);
 
   my @seqs = $aln->each_seq;
-  my ($ref_seq) = grep { $_->id eq $ref_member->taxon_id } @seqs;
+  my ($ref_seq) = grep { $_->id eq 'ens_'. $ref_member->taxon_id } @seqs;
   my $ref_tx = $ref_member->get_Transcript;
 
   my $len = $ref_member->seq_length;
@@ -299,7 +241,7 @@ sub get_table_structure {
     gene_name => 'string',
     aln_type => 'char16',
     parameter_set_name => 'string',
-    parameter_set_shortname => 'char8',
+    parameter_set_shortname => 'char16',
 
     stable_id_gene => 'string',
     stable_id_transcript => 'string',
@@ -320,6 +262,12 @@ sub get_table_structure {
     'hg18_window_start' => 'int',
     'hg18_window_end'   => 'int',
 
+    filtered_Hsap => 'int',
+    filtered_Ptro => 'int',
+    filtered_Ggor => 'int',
+    filtered_Ppyg => 'int',
+    filtered_Mmul => 'int',
+
     pval => 'float',
     n_leaves => 'int',
     n_sites    => 'int',
@@ -328,6 +276,9 @@ sub get_table_structure {
     slr_file => 'string',
     tree_file => 'string',
     aln_file => 'string',
+
+    slr_dnds => 'float',
+    slr_kappa => 'float',
 
     unique_keys => 'data_id,parameter_set_id,peptide_window_start,peptide_window_width',
   };

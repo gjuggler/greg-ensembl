@@ -484,7 +484,7 @@ sub _store_tagvalue {
   
   $value="" unless(defined($value));
 
-  my $sql = "REPLACE into ".$self->protein_tree_tag." (node_id,tag) values ($node_id,\"$tag\")";
+  my $sql = "REPLACE into ".$self->protein_tree_tag." (node_id,tag,value) values ($node_id,\"$tag\",\"$value\")";
   #print("$sql\n");
   $self->dbc->do($sql);
 

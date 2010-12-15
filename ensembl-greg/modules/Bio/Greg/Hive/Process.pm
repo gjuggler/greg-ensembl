@@ -337,46 +337,6 @@ sub worker_temp_directory {
   return $wtd;
 }
 
-sub breadcrumb_param {
-  my $self  = shift;
-  my $param = shift;
-
-  my $breadcrumb = $self->param('breadcrumb') || '';
-
-  #print "bc: $breadcrumb\n";
-
-  if ( $breadcrumb ne '' ) {
-    my @crumbs = split( "\\.", $breadcrumb );
-    my $key_prefix = shift @crumbs;
-    foreach my $crumb (@crumbs) {
-      $key_prefix .= '.' . $crumb;
-
-      #print "Searching for param $param with breadcrumb $key_prefix...\n";
-      my $key   = $key_prefix . "." . $param;
-      my $value = $self->{_param_hash}->{$key};
-      if ( defined $value ) {
-
-        #print "Got it! $value\n";
-        return $value;
-      }
-    }
-  }
-  return undef;
-}
-
-sub add_breadcrumb {
-  my $self   = shift;
-  my $params = shift;
-  my $crumb  = shift;
-
-  my $breadcrumb = $params->{breadcrumb} || 'bcrmb';
-
-  $breadcrumb .= '.' unless ( $breadcrumb eq '' );
-  $breadcrumb .= $crumb;
-
-  $params->{breadcrumb} = $breadcrumb;
-}
-
 sub store_meta {
   my $self   = shift;
   my $params = shift;
@@ -385,6 +345,17 @@ sub store_meta {
     my $value = $params->{$key};
     $self->dbc->do("DELETE from meta where meta_key='$key';");
     $self->dbc->do("REPLACE into meta (meta_key,meta_value) VALUES ('$key','$value');");
+  }
+}
+
+sub get_meta {
+  my $self = shift;
+  my $key = shift;
+
+  my $sth = $self->dbc->prepare("SELECT * from meta where meta_key='$key' limit 1;");
+  $sth->execute;
+  while ( my $obj = $sth->fetchrow_hashref ) {
+    return $obj->{meta_value};
   }
 }
 
@@ -433,7 +404,6 @@ sub new_data_id {
   $dbc->do(
     "DELETE from meta where meta_key='data_id_counter'");
   $dbc->do("REPLACE into meta (meta_key,meta_value) VALUES ('data_id_counter',$data_id);");
-  $self->add_breadcrumb( $params, $data_id );
 
   $self->param( 'data_id', $data_id );
   $params->{data_id} = $data_id;
@@ -458,10 +428,6 @@ sub param {
     $param_value = $self->SUPER::param($param);
   }
   
-  #print "$param value: $param_value\n" if ($param =~ m/slr/);
-  if ( !defined $param_value && $param ne 'breadcrumb' ) {
-    $param_value = $self->breadcrumb_param($param);
-  }
   return $param_value;
 }
 
@@ -807,10 +773,6 @@ sub store_tag {
   my $node_id = $self->param('node_id') || 1;
   my $tree = $self->pta->fetch_node_by_node_id($node_id);
 
-  if ( $self->param('breadcrumb') ) {
-    $tag = $self->param('breadcrumb') . "." . $tag;
-  }
-
   print "  -> Storing tag [$tag] => [$value]\n" if ($self->debug);
   $tree->store_tag( $tag, $value );
 }
@@ -823,6 +785,12 @@ sub base {
 
 sub get_output_folder {
   my $self        = shift;
+
+  # Double-check the meta table for a stored value.
+  my $db_value = $self->get_meta('output_folder');
+  if (defined $db_value) {
+    $self->param('output_folder',$db_value);
+  }
 
   if ( defined $self->param('output_folder') ) {
     my $folder = $self->param('output_folder');
@@ -837,7 +805,7 @@ sub get_output_folder {
     return $folder;
   }
 
-  my $output_base = Bio::Greg::EslrUtils->scratchDirectory.'/'.$self->hive_dba->dbname;
+  my $output_base = Bio::Greg::EslrUtils->scratchDirectory.'/'.$self->hive_dba->dbc->dbname;
 
   print "output_base: $output_base\n";
 
@@ -850,13 +818,10 @@ sub get_output_folder {
     $filename = sprintf( "%s/%s_%.2d", $output_base, $date_string, $i );
   } while ( -e $filename );
 
+  $self->store_meta( { output_folder => $filename } );
+
   mkpath( [$filename] );
   $self->param( 'output_folder', $filename );
-
-# We'll store this output folder in the meta table, so it will be re-used if this module is run again w/ the same database.
-  $self->store_meta( { output_folder => $filename } );
-  mkpath( [$filename] );
-
   return $filename;
 }
 

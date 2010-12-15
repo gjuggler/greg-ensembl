@@ -1081,7 +1081,7 @@ sub get_prank_filter_matrices {
   my $params = shift;
 
   my $defaults = {
-    'prank_filtering_scheme' => 'prank_minimum'
+    'prank_filtering_scheme' => 'prank_mean'
   };
   $params = Bio::EnsEMBL::Compara::ComparaUtils->replace_params($defaults,$params);  
 

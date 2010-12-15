@@ -117,6 +117,8 @@ if(!file.exists("${all_file}")) {
       save(data,file=this.file)
     }
   }
+} else {
+#  load("${all_file}")
 }
 ^;
   print "$rcmd\n";
@@ -333,7 +335,12 @@ dev.off()
 sub fig_two {
   my $self = shift;
 
+  # Call slrsim_all to dump the data.
   $self->slrsim_all;
+
+  # Call slrsim_table to dump the table.
+  $self->slrsim_table;
+
   my $folder = $self->get_output_folder;
   my $file = "${folder}/fig_two.Rdata";
   my $roc_zoom = "${folder}/roc_zoom.pdf";
@@ -359,38 +366,39 @@ plot.x <- 'fpr'
 plot.y <- 'tpr'
 zoom.fpr <- 0.1
 
-n.trees <- length(unique(data[,'slrsim_tree_file']))
+d <- data
+labels <- paste(
+  data[,'slrsim_tree_file'],
+  data[,'alignment_name'],
+  data[,'phylosim_insertrate'],
+  data[,'tree_mean_path'],
+  sep='_'
+)
+data[,'slrsim_label'] <- factor(labels)
 
-for (aln in unique(data[,'alignment_name'])) {
-  if (aln == 'True Alignment') {next;}
-  d <- subset(data,alignment_name==aln | alignment_name=='True Alignment')
-
-  d[,'slrsim_label'] <- paste(d[,'slrsim_tree_file'],d[,'alignment_name'],d[,'filtering_name'],d[,'alignment_score_threshold'])
+for (lbl in unique(data[,'slrsim_label'])) {
+  print(lbl)
+  d <- subset(data,slrsim_label == lbl)
 
   # ROC plot of alignments.
   f = function(df,thresh) {return(slr.roc(df,na.rm=na.rm))}
+  d[,'slrsim_label'] <- d[,'filtering_name']
   comb.roc <- summarize.by.labels(d,f)
-  max.x <- max(comb.roc[,plot.y]) * zoom.fpr
-
+  max.x <- max(comb.roc[,plot.x]) * zoom.fpr
   sub.roc <- comb.roc
-  # Remove the tree file name from the labels so the plots only group into align-filter-threshold
-  sub.roc[,'slrsim_label'] <- paste(sub.roc[,'alignment_name'],sub.roc[,'filtering_name'],sub.roc[,'alignment_score_threshold'])
 
   p <- plot.roc(sub.roc,plot=F,plot.x=plot.x,plot.y=plot.y)
-#  p <- p + scale_colour_brewer("Filtering Scheme",palette="Set1")
 
   fdr.line <- 0.2
   p <- p + geom_abline(slope=2/fdr.line,colour='gray')
   fdr.line <- 0.1
   p <- p + geom_abline(slope=2/fdr.line,colour='black')
 
-  p <- p + facet_grid(. ~ slrsim_tree_file )
-
-  pdf(file=paste("${folder}/",aln,"_roc.pdf",sep=""),width=10*n.trees,height=10)
+  pdf(file=paste("${folder}/",lbl,"_roc.pdf",sep=""),width=10,height=10)
   print(p)
   dev.off()
 
-  pdf(file=paste("${folder}/",aln,"_roc_zoom.pdf",sep=""),width=10*n.trees,height=10)
+  pdf(file=paste("${folder}/",lbl,"_roc_zoom.pdf",sep=""),width=10,height=10)
   p <- p + scale_x_continuous(limits=c(0,max.x))
   print(p)
   dev.off()

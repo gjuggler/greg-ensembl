@@ -10,7 +10,7 @@ use Bio::EnsEMBL::Compara::ComparaUtils;
 
 use Bio::Greg::EslrUtils;
 
-use base ('Bio::Greg::Hive::Process');
+use base ('Bio::Greg::Hive::Process', 'Bio::Greg::Gorilla::CollectDuplicationStats');
 
 sub go_table_def {
   my $self = shift;
@@ -33,29 +33,43 @@ sub go_table_def {
   };
 }
 
-sub fetch_input {
+sub param_defaults {
   my $self = shift;
-
   ### DEFAULT PARAMETERS ###
-  my $params = {};
+  my $params = {    
+    collect_duplication_species => '9606,9598,9593,9600',
+    genes_table                 => 'stats_dups',
+  };
+
   $params->{'go_taxon_ids'} = '9606,10090,9593';
   $params->{'go_table'}     = 'go_terms';
   $params->{'go_subsets'}   = 'goslim_goa,GO';
   #########################
+  return $params;
+}
 
-  $self->load_all_params($params);
-  $self->create_table_from_params( $self->compara_dba, 'go_terms', $self->go_table_def );
+sub fetch_input {
+  my $self = shift;
+
+  $self->load_all_params();
+#  $self->create_table_from_params( $self->compara_dba, 'go_terms', $self->go_table_def );
 
   # Get a GO term adaptor and a gene adaptor (for human).
-  my $go_dba = Bio::EnsEMBL::Registry->get_adaptor( 'Multi', 'Ontology', 'GOTerm' );
-  die if ( !defined $go_dba );
-  $self->param( 'go_dba', $go_dba );
+#  my $go_dba = Bio::EnsEMBL::Registry->get_adaptor( 'Multi', 'Ontology', 'GOTerm' );
+#  die if ( !defined $go_dba );
+#  $self->param( 'go_dba', $go_dba );
 }
 
 sub run {
   my $self = shift;
 
-  $self->collect_go;
+#  $self->collect_go;
+
+  # Remove me: temporary collection of gorilla gene stats...
+  my $gene_stats = $self->get_gene_stats_def;
+  $self->create_table_from_params( $self->compara_dba, 'stats_dups', $gene_stats );  
+  $self->get_gene_data($self->param('node_id'),$self->param('parameter_set_id'));
+
 }
 
 sub collect_go {

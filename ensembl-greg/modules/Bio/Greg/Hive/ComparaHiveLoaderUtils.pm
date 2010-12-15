@@ -23,6 +23,10 @@ sub add_genes_to_analysis {
   my $analysis_name    = shift;
   my $gene_id_arrayref = shift;
 
+  my $dba = $self->dba;
+  my $mba = $dba->get_MemberAdaptor;
+  my $pta = $dba->get_ProteinTreeAdaptor;
+
   my @node_ids = ();
   foreach my $gene_id (@$gene_id_arrayref) {
     chomp $gene_id;
@@ -30,11 +34,14 @@ sub add_genes_to_analysis {
 
     print "Trying to add $gene_id...\n";
 
-    my $ext_member = $self->_find_member_by_external_id($gene_id);
-    $member = $ext_member if ( defined $ext_member );
+    if ($gene_id !~ m/ensp/gi) {
+      print "Finding gene by external ID...\n";
+      my $ext_member = $self->_find_member_by_external_id($gene_id);
+      $member = $ext_member if ( defined $ext_member );
+    }
 
     if ( !defined $member ) {
-      $member = $self->dba->get_MemberAdaptor->fetch_by_source_stable_id( undef, $gene_id );
+      $member = $mba->fetch_by_source_stable_id( undef, $gene_id );
       my $gene_member = $member->gene_member if ( defined $member );
       $member = $gene_member if ( defined $gene_member );
     }
@@ -44,7 +51,6 @@ sub add_genes_to_analysis {
       next;
     }
 
-    my $pta  = $self->dba->get_ProteinTreeAdaptor;
     my $tree = $pta->fetch_by_Member_root_id($member,0);
     if (!defined $tree) {
       print STDERR " -> $gene_id tree not found!\n";
@@ -54,6 +60,7 @@ sub add_genes_to_analysis {
       node_id => $tree->node_id,
       gene_id => $gene_id
                                 } );
+    $tree->release_tree;
   }
 }
 
@@ -91,8 +98,8 @@ sub _find_member_by_external_id {
   my $id   = shift;
 
   Bio::EnsEMBL::Registry->load_registry_from_multiple_dbs( {
-      -host => 'ensembldb.ensembl.org',
-      -user => 'anonymous'
+      -host => 'ens-livemirror',
+      -user => 'ensro',
     }
   );
   my $gene_adaptor = Bio::EnsEMBL::Registry->get_adaptor( "human", "core", "gene" );
