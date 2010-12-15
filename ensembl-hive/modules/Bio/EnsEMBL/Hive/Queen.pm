@@ -120,7 +120,7 @@ sub create_new_worker {
 
     if($input_id) {
         if($job_id) {
-            die "You should either define -input_id or -job_id, but not both\n";
+#            die "You should either define -input_id or -job_id, but not both\n";
 
         } elsif($analysis_id) {
             $job = Bio::EnsEMBL::Hive::AnalysisJob->new(
@@ -144,6 +144,15 @@ sub create_new_worker {
             print "fetching job for job_id '$job_id'\n";
             if($job = $self->reset_and_fetch_job_by_dbID($job_id)) {
                 $analysis_id = $job->analysis_id;
+                if ($input_id) {
+                  # Override the job's input_id with the passed input_id
+                  my $hash = eval($job->input_id);
+                  my $extra_hash = eval($input_id);
+                  $hash = {%$hash, %$extra_hash};
+                  my $hash_str = Bio::EnsEMBL::Hive::Process->encode_hash($hash);
+                  $job->input_id($hash_str);
+                  print STDERR $job->input_id."\n";
+                }
             } else {
                 die "job_id '$job_id' could not be fetched from the database\n";
             }
