@@ -471,8 +471,6 @@ sub fig_one {
   my @array;
   foreach my $scheme ($self->man_a) {
 #  foreach my $scheme ($self->man_a,$self->man_b,$self->man_c) {
-#    foreach my $aln ('true','clustalw','muscle','mafft','prank','prank_codon','prank_codon_filter') {
-#    foreach my $aln ('true', 'clustalw','mafft','prank','prank_filter') {
     foreach my $aln ('true','clustalw','mafft','prank') {
       my $p = {};
       if ($aln eq 'mafft_filter') {
