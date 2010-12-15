@@ -84,8 +84,8 @@ sub extract_substitution_info {
   my $aa_b         = $sub_obj->{aa_b};
   my $confidence   = $sub_obj->{confidence};
 
-  next if ( $aa_a eq '*' || $aa_b eq '*' );
-  next if ( $codon_a =~ m/[nx]/i || $codon_b =~ m/[nx]/i );
+  return undef if ( $aa_a eq '*' || $aa_b eq '*' );
+  return undef if ( $codon_a =~ m/[nx]/i || $codon_b =~ m/[nx]/i );
 
   my $nuc_left        = '';
   my $nuc_right       = '';

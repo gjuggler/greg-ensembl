@@ -98,7 +98,7 @@ sub align {
   my $params     = {
     # These params will be filled in by the LoadTree simulation definitions.
   };
-  $h->create_analysis( $logic_name, $module, $params, 500, 1 );
+  $h->create_analysis( $logic_name, $module, $params, 300, 1 );
 }
 
 sub scores {
@@ -108,7 +108,7 @@ sub scores {
 
     # These params will be filled in by the LoadTree simulation definitions.
   };
-  $h->create_analysis( $logic_name, $module, $params, 500, 1 );
+  $h->create_analysis( $logic_name, $module, $params, 300, 1 );
 }
 
 sub dump_alignments {

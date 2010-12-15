@@ -277,6 +277,17 @@ sub disconnect_when_inactive {
   $self->dbc->disconnect_when_inactive($discon);
 }
 
+sub within_hive {
+  my $self = shift;
+
+  return $self->db != undef;
+}
+
+sub worker_temp_directory {
+  my $self = shift;
+
+}
+
 sub dbc {
   my $self = shift;
 
@@ -328,12 +339,12 @@ sub worker_temp_directory {
 
   my $wtd = $self->SUPER::worker_temp_directory;
 
-  chmod 0777, $wtd;
+  if (!$self->within_hive) {
+    $wtd = '/tmp/process_tmp/';
+    mkpath([$wtd]);
+  }
 
-  #print "ANALYSIS ID:". $self->worker->analysis->dbID."\n";
-  #$wtd = $wtd . $self->data_id."/".$self->worker->analysis->dbID."/";
-  #mkpath([$wtd]);
-  #print "TEMP: $wtd\n";
+  chmod 0777, $wtd;
   return $wtd;
 }
 
@@ -355,6 +366,7 @@ sub get_meta {
   my $sth = $self->dbc->prepare("SELECT * from meta where meta_key='$key' limit 1;");
   $sth->execute;
   while ( my $obj = $sth->fetchrow_hashref ) {
+    $sth->finish;
     return $obj->{meta_value};
   }
 }
@@ -375,12 +387,14 @@ sub get_parameter_sets {
     $hash->{$id}->{$param_name} = $param_value;
     $hash->{$id}->{parameter_set_id} = $id;
   }
+  $sth->finish;
 
   my @sets;
   foreach my $pset ( 1 .. scalar( keys %$hash ) ) {
     push @sets, $hash->{$pset};
   }
   return @sets;
+
 }
 
 sub new_data_id {
@@ -417,6 +431,15 @@ sub param {
   my $self  = shift;
   my $param = shift;
 
+  if (!$self->within_hive) {
+    if (@_) {
+      my $value = shift @_;
+      print "Set local param: [$param] = [$value]\n"; 
+      $self->{'_'.$param} = $value;
+    }
+    return $self->{'_'.$param};
+  }
+
   my $param_value;
   if (@_) {
     $self->SUPER::param( $param, shift @_ );
@@ -435,6 +458,16 @@ sub params {
   my $self = shift;
 
   # Make a copy!
+  if (!$self->within_hive) {
+    my $param_hash;
+    foreach my $key (keys %{$self}) {
+      next unless ($key =~ m/^_/);
+      print $key."\n";
+      my $fixed_key = substr($key,1);
+      $param_hash->{$fixed_key} = $self->{$key};
+    }
+    return $param_hash;
+  }
   my $param_hash = $self->input_job->{_param_hash};
   my $new_params = {};
   foreach my $key ( keys %$param_hash ) {
@@ -723,7 +756,33 @@ sub create_table_from_params {
       }
     }
   };
+}
 
+sub output_rows_to_file {
+  my $self = shift;
+  my $rows_arrayref = shift;
+  my $file = shift;
+
+  my @rows = @{$rows_arrayref};
+
+  my $first = $rows[0];
+
+  my @keys = sort keys %$first;
+
+  my $header = join("\t",@keys)."\n";
+
+  open(OUT,">$file");
+  print OUT $header;
+  foreach my $row (@rows) {
+    my @values;
+    foreach my $key (@keys) {
+      push @values, $row->{$key};
+    }
+    my $line = join("\t",@values)."\n";
+    print OUT $line;
+    #print "OUTPUT: $line";
+  }
+  close(OUT);
 }
 
 sub store_params_in_table {
@@ -846,7 +905,6 @@ sub save_file {
   my $params = shift;
 
   my $hash_subfolders = 1;
-  my $hash_subfolders = $params->{hash_subfolders} if (defined $params->{hash_subfolders});
 
   my $filename = "[unnamed_file]";
   $filename = $params->{filename} if ( defined $params->{filename} );

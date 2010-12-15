@@ -6,7 +6,7 @@ use Getopt::Long;
 use Bio::EnsEMBL::Compara::ComparaUtils;
 use Bio::Greg::Hive::ComparaHiveLoaderUtils;
 
-my $url = 'mysql://ensadmin:ensembl@ens-research:3306/gj1_gor_58_nofilter';
+my $url = 'mysql://ensadmin:ensembl@ens-research:3306/gj1_gor_58';
 my $clean = 1;
 
 my $h = new Bio::Greg::Hive::ComparaHiveLoaderUtils;
@@ -25,9 +25,9 @@ parameter_sets();
 node_sets();
 
 ### Genomewide omegas track.
-#tree_stats();
-#split_by_subtrees();
-#paml_omegas();
+tree_stats();
+split_by_subtrees();
+paml_omegas();
 ### End genomewide omegas.
 
 ### Duplication counts track.
@@ -36,12 +36,12 @@ node_sets();
 
 ### Branch-model tests track.
 filter_one_to_one();
-count_sites();
-count_sites_outgroup();
-lnl_c();
-lnl_p();
+#count_sites();
+#count_sites_outgroup();
+#lnl_c();
+#lnl_p();
 lnl_m();
-lnl_mp();
+#lnl_mp();
 collect_go();
 ### End branch-model tests.
 
@@ -61,10 +61,10 @@ output_gorilla_data();
 ###
 ### Branch models track.
 $h->connect_analysis("NodeSets","FilterOneToOne",1);
-$h->connect_analysis("FilterOneToOne","lnl_c",1);
-$h->connect_analysis("FilterOneToOne","lnl_p",1);
+#$h->connect_analysis("FilterOneToOne","lnl_c",1);
+#$h->connect_analysis("FilterOneToOne","lnl_p",1);
 $h->connect_analysis("FilterOneToOne","lnl_m",1);
-$h->connect_analysis("FilterOneToOne","lnl_mp",1);
+#$h->connect_analysis("FilterOneToOne","lnl_mp",1);
 $h->connect_analysis("NodeSets","CollectGo",1);
 
 add_all_nodes();
@@ -73,11 +73,10 @@ add_all_nodes();
 sub add_genes {
   my @genes = ();
 
-  #open INPUT, "<candidate_genes.txt";
-  #my @lines = <INPUT>;
-  #close INPUT;
-  #@genes =  @lines;
-  @genes = ('PAX2','CYBB','MB','BRCA2','KIRREL3','VPRBP','EIF2AK2','DSCAM','NACC1');
+  open INPUT, "< gorilla_genes.txt";
+  my @lines = <INPUT>;
+  close INPUT;
+  @genes =  @lines;
 
   $h->add_genes_to_analysis("NodeSets",\@genes);
 }

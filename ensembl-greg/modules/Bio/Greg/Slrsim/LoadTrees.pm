@@ -472,7 +472,7 @@ sub fig_one {
   my $self = shift;
 
   my @array;
-  foreach my $scheme ($self->man_a) {
+  foreach my $scheme ($self->man_c) {
 #  foreach my $scheme ($self->man_a,$self->man_b,$self->man_c) {
 #    foreach my $aln ('true','clustalw','muscle','mafft','prank','prank_codon','prank_codon_filter') {
 #    foreach my $aln ('true', 'clustalw','mafft','prank','prank_filter') {
@@ -529,8 +529,6 @@ sub _fig_one_indel_sweep {
   my @lengths = map { $_ * 1 / 5 } 1 .. 10;
   my @indels  = map { $_ / 100 } 0 .. 10;
 
-  #  my @lengths = (1.5);
-  #  my @indels = (0.07);
   foreach my $path_length (@lengths) {
     $params = $self->replace( $base_params, $self->mean_path_param($path_length) );
     foreach my $indel (@indels) {
@@ -577,7 +575,22 @@ sub fig_two {
       indel  => 0.04
     }, {
       aln    => 'clustalw',
+      scheme => $self->man_a,
+      length => 1.0,
+      indel  => 0.10
+    }, {
+      aln    => 'clustalw',
       scheme => $self->man_b,
+      length => 1.0,
+      indel  => 0.10
+    }, {
+      aln    => 'clustalw',
+      scheme => $self->man_c,
+      length => 1.0,
+      indel  => 0.10
+    }, {
+      aln    => 'mafft',
+      scheme => $self->man_a,
       length => 1.0,
       indel  => 0.10
     }, {
@@ -586,6 +599,31 @@ sub fig_two {
       length => 1.0,
       indel  => 0.10
     }, {
+      aln    => 'mafft',
+      scheme => $self->man_c,
+      length => 1.0,
+      indel  => 0.10
+    }, {
+      aln    => 'prank',
+      scheme => $self->man_a,
+      length => 1.0,
+      indel  => 0.10
+    }, {
+      aln    => 'prank',
+      scheme => $self->man_c,
+      length => 1.0,
+      indel  => 0.10
+    }, {
+      aln    => 'prank',
+      scheme => $self->man_b,
+      length => 0.4,
+      indel  => 0.14
+    }, {
+      aln    => 'prank',
+      scheme => $self->man_b,
+      length => 0.6,
+      indel  => 0.12
+    }, {
       aln    => 'prank',
       scheme => $self->man_b,
       length => 1.0,
@@ -593,13 +631,13 @@ sub fig_two {
     }, {
       aln    => 'prank',
       scheme => $self->man_b,
-      length => 0.6,
-      indel  => 0.14
+      length => 1.6,
+      indel  => 0.06
     }, {
       aln    => 'prank',
       scheme => $self->man_b,
-      length => 1.6,
-      indel  => 0.08
+      length => 1.8,
+      indel  => 0.04
     },
   ];
 
@@ -612,9 +650,11 @@ sub fig_two {
     my $length = $self->mean_path_param( $subset->{length} );
     my $indel  = $self->indel_rate_param( $subset->{indel} );
 
-    foreach my $filter ( 'true', 'none', 'gblocks', 'prank', 'optimal', 'tcoffee' ) {
+    foreach my $filter ( 'true', 'true_filtered', 'none', 'gblocks', 'prank', 'optimal', 'tcoffee' ) {
       foreach my $filter_threshold (9) {
         my $tree = $scheme->{tree_name};
+
+        my $len_indel_s = '('.$subset->{length} . '/'. $subset->{indel}.')';
 
         my $params;
         if ( $filter eq 'true' ) {
@@ -622,22 +662,31 @@ sub fig_two {
             $scheme,
             $self->aln_param('true'),
             $self->filter_param('none'),
-            { slrsim_label => "${tree}_True Alignment_${filter}" }
+            { slrsim_label => "${tree}_True Alignment_${len_indel_s}" }
           );
           $params->{filtering_name} = 'True Alignment';
+          $params->{alignment_name} = $aln->{alignment_name};
+        } elsif ( $filter eq 'true_filtered') {
+          $params = $self->replace(
+            $scheme,
+            $self->aln_param('true'),
+            $self->filter_param('tcoffee'),
+            { slrsim_label => "${tree}_True Filtered_${len_indel_s}" }
+          );
+          $params->{filtering_name} = 'True Filtered';
           $params->{alignment_name} = $aln->{alignment_name};
         } else {
           $params = $self->replace(
             $scheme, $aln,
             $self->filter_param($filter),
             $self->filter_thresh_param($filter_threshold),
-            { slrsim_label => "${tree}_${aln_s}_${filter}" }
+            { slrsim_label => "${tree}_${aln_s}_${filter}_${len_indel_s}" }
           );
           $params->{filtering_name} = 'No filter' if ($filter eq 'none');
         }
 
         $params =
-          $self->replace( $params, $self->reps_param(100), $indel, $length,
+          $self->replace( $params, $self->reps_param(50), $indel, $length,
           { experiment_name => 'fig_two' } );
         push @sets, $params;
 

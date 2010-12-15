@@ -33,15 +33,22 @@ sub run {
   my $folder = $self->get_output_folder . '/alns';
 
   my $label = $self->param('slrsim_label');
+  $label =~ s/[\(\)\/\\]//gi;
   my $exp = $self->param('experiment_name');
   my $rep = $self->param('slrsim_rep');
   my $filter = $self->param('alignment_score_threshold');
   
+  print "REP: $rep\n";
+
   return unless ($rep == 1);
+
+  print "SAVING!\n";
 
   throw("Folder doesn't exist!") unless (-d $folder);
 
   my $base = "${folder}/${rep}_${exp}_${label}";
+
+  print "$base\n";
 
   my $tree_f = "${base}.nh";
   Bio::EnsEMBL::Compara::TreeUtils->to_file($tree,$tree_f);

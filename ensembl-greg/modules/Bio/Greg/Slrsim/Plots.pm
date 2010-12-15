@@ -96,7 +96,6 @@ sub slrsim_all {
   my $script = $self->script;
   my $dbname = $self->dbc->dbname;
   my $rcmd = qq^
-# Try to plot all the alignments in the output folder.
 library(R.oo)
 library(ape)
 library(ggplot2)
@@ -109,6 +108,7 @@ if(!file.exists("${all_file}")) {
   save(df.list,file="${all_file}")
 
   for (df in df.list) {
+    print(str(df))
     name = df[1,'experiment_name']
     print(paste("Experiment name:",name))
     data = df
@@ -152,9 +152,77 @@ paper.df <- subset(paper.df, indel == 0.1 & length == 1)
 write.csv(paper.df,file="${table_one_one}",row.names=F)
 
 ^;
-  my $params = {};
   Bio::Greg::EslrUtils->run_r( $rcmd );
 
+}
+
+sub slrsim_alns {
+# Try to plot all the alignments in the output folder.
+  my $self = shift;
+
+  my $folder = $self->get_output_folder;
+  my $alns_folder = $folder.'/alns';
+  my $functions = $self->base . "/projects/slrsim/slrsim.functions.R";
+
+  my $rcmd = qq^
+source("${functions}")
+library(phylosim)
+
+setwd("${alns_folder}")
+
+alns <- list.files(path='.',pattern="*.fasta\$")
+trees <- list.files(path='.',pattern="*.nh\$")
+
+for (i in 1:length(alns)) {
+  aln <- alns[i]
+  tree <- trees[i]
+
+  pdf.file <- paste(aln,".pdf",sep="")
+
+  if (!file.exists(pdf.file)) {
+    print(paste(pdf.file,"..."))
+    pdf(pdf.file)
+
+    sim <- PhyloSim()
+    readAlignment(sim,aln)
+    readTree(sim,tree)
+    plot(sim)
+    dev.off()
+  }
+}
+
+  ^;
+  Bio::Greg::EslrUtils->run_r( $rcmd );
+
+}
+
+# return a table of results with multiple filtering results on each line.
+sub filter_table {
+  my $self = shift;
+
+  my $folder = $self->get_output_folder;
+  my $file = "${folder}/df.list.Rdata";
+  my $functions = $self->base . "/projects/slrsim/slrsim.functions.R";
+  my $table_file = "${folder}/table.csv";
+  my $table_one_one = "${folder}/table_1_1.csv";
+
+my $rcmd = qq^
+source("${functions}")
+load("${file}")
+
+df.f <- function(x) {
+  x[,'slrsim_label'] <- paste(x[,'slrsim_tree_file'],x[,'alignment_name'],x[,'filtering_name'])
+  table.df <- ddply(x,.(slrsim_label,phylosim_insertrate,tree_mean_path),paper.table)
+  return(table.df)
+}
+paper.df <- ldply(df.list,df.f)
+write.csv(paper.df,file="${table_file}",row.names=F)
+
+paper.df <- subset(paper.df, indel == 0.1 & length == 1)
+write.csv(paper.df,file="${table_one_one}",row.names=F)
+
+^;
+  Bio::Greg::EslrUtils->run_r( $rcmd );  
 }
 
 sub fig_one {
@@ -341,6 +409,9 @@ sub fig_two {
   # Call slrsim_table to dump the table.
   $self->slrsim_table;
 
+  # Plot the alignment PDFs...
+#  $self->slrsim_alns;
+
   my $folder = $self->get_output_folder;
   my $file = "${folder}/fig_two.Rdata";
   my $roc_zoom = "${folder}/roc_zoom.pdf";
@@ -362,9 +433,6 @@ source("${plots}")
 load("${file}")
 print(str(data))
 na.rm <- TRUE
-plot.x <- 'fpr'
-plot.y <- 'tpr'
-zoom.fpr <- 0.1
 
 d <- data
 labels <- paste(
@@ -380,27 +448,40 @@ for (lbl in unique(data[,'slrsim_label'])) {
   print(lbl)
   d <- subset(data,slrsim_label == lbl)
 
-  # ROC plot of alignments.
   f = function(df,thresh) {return(slr.roc(df,na.rm=na.rm))}
   d[,'slrsim_label'] <- d[,'filtering_name']
   comb.roc <- summarize.by.labels(d,f)
-  max.x <- max(comb.roc[,plot.x]) * zoom.fpr
+
+  # Plot FP and TP, with lines at fdr=0.1 and fdr=0.5
   sub.roc <- comb.roc
+  p <- plot.roc(sub.roc,plot=F,plot.x='fp',plot.y='tp')
+  fdr <- .5
+  p <- p + geom_abline(slope=(1-fdr)/fdr,colour='gray')
+  fdr <- 0.1
+  p <- p + geom_abline(slope=(1-fdr)/fdr,colour='black')
+  full.roc <- p + opts(legend.position = "none")
+  max.x <- max(comb.roc[,'fp']) * 0.025
+  p <- p + scale_x_continuous(limits=c(0,max.x))
 
-  p <- plot.roc(sub.roc,plot=F,plot.x=plot.x,plot.y=plot.y)
-
-  fdr.line <- 0.2
-  p <- p + geom_abline(slope=2/fdr.line,colour='gray')
-  fdr.line <- 0.1
-  p <- p + geom_abline(slope=2/fdr.line,colour='black')
-
-  pdf(file=paste("${folder}/",lbl,"_roc.pdf",sep=""),width=10,height=10)
+  pdf(file=paste("${folder}/",lbl,"_roc_fp.pdf",sep=""),width=10,height=10)
   print(p)
+  subvp <- viewport(width=0.4,height=0.4,x=0.6, y=0.3)
+  print(full.roc,vp=subvp)
   dev.off()
 
-  pdf(file=paste("${folder}/",lbl,"_roc_zoom.pdf",sep=""),width=10,height=10)
+  # Plot FPR and TPR, with lines at fpr=0.05 and fpr=0.01
+  sub.roc <- comb.roc
+  p <- plot.roc(sub.roc,plot=F,plot.x='fpr',plot.y='tpr')
+  p <- p + geom_vline(xintercept=0.05,colour='gray')
+  p <- p + geom_vline(xintercept=0.01,colour='black')
+  full.roc <- p + opts(legend.position = "none")
+  max.x <- max(comb.roc[,'fpr']) * 0.1
   p <- p + scale_x_continuous(limits=c(0,max.x))
+
+  pdf(file=paste("${folder}/",lbl,"_roc_fpr.pdf",sep=""),width=10,height=10)
   print(p)
+  subvp <- viewport(width=0.4,height=0.4,x=0.6, y=0.3)
+  print(full.roc,vp=subvp)
   dev.off()
 }
 ^;

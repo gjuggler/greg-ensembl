@@ -561,6 +561,7 @@ sub run_sitewise_dNdS {
   my $cdna_aln = shift;
   my $params   = shift;
 
+  $tree = Bio::EnsEMBL::Compara::TreeUtils->from_treeI($tree);
   $tree = Bio::EnsEMBL::Compara::TreeUtils->unroot($tree);
   my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
 
@@ -671,15 +672,16 @@ sub run_sitewise_dNdS {
   }
   close(IN);
 
+  chdir($cwd);
+
   if ($params->{output_to_file}) {
     my $out_to_file = $params->{output_to_file};
+    print "Outputting to file $out_to_file!!!\n";
+    print join("",@output)."\n";
     open(OUT,">$out_to_file");
     print OUT join("",@output);
-    
     close(OUT);
   }
-
-  chdir($cwd);
 
   # Parse the output into a $results object.
   my $results = $self->parse_slr_output(\@output,$params);
@@ -692,9 +694,15 @@ sub run_sitewise_dNdS {
 
   print "$omega_key " . $results->{omega} . "\n";
 
-  $self->store_tag( $kappa_key, $results->{'kappa'} );
-  $self->store_tag( $omega_key, $results->{'omega'} );
-  $self->store_tag( $lnl_key,   $results->{'lnL'} );
+  $self->param($kappa_key, $results->{kappa});
+  $self->param($omega_key, $results->{omega});
+  $self->param($lnl_key, $results->{lnL});
+  
+  if ($self->within_hive) {
+    $self->store_tag( $kappa_key, $results->{'kappa'} );
+    $self->store_tag( $omega_key, $results->{'omega'} );
+    $self->store_tag( $lnl_key,   $results->{'lnL'} );
+  }
 
   # Store results in the table if desired.
   if ($self->param('genewise_table_output') == 1) {
@@ -736,7 +744,7 @@ sub run_sitewise_dNdS {
     $self->store_tag( $tree_key, $new_pt->newick_format );
   }
 
-
+  print "RETURNING RESULTS!\n";
   return $results;
 }
 
@@ -1004,8 +1012,6 @@ sub store_sitewise {
 
   foreach my $site ( @{ $results->{'sites'} } ) {
 
-    #sleep(0.08);
-
 # Site  Neutral  Optimal   Omega    lower    upper LRT_Stat    Pval     Adj.Pval    Q-value Result Note
 # 1     4.77     3.44   0.0000   0.0000   1.4655   2.6626 1.0273e-01 8.6803e-01 1.7835e-02  --     Constant;
 # 0     1        2      3        4        5        6      7          8          9           10     11
@@ -1013,18 +1019,6 @@ sub store_sitewise {
       $site,     $neutral, $optimal,  $omega,   $lower, $upper,
       $lrt_stat, $pval,    $adj_pval, $q_value, $type,  $note
     ) = @{$site};
-
-    #    my $mapped_site = $site;
-    #    my $original_site = $site;
-    #    if (defined $aln_map_aa) {
-    #      $mapped_site = $aln_map_aa->{$site};
-    #      if (defined $mapped_site) {
-    #	$original_site = $site;
-    #	$site = $mapped_site;
-    #      } else {
-    #	die "Something went wrong! NO mapped site for $site!\n";
-    #      }
-    #    }
 
     my $aln_position = $site;
     my $orig_aln_position = $self->get_orig_aln_position( $input_aa, $aln_position );

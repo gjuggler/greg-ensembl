@@ -927,6 +927,79 @@ sub remove_funky_stretches {
   return $aln;
 }
 
+
+sub mask_high_mutation_windows {
+  my $class = shift;
+  my $aln = shift;
+  my $window_size = shift;
+  my $window_step = shift;
+  my $max_mutations_in_window = shift;
+
+  my $num_sites_masked = 0;
+
+  for (my $i=1; $i <= $aln->length-($window_size-1); $i+= $window_step) {
+    my $lo = $i;
+    my $hi = $i+$window_size;
+    $hi = $aln->length if ($hi > $aln->length);
+
+    # Count up differences between seq_a and all other seqs.
+    foreach my $seq_a ($aln->each_seq) {
+      my $diff_count = 0;
+
+      foreach my $seq_b ($aln->each_seq) {
+        next if ($seq_b == $seq_a);
+
+        my $n_diffs = $class->aln_string_diff($seq_a->subseq($lo,$hi),$seq_b->subseq($lo,$hi));
+        $diff_count += $n_diffs;
+      }
+
+      # If the differences are too many, mask out all of $seq_a in this window.
+      if ($diff_count / scalar($aln->each_seq) > $max_mutations_in_window) {
+        printf "(%d %d) %s N_DIFFS: %.3f\n",$lo,$hi,$seq_a->id,$diff_count / scalar($aln->each_seq);
+        my $orig_seq = $seq_a->seq;
+        my ($seq,$n_masked) = $class->mask_string($orig_seq,$lo-1,$hi-1);
+        $num_sites_masked += $n_masked;
+        $seq_a->seq($seq);
+      }
+    }
+  }
+  return $num_sites_masked;
+}
+
+sub mask_string {
+  my $class = shift;
+  my $string = shift;
+  my $lo = shift;
+  my $hi = shift;
+
+  my $n = 0;
+  for (my $i=$lo; $i < $hi; $i++) {
+    if (substr($string,$i,1) ne '-') {
+      substr($string,$i,1,'N');
+      $n++;
+    }
+  }
+  return ($string,$n);
+}
+
+sub aln_string_diff {
+  my $class = shift;
+  my $string1 = shift;
+  my $string2 = shift;
+
+  my $n_diffs = 0;
+  for (my $i=0; $i < length($string1); $i++) {
+    my $char1 = substr($string1,$i,1);
+    my $char2 = substr($string2,$i,1);
+    
+    if ($char1 ne '-' && $char2 ne '-' && $char1 ne 'N' && $char2 ne 'N' && $char1 ne $char2) {
+      $n_diffs++;
+    }
+  }
+  return $n_diffs;
+}
+
+
 # Removes codons where all three nucleotide positions differ between two species.
 sub remove_triple_mutated_codons {
   my $class = shift;

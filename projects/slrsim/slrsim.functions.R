@@ -2,9 +2,16 @@ library(plyr)
 library(doBy)
 
 paper.table <- function(df) {
+
+  # Sum up the total and unfiltered site counts.
+  one.index.per.rep <- which(!duplicated(df$slrsim_rep))
+  one.row.per.rep <- df[one.index.per.rep,]
+  all.residues <- sum(one.row.per.rep$site_count)
+  left.residues <- sum(one.row.per.rep$unfiltered_site_count)   
+
   row <- df[1,]
 
-  # Use the technique whereby the p-value can be doubled because we're just looking
+  # Use the technique where the p-value can be doubled because we're just looking
   # at positive selection. This gives thresholds of 2.71 and 5.41 for 5% and 1% FPR.
   stats.05 <- df.stats(df,thresh=2.71)
   stats.01 <- df.stats(df,thresh=5.41)
@@ -12,7 +19,10 @@ paper.table <- function(df) {
   stats.05 <- data.frame(stats.05)
   stats.01 <- data.frame(stats.01)
 
+  cor = cor(df$true_dnds,df$aln_dnds,method='spearman',use='complete.obs')
+
   roc <- slr.roc(df,na.rm=TRUE)
+  n.sites <- nrow(roc)
   rrow <- roc[1,]
 
   indel = row$phylosim_insertrate * 2
@@ -24,20 +34,26 @@ paper.table <- function(df) {
     indel    = indel,
     filter   = row$filtering_name,
 
-    `05_fdr` = stats.05$fdr,
-    `05_tp`  = stats.05$tp,
-    `01_fdr` = stats.01$fdr,
-    `01_tp`  = stats.01$tp,
-    
     auc      = rrow$auc,
-    `tpr`    = rrow$tpr_at_threshold,
-    `tpn`    = rrow$tp_at_threshold,
-    `tpr_fdr`    = rrow$tpr_at_fdr,
-    `tp_fdr`    = rrow$tp_at_fdr
-  )
-  ret.df <- ret.df[with(ret.df, order(tree,aligner,length,indel,filter)),]
-  #ret.df <- orderBy(~tree + aligner + length + indel + filter,data=ret.df)
+    `fpr_tpr`    = rrow$tpr_at_fpr,
+    `fpr_fdr`    = rrow$tpr_at_fpr,
+    `fpr_tp`    = rrow$tp_at_fpr,
+    `fpr_fp`    = rrow$fp_at_fpr,
 
+    `fdr_tpr`    = rrow$tpr_at_fdr,
+    `fdr_fpr`    = rrow$fpr_at_fdr,
+    `fdr_tp`    = rrow$tp_at_fdr,
+    `fdr_fp`    = rrow$fp_at_fdr,
+
+    `cor`   = cor
+  )
+
+  ret.df <- data.frame(ret.df,
+    sites = all.residues,
+    filtered.fraction = 1 - (left.residues/all.residues)
+  )
+
+  ret.df <- ret.df[with(ret.df, order(tree,aligner,length,indel,filter)),]
   return(ret.df)
 }
 
@@ -48,7 +64,7 @@ fig.1.summary <- function(df,thresh) {
 
   # Need to copy these ROC-derived summary stats over to the 'stats' object.
   stats$auc <- roc[1,]$auc
-  stats$tpr_at_threshold <- roc[1,]$tpr_at_threshold
+  stats$tpr_at_fpr <- roc[1,]$tpr_at_fpr
 
   print(paste("summarizing",df[1,]$experiment_name,df[1,]$slrsim_label))
   return(cbind(df[1,],stats))
@@ -73,7 +89,7 @@ slr.roc = function(df,na.rm=F) {
     n.na = nrow(subset(df,is.na(aln_lrt)))
     df = subset(df,!is.na(aln_lrt))
     n.left <- nrow(df)
-    print(sprintf("Removed %d NA rows (%d remaining)",n.na,n.left))
+    #print(sprintf("Removed %d NA rows (%d remaining)",n.na,n.left))
     if(n.left == 0) {
       # Think of something to do here. Return empty df?
     }
@@ -106,6 +122,7 @@ slr.roc = function(df,na.rm=F) {
   }
 
   df$auc_full <- -1
+  df$auc <- -1
   if (nrow(df) > 1) {
     auc <- area.under.curve(df,x.lim=0.2)
     df$auc <- auc
@@ -113,27 +130,35 @@ slr.roc = function(df,na.rm=F) {
     df$auc_full <- auc_full
   }
 
-  df$tpr_at_threshold <- -1
-  df$tp_at_threshold <- -1
+  df$tpr_at_fpr <- -1
+  df$fdr_at_fpr <- -1
+  df$tp_at_fpr <- -1
+  df$fp_at_fpr <- -1
   if (nrow(df) > 1) {
-    fpr.sub <- subset(df,fpr > 0.05)
+    fpr.sub <- subset(df,fpr < 0.05)
     if (nrow(fpr.sub) > 0) {
-      # Take the first (leftmost) row with fdr > 0.05
-      row <- fpr.sub[1,]
-      df$tpr_at_threshold <- row$tpr
-      df$tp_at_threshold <- row$tp
+      # Take the last (rightmost) row with fpr < 0.05
+      row <- fpr.sub[nrow(fpr.sub),]
+      df$tpr_at_fpr <- row$tpr
+      df$fdr_at_fpr <- row$fdr
+      df$tp_at_fpr <- row$tp
+      df$fp_at_fpr <- row$fp
     }
   }
 
   df$tpr_at_fdr <- -1
+  df$fpr_at_fdr <- -1
   df$tp_at_fdr <- -1
+  df$fp_at_fdr <- -1
   if (nrow(df) > 1) {
     fpr.sub <- subset(df,fdr < 0.1)
     if (nrow(fpr.sub) > 0) {
       # Take the last (rightmost) row with fdr < 0.1
       row <- fpr.sub[nrow(fpr.sub),]
       df$tpr_at_fdr <- row$tpr
+      df$fpr_at_fdr <- row$fpr
       df$tp_at_fdr <- row$tp
+      df$fp_at_fdr <- row$fp
     }
   }
 

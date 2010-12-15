@@ -161,13 +161,31 @@ sub run_with_windows {
   my $params = $self->params;
   my $cur_params = $self->replace( $params, {} );
 
-  print "REF: ".$ref_member->stable_id."\n" if ($self->debug);
+  my $ref_seq;
+  my $ref_tx;
+  my $len;
 
-  my @seqs = $aln->each_seq;
-  my ($ref_seq) = grep { $_->id eq 'ens_'. $ref_member->taxon_id } @seqs;
-  my $ref_tx = $ref_member->get_Transcript;
+  if ($tree->isa('Bio::Tree::TreeI')) {
+    $tree = Bio::EnsEMBL::Compara::TreeUtils->from_treeI($tree);
+  }
 
-  my $len = $ref_member->seq_length;
+  if ($ref_member->isa('Bio::EnsEMBL::Compara::Member')) {
+    print "REF: ".$ref_member->stable_id."\n" if ($self->debug);
+    my @seqs = $aln->each_seq;
+    ($ref_seq) = grep { $_->id eq 'ens_'. $ref_member->taxon_id } @seqs;
+    $ref_tx = $ref_member->get_Transcript;
+  } else {
+    print "REF SEQ: $ref_member\n";
+    $ref_seq = $ref_member;
+    $ref_member = undef;
+  }
+
+  my $seq_str = $ref_seq->seq;
+  my $seq_str_nogaps = $seq_str;
+  $seq_str_nogaps =~ s/-//g;
+  $len = length($seq_str_nogaps);
+
+  my @rows;
 
   my $no_windows_yet = 1;
   for (my $i=1; $i < $len; $i += $w_step) {
@@ -179,29 +197,36 @@ sub run_with_windows {
     $no_windows_yet = 0;
     printf ">>>> PEPTIDE WINDOW: %d %d\n",$lo,$hi if ($self->debug);
 
-    my $lo_coords = $self->get_coords_from_pep_position($ref_member,$lo);
-    my $hi_coords = $self->get_coords_from_pep_position($ref_member,$hi);
+    my $cur_params = $params;
+
+    if (defined $ref_member) {
+      my $lo_coords = $self->get_coords_from_pep_position($ref_member,$lo);
+      my $hi_coords = $self->get_coords_from_pep_position($ref_member,$hi);
+      $cur_params = $self->replace($cur_params,{
+        stable_id_peptide => $ref_member->stable_id,
+        stable_id_transcript => $ref_tx->stable_id,
+        stable_id_gene => $ref_member->get_Gene->stable_id,
+        
+        hg19_chr_name => $lo_coords->{hg19_name},
+        hg18_chr_name => $lo_coords->{hg18_name},
+        hg19_window_start => $lo_coords->{hg19_pos},
+        hg18_window_start => $lo_coords->{hg18_pos},
+        hg19_window_end => $hi_coords->{hg19_pos},
+        hg18_window_end => $hi_coords->{hg18_pos},
+        gene_name => $ref_member->get_Gene->external_name,
+                     }
+        );
+    }
+
     my $aln_coord_lo = $aln->column_from_residue_number($ref_seq->id,$lo);
     my $aln_coord_hi = $aln->column_from_residue_number($ref_seq->id,$hi);
-
-    my $cur_params = $self->replace($params,{
-      stable_id_peptide => $ref_member->stable_id,
-      stable_id_transcript => $ref_tx->stable_id,
-      stable_id_gene => $ref_member->get_Gene->stable_id,
-      
+    $cur_params = $self->replace($cur_params, {
       peptide_window_start => $lo,
       peptide_window_end => $hi,
       peptide_window_width => $w_size,
       aln_window_start => $aln_coord_lo,
-      aln_window_end => $aln_coord_hi,
-      hg19_chr_name => $lo_coords->{hg19_name},
-      hg18_chr_name => $lo_coords->{hg18_name},
-      hg19_window_start => $lo_coords->{hg19_pos},
-      hg18_window_start => $lo_coords->{hg18_pos},
-      hg19_window_end => $hi_coords->{hg19_pos},
-      hg18_window_end => $hi_coords->{hg18_pos},
-      gene_name => $ref_member->get_Gene->external_name,
-                                    });
+      aln_window_end => $aln_coord_hi
+                   });
 
     foreach my $sites ($psc_hash) {
       my @window_sites = map {$sites->{$_}} keys %$sites;
@@ -223,11 +248,19 @@ sub run_with_windows {
 
     $cur_params->{data_id} = $cur_params->{node_id};
 
-    $self->store_params_in_table($self->dbc,$self->param('output_table'),$cur_params);
+    if ($self->within_hive) {
+      $self->store_params_in_table($self->dbc,$self->param('output_table'),$cur_params);
+    } else {
+      $self->hash_print($cur_params);
+      push @rows, $cur_params;
+    }
+  }
+
+  if (scalar(@rows) > 0) {
+    return @rows;
   }
 
   $self->fail_and_die("No windows covered!") if ($no_windows_yet);
-
 }
 
 sub get_table_structure {

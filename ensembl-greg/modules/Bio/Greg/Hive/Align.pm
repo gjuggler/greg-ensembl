@@ -215,10 +215,13 @@ sub align_with_prank {
   Bio::EnsEMBL::Compara::AlignUtils->dump_ungapped_seqs( $aln, $aln_file )
     ;    # Write the alignment out to file.
 
-  my $tree_file = $tmp . "tree.nh";
-  rmtree( [$tree_file] ) if ( -e $tree_file );
-  my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
-  Bio::EnsEMBL::Compara::TreeUtils->to_file( $treeI, $tree_file );
+  my $tree_file;
+  if (defined $tree) {
+    $tree_file = $tmp . "tree.nh";
+    rmtree( [$tree_file] ) if ( -e $tree_file );
+    my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
+    Bio::EnsEMBL::Compara::TreeUtils->to_file( $treeI, $tree_file );
+  }
 
   my $output_file = $tmp . "output";
 
@@ -228,13 +231,20 @@ sub align_with_prank {
   $extra_params .= ' +F '     if ( $params->{'alignment_prank_f'} );
 
   my $cmd = qq^$executable $extra_params -d=$aln_file -t=$tree_file -o=$output_file^;
+  if (!defined $tree) {
+    $cmd = qq^$executable $extra_params -d=$aln_file -o=$output_file^;
+  }
 
   $output_file .= '.1.fas';
 
   # Run the command.
-  $self->dbc->disconnect_when_inactive(1);
+  if ($self->within_hive) {
+    $self->dbc->disconnect_when_inactive(1);
+  }
   my $rc = system($cmd);
-  $self->dbc->disconnect_when_inactive(0);
+  if ($self->within_hive) {
+    $self->dbc->disconnect_when_inactive(0);
+  }
 
   unless ( $rc == 0 ) {
     print "Prank error!\n";
@@ -416,7 +426,7 @@ sub align_with_mafft {
   
   my $prefix = "export MAFFT_BINARIES=/homes/greg/lib/greg-ensembl/bin/linux64/mafft-libs;";
   if (!Bio::Greg::EslrUtils->is_ebi) {
-    $prefix = "export MAFFT_BINARIES=/nfs/users/nfs_g/gj1/bin/mafft-bins/binaries;";
+    $prefix = "export MAFFT_BINARIES=/nfs/users/nfs_g/gj1/src/greg-ensembl/bin/linux64/mafft-libs;";
   }  
 
   $cmd = $prefix . $cmd;
@@ -424,9 +434,9 @@ sub align_with_mafft {
   print $cmd."\n";
 
   # Run the command.
-  $self->dbc->disconnect_when_inactive(1);
+#  $self->dbc->disconnect_when_inactive(1);
   my $rc = system($cmd);
-  $self->dbc->disconnect_when_inactive(0);
+#  $self->dbc->disconnect_when_inactive(0);
 
   unless ( $rc == 0 ) {
     $self->throw("Alignment error!");
@@ -680,13 +690,14 @@ sub parse_and_store_alignment_into_proteintree {
 
   my $table_name = $self->param('alignment_table');
 
-  $pta->dbc->do("LOCK TABLES $table_name WRITE");
-
   #my $sth = $pta->prepare("INSERT INTO $table_name
   #      (node_id,member_id,method_link_species_set_id,cigar_line)  VALUES (?,?,?,?)");
 
+    sleep(1);
+
   # Align cigar_lines to members and store
   foreach my $member ( $tree->leaves ) {
+
     if ( !$align_hash{ $member->stable_id } ) {
       die( "Align.pm produced an empty cigar_line for " . $member->stable_id . "\n" );
     }
@@ -733,12 +744,9 @@ sub parse_and_store_alignment_into_proteintree {
     #      }
     # Do a manual insert of the *scores* into the correct score output table.
 
-    sleep(0.1);
+    sleep(1);
   }
 
-  #$sth->finish;
-
-  $pta->dbc->do("UNLOCK TABLES;");
 }
 
 1;

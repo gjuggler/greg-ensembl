@@ -12,7 +12,7 @@ if (!exists('dbname')) {
   user='slrsim'
   password='slrsim'
   userpass='slrsim:slrsim'
-} else if (exists('dbname') && dbname == 'gj1_slrsim') {
+} else if (Sys.getenv('USER') == 'gj1') {
   host = 'ens-research'
   port=3306
   user='ensro'
@@ -74,7 +74,9 @@ get.all.data = function(sites.cols=NULL,genes.cols=NULL,where=NULL) {
     'g.filtering_name',
     'g.slrsim_tree_file',
     'g.slrsim_rep',
-    'g.tree_mean_path'
+    'g.tree_mean_path',
+    'g.site_count',
+    'g.unfiltered_site_count'
     )) {
     if (!necessary %in% genes.cols) {
       genes.cols = paste(genes.cols,necessary,sep=',')

@@ -26,36 +26,38 @@ my $TREE    = "Bio::EnsEMBL::Compara::TreeUtils";
 my $ALN     = "Bio::EnsEMBL::Compara::AlignUtils";
 my $COMPARA = "Bio::EnsEMBL::Compara::ComparaUtils";
 
-if ( $ENV{'USER'} =~ /gj1/ ) {
-  Bio::EnsEMBL::Registry->load_registry_from_multiple_dbs(
-
-    {
-      -host => 'ens-livemirror',
-      -user => 'ensro',
-      #							    -verbose => 1
-    },
-#    {
-#      -host => 'ens-staging',
-#      -user => 'ensro',
-#    },
-#    {
-#      -host => 'ens-staging1',
-#      -user => 'ensro',
-#    },
-#    {
-#      -host => 'ens-staging2',
-#      -user => 'ensro',
-#    },
-    {
-      -host => 'ensdb-archive',
-      -port => 5304,
-      -user => 'ensro',
-    }
-  );
-  Bio::EnsEMBL::Registry->set_disconnect_when_inactive(1);
-} else {
-
-  #Bio::EnsEMBL::Registry->no_version_check(1);
+sub load_registry {
+  my $class = shift;
+  if ( $ENV{'USER'} =~ /gj1/ ) {
+    Bio::EnsEMBL::Registry->load_registry_from_multiple_dbs(
+      {
+        -host => 'ensdb-archive',
+        -port => 5304,
+        -user => 'ensro',
+      }
+      ,
+      {
+        -host => 'ens-livemirror',
+        -user => 'ensro',
+        #							    -verbose => 1
+      },
+      {
+        -host => 'ens-staging',
+        -user => 'ensro',
+      },
+      {
+        -host => 'ens-staging1',
+        -user => 'ensro',
+      },
+      {
+        -host => 'ens-staging2',
+        -user => 'ensro',
+      },
+      );
+    Bio::EnsEMBL::Registry->set_disconnect_when_inactive(1);
+  } else {
+    #Bio::EnsEMBL::Registry->no_version_check(1);
+  }
 }
 
 sub get_one_to_one_ortholog {
@@ -1956,7 +1958,8 @@ sub get_compara_or_genomic_aln {
     warn("Tree didn't stay the same!! before: $num_species  after: $trimmed_num_species");
     
     if ($params->{'fail_on_altered_tree'}) {
-      return;
+      print "FAILING!!!\n";
+      return undef;
     }
   }
 

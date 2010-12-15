@@ -13,13 +13,15 @@ my $TREE = 'Bio::EnsEMBL::Compara::TreeUtils';
 
 sub param_defaults {
   return {
-    output_table                           => 'stats_branch',
-    alignment_output                       => 1,
-    alignment_output_folder                => 'branch_alns_nofilter',
-    aln_type                               => 'compara',
-    likelihood_realign_with_prank          => 0,
-    likelihood_filter_triple_substitutions => 0,
-    species_taxon_ids                      => '9606, 9593, 9598, 9600, 9544, 9483'
+    output_table                        => 'stats_branch',
+    alignment_output                    => 1,
+    alignment_output_folder             => 'branch_alns_nofilter',
+    aln_type                            => 'compara',
+    quality_threshold                   => 30,
+    fail_on_altered_tree                => 1,
+    likelihood_realign_with_prank       => 0,
+    likelihood_filter_substitution_runs => 1,
+    species_taxon_ids                   => '9606, 9593, 9598, 9600, 9544, 9483'
   };
 }
 
@@ -81,7 +83,7 @@ sub run {
   $self->_get_peptides( $full_primate_tree, 9598, 'Ptro' );
 
   # Get GC content and stuff, using the human sequence.
-  #$self->collect_stats($full_tree,9606);
+  $self->collect_stats( $full_tree, 9606 );
 
   print "full primate tree: \n";
   print $full_primate_tree->newick_format . "\n";
@@ -187,6 +189,8 @@ sub collect_stats {
 
   my ($ref_member) = grep { $_->taxon_id == $taxon_id } $tree->leaves;
 
+  $self->param( 'name', $ref_member->get_Gene->external_name );
+
   my $gc = $self->gc_content($ref_member);
   $self->param( 'gc_cds', sprintf( "%.3f", $gc ) );
   my $gc3 = $self->gc3_content($ref_member);
@@ -241,7 +245,7 @@ sub get_filtered_aln {
   $self->param( 'gene_name', $gene_name );
 
   my $c_dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new(
-    -url => 'mysql://ensadmin:ensembl@ens-livemirror:3306/ensembl_compara_58' );
+    -url => 'mysql://ensadmin:ensembl@ensdb-archive:5304/ensembl_compara_58' );
   my $params = $self->params;
   my $tree_aln_obj =
     Bio::EnsEMBL::Compara::ComparaUtils->get_compara_or_genomic_aln( $c_dba, $tree, $ref_member,
@@ -269,8 +273,8 @@ sub get_filtered_aln {
   $self->param( 'orig_aln_file',   $file->{rel_file} );
 
   if ( $self->param('aln_type') =~ m/genomic/i ) {
-    $self->param( 'likelihood_realign_with_prank',          0 );
-    $self->param( 'likelihood_filter_triple_substitutions', 0 );
+    $self->param( 'likelihood_realign_with_prank',       0 );
+    $self->param( 'likelihood_filter_substitution_runs', 1 );
   }
 
   if ( $self->param('likelihood_realign_with_prank') ) {
@@ -301,31 +305,19 @@ sub get_filtered_aln {
     }
   }
 
-  if ( $self->param('likelihood_filter_triple_substitutions') ) {
+  if ( $self->param('likelihood_filter_substitution_runs') ) {
 
-    # Remove 'funky' columns with triple substitutions between close pairs of species.
-    my ($first_keeper)  = grep { $_->taxon_id == 9606 } $tree->leaves;
-    my ($second_keeper) = grep { $_->taxon_id == 9593 } $tree->leaves;
-    my ($third_keeper)  = grep { $_->taxon_id == 9598 } $tree->leaves;
+    my $masked_count =
+      Bio::EnsEMBL::Compara::AlignUtils->mask_high_mutation_windows( $aln, 30, 10, 5 );
+    $self->param( 'filtered_mut_windows', $masked_count );
 
-    if ( $first_keeper && $second_keeper ) {
-      $aln =
-        Bio::EnsEMBL::Compara::AlignUtils->remove_triple_mutated_codons( $aln, $first_keeper->name,
-        $second_keeper->name );
-    }
-    if ( $first_keeper && $third_keeper ) {
-      $aln =
-        Bio::EnsEMBL::Compara::AlignUtils->remove_triple_mutated_codons( $aln, $first_keeper->name,
-        $third_keeper->name );
-    }
-    if ( $second_keeper && $third_keeper ) {
-      $aln =
-        Bio::EnsEMBL::Compara::AlignUtils->remove_triple_mutated_codons( $aln, $second_keeper->name,
-        $third_keeper->name );
-    }
-    $file =
-      $self->save_aln( $aln,
-      { id => $aln_id, filename => $aln_id . "_final", subfolder => 'branch_alns' } );
+    $file = $self->save_aln(
+      $aln, {
+        id        => $aln_id,
+        filename  => $aln_id . "_final",
+        subfolder => $self->param('alignment_output_folder')
+      }
+    );
     $self->param( 'filtered_aln_length', $aln->length );
     $self->param( 'filtered_aln_file',   $file->{rel_file} );
   }
@@ -517,14 +509,16 @@ sub store {
     my ($gor_node)   = grep { $_->id eq $gor_name } $tree->get_nodes;
     my ($other_node) = grep { $_->id eq $other_name } $tree->get_nodes;
 
-    $self->store_subs_parameters( 'Ggor',  $gor_node->get_tag_values('substitutions') );
-    $self->store_subs_parameters( 'other', $other_node->get_tag_values('substitutions') );
+    $self->store_subs_parameters( 'Ggor', $gor_node, $gor_node->get_tag_values('substitutions') );
+    $self->store_subs_parameters( 'other', $other_node,
+      $other_node->get_tag_values('substitutions') );
   }
 }
 
 sub store_subs_parameters {
   my $self      = shift;
   my $suffix    = shift;
+  my $node      = shift;
   my $subs_hash = shift;
 
   my $scores = Bio::Greg::Codeml->get_grantham_score_hash;
@@ -533,7 +527,19 @@ sub store_subs_parameters {
   my $ds       = 0;
   my $grantham = 0;
   foreach my $key ( sort { $a <=> $b } keys %$subs_hash ) {
-    my $subst   = $subs_hash->{$key};
+    my $subst = $subs_hash->{$key};
+
+    # This will return undefined if the substitution involves Ns or stop codons.
+    my $obj = $self->extract_substitution_info(
+      $node,
+      $subst,
+      $self->param('tree'),    # Previously stored these objects in the params for safe keeping.
+      $self->param('aa_aln'),
+      $self->param('cdna_aln'),
+    );
+    next unless ( defined $obj );
+
+    $self->hash_print($subst);
     my $sub_key = $subst->{'aa_a'} . $subst->{'aa_b'};
     $grantham += $scores->{$sub_key};
     if ( $subst->{'aa_a'} ne $subst->{'aa_b'} ) {
@@ -554,6 +560,7 @@ sub get_gene_stats_def {
     node_id      => 'int',
     orig_node_id => 'string',
 
+    name         => 'char32',
     Hsap_protein => 'char16',
     Hsap_gene    => 'char16',
     Hsap_tx      => 'char16',
@@ -570,15 +577,16 @@ sub get_gene_stats_def {
     prank_aln_file      => 'string',
     filtered_aln_file   => 'string',
 
-    filtered_Hsap => 'int',
-    filtered_Ggor => 'int',
-    filtered_Ptro => 'int',
-    filtered_Ppyg => 'int',
-    filtered_Mmul => 'int',
-    filtered_Cjac => 'int',
-    filtered_Tsyr => 'int',
-    filtered_Ogar => 'int',
-    filtered_Mmur => 'int',
+    filtered_mut_windows => 'int',
+    filtered_Hsap        => 'int',
+    filtered_Ggor        => 'int',
+    filtered_Ptro        => 'int',
+    filtered_Ppyg        => 'int',
+    filtered_Mmul        => 'int',
+    filtered_Cjac        => 'int',
+    filtered_Tsyr        => 'int',
+    filtered_Ogar        => 'int',
+    filtered_Mmur        => 'int',
 
     gc_cds     => 'float',
     'gc_3'     => 'float',

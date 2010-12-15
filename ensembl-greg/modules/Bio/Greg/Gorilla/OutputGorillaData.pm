@@ -21,24 +21,15 @@ sub param_defaults {
 sub run {
   my $self = shift;
 
-  $self->export_likelihoods('lnl_c_Hsap','lnl_c_Hsap.Rdata','h');
-  $self->export_likelihoods('lnl_c_Ptro','lnl_c_Ptro.Rdata','c');
-  $self->export_likelihoods('lnl_p_Hsap','lnl_p_Hsap.Rdata','h');
-  $self->export_likelihoods('lnl_p_Ptro','lnl_p_Ptro.Rdata','c');
+#  $self->export_likelihoods('lnl_c_Hsap','lnl_c_Hsap.Rdata','h');
+#  $self->export_likelihoods('lnl_c_Ptro','lnl_c_Ptro.Rdata','c');
+#  $self->export_likelihoods('lnl_p_Hsap','lnl_p_Hsap.Rdata','h');
+#  $self->export_likelihoods('lnl_p_Ptro','lnl_p_Ptro.Rdata','c');
   $self->export_likelihoods('lnl_m_Hsap','lnl_m_Hsap.Rdata','h');
   $self->export_likelihoods('lnl_m_Ptro','lnl_m_Ptro.Rdata','c');
-  $self->export_likelihoods('lnl_mp_Hsap','lnl_mp_Hsap.Rdata','h');
-  $self->export_likelihoods('lnl_mp_Ptro','lnl_mp_Ptro.Rdata','c');
+#  $self->export_likelihoods('lnl_mp_Hsap','lnl_mp_Hsap.Rdata','h');
+#  $self->export_likelihoods('lnl_mp_Ptro','lnl_mp_Ptro.Rdata','c');
 
-  #$self->branch_enrichments('lnl','lnl.Rdata','human');
-  #$self->branch_enrichments('lnl_chimp','lnl_chimp.Rdata','chimp');
-
-  #$self->bryndis_enrichments;
-  #$self->bryndis_dup_counts;
-
-  #$self->export_counts;
-  #$self->analyze_counts;
-  #$self->get_enriched_genes;
 }
 
 sub bryndis_dup_counts {
@@ -59,76 +50,6 @@ write.csv(stats.dups,file="$bryndis_output")
   Bio::Greg::EslrUtils->run_r( $cmd, {} );
 }
 
-sub bryndis_enrichments {
-  my $self = shift;
-
-  my $folder       = $self->get_output_folder;
-  my $base         = Bio::Greg::EslrUtils->baseDirectory;
-  my $bryndis_list = "${base}/projects/gorilla/bryndis_genes.txt";
-  my $go_script    = Bio::Greg::EslrUtils->baseDirectory . "/scripts/go_enrichments.R";
-  my $eslr_script  = Bio::Greg::EslrUtils->baseDirectory . "/scripts/collect_sitewise.R";
-
-  my $cmd = qq^
-dbname = 'gj1_gor_58'
-source("${eslr_script}",echo=F)
-
-bryndis.genes <- read.csv("${bryndis_list}",header=T)
-names(bryndis.genes) = c('gorilla_gene')
-stats.dups <- get.vector(con,"SELECT * from stats_dups;")
-stats.branch <- get.vector(con,"SELECT * from stats_branch;")
-
-source("${go_script}")
-
-stats.branch[,'stable_id'] = stats.branch[,'human_protein']
-interesting.genes = merge(bryndis.genes,stats.branch,by='gorilla_gene')
-go.df = go.hs
-
-all.ids = stats.branch[,'stable_id']
-interesting.ids = interesting.genes[,'stable_id']
-
-get.df.subset = function(subset) {
-  print(paste("size: ",nrow(subset)))
-  return(get.enrich.by.subset(
-    subset = subset,
-    all = all.ids,
-    go.df = go.df,
-    go.field.name = 'stable_id',
-    nodeSize = 3
-  ))
-}
-
-get.go.data = function(subset,all) {
-  geneSelectionFun = function(score){return(score >= 1)}
-
-  go.vec = strsplit(go.df[,'go'],split=",",fixed=T)
-  names(go.vec) = go.df[,'stable_id']
-
-  scores = as.integer(all %in% subset)
-  names(scores) = all
-
-  GOdata <- new("topGOdata",
-    ontology = 'BP',
-    allGenes = scores,
-    annot = annFUN.gene2GO,
-    gene2GO = go.vec,
-    geneSelectionFun = geneSelectionFun,
-    nodeSize = 1,
-    description = ''
-  )
-  return(GOdata)
-}
-
-go.data = get.go.data(interesting.ids,all.ids)
-enrichment.table = get.df.subset(interesting.ids)
-
-save(go.data,interesting.genes,enrichment.table,file="${folder}/bryndis_enrichments.Rdata")
-write.csv(enrichment.table,file="${folder}/bryndis_enrichments.csv",row.names=F)
-
-^;
-
-  my $params = {};
-  Bio::Greg::EslrUtils->run_r( $cmd, $params );
-}
 
 sub export_likelihoods {
   my $self            = shift;
@@ -154,13 +75,6 @@ dbname="${dbname}"
 source("${collect_script}");
 
 stats.lnl <- get.vector(con,"SELECT * from $table;")
-stats.lnl[,'gc_3'] <- NULL
-stats.lnl[,'gc_cds'] <- NULL
-stats.lnl[,'gc_genomic'] <- NULL
-stats.dups <- get.vector(con,"SELECT * from stats_dups;")
-stats.dups <- subset(stats.dups,select=c('data_id','name','gc_3','gc_cds','gc_genomic'))
-stats.lnl = merge(stats.lnl,stats.dups,by='data_id')
-
 gor.subs <- get.vector(con,"SELECT * from ${table}_subs;")
 
 print(str(stats.lnl))
