@@ -4,17 +4,12 @@ use warnings;
 use strict;
 use DBI;
 use Getopt::Long;
-use Bio::EnsEMBL::Registry;
-use Bio::EnsEMBL::Compara::DBSQL::DBAdaptor;
-use Bio::EnsEMBL::Hive::DBSQL::DBAdaptor;
-use Bio::EnsEMBL::Compara::ComparaUtils;
-use Bio::Greg::EslrUtils;
 use File::Path;
 use File::Basename;
-
+use Bio::EnsEMBL::Compara::ComparaUtils;
 use Bio::Greg::Hive::ComparaHiveLoaderUtils;
 
-my ($url) = 'mysql://ensadmin:ensembl@ens-research/gj1_2xmc_57';
+my ($url) = 'mysql://ensadmin:ensembl@ens-research/gj1_2x';
 GetOptions('url=s' => \$url);
 
 my $h = new Bio::Greg::Hive::ComparaHiveLoaderUtils;
@@ -24,8 +19,8 @@ my $clean = 1;
 
 # Clean up our mess.
 if ($clean) {
-  $h->clean_hive_tables;
   $h->clean_compara_analysis_tables;
+  $h->clean_hive_tables;
 }
 
 # Define parameters (species sets, filtering options, etc).

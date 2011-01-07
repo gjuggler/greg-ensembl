@@ -20,7 +20,6 @@ get.numbers <- function(sites) {
     positive.n = nrow(positive.genes)
   )
   print(df)
-
 }
 
 classify.genes <- function(sites) {
@@ -37,8 +36,13 @@ classify.genes <- function(sites) {
     
     n <- nrow(gene.sites)
 
+    n.genes <- length(unique(gene.sites$node_id))
+    n.domains <- length(unique(gene.sites$domain))
+
     asdf <- data.frame(
       n = n,
+      n.genes = n.genes,
+      n.domains = n.domains,
       pos.n = nrow(pos.sites),
       neg.n = nrow(neg.sites),
       neutral.n = nrow(neutral.sites),
@@ -47,11 +51,16 @@ classify.genes <- function(sites) {
       neutral.f = nrow(neutral.sites)/n,
       dnds = mean.dnds
     )
-#    print(asdf)
     return(asdf)
   }
   
   library(plyr)
   gene.types <- ddply(sites,.(node_id),classify.gene)
-  return(gene.types)
+
+  domain.sites <- subset(sites,!is.na(domain))
+  domain.types <- ddply(domain.sites,.(domain),classify.gene)
+
+  assign('domain.types',domain.types,envir=.GlobalEnv)
+  assign('gene.types',gene.types,envir=.GlobalEnv)
 }
+
