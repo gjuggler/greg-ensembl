@@ -15,7 +15,7 @@ use File::Basename;
 use Bio::Greg::Hive::HiveLoaderUtils;
 use Bio::Greg::Hive::ComparaHiveLoaderUtils;
 
-my $url = 'mysql://ensadmin:ensembl@ens-research:3306/gj1_hiv_58';
+my $url = 'mysql://ensadmin:ensembl@ens-research:3306/gj1_hiv_58_1000';
 my $clean = 1;
 
 my $h = new Bio::Greg::Hive::ComparaHiveLoaderUtils;
@@ -43,13 +43,10 @@ $h->connect_analysis("SplitParams","WindowAnalysis");
 
 $h->wait_for("OutputData",["NodeSets","SplitParams","WindowAnalysis"]);
 
-add_all_genes();
-
-#my @genes = gene_list();
-#@genes = @genes[1..30];
+my @genes = gene_list();
+#@genes = @genes[1..10];
 #@genes = grep {$_ =~ m/(ENSG00000197123|ENSG00000119977)/gi} @genes;
-#$h->add_genes_to_analysis("NodeSets",\@genes);
-#add_all_nodes();
+$h->add_genes_to_analysis("NodeSets",\@genes);
 
 sub add_all_genes {
   my $cmd = "SELECT stable_id FROM member m join protein_tree_member ptm USING(member_id) WHERE taxon_id=9606 and source_name='ENSEMBLPEP'";
@@ -118,19 +115,10 @@ sub parameter_sets {
         parameter_set_shortname => 'p_'.$aln_short,
         quality_threshold => 30,
         keep_species => $primates,
-        aln_type => $aln_type
+        aln_type => $aln_type,
+        window_sizes => '9999'
       };
       $h->add_parameter_set($params);
-
-#      $params = {
-#        parameter_set_name => "Mammals".' '.$aln_type,
-#        parameter_set_shortname => 'm_'.$aln_short,
-#        quality_threshold => 30,
-#        keep_species => $mammals,
-#        aln_type => $aln_type
-#      };
-#      $h->add_parameter_set($params);
-      
   }
 }
 

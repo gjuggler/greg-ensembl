@@ -15,7 +15,7 @@ use File::Basename;
 use Bio::Greg::Hive::HiveLoaderUtils;
 use Bio::Greg::Hive::ComparaHiveLoaderUtils;
 
-my $url = 'mysql://ensadmin:ensembl@ens-research:3306/gj1_hiv_58';
+my $url = 'mysql://ensadmin:ensembl@ens-research:3306/gj1_hiv_50_57';
 my $clean = 1;
 
 my $h = new Bio::Greg::Hive::ComparaHiveLoaderUtils;
@@ -43,13 +43,8 @@ $h->connect_analysis("SplitParams","WindowAnalysis");
 
 $h->wait_for("OutputData",["NodeSets","SplitParams","WindowAnalysis"]);
 
-add_all_genes();
-
-#my @genes = gene_list();
-#@genes = @genes[1..30];
-#@genes = grep {$_ =~ m/(ENSG00000197123|ENSG00000119977)/gi} @genes;
-#$h->add_genes_to_analysis("NodeSets",\@genes);
-#add_all_nodes();
+my @genes = gene_list();
+$h->add_genes_to_analysis("NodeSets",\@genes);
 
 sub add_all_genes {
   my $cmd = "SELECT stable_id FROM member m join protein_tree_member ptm USING(member_id) WHERE taxon_id=9606 and source_name='ENSEMBLPEP'";
@@ -75,7 +70,7 @@ sub add_all_nodes {
 
 
 sub gene_list {
-  open INPUT, "<scale_up_genes.txt";
+  open INPUT, "<50_manual_genes.txt";
   my @lines = <INPUT>;
   close INPUT;
   return @lines;
@@ -118,19 +113,10 @@ sub parameter_sets {
         parameter_set_shortname => 'p_'.$aln_short,
         quality_threshold => 30,
         keep_species => $primates,
-        aln_type => $aln_type
+        aln_type => $aln_type,
+        window_sizes => '9999'
       };
       $h->add_parameter_set($params);
-
-#      $params = {
-#        parameter_set_name => "Mammals".' '.$aln_type,
-#        parameter_set_shortname => 'm_'.$aln_short,
-#        quality_threshold => 30,
-#        keep_species => $mammals,
-#        aln_type => $aln_type
-#      };
-#      $h->add_parameter_set($params);
-      
   }
 }
 
@@ -188,7 +174,7 @@ sub output_data {
 sub clade_taxon_ids {
   my $clade = shift || 1;
 
-  my $dba = $h->dba;
+  my $dba = $h->compara_dba;
   my @genomes = Bio::EnsEMBL::Compara::ComparaUtils->get_genomes_within_clade($dba,$clade);
   my @taxon_ids = map {$_->taxon_id} @genomes;
   return @taxon_ids;
@@ -196,7 +182,7 @@ sub clade_taxon_ids {
 sub coverage_taxon_ids {
   my $coverage = shift;
   
-  my $dba = $h->dba;
+  my $dba = $h->compara_dba;
   my @output;
   my @all_gdb = Bio::EnsEMBL::Compara::ComparaUtils->get_genomes_within_clade($dba,1);
   foreach my $gdb (@all_gdb) {
