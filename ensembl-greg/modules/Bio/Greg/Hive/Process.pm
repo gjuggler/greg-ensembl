@@ -202,15 +202,10 @@ sub compara_dba {
       or do {
       print "ERROR: $@\n";
       print " >> No compara in hive DB -- falling back to ens-livemirror!!\n";
-#      Bio::EnsEMBL::Registry->load_registry_from_multiple_dbs( {
-#          -host => 'ens-livemirror',
-#          -user => 'ensro',
-#          -verbose => 1,
-#        }
-#      );
       $self->load_registry();
       $compara_dba = Bio::EnsEMBL::Registry->get_DBAdaptor( 'multi', 'compara' );
-      print "$compara_dba\n";
+      
+      printf " >> Using Compara DB at [%s/%s]\n",$compara_dba->dbc->host,$compara_dba->dbc->dbname;
       #      $compara_dba->disconnect_when_inactive(1);
       };
     $self->{_compara_dba} = $compara_dba;

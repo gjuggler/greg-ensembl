@@ -34,7 +34,8 @@ sub copy_tree {
   my $root;
 
   foreach my $node ($tree->nodes) {
-    $node_hash->{$node} = new $node;
+    my $cls = ref($node);
+    $node_hash->{$node} = new $cls;
   }
   
   foreach my $node ($tree->nodes) {
@@ -61,6 +62,7 @@ sub copy_tree {
       # You'd think we should just use $node->taxon_id to set the new taxon ID here,
       # but Compara keeps us on our toes by instead requiring us to manually set a tagvalue.
       # W.T.F.
+      $new_n->taxon_id($node->taxon_id) if ($node->can('taxon_id') && $new_n->can('taxon_id'));
       $new_n->store_tag('taxon_id',$node->taxon_id) if ($node->can('taxon_id')); 
     }
     
@@ -213,7 +215,7 @@ sub has_ancestor_node_id {
 sub to_treeI {
   my $class = shift;
   my $tree = shift;
-  my $format = shift || 'no_zero_branch_length';
+  my $format = shift;
 
   my $newick = "";
   if (!ref $tree) {
@@ -228,13 +230,12 @@ sub to_treeI {
   } elsif ($tree->isa($NSET)) {
     $newick = $tree->newick_format($format);
     $newick .= ';' unless ($newick =~ m/;/);
-#    print $newick."\n";
+    warn("Temporary Newick for NSET to TREEI conversion: [$newick]\n");
   }
   
   open(my $fake_fh, "+<", \$newick);
   my $treein = new Bio::TreeIO
     (-fh => $fake_fh,
-#     -verbose => 1,
      -format => 'newick');
   my $treeI = $treein->next_tree;
   $treein->close;
@@ -1054,8 +1055,6 @@ sub pretty_print {
   my $params = shift;
 
   my $treeI = $class->to_treeI($tree);
-
-  
 
 }
 

@@ -624,7 +624,7 @@ sub get_seq_with_id {
     return $seq if ($seq->id eq $id);
   }
   
-  #print("aln_get_seq_with_id: No sequence with id $id found!\n");
+  #warn("aln_get_seq_with_id: No sequence with id $id found!\n");
   return undef;
 }
 
@@ -720,6 +720,7 @@ sub flatten_to_sequence {
   my $id = shift;
   
   my $ref_seq = $aln->get_seq_by_id($id);
+  $self->warn("Seq [$id] not found!") unless (defined $ref_seq);
   my $display_id = $ref_seq->display_id;
   my $seq_str = $ref_seq->seq;
     
@@ -1105,6 +1106,7 @@ sub sort_by_tree {
     my $name = $leaf->id;
     #print "$name\n";
     my $seq = $class->get_seq_with_id($aln,$name);
+    warn("Seq with id [$name] not found in aln!\n") unless (defined $seq);
     $new_aln->add_seq($seq);
   }
   return $new_aln;

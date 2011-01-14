@@ -41,9 +41,8 @@ sub run {
   my $self = shift;
 
   my $params = $self->params;
-  print "Getting tree\n";
   my $tree   = $self->get_tree;
-  print $tree->newick_format."\n";
+  print $tree->newick_format."\n" if ($self->debug);
   
   $params->{'fail_on_altered_tree'} = 0;
 
@@ -55,9 +54,10 @@ sub run {
     my $gn = $self->param('gene_id');
     my ($gene_name_member) = grep { $_->get_Gene->external_name eq $gn || $_->stable_id eq $gn || $_->gene_member->stable_id eq $gn || $_->get_Transcript->stable_id eq $gn} @members;
     $ref_member = $gene_name_member if (defined $gene_name_member && $gene_name_member->taxon_id == $self->param('reference_species'));
-    print "Reference member found by gene ID [$gn]!\n" if ($self->debug);
+    print "Reference member [".$ref_member->stable_id."] found by gene ID [$gn]!\n" if ($self->debug);
   }
   if (!defined $ref_member) {
+    warn("Good reference member not found -- just using the first one");
     $ref_member = $members[0];
   }
 
@@ -67,8 +67,7 @@ sub run {
   my $gene_name = $ref_member->get_Gene->external_name || $ref_member->gene_member->stable_id;
   $self->param('gene_name',$gene_name);
 
-  my $c_dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new(
-    -url => 'mysql://ensadmin:ensembl@ensdb-archive:5304/ensembl_compara_58' );
+  my $c_dba = $self->compara_dba;
   my $params = $self->params;
 
   my $tree_aln_obj =
@@ -101,7 +100,8 @@ sub run {
 
   my $aln_type = $self->param('aln_type');
   my $p_set_id = $self->param('parameter_set_id');
-  my $subfolder = "primate_hiv_alns/$p_short/";
+  my $p_short = $self->data_label;
+  my $subfolder = "alns/${p_short}/";
 
   # Output the tree and aln.
   my $aln_filename = $gene_name . "_" . $self->data_label;
@@ -174,7 +174,6 @@ sub run_with_windows {
   my $ref_member = shift;
   my $psc_hash = shift;
 
-  print "$psc_hash\n";
   my $params = $self->params;
   my $cur_params = $self->replace( $params, {} );
 
@@ -187,13 +186,23 @@ sub run_with_windows {
   }
 
   if ($ref_member->isa('Bio::EnsEMBL::Compara::Member')) {
-    print "REF: ".$ref_member->stable_id."\n" if ($self->debug);
+    print "REF MEMBER: ".$ref_member->stable_id."\n" if ($self->debug);
     my @seqs = $aln->each_seq;
     my $taxon_id = $ref_member->taxon_id;
-    ($ref_seq) = grep { $_->id =~ m/$taxon_id/ } @seqs;
+    ($ref_seq) = grep { $_->id =~ m/$taxon_id/i } @seqs;
+
+    if (!defined $ref_seq) {
+      # Remember, we connect the genomic aln and member by genome_db name now.
+      my $name = $ref_member->genome_db->name;
+      ($ref_seq) = grep { $_->id =~ m/$name/i } @seqs;      
+    }
+    if (!defined $ref_seq) {
+      # Remember, we connect the genomic aln and member by genome_db name now.
+      my $name = $ref_member->name;
+      ($ref_seq) = grep { $_->id =~ m/$name/i } @seqs;      
+    }
     $ref_tx = $ref_member->get_Transcript;
   } else {
-    print "REF SEQ: $ref_member\n";
     $ref_seq = $ref_member;
     $ref_member = undef;
   }
@@ -218,11 +227,17 @@ sub run_with_windows {
     my $cur_params = $params;
 
     if (defined $ref_member) {
+      # Re-fetch a fresh reference member from the database.
+      my $ref_member_id = $self->param('ref_member_id');
+      print "ref_member_id: [$ref_member_id]\n" if ($self->debug);
+      my $mba        = $self->compara_dba->get_MemberAdaptor;
+      $ref_member = $mba->fetch_by_source_stable_id( undef, $ref_member_id );
       my $lo_coords = $self->get_coords_from_pep_position($ref_member,$lo);
       my $hi_coords = $self->get_coords_from_pep_position($ref_member,$hi);
+
       $cur_params = $self->replace($cur_params,{
         stable_id_peptide => $ref_member->stable_id,
-        stable_id_transcript => $ref_tx->stable_id,
+        stable_id_transcript => $ref_member->get_Transcript->stable_id,
         stable_id_gene => $ref_member->get_Gene->stable_id,
         gene_name => $ref_member->get_Gene->external_name,
                                    }

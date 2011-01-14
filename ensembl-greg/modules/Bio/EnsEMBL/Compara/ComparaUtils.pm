@@ -34,13 +34,14 @@ sub load_registry {
         -host => 'ensdb-archive',
         -port => 5304,
         -user => 'ensro',
-      }
-      ,
-      {
-        -host => 'ens-livemirror',
-        -user => 'ensro',
         #-verbose => 1
       }
+      ,
+#      {
+#        -host => 'ens-livemirror',
+#        -user => 'ensro',
+#        #-verbose => 1
+#      },
       );
     Bio::EnsEMBL::Registry->set_disconnect_when_inactive(1);
   } else {
@@ -1026,6 +1027,7 @@ sub restrict_aln_to_tree {
   foreach my $leaf ( $tree->leaves ) {
     $ok_id_hash->{ $leaf->stable_id } = 1;
     my $taxon = $leaf->taxon;
+    $ok_id_hash->{ $leaf->genome_db->name }    = 1;
     $ok_id_hash->{ $taxon->taxon_id }    = 1;
     $ok_id_hash->{ $taxon->common_name } = 1;
     $ok_id_hash->{ $taxon->short_name }  = 1;
@@ -1809,11 +1811,14 @@ sub restrict_tree_to_aln {
 
   my $used_seqs;
 
+  Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $aln, { width => 150,full => 1});
+  
   my @keepers;
   foreach my $leaf ( $tree->leaves ) {
-
     # Try binomial, taxon_id, and alias.
     my $seq = Bio::EnsEMBL::Compara::AlignUtils->get_seq_with_id( $aln, $leaf->stable_id );
+    $seq = Bio::EnsEMBL::Compara::AlignUtils->get_seq_with_id( $aln, $leaf->genome_db->name )
+      if ( !defined $seq );
     $seq = Bio::EnsEMBL::Compara::AlignUtils->get_seq_with_id( $aln, $leaf->taxon->binomial )
       if ( !defined $seq );
     $seq = Bio::EnsEMBL::Compara::AlignUtils->get_seq_with_id( $aln, $leaf->taxon->ensembl_alias )
@@ -1821,8 +1826,10 @@ sub restrict_tree_to_aln {
     $seq = Bio::EnsEMBL::Compara::AlignUtils->get_seq_with_id( $aln, $leaf->taxon->taxon_id )
       if ( !defined $seq );
     next if ($used_seqs->{$seq});
-    $used_seqs->{$seq} = $seq;
-    push @keepers, $leaf if ( defined $seq );
+    if (defined $seq) {
+      $used_seqs->{$seq} = $seq;
+      push @keepers, $leaf;
+    }
   }
   my $pruned_tree =
     Bio::EnsEMBL::Compara::TreeUtils->extract_subtree_from_leaf_objects( $tree, \@keepers );
@@ -1889,9 +1896,6 @@ sub get_compara_or_genomic_aln {
     }
     $aln = $cdna;
     $aln = Bio::EnsEMBL::Compara::ComparaUtils->restrict_aln_to_tree( $aln, $tree );
-
-    #print "Genomic align [$aln_type]:\n";
-    Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $aln, { width => 150,full => 1});
     $tree = Bio::EnsEMBL::Compara::ComparaUtils->restrict_tree_to_aln( $tree, $aln );
 
     #map {print "   [".$_."]\n";} $tree->leaves;
@@ -1913,6 +1917,8 @@ sub get_compara_or_genomic_aln {
       my $val    = $values[0];
       $extra_info->{$key} = $val->value;
     }
+    
+    # /end Compara and genomic alignment collection.
 
     $aln = Bio::EnsEMBL::Compara::AlignUtils->remove_blank_columns_in_threes($aln);
     Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $aln, { width => 150, full => 1 } );
@@ -1931,7 +1937,7 @@ sub get_compara_or_genomic_aln {
 
   my $seen_nodes;
   foreach my $node ($tree->nodes) {
-    my $seen_count;
+    my $seen_count = 0;
     if ($node->is_leaf) {
       if (defined $seen_nodes->{$node->taxon_id}) {
         $seen_count = $seen_nodes->{$node->taxon_id};
@@ -1952,6 +1958,7 @@ sub get_compara_or_genomic_aln {
     
     if ($node->is_leaf) {
       my $aln_map;
+      $aln_map->{ $node->genome_db->name } = $ens_string;
       $aln_map->{ $node->taxon->binomial } = $ens_string;
       $aln_map->{ $node->stable_id } = $ens_string;
       $aln = Bio::EnsEMBL::Compara::AlignUtils->translate_ids( $aln, $aln_map );
@@ -2001,10 +2008,7 @@ sub get_compara_or_genomic_aln {
     print "After flattening: " . $aln->length . "\n";
   }
 
-  print $tree->newick_format."\n";
-
   $aln = Bio::EnsEMBL::Compara::AlignUtils->sort_by_tree( $aln, $tree );
-
   my $pep_aln = Bio::EnsEMBL::Compara::AlignUtils->translate($aln);
 
   return {
@@ -2268,6 +2272,7 @@ sub genomic_aln_for_transcript {
   }
   my $type      = $mlss->method_link_type;
   my $mlss_name = $mlss->name;
+  $params->{debug} = 1;
   print "Fetching genomic alignments [$mlss_name]...\n" if ( $params->{debug} );
 
   my $slice_a = $tx->adaptor->db->get_SliceAdaptor;
@@ -2291,8 +2296,7 @@ sub genomic_aln_for_transcript {
     foreach my $a_s_slice ( @{ $align_slice->get_all_Slices } ) {
       my $gdb  = $a_s_slice->genome_db;
       my $name = $gdb->name;
-      #print "$name\n";
-      if ( $name ne 'Ancestral sequences' ) {
+      if ( $name !~ m/ancestral/gi ) {
         $all_species->{$name} = 1;
         $seq_hash->{$name}    = '' if ( !defined $seq_hash->{$name} );
         $qual_hash->{$name}   = [] if ( !defined $qual_hash->{$name} );
@@ -2353,7 +2357,7 @@ sub genomic_aln_for_transcript {
         #printf "%-20s %-6s %-6s\n",$name,$aln_start,$aln_end;
 
         if ( $a_s_slice->isa("Bio::EnsEMBL::Compara::AlignSlice::Slice")
-          && $name ne 'Ancestral sequences' ) {
+          && $name !~ m/ancestral/gi ) {
           my $slice_a =
             Bio::EnsEMBL::Registry->get_adaptor( $gdb->taxon->ensembl_alias, 'core', 'slice' );
 
@@ -2481,7 +2485,7 @@ sub genomic_aln_for_transcript {
           }
         }
 
-        if ( $name eq 'Ancestral sequences' ) {
+        if ( $name =~ m/ancestral/gi ) {
 
           # Try to get the tree which this ancestral sequence represents...
           # See ensembl-webcode/modules/EnsEMBL/Web/Component/Compara_Alignments.pm
@@ -2499,26 +2503,30 @@ sub genomic_aln_for_transcript {
 
             # Gotta create a dummy copy of the genome db object too.
             my $gdb = $a_s_slice->genome_db;
-            $gdb = new $gdb;
-            $gdb->name( 'Anc.' . join( '', @leaf_initials ) );
-            $a_s_slice->genome_db($gdb);
+#            $gdb = new $gdb;
+#            $gdb->name( 'Anc.' . join( '', @leaf_initials ) );
+#            $a_s_slice->genome_db($gdb);
           }
         }
       }
     }
 
     my $sa = $align_slice->get_SimpleAlign();
-    #Bio::EnsEMBL::Compara::AlignUtils->pretty_print($sa,{full => 1});
+    my @remove_seqs = grep {$_->id =~ m/ancestral/i} $sa->each_seq;
+    foreach my $seq (@remove_seqs) {
+      $sa = Bio::EnsEMBL::Compara::AlignUtils->remove_seq_from_aln($sa,$seq->id);
+    }
+    Bio::EnsEMBL::Compara::AlignUtils->pretty_print($sa,{full => 1});
 
     my $ann = $sa->annotation;
     $ann->{_genomic_coords} = {};
 
     # Store the genomic coordinates for each species at each position (ya this is wasteful,
-    # but I think it's the only way...
+    # but I think it's the only way...)
     foreach my $a_s_slice ( @{ $align_slice->get_all_Slices } ) {
       next unless ( defined $a_s_slice->genome_db->taxon_id );
       my $gdb = $a_s_slice->genome_db;
-      next if ( $gdb->name =~ m/ancestral/i );
+      next if ( $gdb->name =~ m/ancestral/gi );
       my $name = $gdb->taxon->short_name;
       foreach my $i ( 1 .. $sa->length ) {
         my ( $slice, $pos ) = $a_s_slice->get_original_seq_region_position($i);
@@ -2545,6 +2553,7 @@ sub genomic_aln_for_transcript {
       }
     }
 
+    Bio::EnsEMBL::Compara::AlignUtils->pretty_print($sa,{full=>1,length=>150});
     push @alns, $sa;
     $cur_aln_col += $sa->length;
   }
