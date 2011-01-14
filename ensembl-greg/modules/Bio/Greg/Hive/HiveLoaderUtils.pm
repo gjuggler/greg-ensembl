@@ -65,13 +65,11 @@ sub init {
   $self->dba($dba);
   $self->hive_dba($hive_dba);
 
-  # Init hive and compara tables if necessary.
+  # Init hive tables if necessary.
   my $base_folder = Bio::Greg::EslrUtils->baseDirectory;
-  my $compara_sql = "$base_folder/ensembl-greg/sql/compara-basic-tables.sql";
   my $hive_sql    = "$base_folder/ensembl-greg/sql/hive-basic-tables.sql";
 
   my $args = Bio::Greg::EslrUtils->mysqlArgsFromConnection($dba->dbc);
-  `mysql $args < $compara_sql`;
   `mysql $args < $hive_sql`;
 
 }

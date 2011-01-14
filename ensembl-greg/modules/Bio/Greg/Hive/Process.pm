@@ -174,7 +174,19 @@ sub pretty_print {
   my $aln    = shift;
   my $params = shift || {};
 
-  Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $aln, $params );
+  print ref($aln)."\n";
+
+  if (ref($aln) =~ m/align/i) {
+    Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $aln, $params );
+  } elsif (ref($aln) =~ m/proteintree/i) {
+    $aln->print_tree;
+  }
+}
+
+sub load_registry {
+  my $self = shift;
+
+  Bio::EnsEMBL::Compara::ComparaUtils->load_registry();
 }
 
 sub compara_dba {
@@ -190,14 +202,15 @@ sub compara_dba {
       or do {
       print "ERROR: $@\n";
       print " >> No compara in hive DB -- falling back to ens-livemirror!!\n";
-      Bio::EnsEMBL::Registry->load_registry_from_multiple_dbs( {
-          -host => 'ens-livemirror',
-          -user => 'ensro',
-          #-verbose => 1,
-        }
-      );
+#      Bio::EnsEMBL::Registry->load_registry_from_multiple_dbs( {
+#          -host => 'ens-livemirror',
+#          -user => 'ensro',
+#          -verbose => 1,
+#        }
+#      );
+      $self->load_registry();
       $compara_dba = Bio::EnsEMBL::Registry->get_DBAdaptor( 'multi', 'compara' );
-
+      print "$compara_dba\n";
       #      $compara_dba->disconnect_when_inactive(1);
       };
     $self->{_compara_dba} = $compara_dba;
@@ -323,6 +336,35 @@ sub data_id {
   my $data_id = 0;
   $data_id = $self->param('data_id') if ( defined $self->param('data_id') );
   return $data_id;
+}
+
+sub stable_id {
+  my $self = shift;
+  my $tree = shift;
+  my $s_id = $self->_get_pep($tree)->stable_id;
+  return $s_id || 'unknown_gene';
+}
+
+sub gene_name {
+  my $self = shift;
+  my $tree = shift;
+  my $name = $self->_get_pep($tree)->display_label;
+  return $name || 'unknown_gene';
+}
+
+sub _get_pep {
+  my $self = shift;
+  my $tree = shift;
+
+  $tree = $self->get_tree unless (defined $tree);
+
+  # Try human first.
+  my $pep;
+  ($pep) = grep {$_->taxon_id == 9606} $tree->leaves;
+  if (!defined $pep) {
+    ($pep) = $tree->leaves;
+  }
+  return $pep;
 }
 
 sub parameter_set_id {

@@ -182,8 +182,15 @@ sub genomic_gc_content {
 
   my $gene = $member->get_Gene;
   my $slice = $gene->slice;
+  my $full_chromosome = $slice->seq_region_slice;
 
-  my $seq = $slice->seq;
+  my $start = $gene->seq_region_start;
+  my $end = $gene->seq_region_end;
+  my $strand = $gene->seq_region_strand;
+
+  my $segment = $full_chromosome->sub_Slice($start,$end,$strand);
+
+  my $seq = $segment->seq;
 
   $seq =~ s/[-nx]//gi;
   my $total_len = length($seq);
@@ -647,6 +654,11 @@ sub get_coords_from_pep_position {
   my $dba   = Bio::EnsEMBL::Registry->get_DBAdaptor( $alias, 'core' );
   my $asma  = $dba->get_AssemblyMapperAdaptor;
   my $csa   = $dba->get_CoordSystemAdaptor;
+
+  if ($member->taxon_id != 9606) {
+    return {
+    };
+  }
 
   my $new_cs = $csa->fetch_by_name('chromosome');
   my $old_cs = $csa->fetch_by_name( 'chromosome', 'NCBI36' );

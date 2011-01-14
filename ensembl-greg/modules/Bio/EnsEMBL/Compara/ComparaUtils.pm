@@ -39,20 +39,8 @@ sub load_registry {
       {
         -host => 'ens-livemirror',
         -user => 'ensro',
-        #							    -verbose => 1
-      },
-      {
-        -host => 'ens-staging',
-        -user => 'ensro',
-      },
-      {
-        -host => 'ens-staging1',
-        -user => 'ensro',
-      },
-      {
-        -host => 'ens-staging2',
-        -user => 'ensro',
-      },
+        #-verbose => 1
+      }
       );
     Bio::EnsEMBL::Registry->set_disconnect_when_inactive(1);
   } else {
@@ -380,8 +368,8 @@ sub fetch_masked_alignment {
 
   #  print "$tree\n";
   my $dbc = $tree->adaptor->dbc;
-  my $ps_params = $class->load_params_from_param_set( $dbc, $params->{'parameter_set_id'} );
-  $params = $class->replace_params( $params, $ps_params );
+#  my $ps_params = $class->load_params_from_param_set( $dbc, $params->{'parameter_set_id'} );
+#  $params = $class->replace_params( $params, $ps_params );
 
   my $aln;
   $aln = $cdna_aln if ($cdna_option);
@@ -1908,8 +1896,6 @@ sub get_compara_or_genomic_aln {
 
     #map {print "   [".$_."]\n";} $tree->leaves;
   } else {
-
-    # Align with Prank to try and de -align incorrectly called exons.
     $params->{alignment_score_filtering}  = 0;
     $params->{sequence_quality_filtering} = 0;
     $params->{quality_threshold}          = $quality_threshold;
@@ -1917,6 +1903,7 @@ sub get_compara_or_genomic_aln {
     my $cdna = $tree->get_SimpleAlign( -cdna => 1 );
     my $aa = $tree->get_SimpleAlign();
 
+    $aln = $cdna;
     $aln = $class->fetch_masked_alignment( $aa, $cdna, $tree, $params, 1 );
 
     # Collect alignment annotations right after getting the masked aln.
@@ -1938,16 +1925,43 @@ sub get_compara_or_genomic_aln {
     }
 
     $class->hash_print($extra_info);
+
+    $tree = Bio::EnsEMBL::Compara::ComparaUtils->restrict_tree_to_aln( $tree, $aln );
   }
 
-  my $map;
-  map { $map->{ $_->taxon->binomial } = 'ens_' . $_->taxon_id } $tree->leaves;
-  map { $map->{ $_->stable_id } = 'ens_' . $_->taxon_id } $tree->leaves;
-  $aln = Bio::EnsEMBL::Compara::AlignUtils->translate_ids( $aln, $map );
+  my $seen_nodes;
+  foreach my $node ($tree->nodes) {
+    my $seen_count;
+    if ($node->is_leaf) {
+      if (defined $seen_nodes->{$node->taxon_id}) {
+        $seen_count = $seen_nodes->{$node->taxon_id};
+        $seen_nodes->{$node->taxon_id}++;
+      } else {
+        $seen_count = 0;
+        $seen_nodes->{$node->taxon_id} = 1;
+      }
+    }
+    
+    my $ens_string;
+    if ($node->is_leaf) {
+      $ens_string = 'ens_' . $node->taxon_id . '_' . $seen_count;
+    } else {
+      $ens_string = 'ens_' . $node->node_id . '_' . $seen_count;
+    }
+    print "$ens_string\n";
+    
+    if ($node->is_leaf) {
+      my $aln_map;
+      $aln_map->{ $node->taxon->binomial } = $ens_string;
+      $aln_map->{ $node->stable_id } = $ens_string;
+      $aln = Bio::EnsEMBL::Compara::AlignUtils->translate_ids( $aln, $aln_map );
+      $node->name($ens_string);
+    }
 
-  my $tree_map;
-  map { $tree_map->{ $_->node_id } = 'ens_' . $_->taxon_id } $tree->nodes;
-  $tree = Bio::EnsEMBL::Compara::TreeUtils->translate_ids( $tree, $tree_map );
+    my $tree_map;
+    $tree_map->{$node->node_id} = $ens_string;
+    $tree = Bio::EnsEMBL::Compara::TreeUtils->translate_ids( $tree, $tree_map );
+  }
 
   if ( scalar( $tree->leaves ) < 2 ) {
     return;
@@ -1978,7 +1992,7 @@ sub get_compara_or_genomic_aln {
   # Flatten and filter genomic aligns.
   if ( $aln_type =~ m/genomic/i ) {
     print "Before flattening: " . $aln->length . "\n";
-    $aln = Bio::EnsEMBL::Compara::AlignUtils->flatten_to_sequence( $aln, 'ens_9606' );
+    $aln = Bio::EnsEMBL::Compara::AlignUtils->flatten_to_sequence( $aln, $ref_member->name);
     $aln = Bio::EnsEMBL::Compara::AlignUtils->filter_stop_codons($aln);
     $aln = Bio::EnsEMBL::Compara::AlignUtils->ensure_multiple_of_three($aln);    
     if ( Bio::EnsEMBL::Compara::AlignUtils->has_stop_codon($aln) ) {
@@ -1988,6 +2002,7 @@ sub get_compara_or_genomic_aln {
   }
 
   print $tree->newick_format."\n";
+
   $aln = Bio::EnsEMBL::Compara::AlignUtils->sort_by_tree( $aln, $tree );
 
   my $pep_aln = Bio::EnsEMBL::Compara::AlignUtils->translate($aln);
@@ -2205,6 +2220,22 @@ sub genomic_aln_for_member {
   my $ref_member  = shift;
   my $params      = shift;
 
+  my $mirror_dba = $compara_dba;
+  my $mba        = $mirror_dba->get_MemberAdaptor;
+
+  my $tx;
+  $ref_member = $mba->fetch_by_source_stable_id( undef, $ref_member->stable_id );
+  $tx = $ref_member->get_Transcript;
+
+  return $class->genomic_aln_for_transcript($compara_dba,$tx,$params);
+}
+
+sub genomic_aln_for_transcript {
+  my $class       = shift;
+  my $compara_dba = shift;
+  my $tx  = shift;
+  my $params      = shift;
+
   my $debug = $params->{debug};
   $debug = 0 unless ( defined $debug );
 
@@ -2213,9 +2244,6 @@ sub genomic_aln_for_member {
     unless ( defined $quality_threshold );
 
   my $mirror_dba = $compara_dba;
-  my $mba        = $mirror_dba->get_MemberAdaptor;
-  my $gat_a      = $mirror_dba->get_GenomicAlignTreeAdaptor;
-  my $gab_a      = $mirror_dba->get_GenomicAlignBlockAdaptor;
   my $as_a       = $mirror_dba->get_AlignSliceAdaptor;
   my $mlss_a     = $mirror_dba->get_MethodLinkSpeciesSetAdaptor;
 
@@ -2228,15 +2256,20 @@ sub genomic_aln_for_member {
   } else {
     my $species_set = 'mammals';
     $species_set = $params->{species_set} if ( defined $params->{species_set} );
-    $mlss = $mlss_a->fetch_by_method_link_type_species_set_name( 'EPO', $species_set );
+    if ($mlss_a->can('fetch_by_method_link_type_species_set_name')) {
+      $mlss = $mlss_a->fetch_by_method_link_type_species_set_name( 'EPO', $species_set );
+    } else {      
+      my $mlss_list = $mlss_a->fetch_all_by_method_link_type('EPO');
+      foreach my $cur_mlss (@$mlss_list) {
+        my $name = $cur_mlss->name;
+        $mlss = $cur_mlss if ($name =~ m/$species_set/gi);
+      }
+    }
   }
   my $type      = $mlss->method_link_type;
   my $mlss_name = $mlss->name;
   print "Fetching genomic alignments [$mlss_name]...\n" if ( $params->{debug} );
 
-  my $tx;
-  $ref_member = $mba->fetch_by_source_stable_id( undef, $ref_member->stable_id );
-  $tx = $ref_member->get_Transcript;
   my $slice_a = $tx->adaptor->db->get_SliceAdaptor;
 
   my @exons = @{ $tx->get_all_translateable_Exons };
@@ -2258,6 +2291,7 @@ sub genomic_aln_for_member {
     foreach my $a_s_slice ( @{ $align_slice->get_all_Slices } ) {
       my $gdb  = $a_s_slice->genome_db;
       my $name = $gdb->name;
+      #print "$name\n";
       if ( $name ne 'Ancestral sequences' ) {
         $all_species->{$name} = 1;
         $seq_hash->{$name}    = '' if ( !defined $seq_hash->{$name} );
@@ -2271,7 +2305,7 @@ sub genomic_aln_for_member {
   foreach my $exon (@exons) {
     $exon_i++;
     my $slice = $exon->slice;
-    print $slice->seq_region_name . " " . $exon->stable_id." ".$exon->start . " " . $exon->end . "\n";
+    #print $slice->seq_region_name . " " . $exon->stable_id." ".$exon->start . " " . $exon->end . "\n";
 
     my $start     = $exon->coding_region_start($tx);
     my $end       = $exon->coding_region_end($tx);
@@ -2316,7 +2350,7 @@ sub genomic_aln_for_member {
         my $gdb       = $a_s_slice->genome_db;
         my $name      = $gdb->name;
         $gdb_hash->{$name} = $gdb;
-        printf "%-20s %-6s %-6s\n",$name,$aln_start,$aln_end;
+        #printf "%-20s %-6s %-6s\n",$name,$aln_start,$aln_end;
 
         if ( $a_s_slice->isa("Bio::EnsEMBL::Compara::AlignSlice::Slice")
           && $name ne 'Ancestral sequences' ) {

@@ -111,14 +111,14 @@ sub run {
   if ( scalar(@leaves) < $self->param('sitewise_minimum_leaf_count') ) {
     my $value = sprintf "Too small (%d < %d)", scalar(@leaves),
       $self->param('sitewise_minimum_leaf_count');
-    $self->store_tag( "slr_skipped", $value );
+#    $self->store_tag( "slr_skipped", $value );
     return;
   } elsif ( scalar(@leaves) > 300 ) {
     my $value = sprintf "Too big (%d > %d)", scalar(@leaves), 300;
-    $self->store_tag( "slr_skipped", $value );
+#    $self->store_tag( "slr_skipped", $value );
     return;
   } elsif ( $self->check_tree_aln < 0 ) {
-    $self->store_tag( "slr_skipped", "Tree or align doesn't look good!" );
+#    $self->store_tag( "slr_skipped", "Tree or align doesn't look good!" );
     print "Skipping: tree or align doesn't look good!\n";
     return;
   }
@@ -145,7 +145,7 @@ sub run {
       eval { $self->run_with_params( $self->params, $tree ); };
       if ($@) {
         print "ERROR - GIVING up! \n";
-        $self->store_tag( 'slr_error', 1 );
+#        $self->store_tag( 'slr_error', 1 );
         $self->fail_and_die;
         sleep(2);
       }
@@ -207,13 +207,12 @@ sub run_with_params {
   } elsif ( $action =~ m/wobble/i ) {
     $self->param( 'slr_wobble', 0 );
     my $results_nowobble = $self->run_wobble( $tree, $input_cdna, $self->params );
-    $self->store_tag( "lnl_nowobble", $results_nowobble->{'lnL'} );
-
+#    $self->store_tag( "lnl_nowobble", $results_nowobble->{'lnL'} );
     sleep(2);
 
     $self->param( 'slr_wobble', 1 );
     my $results_wobble = $self->run_wobble( $tree, $input_cdna, $self->params );
-    $self->store_tag( "lnl_wobble", $results_wobble->{'lnL'} );
+#    $self->store_tag( "lnl_wobble", $results_wobble->{'lnL'} );
   } elsif ( $action =~ m/hyphy_dnds/i ) {
     $self->run_hyphy( $tree, $input_cdna, $self->params );
   } elsif ( $action =~ m/xrate_indels/i ) {
@@ -282,6 +281,7 @@ sub run_hyphy {
   }
 
   my $codon_model = $self->param('hyphy_codon_model');
+  $codon_model = 'mg94' unless (defined $codon_model);
   my $model_bf    = "${hyphy_base}/${codon_model}.bf";
   $batch_string = replace_string( $batch_string, '[MODEL_BF]', $model_bf );
 
@@ -311,9 +311,13 @@ sub run_hyphy {
 
   print "$omega_lo $omega $omega_hi\n";
 
-  $self->store_tag( "hyphy_dnds",    $omega );
-  $self->store_tag( "hyphy_dnds_lo", $omega_lo );
-  $self->store_tag( "hyphy_dnds_hi", $omega_hi );
+#  $self->store_tag( "hyphy_dnds",    $omega );
+#  $self->store_tag( "hyphy_dnds_lo", $omega_lo );
+#  $self->store_tag( "hyphy_dnds_hi", $omega_hi );
+
+  $self->param('hyphy_dnds',$omega);
+  $self->param('hyphy_dnds_lo',$omega_lo);
+  $self->param('hyphy_dnds_hi',$omega_hi);
 
   chdir($cwd);
 
@@ -331,8 +335,8 @@ sub run_indelign {
 
   print "ins: $ins_rate del: $del_rate\n";
 
-  $self->store_tag( "indelign_ins", $ins_rate );
-  $self->store_tag( "indelign_del", $del_rate );
+#  $self->store_tag( "indelign_ins", $ins_rate );
+#  $self->store_tag( "indelign_del", $del_rate );
 }
 
 sub run_xrate_indels {
@@ -399,8 +403,8 @@ sub run_xrate_indels {
 
   print "lambda: $lambda mu: $mu\n";
 
-  $self->store_tag( "xrate_ins", $lambda );
-  $self->store_tag( "xrate_del", $mu );
+#  $self->store_tag( "xrate_ins", $lambda );
+#  $self->store_tag( "xrate_del", $mu );
 
   #print "@results\n";
 }
@@ -561,7 +565,9 @@ sub run_sitewise_dNdS {
   my $cdna_aln = shift;
   my $params   = shift;
 
-  $tree = Bio::EnsEMBL::Compara::TreeUtils->from_treeI($tree);
+  if ($tree->isa("Bio::Tree::TreeI")) {
+    $tree = Bio::EnsEMBL::Compara::TreeUtils->from_treeI($tree);
+  }
   $tree = Bio::EnsEMBL::Compara::TreeUtils->unroot($tree);
   my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
 
@@ -699,9 +705,9 @@ sub run_sitewise_dNdS {
   $self->param($lnl_key, $results->{lnL});
   
   if ($self->within_hive) {
-    $self->store_tag( $kappa_key, $results->{'kappa'} );
-    $self->store_tag( $omega_key, $results->{'omega'} );
-    $self->store_tag( $lnl_key,   $results->{'lnL'} );
+#    $self->store_tag( $kappa_key, $results->{'kappa'} );
+#    $self->store_tag( $omega_key, $results->{'omega'} );
+#    $self->store_tag( $lnl_key,   $results->{'lnL'} );
   }
 
   # Store results in the table if desired.
@@ -741,7 +747,7 @@ sub run_sitewise_dNdS {
   # Store SLR tree action.
   if ( $params->{sitewise_store_opt_tree} ) {
     my $tree_key = "slr_tree";
-    $self->store_tag( $tree_key, $new_pt->newick_format );
+#    $self->store_tag( $tree_key, $new_pt->newick_format );
   }
 
   print "RETURNING RESULTS!\n";
@@ -894,7 +900,8 @@ sub run_paml {
       Bio::Greg::Codeml->NSsites_ratio_test( $treeI, $input_cdna, $model_a, $model_b,
       $self->worker_temp_directory );
     my $test_label = sprintf( "PAML LRT M%s-M%s", $model_a, $model_b );
-    $self->store_tag( $test_label, $twice_lnL );
+    $self->param($test_label,$twice_lnL);
+#    $self->store_tag( $test_label, $twice_lnL );
   }
 
   if ( $self->param('analysis_action') =~ m/sitewise/i ) {
