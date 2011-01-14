@@ -6,7 +6,7 @@ use Getopt::Long;
 use Bio::EnsEMBL::Compara::ComparaUtils;
 use Bio::Greg::Hive::ComparaHiveLoaderUtils;
 
-my $url = 'mysql://ensadmin:ensembl@ens-research:3306/gj1_gor_58';
+my $url = 'mysql://ensadmin:ensembl@ens-research:3306/gj1_gor2';
 my $clean = 1;
 
 my $h = new Bio::Greg::Hive::ComparaHiveLoaderUtils;
@@ -18,9 +18,6 @@ if ($clean) {
   $h->clean_hive_tables;
 }
 
-# Define parameters (species sets, filtering options, etc).
-parameter_sets();
-
 # Node sets.
 node_sets();
 
@@ -30,45 +27,38 @@ split_by_subtrees();
 paml_omegas();
 ### End genomewide omegas.
 
-### Duplication counts track.
-#collect_duplications();
-### End duplication counts.
-
 ### Branch-model tests track.
 filter_one_to_one();
-#count_sites();
-#count_sites_outgroup();
 #lnl_c();
 #lnl_p();
 lnl_m();
 #lnl_mp();
-collect_go();
+#lnl_nf();
 ### End branch-model tests.
 
 ### Collect everything at the end. Run this one off-hive with an empty input_id
 output_gorilla_data();
 
-# Connect the dots.
+map_gorilla_subs();
+$h->add_inputs_to_analysis("MapGorillaSubs",[{}]);  
+$h->connect_analysis("MapGorillaSubs","MapGorillaSubs",99);
+
 ### Genomewide omega track.
-#$h->connect_analysis("NodeSets","TreeStats",1);
 # Add a single trigger job to SplitBySubtrees.
-#$h->add_inputs_to_analysis("SplitBySubtrees",[{}]);  
-#$h->wait_for("SplitBySubtrees",["NodeSets","TreeStats"]);
-#$h->connect_analysis("SplitBySubtrees","PamlOmegas",1);
-###
-### Duplication counts track.
-#$h->connect_analysis("NodeSets","CollectDuplications",1);
-###
+$h->add_inputs_to_analysis("SplitBySubtrees",[{}]);  
+$h->wait_for("SplitBySubtrees",["NodeSets"]);
+$h->connect_analysis("SplitBySubtrees","PamlOmegas",1);
+
 ### Branch models track.
 $h->connect_analysis("NodeSets","FilterOneToOne",1);
 #$h->connect_analysis("FilterOneToOne","lnl_c",1);
 #$h->connect_analysis("FilterOneToOne","lnl_p",1);
 $h->connect_analysis("FilterOneToOne","lnl_m",1);
 #$h->connect_analysis("FilterOneToOne","lnl_mp",1);
-$h->connect_analysis("NodeSets","CollectGo",1);
+#$h->connect_analysis("FilterOneToOne","lnl_mf",1);
 
-add_all_nodes();
-#add_genes();
+#add_all_nodes();
+add_genes();
 
 sub add_genes {
   my @genes = ();
@@ -86,114 +76,6 @@ sub add_all_nodes {
   my @nodes = _select_node_ids($cmd);
   my $logic_name = "NodeSets";
   _add_nodes_to_analysis($logic_name,\@nodes);
-}
-
-sub parameter_sets {
-  my $params;
-  my $base_params={};
-
-  my @all_arr = clade_taxon_ids();
-  my @mammals_arr = clade_taxon_ids("Eutheria");
-  my @primates_arr = clade_taxon_ids("Primates");
-  my @homininae_arr = clade_taxon_ids("Homininae");
-  my @hominidae_arr = clade_taxon_ids("Hominidae");
-
-  my $everything = join(",",clade_taxon_ids());
-
-  my $primates = join(",",clade_taxon_ids("Primates"));
-  my $homininae = join(",",clade_taxon_ids("Homininae"));
-  my $hominidae = join(",",clade_taxon_ids("Hominidae"));
-  my $non_homininae = join(",",subtract(\@primates_arr,\@homininae_arr));
-  my $non_hominidae = join(",",subtract(\@primates_arr,\@hominidae_arr));
-  my $non_gorilla = join(",",subtract(\@hominidae_arr,[9593]));
-  my $simiiformes = join(",",clade_taxon_ids("Simiiformes"));
-  my $haplorrhini = join(",",clade_taxon_ids("Haplorrhini"));
-
-  my $glires = join(",",clade_taxon_ids("Glires"));
-  my $laurasiatheria = join(",",clade_taxon_ids("Laurasiatheria"));
-  my $afrotheria = join(",",clade_taxon_ids("Afrotheria"));
-
-  my $mammals = join(",",clade_taxon_ids("Eutheria"));
-
-  my $non_primates = join(",",subtract(\@mammals_arr,\@primates_arr));
- 
- $params = {
-    parameter_set_name => "Homininae",
-    parameter_set_shortname => 'hmn',
-    keep_species => $homininae
-  };
-  $h->add_parameter_set($params);
-
-  $params = {
-    parameter_set_name => "Hominidae",
-    parameter_set_shortname => 'hmd',
-    keep_species => $hominidae
-  };
-  $h->add_parameter_set($params);
-
-  $params = {
-    parameter_set_name => "NonGorillaHominidae",
-    parameter_set_shortname => 'nongor',
-    keep_species => $non_gorilla
-  };
-  $h->add_parameter_set($params);
-
-  $params = {
-    parameter_set_name => "NonHominidPrimates",
-    parameter_set_shortname => 'nonhom',
-    keep_species => $non_hominidae
-  };
-  $h->add_parameter_set($params);
-
-  $params = {
-    parameter_set_name => "Haplorrhini",
-    parameter_set_shortname => 'hpl',
-    keep_species => $haplorrhini
-  };
-  $h->add_parameter_set($params);
-
-  $params = {
-    parameter_set_name => "Primates",
-    parameter_set_shortname => 'p',
-    keep_species => $primates
-  };
-  $h->add_parameter_set($params);
- 
-  $params = {
-    parameter_set_name => "Glires",
-    parameter_set_shortname => 'g',
-    keep_species => $glires
-  };
-  $h->add_parameter_set($params);
-
-  $params = {
-    parameter_set_name => "Laurasiatheria",
-    parameter_set_shortname => 'l',
-    keep_species => $laurasiatheria
-  };
-  $h->add_parameter_set($params);
-
-  $params = {
-    parameter_set_name => "Afrotheria",
-    parameter_set_shortname => 'a',
-    keep_species => $afrotheria
-  };
-  $h->add_parameter_set($params);
-
-  $params = {
-    parameter_set_name => "Mammals",
-    parameter_set_shortname => 'm',
-    keep_species => $mammals
-  };
-  $h->add_parameter_set($params);
-
-  $params = {
-    parameter_set_name => "NonPrimateMammals",
-    parameter_set_shortname => 'nonprm',
-    keep_species => $non_primates
-  };
-  $h->add_parameter_set($params);
-
 }
 
 sub node_sets {
@@ -254,34 +136,12 @@ sub filter_one_to_one {
   $h->create_analysis($logic_name,$module,$params,150,1);
 }
 
-sub count_sites {
-  my $logic_name = "CountSites";
-  my $module = "Bio::Greg::Gorilla::CountSites";
-  my $params = {
-    gorilla_count_species => '9593,9598,9606',
-    counts_sites_table => 'counts_sites',
-    counts_genes_table => 'counts_genes'
-  };
-  $h->create_analysis($logic_name,$module,$params,50,1);
-}
-
-sub count_sites_outgroup {
-  my $logic_name = "CountSitesOutgroup";
-  my $module = "Bio::Greg::Gorilla::CountSites";
-  my $params = {
-    gorilla_count_species => '9593,9598,9606,9600',
-    counts_sites_table => 'outgroup_sites',
-    counts_genes_table => 'outgroup_genes'
-  };
-  $h->create_analysis($logic_name,$module,$params,50,1);
-}
-
 sub lnl_c {
   my $logic_name = "lnl_c";
   my $module = "Bio::Greg::Gorilla::LikelihoodTests";
   my $params = {
     output_table => 'lnl_c',
-    alignment_output_folder => 'alns_c',
+    aln_type => 'compara'
   };
   $h->create_analysis($logic_name,$module,$params,300,1);
 }
@@ -292,7 +152,6 @@ sub lnl_p {
   my $params = {
     output_table => 'lnl_p',
     aln_type => 'genomic_primates',
-    alignment_output_folder => 'alns_p',
   };
   $h->create_analysis($logic_name,$module,$params,300,1);
 }
@@ -303,7 +162,6 @@ sub lnl_m {
   my $params = {
     output_table => 'lnl_m',
     aln_type => 'genomic_mammals',
-    alignment_output_folder => 'alns_m',
   };
   $h->create_analysis($logic_name,$module,$params,300,1);
 }
@@ -313,20 +171,22 @@ sub lnl_mp {
   my $module = "Bio::Greg::Gorilla::LikelihoodTests";
   my $params = {
     output_table => 'lnl_mp',
-    aln_type => 'compara',
-    alignment_output_folder => 'alns_mp',
+    aln_type => 'genomic_mammals',
     species_taxon_ids => '9606, 9593, 9598, 9600, 9544, 9483, 9478, 30608, 30611'
   };
   $h->create_analysis($logic_name,$module,$params,300,1);
 }
 
-sub collect_go {
-  my $logic_name = "CollectGo";
-  my $module = "Bio::Greg::Hive::CollectGO";
+sub lnl_nf {
+  my $logic_name = "lnl_nf";
+  my $module = "Bio::Greg::Gorilla::LikelihoodTests";
   my $params = {
-    go_taxon_ids => '9606,9593',
+    output_table => 'lnl_nf',
+    aln_type => 'genomic_mammals',
+    quality_threshold => 0,
+    likelihood_filter_substitution_runs => 0
   };
-  $h->create_analysis($logic_name,$module,$params,200,1);
+  $h->create_analysis($logic_name,$module,$params,300,1);
 }
 
 sub output_gorilla_data {
@@ -336,6 +196,15 @@ sub output_gorilla_data {
   };
   $h->create_analysis($logic_name,$module,$params,1,1);
 }
+
+sub map_gorilla_subs {
+  my $logic_name = "MapGorillaSubs";
+  my $module = "Bio::Greg::Gorilla::MapGorillaSubs";
+  my $params = {
+  };
+  $h->create_analysis($logic_name,$module,$params,100,1);
+}
+
 
 ########*********########
 #-------~~~~~~~~~-------#
