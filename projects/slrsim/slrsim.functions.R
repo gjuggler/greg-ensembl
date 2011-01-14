@@ -36,15 +36,13 @@ paper.table <- function(df) {
 
     auc      = rrow$auc,
     `fpr_tpr`    = rrow$tpr_at_fpr,
-    `fpr_fdr`    = rrow$tpr_at_fpr,
-    `fpr_tp`    = rrow$tp_at_fpr,
-    `fpr_fp`    = rrow$fp_at_fpr,
-
+#    `fpr_fdr`    = rrow$tpr_at_fpr,
+#    `fpr_tp`    = rrow$tp_at_fpr,
+#    `fpr_fp`    = rrow$fp_at_fpr,
     `fdr_tpr`    = rrow$tpr_at_fdr,
-    `fdr_fpr`    = rrow$fpr_at_fdr,
-    `fdr_tp`    = rrow$tp_at_fdr,
-    `fdr_fp`    = rrow$fp_at_fdr,
-
+#    `fdr_fpr`    = rrow$fpr_at_fdr,
+#    `fdr_tp`    = rrow$tp_at_fdr,
+#    `fdr_fp`    = rrow$fp_at_fdr,
     `cor`   = cor
   )
 
@@ -56,6 +54,8 @@ paper.table <- function(df) {
   ret.df <- ret.df[with(ret.df, order(tree,aligner,length,indel,filter)),]
   return(ret.df)
 }
+
+
 
 fig.1.summary <- function(df,thresh) {
   
@@ -264,4 +264,16 @@ df.stats = function(df,
     tn = neg_neg,
     cor = cor
   ))
+}
+
+format.numeric.df <- function(x,digits=3) {  
+  nums <- unlist(lapply(x,is.double))
+  print(nums)
+  for (col in names(x)) {
+    if (nums[col] == TRUE) {
+      x[,col] <- formatC(x[,col],digits=digits,format='fg')
+    }
+  }
+
+  return(x)
 }
