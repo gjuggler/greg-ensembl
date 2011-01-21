@@ -138,7 +138,7 @@ sub get_sequence_region {
 
   my $position_hash = $self->position_hash;
 
-  my $index_freq = 1_000_000;
+  my $index_freq = 100_000;
   my $position;
   my $orig_key = $key;
   if ($start > $index_freq && $use_subindex) {
@@ -149,6 +149,7 @@ sub get_sequence_region {
     #print "New id:[$new_id]\n";
     $position = $position_hash->{$new_id};
     if (defined $position) {
+      #print "Used sub-index!\n";
       #print "New start: $start_from $position\n";
       $start = $start - $start_from;
       $end = $end - $start_from;
@@ -168,10 +169,12 @@ sub get_sequence_region {
   my $line;
   my $seq = "";
   my @toks;
+  my $skip_count = 0;
   while ( $line = <$filehandle> ) {
     chomp $line;
     if ( $line =~ /^>/ ) {
       next if ( $seq eq "" );
+      #print $skip_count."\n";
       return $seq;
     }
 
@@ -187,8 +190,9 @@ sub get_sequence_region {
     for ( my $i = 0 ; $i < scalar(@toks) ; $i++ ) {
       next if ( $toks[$i] eq ' ' || $toks[$i] eq '' );
       $current_position++;
-
+      $skip_count++;
       if ( $current_position == $end ) {
+        #print "$skip_count\n";
         return $seq . $toks[$i];
       }
       if ( $current_position >= $start ) {
@@ -254,7 +258,7 @@ sub index_fasta {
   my $sep = $params->{sep};
   $sep = '' unless ( defined $sep );
   my $index_spacing = $params->{index_spacing};
-  $index_spacing = 1_000_000 unless ( defined $index_spacing );
+  $index_spacing = 100_000 unless ( defined $index_spacing );
 
   printf "Indexing fasta file %s...\n", $file_in;
   print "  (with subseqs each $index_spacing)\n" if ($index_subseqs);

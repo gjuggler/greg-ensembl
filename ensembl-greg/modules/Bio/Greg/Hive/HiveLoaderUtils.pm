@@ -71,7 +71,16 @@ sub init {
 
   my $args = Bio::Greg::EslrUtils->mysqlArgsFromConnection($dba->dbc);
   `mysql $args < $hive_sql`;
+}
 
+sub init_compara_tables {
+  my $self = shift;
+
+  my $base_folder = Bio::Greg::EslrUtils->baseDirectory;
+  my $compara_sql    = "$base_folder/ensembl-greg/sql/compara-basic-tables.sql";
+
+  my $args = Bio::Greg::EslrUtils->mysqlArgsFromConnection($self->dba->dbc);
+  `mysql $args < $compara_sql`;  
 }
 
 sub add_job_to_analysis {

@@ -58,8 +58,7 @@ sub genes_table_structure {
     # Comes from on-the-fly calculations on sites data.
     f_neg => 'float',
     f_pos => 'float',
-    f_neut => 'float',
-    
+    f_neut => 'float',    
 
     unique_keys => 'node_id,parameter_set_id'
   };
@@ -156,30 +155,6 @@ sub run {
 
 }
 
-sub calculate_fractions {
-  my $self = shift;
-  my $csv_file = shift;
-
-  return unless (-e $csv_file);
-
-  my $cmd = qq^
-  sites <- read.csv("$csv_file")
-
-  pos.sites <- subset(sites,omega > 1 & pval < 0.01)
-  neg.sites <- subset(sites,omega < 1 & pval < 0.01)
-  neutral.sites <- subset(sites,pval > 0.01)
-
-  n <- nrow(sites)
-  if (n == 0) { n <- 1 }
-
-  print(c(nrow(pos.sites)/n,nrow(neg.sites)/n,nrow(neutral.sites)/n))
-^;
-  my @values = Bio::Greg::EslrUtils->get_r_values($cmd,$self->worker_temp_directory);
-  
-  $self->param('f_pos',$values[0]);
-  $self->param('f_neg',$values[1]);
-  $self->param('f_neut',$values[2]);
-}
 
 sub save_file {
   my $self = shift;

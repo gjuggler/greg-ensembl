@@ -693,16 +693,9 @@ sub run_sitewise_dNdS {
   my $results = $self->parse_slr_output(\@output,$params);
   my $new_pt = $results->{slr_tree};
 
-  # Store the results in the database.
-  my $kappa_key = "slr_kappa";
-  my $omega_key = "slr_omega";
-  my $lnl_key   = "slr_lnL";
-
-  print "$omega_key " . $results->{omega} . "\n";
-
-  $self->param($kappa_key, $results->{kappa});
-  $self->param($omega_key, $results->{omega});
-  $self->param($lnl_key, $results->{lnL});
+  $self->param('slr_kappa', $results->{kappa});
+  $self->param('slr_dnds', $results->{omega});
+  $self->param('slr_lnL', $results->{lnL});
   
   if ($self->within_hive) {
 #    $self->store_tag( $kappa_key, $results->{'kappa'} );
@@ -800,10 +793,12 @@ sub parse_slr_output {
     my @sites;
     my $type = '';
     my $note = '';
+    my $random = '';
     foreach my $line (@output) {
       $_ = $line;
       $type = '';
       $note = '';
+      $random = '';
       chomp $_;
 
       #      print $_."\n";
@@ -820,9 +815,11 @@ sub parse_slr_output {
         $note = 'single_char';
       } elsif (/Synonymous/i) {
         $note = 'synonymous';
-      } elsif (/\!/)
+      }
+
+      if (/\!/)
       { # Make sure to parse the random note last, because it's sometimes shown alongside other notes.
-        $note = 'random';
+        $random = 'random';
       }
 
       # Parse the pos/sel test results.
@@ -844,7 +841,7 @@ sub parse_slr_output {
         $type = 'negative1';
       }
       if (/^\s+(\d+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)/) {
-        my @arr = ( $1, $2, $3, $4, $5, $6, $7, $8, $9, 10, $type, $note );
+        my @arr = ( $1, $2, $3, $4, $5, $6, $7, $8, $9, 10, $type, $note, $random );
         push @sites, \@arr;
 
         #print join(",",@arr)."\n";
@@ -854,6 +851,10 @@ sub parse_slr_output {
     }
     $results->{'sites'} = \@sites;
   }
+
+  $self->param('slr_kappa',$results->{kappa});
+  $self->param('slr_dnds',$results->{omega});
+  $self->param('slr_lnL',$results->{lnL});
 
   return $results;
 }
@@ -977,11 +978,11 @@ sub results_to_psc_hash {
   my $aln_aa = shift;
 
   my $psc_hash;
-  foreach my $site ( @{ $results->{'sites'} } ) {
+  foreach my $site_obj ( @{ $results->{'sites'} } ) {
     my (
       $site,     $neutral, $optimal,  $omega,   $lower, $upper,
-      $lrt_stat, $pval,    $adj_pval, $q_value, $type,  $note
-    ) = @{$site};
+      $lrt_stat, $pval,    $adj_pval, $q_value, $type,  $note, $random
+    ) = @{$site_obj};
     my $nongaps = Bio::EnsEMBL::Compara::AlignUtils->get_nongaps_at_column( $aln_aa, $site );
 
     my $obj = {
@@ -992,7 +993,8 @@ sub results_to_psc_hash {
       omega_upper => $upper,
       lrt_stat => $lrt_stat,
       type => $type,
-      note => $note
+      note => $note,
+      random => $random
     };
 
     $psc_hash->{$site} = $obj;

@@ -2,16 +2,9 @@
 
 use warnings;
 use strict;
-use DBI;
-use Getopt::Long;
-use File::Path;
-use File::Basename;
-use Bio::EnsEMBL::Compara::ComparaUtils;
 use Bio::Greg::Hive::ComparaHiveLoaderUtils;
 
-my ($url) = 'mysql://ensadmin:ensembl@ens-research/gj1_2x_60';
-GetOptions('url=s' => \$url);
-
+my $url = 'mysql://ensadmin:ensembl@ens-research/gj1_2x_60';
 my $h = new Bio::Greg::Hive::ComparaHiveLoaderUtils;
 $h->init($url);
 
@@ -21,6 +14,7 @@ my $clean = 1;
 if ($clean) {
   $h->clean_compara_analysis_tables;
   $h->clean_hive_tables;
+  $h->truncate_tables([qw(meta genes_g genes_c sites_g sites_c)]);
 }
 
 # Define parameters (species sets, filtering options, etc).
@@ -35,28 +29,19 @@ output_data();
 # Connect the dots.
 $h->connect_analysis("NodeSets","SplitByParameterSet");
 $h->connect_analysis("SplitByParameterSet","SitewiseMammals");
-$h->connect_analysis("SitewiseMammals","OutputMammalsData");
 $h->wait_for("OutputMammalsData",["NodeSets","SplitByParameterSet","SitewiseMammals"]);
 
-# Add some genes.
-add_all_genes();
+# Add some trees.
+add_all_nodes();
 
-sub add_all_genes {
-  my $cmd = "SELECT stable_id FROM member m join protein_tree_member ptm USING(member_id) WHERE taxon_id=9606 and source_name='ENSEMBLPEP'";
+sub add_all_nodes {
+  my $cmd = "SELECT node_id FROM protein_tree_node WHERE parent_id=1;";
+  my @nodes = $h->select_node_ids($cmd);
 
-  my $dbc = $h->dbc;
-  my $sth = $dbc->prepare($cmd);
-  $sth->execute();
-  my $array_ref = $sth->fetchall_arrayref( [0] );
-  my @protein_ids = @{$array_ref};
-  @protein_ids =
-    map { @{$_}[0] } @protein_ids;    # Some weird mappings to unpack the numbers from the arrayrefs.
-  $sth->finish;
+  # TEMP: Only add the first N.
+  #@nodes = @nodes[60..70];
 
-  # TEMP: Only add the first 50.
-  @protein_ids = @protein_ids[1..50];
-
-  $h->add_genes_to_analysis("NodeSets",\@protein_ids);
+  $h->add_nodes_to_analysis('NodeSets',\@nodes);
 }
 
 ### Process definitions.
@@ -66,7 +51,7 @@ sub node_sets {
   my $logic_name = "NodeSets";
   my $module = "Bio::Greg::Hive::NodeSets";
   my $params = {
-    flow_node_set => 'MammalPlusOutgroup'
+    flow_node_set => 'Mammals'
   };
   my $analysis_id = $h->create_analysis($logic_name,$module,$params,50,1);
 }
@@ -78,7 +63,7 @@ sub split_by_parameter_set {
   my $params = {
     flow_parameter_sets => 'all'
   };
-  $h->create_analysis($logic_name,$module,$params,100,1);
+  $h->create_analysis($logic_name,$module,$params,150,1);
 }
 
 sub sitewise_mammals {
@@ -94,7 +79,7 @@ sub output_data {
   my $module = "Bio::Greg::Mammals::OutputMammalsData";
   my $params = {
   };
-  $h->create_analysis($logic_name,$module,$params,50,1);
+  $h->create_analysis($logic_name,$module,$params,1,1);
   $h->add_job_to_analysis($logic_name,{});
 }
 
@@ -103,7 +88,6 @@ sub output_data {
 
 sub parameter_sets {
   my $params;
-  my $base_params={};
 
   # 2xmammals off-limits species.
   our @off = (
@@ -129,7 +113,6 @@ sub parameter_sets {
       # This is finicky: we need to call the "db_adaptor" method to get the Bio::EnsEMBL::DBSQL::DBAdaptor object, and then the meta container.
       my $meta = $gdb->db_adaptor->get_MetaContainer;
       my $str = @{$meta->list_value_by_key('assembly.coverage_depth')}[0];
-      print "Coverage: $str\n";
       push @output, $gdb->taxon_id if ($str eq $coverage);
     }
     return subtract(\@output,\@off);
@@ -173,17 +156,18 @@ sub parameter_sets {
   my $hi_coverage = join(",",subtract(\@mamms,\@hi_coverage_arr));
   my $lo_coverage = join(",",subtract(\@mamms,\@lo_coverage_arr));
 
-  my $params;
-  foreach my $aln_type ('genomic_all', 'compara') {
-    my $aln_short = 'gm';
+  foreach my $aln_type ('compara','genomic_all') {
+    my $aln_short = 'm';
     $aln_short = 'c' if ($aln_type eq 'compara');
     $aln_short = 'g' if ($aln_type eq 'genomic_all');
 
     $params = {
       parameter_set_name => "Mammals".' '.$aln_type,
-      parameter_set_shortname => 'm_',
+      parameter_set_shortname => 'm_'.$aln_short,
       quality_threshold => 30,
       keep_species => $mammals,
+      genes_table => 'genes_'.$aln_short,
+      sites_table => 'sites_'.$aln_short,
       aln_type => $aln_type,
       rename_sequences_by_taxon => 0
     };

@@ -13,7 +13,7 @@ SKIP_DISTRIBUTION_CLASSES = 1;
 fscanf (stdin, "String",  alignmentFilename);
 fscanf (stdin, "String",  treeFilename);
 
-fprintf(stdout,"\n",alignmentFilename,"\n",treeFilename,"\n");
+fprintf(stdout,"\nAlignment:",alignmentFilename,"\nTree:",treeFilename,"\n");
 DataSet codon_ds = ReadDataFile (alignmentFilename);
 DataSetFilter codon_dsf = CreateFilter (codon_ds,3,"","",GeneticCodeExclusions);
 fprintf (stdout,"\n______________READ THE FOLLOWING DATA______________\n", codon_ds,"\n");
