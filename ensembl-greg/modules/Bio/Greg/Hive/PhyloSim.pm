@@ -197,8 +197,11 @@ sub simulate_alignment_indelible {
   my $output_f = $tmp_dir . "sim.txt";
   my $ctrl_f   = $tmp_dir . "control.txt";
 
-  my $randomseed_string = $models_trees_partitions;
-  $randomseed_string .= $params->{slrsim_rep};
+  my $randomseed_string = $self->param('random_seed');
+  if (!defined $randomseed_string) {
+    $randomseed_string = $models_trees_partitions;
+    $randomseed_string .= $params->{slrsim_rep};
+  }
   my $randomseed = crc32($randomseed_string);
 
   $self->store_tag( 'random_seed', $randomseed );
@@ -421,13 +424,12 @@ sub _store_sitewise_omegas {
       $type = "positive1";
     }
 
-    my $aln_position_fraction = $hr->{aln_position} / $sa->length;
     my $ncod = Bio::EnsEMBL::Compara::AlignUtils->get_nongaps_at_column( $sa, $hr->{aln_position} );
 
     push @insert_strings,
       sprintf(
-      '(%d,%.5f,%d,%d,%d,%.5f,%.5f,%.5f,"%s",%d)',
-      $hr->{aln_position}, $aln_position_fraction, $node_id,     $data_id,
+      '(%d,%d,%d,%d,%.5f,%.5f,%.5f,"%s",%d)',
+      $hr->{aln_position}, $node_id,     $data_id,
       $parameter_set_id,   $hr->{omega},           $hr->{omega}, $hr->{omega},
       $type,               $ncod
       );
@@ -435,7 +437,7 @@ sub _store_sitewise_omegas {
     if ( scalar(@insert_strings) >= 1000 ) {
       my $insert = join( ",", @insert_strings );
       my $cmd =
-        "INSERT INTO $output_table (aln_position,aln_position_fraction,node_id,data_id,parameter_set_id,omega,omega_lower,omega_upper,type,ncod) values $insert;";
+        "INSERT INTO $output_table (aln_position,node_id,data_id,parameter_set_id,omega,omega_lower,omega_upper,type,ncod) values $insert;";
  #     print "$cmd\n";
       $self->dbc->do($cmd);
       @insert_strings = ();
@@ -445,7 +447,7 @@ sub _store_sitewise_omegas {
   if ( scalar(@insert_strings) > 0 ) {
     my $insert = join( ",", @insert_strings );
     my $cmd =
-      "INSERT INTO $output_table (aln_position,aln_position_fraction,node_id,data_id,parameter_set_id,omega,omega_lower,omega_upper,type,ncod) values $insert;";
+      "INSERT INTO $output_table (aln_position,node_id,data_id,parameter_set_id,omega,omega_lower,omega_upper,type,ncod) values $insert;";
 #    print "$cmd\n";
     $self->dbc->do($cmd);
   }

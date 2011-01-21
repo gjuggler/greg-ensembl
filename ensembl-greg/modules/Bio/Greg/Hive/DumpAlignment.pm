@@ -23,7 +23,8 @@ sub fetch_input {
 
   ### DEFAULT PARAMETERS ###
   my $params = {
-    output_folder   => '',
+    aln_output_id => '',
+    output_folder   => 'aln',
     output_aln_aa   => 1,
     output_aln_cdna => 1,
     output_tree     => 1,
@@ -50,6 +51,9 @@ sub run {
   die("No output folder set!") unless ( $output_folder ne '' );
 
   my $stable_id       = $self->get_stable_id($tree);
+  if ($self->param('aln_output_id')) {
+    $stable_id = $aln_output_id;
+  }
   my $output_tree     = "${output_folder}/${stable_id}.nh";
   my $output_aln_aa   = "${output_folder}/${stable_id}_aa.fasta";
   my $output_aln_cdna = "${output_folder}/${stable_id}_cdna.fasta";

@@ -19,16 +19,21 @@ use Bio::Greg::Hive::ComparaHiveLoaderUtils;
 my ( $clean, $url, $experiment_name ) = undef;
 GetOptions(
   'clean' => \$clean,
-  'url=s' => \$url,
   'experiment=s' => \$experiment_name
 );
 Bio::EnsEMBL::Registry->no_version_check(1);
 
 die("No experiment name given!") unless (defined $experiment_name);
 
-$url = 'mysql://slrsim:slrsim@mysql-greg.ebi.ac.uk:4134/slrsim_anisimova' if ( !$url );
+# First create a database for the experiment.
+$url = 'mysql://ensadmin:ensembl@ens-research/gj1_slrsim';
+my $dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new( -url => $url );
+$dba->dbc->do("create database if not exists gj1_${experiment_name};");
+
+$url = 'mysql://ensadmin:ensembl@ens-research/' . "gj1_${experiment_name}";
 my $h = new Bio::Greg::Hive::ComparaHiveLoaderUtils;
 $h->init($url);
+$h->init_compara_tables;
 
 if ($clean) {
   $h->clean_hive_tables;
@@ -64,10 +69,6 @@ $h->wait_for("Plots",["Omegas","CollectStats"]);
 $h->wait_for("PhyloSim",["LoadTrees","LoadTree"]);
 #$h->wait_for("Align",["PhyloSim"]);
 $h->wait_for("AlignScores",["PhyloSim"]);
-
-sub output_dir {
-  $h->dba->dbc->do("insert into meta(meta_key,meta_value) VALUES ('hive_output_dir','/homes/greg/hive_temp');");
-}
 
 sub load_trees {
   my $logic_name  = "LoadTrees";

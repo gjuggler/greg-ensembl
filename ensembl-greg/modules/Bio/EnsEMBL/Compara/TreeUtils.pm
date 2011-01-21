@@ -26,6 +26,14 @@ sub species_count {
   return scalar(keys %$species_hash);
 }
 
+sub is_polytomy {
+  my $class = shift;
+  my $tree = shift;
+  
+  return 1 if ($tree->get_child_count > 2);
+  return 0;
+}
+
 sub copy_tree {
   my $self = shift;
   my $tree = shift;
@@ -230,7 +238,7 @@ sub to_treeI {
   } elsif ($tree->isa($NSET)) {
     $newick = $tree->newick_format($format);
     $newick .= ';' unless ($newick =~ m/;/);
-    warn("Temporary Newick for NSET to TREEI conversion: [$newick]\n");
+    #warn("Temporary Newick for NSET to TREEI conversion: [$newick]\n");
   }
   
   open(my $fake_fh, "+<", \$newick);

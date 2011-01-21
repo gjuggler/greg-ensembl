@@ -624,7 +624,7 @@ sub get_seq_with_id {
     return $seq if ($seq->id eq $id);
   }
   
-  #warn("aln_get_seq_with_id: No sequence with id $id found!\n");
+  warn("aln_get_seq_with_id: No sequence with id $id found!\n");
   return undef;
 }
 
@@ -720,7 +720,7 @@ sub flatten_to_sequence {
   my $id = shift;
   
   my $ref_seq = $aln->get_seq_by_id($id);
-  $self->warn("Seq [$id] not found!") unless (defined $ref_seq);
+  warn("Seq [$id] not found while flattening alignment!") unless (defined $ref_seq);
   my $display_id = $ref_seq->display_id;
   my $seq_str = $ref_seq->seq;
     
@@ -1699,7 +1699,7 @@ sub pretty_print {
   my $params = shift;
 
   my $full = $params->{'full'} || 0;
-  my $length = $params->{'length'} || $params->{width} || 50;
+  my $length = $params->{'length'} || $params->{width} || 150;
 
   $full = 1 if (!$full && $length > $aln->length + 10);
   

@@ -100,6 +100,8 @@ library(R.oo)
 library(ape)
 library(ggplot2)
 
+### SLRSIM ALL ###
+
 dbname="$dbname"
 source("$script")
 
@@ -137,6 +139,10 @@ sub slrsim_table {
   my $table_one_one = "${folder}/table_1_1.csv";
 
 my $rcmd = qq^
+#
+# Plots::slrsim_table
+#
+
 source("${functions}")
 load("${file}")
 
@@ -146,11 +152,8 @@ df.f <- function(x) {
   return(table.df)
 }
 paper.df <- ldply(df.list,df.f)
-write.csv(paper.df,file="${table_file}",row.names=F)
-
-paper.df <- subset(paper.df, indel == 0.1 & length == 1)
-write.csv(paper.df,file="${table_one_one}",row.names=F)
-
+paper.df <- format.numeric.df(paper.df,digits=3)
+write.csv(paper.df,file="${table_file}",row.names=F,quote=F)
 ^;
   Bio::Greg::EslrUtils->run_r( $rcmd );
 
@@ -165,6 +168,10 @@ sub slrsim_alns {
   my $functions = $self->base . "/projects/slrsim/slrsim.functions.R";
 
   my $rcmd = qq^
+#
+# Plots::slrsim_alns
+#
+
 source("${functions}")
 library(phylosim)
 
@@ -203,23 +210,32 @@ sub filter_table {
   my $folder = $self->get_output_folder;
   my $file = "${folder}/df.list.Rdata";
   my $functions = $self->base . "/projects/slrsim/slrsim.functions.R";
-  my $table_file = "${folder}/table.csv";
-  my $table_one_one = "${folder}/table_1_1.csv";
+  my $fdr_tpr = "${folder}/fdr_tpr_collated.csv";
+  my $fpr_tpr = "${folder}/tpr_tpr_collated.csv";
+  my $cor = "${folder}/cor_collated.csv";
+  my $auc = "${folder}/auc_collated.csv";
 
 my $rcmd = qq^
 source("${functions}")
+#
+# Plots::filter_table
+#
 load("${file}")
 
-df.f <- function(x) {
-  x[,'slrsim_label'] <- paste(x[,'slrsim_tree_file'],x[,'alignment_name'],x[,'filtering_name'])
-  table.df <- ddply(x,.(slrsim_label,phylosim_insertrate,tree_mean_path),paper.table)
-  return(table.df)
-}
-paper.df <- ldply(df.list,df.f)
-write.csv(paper.df,file="${table_file}",row.names=F)
+x <- df.list[[1]]
+x[,'slrsim_label'] <- paste(x[,'slrsim_tree_file'],x[,'alignment_name'],x[,'filtering_name'])
+table.df <- ddply(x,.(slrsim_label,phylosim_insertrate,tree_mean_path),paper.table)
+paper.df <- table.df
 
-paper.df <- subset(paper.df, indel == 0.1 & length == 1)
-write.csv(paper.df,file="${table_one_one}",row.names=F)
+for (col in c('auc','fpr_tpr','fdr_tpr','cor')) {
+  filter.df <- ddply(paper.df,
+    .(phylosim_insertrate,tree_mean_path,tree,aligner),
+    function(x) {
+      filter.list <- dlply(x,.(filter),function(y) {y[1,col]})
+      return(data.frame(x[1,],filter.list))
+    })
+  write.csv(filter.df,file=paste("${folder}/",col,"_collated.csv",sep=""),row.names=F,quote=F)
+}
 
 ^;
   Bio::Greg::EslrUtils->run_r( $rcmd );  
@@ -231,25 +247,28 @@ sub fig_one {
   my $folder = $self->get_output_folder;
 
   # Call slrsim_all to dump the data.
-  $self->slrsim_all;
+  my $file = "${folder}/df.list.Rdata";
+  if (!-e $file) {
+    $self->slrsim_all;
+  }
 
   # Call slrsim_table to dump the table.
-  $self->slrsim_table;
+  my $table_file = "${folder}/table.csv";
+  if (!-e $table_file) {
+    $self->slrsim_table;
+  }
 
   my $mafft_nofilter_file = "${folder}/1_bglobin_mafft_None.Rdata";
   my $prank_filter_file = "${folder}/1_bglobin_prank_filter_tcoffee.Rdata";
   my $prank_nofilter_file = "${folder}/1_bglobin_prank_None.Rdata";
   my $true_aln_file = "${folder}/1_bglobin_True Alignment_None.Rdata";
 
-  my $file = "${folder}/df.list.Rdata";
   my $f_auc = "${folder}/auc.pdf";
-  my $f_fdr = "${folder}/fdr.pdf";
-  my $f_sens = "${folder}/sens.pdf";
-  my $f_tpr = "${folder}/tpr_at_threshold.pdf";
+  my $f_fdr_tpr = "${folder}/fdr_tpr.pdf";
+  my $f_fpr_tpr = "${folder}/fpr_tpr.pdf";
+  my $f_cor = "${folder}/cor.pdf";
   my $functions = $self->base . "/projects/slrsim/slrsim.functions.R";
   my $plots = $self->base . "/projects/slrsim/slrsim.plots.R";
-
-  my $table_file = "${folder}/table.csv";
 
   my $phylosim_dir = $self->base . "/projects/phylosim";
 
@@ -258,7 +277,7 @@ library(ggplot2)
 library(fields)
 library(RColorBrewer)
 
-plot.f = function(data,palette="Spectral",field='fdr',rev.colors=F,limits=c(0,1),x.lim=c(0,4),y.lim=c(0,0.1),label.species=T,do.plot=T) {
+plot.f = function(data,palette="Spectral",field='fdr',rev.colors=F,limits=c(0,1),x.lim=c(0,4),y.lim=c(0,0.1),do.plot=T) {
   data[,'z_vals'] = data[,field]
   p <- ggplot(data,aes(x=tree_mean_path,y=phylosim_insertrate*2,z=z_vals))
   p <- p + scale_x_continuous('Mean Path Length')
@@ -288,53 +307,47 @@ plot.f = function(data,palette="Spectral",field='fdr',rev.colors=F,limits=c(0,1)
 source("${functions}")
 source("${plots}")
 
-load("${file}")
+#load("${file}")
+summary.df <- read.csv("${table_file}")
+tbl <- summary.df
 
 na.rm <- TRUE
 plot.x <- 'fpr'
 plot.y <- 'tpr'
 zoom.fpr <- 0.1
 
-df.f <- function(x) {
-  slr.threshold <- 0
-  a <- summarize.by.labels(x,fn=fig.1.summary,thresh=slr.threshold)
-  return(a)
-}
-summary.df <- ldply(df.list,df.f)
-sub.df <- summary.df
-
 art = 'artificial.nh'
 bg = 'bglobin.nh'
 enc = 'encode.nh'
-tree.files <- unique(sub.df[,'slrsim_tree_file'])
+tree.files <- unique(tbl[,'tree'])
 tree.labels <- c('6 artificial','17 bglobin', '44 vertebrate')
-sub.df[sub.df[,'slrsim_tree_file'] == art,'slrsim_tree_file'] = 0
-sub.df[sub.df[,'slrsim_tree_file'] == bg,'slrsim_tree_file'] = 1
-sub.df[sub.df[,'slrsim_tree_file'] == enc,'slrsim_tree_file'] = 2
-#sub.df[,'slrsim_tree_file'] <- factor(sub.df[,'slrsim_tree_file'],labels=tree.labels)
+tbl[tbl[,'tree'] == art,'slrsim_tree_file'] = 0
+tbl[tbl[,'tree'] == bg,'slrsim_tree_file'] = 1
+tbl[tbl[,'tree'] == enc,'slrsim_tree_file'] = 2
+#tbl[,'tree'] <- factor(tbl[,'tree'],labels=tree.labels)
 
-str(sub.df)
+str(tbl)
 pdf(file="${f_auc}",width=10,height=5)
-p <- plot.f(sub.df,field='auc',do.plot=F,label.species=F,rev.colors=F,limits=c(0.4,1))
-p <- p + facet_grid(slrsim_tree_file ~ alignment_name)
+p <- plot.f(tbl,field='auc',do.plot=F,rev.colors=F,limits=c(0.4,1))
+p <- p + facet_grid(tree ~ aligner)
 print(p)
 dev.off()
 
-pdf(file="${f_fdr}",width=10,height=5)
-p <- plot.f(sub.df,field='fdr',do.plot=F,label.species=F,rev.colors=T)
-p <- p + facet_grid(slrsim_tree_file ~ alignment_name)
+pdf(file="${f_fpr_tpr}",width=10,height=5)
+p <- plot.f(tbl,field='fpr_tpr',do.plot=F,rev.colors=F)
+p <- p + facet_grid(tree ~ aligner)
 print(p)
 dev.off()
 
-pdf(file="${f_sens}",width=10,height=5)
-p <- plot.f(sub.df,field='sens',do.plot=F,label.species=F,rev.colors=F)
-p <- p + facet_grid(slrsim_tree_file ~ alignment_name)
+pdf(file="${f_fdr_tpr}",width=10,height=5)
+p <- plot.f(tbl,field='fdr_tpr',do.plot=F,rev.colors=F)
+p <- p + facet_grid(tree ~ aligner)
 print(p)
 dev.off()
 
-pdf(file="${f_tpr}",width=10,height=5)
-p <- plot.f(sub.df,field='tpr_at_threshold',do.plot=F,label.species=F,rev.colors=F)
-p <- p + facet_grid(slrsim_tree_file ~ alignment_name)
+pdf(file="${f_cor}",width=10,height=5)
+p <- plot.f(tbl,field='cor',do.plot=F,rev.colors=F)
+p <- p + facet_grid(tree ~ aligner)
 print(p)
 dev.off()
 
@@ -404,10 +417,11 @@ sub fig_two {
   my $self = shift;
 
   # Call slrsim_all to dump the data.
-  $self->slrsim_all;
+#  $self->slrsim_all;
 
   # Call slrsim_table to dump the table.
-  $self->slrsim_table;
+#  $self->slrsim_table;
+  $self->filter_table;
 
   # Plot the alignment PDFs...
 #  $self->slrsim_alns;

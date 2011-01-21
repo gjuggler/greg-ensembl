@@ -40,6 +40,7 @@ sub add_genes_to_analysis {
   foreach my $gene_id (@$gene_id_arrayref) {
     chomp $gene_id;
     my $member;
+    my $gene_member;
 
     print "Trying to add $gene_id...\n";
 
@@ -47,12 +48,13 @@ sub add_genes_to_analysis {
       print "Finding gene by external ID...\n";
       my $ext_member = $self->_find_member_by_external_id($gene_id);
       $member = $ext_member if ( defined $ext_member );
+      $gene_member = $member->gene_member if ( defined $member );
     }
 
     if ( !defined $member ) {
+      print "Finding gene by stable id...\n";
       $member = $mba->fetch_by_source_stable_id( undef, $gene_id );
-      my $gene_member = $member->gene_member if ( defined $member );
-      $member = $gene_member if ( defined $gene_member );
+      $gene_member = $member->gene_member if ( defined $member );
     }
 
     if ( !defined $member ) {
@@ -61,6 +63,9 @@ sub add_genes_to_analysis {
     }
 
     my $tree = $pta->fetch_by_Member_root_id($member,0);
+    $tree = $pta->fetch_by_gene_Member_root_id($member,0) if (!defined $tree);
+    $tree = $pta->fetch_by_Member_root_id($gene_member,0) if (!defined $tree && defined $gene_member);
+    $tree = $pta->fetch_by_gene_Member_root_id($gene_member,0) if (!defined $tree && defined $gene_member);
     if (!defined $tree) {
       print STDERR " -> $gene_id tree not found!\n";
       next;
@@ -89,11 +94,7 @@ sub compara_dba {
 
   if (!defined $self->{_compara_dba}) {
     warn("No Compara version specified -- loading from livemirror!") if (!defined $version);
-    Bio::EnsEMBL::Registry->load_registry_from_multiple_dbs( {
-      -host => 'ens-livemirror',
-      -user => 'ensro',
-      -species => 'multi'
-      });
+    Bio::EnsEMBL::Compara::ComparaUtils->load_registry;
     my $compara_dba = Bio::EnsEMBL::Registry->get_DBAdaptor( 'multi', 'compara' );
     $self->{_compara_dba} = $compara_dba;
   }
@@ -104,7 +105,7 @@ sub select_node_ids {
   my $self = shift;
   my $cmd  = shift;
 
-  my $dba = $self->dba;
+  my $dba = $self->compara_dba;
   if ( !defined $cmd ) {
     $cmd = "SELECT node_id FROM protein_tree_node WHERE parent_id=1 AND root_id=1";
   }
@@ -182,6 +183,7 @@ sub clean_compara_analysis_tables {
     node_set_member node_set
     go_terms
     stats_sites stats_genes
+    sites genes
     ^;
   map {
     print "$_\n";

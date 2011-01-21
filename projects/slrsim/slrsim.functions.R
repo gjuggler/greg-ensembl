@@ -55,32 +55,6 @@ paper.table <- function(df) {
   return(ret.df)
 }
 
-
-
-fig.1.summary <- function(df,thresh) {
-  
-  stats <- df.stats(df,thresh=thresh)
-  roc <- slr.roc(df,na.rm=TRUE)
-
-  # Need to copy these ROC-derived summary stats over to the 'stats' object.
-  stats$auc <- roc[1,]$auc
-  stats$tpr_at_fpr <- roc[1,]$tpr_at_fpr
-
-  print(paste("summarizing",df[1,]$experiment_name,df[1,]$slrsim_label))
-  return(cbind(df[1,],stats))
-}
-
-min.fdr.score <- function(data) {
-    roc = slr.roc(data,na.rm=F)
-    roc = subset(roc, tp > 0)
-		min.fdr = min(roc$fdr)
-    which.min = which(roc$fdr <= min.fdr)
-    best.index = max(which.min)
-    min.score = roc[best.index,]$score
-#    print(paste(roc[1,]$slrsim_label,min.fdr,best.index,min.score))
-    return(data.frame(min.score=min.score,min.fdr=min.fdr))
-}
-
 slr.roc = function(df,na.rm=F) {
   library(doBy)
   library(plyr)

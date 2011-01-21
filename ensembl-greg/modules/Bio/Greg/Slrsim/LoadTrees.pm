@@ -551,8 +551,15 @@ sub _fig_one_indel_sweep {
   return \@sets;
 }
 
+sub fig_two_short {
+  my $self = shift;
+  return $self->fig_two(1);
+
+}
+
 sub fig_two {
   my $self = shift;
+  my $short = shift;
 
   my @sets;
 
@@ -639,6 +646,27 @@ sub fig_two {
     },
   ];
 
+  if ($short) {  
+    $subsets = [
+      {
+        aln    => 'clustalw',
+        scheme => $self->man_c,
+        length => 0.6,
+        indel  => 0.06
+      }, {
+        aln    => 'clustalw',
+        scheme => $self->man_c,
+        length => 1.0,
+        indel  => 0.1
+      }, {
+        aln    => 'clustalw',
+        scheme => $self->man_c,
+        length => 1.5,
+        indel  => 0.14
+      }
+      ];
+  }
+
   foreach my $subset ( @{$subsets} ) {
     $self->hash_print($subset);
 
@@ -695,8 +723,83 @@ sub fig_two {
   return \@sets;
 }
 
+sub phd_anim {
+  my $self = shift;
+
+  my @sets;
+
+  my $scheme = $self->man_b;
+  my @lengths = map { $_ * 1 / 10 } 1 .. 20;
+  my @indels = (0, 0.01, 0.02, 0.1);
+
+  foreach my $indel (@indels) {
+    foreach my $length(@lengths) {
+      foreach my $aln ('true', 'mafft') {
+        my $params = $self->replace($scheme,
+                                    $self->analysis_param('none'),
+                                    $self->reps_param(1),
+                                    $self->length_param(100),
+                                    $self->aln_param($aln),
+                                    $self->indel_rate_param($indel),
+                                    $self->mean_path_param($length)
+          );
+        $params->{random_seed} = 1;
+        $params->{aln_output_id} = "${aln}_${indel}_${length}";
+        push @sets, $params;
+      }
+    }
+  }
+  return \@sets;
+}
+
+sub phd_short {
+  my $self = shift;
+
+  my $subsets = [
+      {
+        aln    => 'clustalw',
+        scheme => $self->man_c,
+        length => 0.6,
+        indel  => 0.06
+      }, {
+        aln    => 'clustalw',
+        scheme => $self->man_c,
+        length => 1.0,
+        indel  => 0.1
+      }, {
+        aln    => 'clustalw',
+        scheme => $self->man_c,
+        length => 1.5,
+        indel  => 0.14
+      }
+      ];
+
+  my @sets;
+
+  foreach my $subset ( @{$subsets} ) {
+    $self->hash_print($subset);
+
+    my $scheme = $subset->{scheme};
+    my $aln    = $self->aln_param( $subset->{aln} );
+    my $aln_s = $subset->{aln};
+    my $length = $self->mean_path_param( $subset->{length} );
+    my $indel  = $self->indel_rate_param( $subset->{indel} );
+
+    my $params = $self->replace($scheme,$aln,$length,$indel,
+                                    $self->analysis_param('none'),
+                                    $self->reps_param(1),
+                                    $self->length_param(50)
+      );
+    $params->{random_seed} = 1;
+    $params->{aln_output_id} = $subset->{aln}.'_'.$subset->{indel}.'_'.$subset->{length};
+    
+    push @sets, $params;
+  }    
+  return \@sets;
+}
+
 sub apply_experiment_name_to_sets {
-  my $selft           = shift;
+  my $self           = shift;
   my $sets_arrayref   = shift;
   my $experiment_name = shift;
 
