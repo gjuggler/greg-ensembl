@@ -461,12 +461,13 @@ dump.parallel.subsets <- function(all.data,base.dir) {
 
   out.with.it <- function(genes,file) {
     print(file)
+
     all.genes <- data.frame(Hsap_protein=all.tests$Hsap_protein,name=all.tests$name)
     merged <- merge(all.genes,genes,by=c('name'),all.x=TRUE)
     merged[is.na(merged$lrt.signed),]$lrt.signed <- 0
 
-    merged <- merged[,c('Hsap_protein.x','Hsap_gene.x','name','lrt.signed')]
-    names(merged) <- c('Hsap_protein','Hsap_gene','name','lrt.signed')
+    merged <- merged[,c('Hsap_protein.x','name','lrt.signed')]
+    names(merged) <- c('Hsap_protein','name','lrt.signed')
     merged <- merged[order(-merged$lrt.signed),]
     write.csv(merged,file=file,quote=F)
   }
@@ -690,7 +691,7 @@ dump.subsets.for.env <- function(env) {
         all.genes[,'fg.omega'] = all.genes[,fg.omega.label]
         all.genes[,'bg.omega'] = all.genes[,bg.omega.label]
         all.genes <- orderBy(~ -lrt.signed,data=all.genes)
-        all.genes <- all.genes[,c('name','Hsap_protein','Hsap_gene','lrt.signed','pval','fg.omega','bg.omega')]
+        all.genes <- all.genes[,c('name','Hsap_protein','lrt.signed','pval','fg.omega','bg.omega')]
         print(head(all.genes,n=5))
         write.csv(all.genes,file=paste(base,'_',test,'_sorted.csv',sep=''),row.names=F,quote=F)
       }
@@ -711,11 +712,20 @@ dump.subsets.for.env <- function(env) {
   })
 }
 
-plot.omegas.new <- function(all.tests) {
+plot.omegas.new <- function(all.tests,which.tests) {
 
   rows <- data.frame()
-#  for (test in c('5.h','7.h','8.h')) {
-   for (test in c('3.h','4.h','4.c')) {
+
+  if (which.tests == 'lineages') {
+    tests <- c('3.h','4.h','4.c')
+    test.labels <- c('Gorilla','Human','Chimpanzee')
+  } else {
+    tests <- c('3.h','7.h','8.h')
+    test.labels <- c('Gorilla','AGA branch','AGA clade')
+    
+  }
+
+   for (test in tests) {
     print(test)
     fg <- all.tests[,paste('fg.',test,sep='')]
     lrt <- all.tests[,paste('lrt.',test,sep='')]
@@ -733,9 +743,7 @@ plot.omegas.new <- function(all.tests) {
     rows <- rbind(rows,cur.df)    
   }
 
-  rows$dr <- factor(rows$dr,labels=c('Accelerated','Decelerated'))
-  rows$test <- factor(rows$test,labels=c('Gorilla','Human','Chimpanzee'))
-#  rows$test <- factor(rows$test,labels=c('T5','T7','T8'))
+  rows$test <- factor(rows$test,labels=test.labels)
 
   t <- 10
   rows[rows$lrt < -t,]$lrt = -t
@@ -755,77 +763,6 @@ plot.omegas.new <- function(all.tests) {
   dev.off()
 }
 
-plot.omegas <- function(Hsap.env,Ptro.env) {
-  library(ggplot2)
-
-  Hsap <- Hsap.env$stats.lnl
-  Ptro <- Ptro.env$stats.lnl
-
-  Hsap[,'lrt.pt.signed'] <- 0
-  Hsap[,'fg.pt'] <- 0
-  Hsap[,'bg.pt'] <- 0
-
-  Ptro[,'lrt.pt.signed'] <- Ptro[,'lrt.4.signed']
-  Ptro[,'fg.pt'] <- Ptro[,'fg.4']
-  Ptro[,'bg.pt'] <- Ptro[,'bg.4']
-
-  df <- data.frame()
-  for (test in c(1, 2, 3, 'pt', 4, 5, 6, 7, 8)) {
-    lrt.lbl <- paste('lrt.',test,'.signed',sep='')
-    fg.lbl <- paste('fg.',test,sep='')
-    bg.lbl <- paste('bg.',test,sep='')
-
-    rows <- Hsap
-    if (test == 'pt') {
-      rows <- Ptro
-    }
-
-    rows$plot.test <- test
-
-    rows$sig <- abs(rows[,lrt.lbl])
-    rows <- subset(rows,!is.na(sig))
-    rows$lrt <- rows[,lrt.lbl]
-    rows$dr <- sign(rows[,lrt.lbl]-0.0001)
-
-    rows$fg <- rows[,fg.lbl]
-    rows$bg <- rows[,bg.lbl]
-    df <- rbind(df,rows)
-  }
-
-  df$plot.test <- factor(df$plot.test,labels=c('hsap','ggor','Ggor','Ptro','Hsap','diff1','diff2','GA-b','GA-c'))
-  df$dr <- factor(df$dr,labels=c('Decelerated','Accelerated'))
-
-  pdf(file="all_fg.pdf")
-  p <- ggplot(data=df,aes(x=fg,colour=dr,fill=dr))
-  p <- p + geom_bar(position="dodge",aes(group=dr),binwidth=0.2)
-  p <- p + scale_x_log10()
-  p <- p + facet_grid(plot.test ~ .)
-
-  print(p)
-  dev.off()
-
-  df2 <- df
-  df2[df2$lrt > 6,]$lrt = 5.9
-  df2[df2$lrt < -6,]$lrt = -5.9
-
-  pdf(file="all_lrt.pdf")
-  p <- ggplot(data=df2,aes(x=lrt,fill=dr,colour=dr))
-  p <- p + geom_bar(position="dodge",aes(group=dr),binwidth=0.5)
-  p <- p + scale_x_continuous(limits=c(-6,6))
-  p <- p + facet_grid(plot.test ~ .)
-  print(p)
-  dev.off()
-
-  pdf(file="all_bg.pdf")
-
-  df2 <- df2[order(df2$sig),]
-  p <- ggplot(data=df2,aes(x=bg,y=fg,colour=lrt))
-  p <- p + geom_point(size=0.5,alpha=1)
-  p <- p + scale_y_log10() + scale_x_log10()
-  p <- p + facet_grid(plot.test ~ .)
-  print(p)
-  dev.off()
-}
 
 plot.test.5 <- function(data,dir='up') {
   if (dir == 'up') {
@@ -911,9 +848,9 @@ manuscript.table <- function(all.genes,human.env,chimp.env,go.ens) {
       lrt.pval.gorilla = all.row$pval.3.h,
       lrt.pval.human = all.row$pval.4.h,
       lrt.pval.chimpanzee = all.row$pval.4.c,
-      dnds.gorilla = all.row$pval.3.h,
-      dnds.human = all.row$pval.4.h,
-      dnds.chimpanzee = all.row$pval.4.c
+      dnds.gorilla = all.row$fg.3.h,
+      dnds.human = all.row$fg.4.h,
+      dnds.chimpanzee = all.row$fg.4.c
     )
 
     #trms <- paste(as.character(unlist(terms)),collapse=',')
