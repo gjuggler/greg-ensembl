@@ -1,0 +1,39 @@
+body {
+  font-size:10pt;
+}
+table {
+  font-size: 10pt;
+  border-collapse: collapse;
+}
+table td {
+  padding: 3px;
+  border-color: gray;
+}
+
+a {
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline
+}
+ul li {
+  margin-top: 1em;
+  margin-bottom: 1em;
+}
+
+.chr {
+  display:inline-block;
+  width: 42px;
+  border: 1px solid #333;
+  margin: .2em;
+  padding: .2em;
+}
+
+.top-bot {
+  text-align: center;
+  width: 175px;
+  display:inline-block;
+  border: 1px solid #333;
+  margin: .2em;
+  padding: .2em;
+}

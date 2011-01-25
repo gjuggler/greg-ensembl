@@ -26,6 +26,14 @@ sub species_count {
   return scalar(keys %$species_hash);
 }
 
+sub is_polytomy {
+  my $class = shift;
+  my $tree = shift;
+  
+  return 1 if ($tree->get_child_count > 2);
+  return 0;
+}
+
 sub copy_tree {
   my $self = shift;
   my $tree = shift;
@@ -34,7 +42,8 @@ sub copy_tree {
   my $root;
 
   foreach my $node ($tree->nodes) {
-    $node_hash->{$node} = new $node;
+    my $cls = ref($node);
+    $node_hash->{$node} = new $cls;
   }
   
   foreach my $node ($tree->nodes) {
@@ -51,7 +60,7 @@ sub copy_tree {
       $new_n->sequence_id($node->sequence_id);
       $new_n->genome_db($node->genome_db);
       $new_n->genome_db_id($node->genome_db_id);
-      $new_n->taxon_id($node->taxon_id);
+      $new_n->taxon_id($node->taxon_id) if ($node->can('taxon_id'));
       #$new_n->{core_transcript} = $node->{core_transcript};
       $new_n->{core_gene} = $node->{core_gene};
       $new_n->gene_member($node->gene_member);
@@ -61,7 +70,8 @@ sub copy_tree {
       # You'd think we should just use $node->taxon_id to set the new taxon ID here,
       # but Compara keeps us on our toes by instead requiring us to manually set a tagvalue.
       # W.T.F.
-      $new_n->store_tag('taxon_id',$node->taxon_id); 
+      $new_n->taxon_id($node->taxon_id) if ($node->can('taxon_id') && $new_n->can('taxon_id'));
+      $new_n->store_tag('taxon_id',$node->taxon_id) if ($node->can('taxon_id')); 
     }
     
     my $parent = $node_hash->{$node->parent};
@@ -213,7 +223,7 @@ sub has_ancestor_node_id {
 sub to_treeI {
   my $class = shift;
   my $tree = shift;
-  my $format = shift || 'no_zero_branch_length';
+  my $format = shift;
 
   my $newick = "";
   if (!ref $tree) {
@@ -228,13 +238,12 @@ sub to_treeI {
   } elsif ($tree->isa($NSET)) {
     $newick = $tree->newick_format($format);
     $newick .= ';' unless ($newick =~ m/;/);
-#    print $newick."\n";
+    #warn("Temporary Newick for NSET to TREEI conversion: [$newick]\n");
   }
   
   open(my $fake_fh, "+<", \$newick);
   my $treein = new Bio::TreeIO
     (-fh => $fake_fh,
-#     -verbose => 1,
      -format => 'newick');
   my $treeI = $treein->next_tree;
   $treein->close;
@@ -746,13 +755,13 @@ sub remove_members_by_taxon_id {
   my @keep_me;
   foreach my $leaf ($tree->leaves) {
     if (!exists $tax_hash{$leaf->taxon_id}) {
-      push @keep_me, $leaf->node_id;
+      push @keep_me, $leaf;
       #$class->delete_lineage($tree,$leaf);
       #$tree->minimize_tree();
     }
   }
 
-  $tree = $class->extract_subtree_from_leaves($tree,\@keep_me);
+  $tree = $class->extract_subtree_from_leaf_objects($tree,\@keep_me);
   
 #  print "  After: " . scalar($tree->leaves) . "\n";
   return $tree;
@@ -1046,6 +1055,15 @@ sub translate_ids {
   }
 
   return $tree;
+}
+
+sub pretty_print {
+  my $class = shift;
+  my $tree = shift;
+  my $params = shift;
+
+  my $treeI = $class->to_treeI($tree);
+
 }
 
 1; # Keep perl happy.

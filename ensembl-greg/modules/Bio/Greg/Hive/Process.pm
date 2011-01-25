@@ -13,7 +13,8 @@ use Bio::EnsEMBL::Hive::Utils 'stringify';    # import 'stringify()'
 use Bio::EnsEMBL::Compara::ComparaUtils;
 use Bio::EnsEMBL::Compara::DBSQL::DBAdaptor;
 
-use File::Path;
+use File::Path qw(make_path);
+use File::Basename;
 use POSIX qw(strftime mktime);
 
 use Bio::Greg::EslrUtils;
@@ -174,7 +175,17 @@ sub pretty_print {
   my $aln    = shift;
   my $params = shift || {};
 
-  Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $aln, $params );
+  if (ref($aln) =~ m/align/i) {
+    Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $aln, $params );
+  } elsif (ref($aln) =~ m/proteintree/i) {
+    $aln->print_tree;
+  }
+}
+
+sub load_registry {
+  my $self = shift;
+
+  Bio::EnsEMBL::Compara::ComparaUtils->load_registry();
 }
 
 sub compara_dba {
@@ -190,14 +201,10 @@ sub compara_dba {
       or do {
       print "ERROR: $@\n";
       print " >> No compara in hive DB -- falling back to ens-livemirror!!\n";
-      Bio::EnsEMBL::Registry->load_registry_from_multiple_dbs( {
-          -host => 'ens-livemirror',
-          -user => 'ensro',
-          #-verbose => 1,
-        }
-      );
+      $self->load_registry();
       $compara_dba = Bio::EnsEMBL::Registry->get_DBAdaptor( 'multi', 'compara' );
-
+      
+      printf " >> Using Compara DB at [%s/%s]\n",$compara_dba->dbc->host,$compara_dba->dbc->dbname;
       #      $compara_dba->disconnect_when_inactive(1);
       };
     $self->{_compara_dba} = $compara_dba;
@@ -325,6 +332,35 @@ sub data_id {
   return $data_id;
 }
 
+sub stable_id {
+  my $self = shift;
+  my $tree = shift;
+  my $s_id = $self->_get_pep->stable_id;
+  return $s_id || 'unknown_gene';
+}
+
+sub gene_name {
+  my $self = shift;
+  my $tree = shift;
+  my $name = $self->_get_pep->display_label;
+  return $name || 'unknown_gene';
+}
+
+sub _get_pep {
+  my $self = shift;
+  
+  my $pta = $self->compara_dba->get_ProteinTreeAdaptor;  
+  my $tree = $pta->fetch_node_by_node_id($self->node_id);
+
+  # Try human first.
+  my $pep;
+  ($pep) = grep {$_->taxon_id == 9606} $tree->leaves;
+  if (!defined $pep) {
+    ($pep) = $tree->leaves;
+  }
+  return $pep;
+}
+
 sub parameter_set_id {
   my $self = shift;
 
@@ -341,7 +377,7 @@ sub worker_temp_directory {
 
   if (!$self->within_hive) {
     $wtd = '/tmp/process_tmp/';
-    mkpath([$wtd]);
+    make_path($wtd);
   }
 
   chmod 0777, $wtd;
@@ -859,7 +895,7 @@ sub get_output_folder {
       print
         "Warning: Output folder was already stored in the database, but the folder did not exist.\n";
       print " -> Creating folder: $folder\n";
-      mkpath( [$folder] );
+      make_path( $folder );
     }
     return $folder;
   }
@@ -879,7 +915,7 @@ sub get_output_folder {
 
   $self->store_meta( { output_folder => $filename } );
 
-  mkpath( [$filename] );
+  make_path( $filename );
   $self->param( 'output_folder', $filename );
   return $filename;
 }
@@ -936,7 +972,10 @@ sub save_file {
     $full_file = "$full_dir/$filename.$extension";
     $rel_file = "$filename.$extension";
   }
-  mkpath( [$full_dir] );
+
+  # If the file contains a directory, we need to make sure that's also created.
+  my ($f,$d) = fileparse($full_file);
+  make_path($d);
 
   return {
     full_file => $full_file,
@@ -958,7 +997,7 @@ sub get_hashed_file {
   my $hash_subfolder = join( '/', @md5[ $lo .. $hi ] );
 
   my $full_dir = "$output_base/$subfolder/$hash_subfolder";
-  mkpath( [$full_dir] );
+  make_path( $full_dir );
 
   my $full_file = "$full_dir/$filename";
   print "$full_file\n" if ($self->debug);

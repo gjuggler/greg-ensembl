@@ -238,8 +238,8 @@ sub get_coords_from_pep_position {
         'hg18_pos'  => $coord->start,
       };
     }
-
   }
+  return undef;
 }
 
 1;

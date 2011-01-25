@@ -57,7 +57,7 @@ plot.cum = function(df, new.plot=T, x.lim=NULL, y.lim=NULL, ...) {
     col=rgb(lrt.red,0,lrt.blue,.5),border=NA,...)
 }
 
-plot.cum(df,x.lim=c(0,5))
+#plot.cum(df,x.lim=c(0,5))
 
 plot.fn = function(ft,col) {
   a <- ft$estimate[1]
@@ -68,6 +68,46 @@ plot.fn = function(ft,col) {
   lines(xx,yy,col=col,lwd=1.5)
 }
 
-fit.fn(df,'lnorm','orange')
-fit.fn(df,'gamma','green')
-fit.fn(df,'weibull','purple')
+#fit.fn(df,'lnorm','orange')
+#fit.fn(df,'gamma','green')
+#fit.fn(df,'weibull','purple')
+
+sign.lrt <- function(df) {
+  df[,'signed_lrt'] = df$lrt_stat
+  df[df$omega < 1,]$signed_lrt = -df[df$omega < 1,]$signed_lrt
+  return(df)
+}
+
+ggplot.gene <- function(df,field) {
+  df <- sign.lrt(df)
+  df$x_pos <- df[,field]
+#  max_val <- max(abs(df$signed_lrt))
+  max_val <- 20
+  values = c(-max_val,-5,5,max_val)
+
+  # Get colors.
+  cols <- df$signed_lrt
+  my.cols <- c()
+  ###
+  max <- 15
+  offset <- 0.9
+  rate <- 0.5
+  ###
+  cols[cols > max] <- max
+  cols[cols < -max] <- -max
+  abv <- cols >= 0
+  blw <- cols < 0
+  my.cols[abv] <- hsv(0,cols[abv]/max,offset-cols[abv]/max * rate)
+  my.cols[blw] <- hsv(2/3,-cols[blw]/max,offset+cols[blw]/max * rate)
+  colors <- my.cols
+  df$colors <- colors
+  # /end Get colors.
+
+  p <- ggplot(df)
+  p <- p + geom_rect(aes(xmin=x_pos-0.5,xmax=x_pos+0.5,ymin=omega_lower+0.01,ymax=omega_upper+0.01,fill=colors))
+  p <- p + scale_x_continuous(name="Alignment Position")
+  p <- p + scale_fill_identity()
+  p <- p + geom_hline(yintercept=1,colour='black',linetype='dashed',size=1,alpha=0.7)
+  p <- p + scale_y_log10(name="dN/dS (log scale)")
+  return(p)
+}

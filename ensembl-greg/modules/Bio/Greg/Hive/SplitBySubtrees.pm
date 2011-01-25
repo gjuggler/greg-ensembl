@@ -47,8 +47,6 @@ sub flow_taxon_subtree {
 
   my @taxon_ids = map { $_->taxon_id } $node->leaves;
 
-  @taxon_ids = grep { $_ != 9598 } @taxon_ids;
-
   my $keep_taxon_string = join( ',', @taxon_ids );
 
   my $added_params = { keep_species => $keep_taxon_string };

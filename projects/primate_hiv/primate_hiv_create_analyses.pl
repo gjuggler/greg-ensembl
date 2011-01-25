@@ -108,7 +108,7 @@ sub parameter_sets {
 
   my $non_primates = join(",",subtract(\@mammals_arr,\@primates_arr));
 
-  foreach my $aln_type ('genomic_mammals') {
+  foreach my $aln_type ('genomic_mammals','compara') {
     my $aln_short = 'gm';
     $aln_short = 'c' if ($aln_type eq 'compara');
     $aln_short = 'ga' if ($aln_type eq 'genomic_all');

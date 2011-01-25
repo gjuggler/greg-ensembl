@@ -1,3 +1,11 @@
+CREATE TABLE IF NOT EXISTS `parameter_set` (
+  `parameter_set_id` tinyint unsigned NOT NULL AUTO_INCREMENT,
+  `parameter_name` varchar(40) DEFAULT NULL,
+  `parameter_value` mediumtext,
+#  PRIMARY KEY (parameter_set_id),
+  UNIQUE (parameter_set_id,parameter_name)
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;
+
 
 -- ----------------------------------------------------------------------------------
 --

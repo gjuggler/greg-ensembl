@@ -1,7 +1,6 @@
 get.numbers <- function(sites) {
   if (!exists('gene.types')) {
-    gene.types <- classify.genes(sites)
-    assign('gene.types',gene.types,envir=.GlobalEnv)
+    classify.genes(sites)
   }
 
   # 'Neutral' type genes are ones with < 0.5 neg.f
@@ -22,11 +21,57 @@ get.numbers <- function(sites) {
   print(df)
 }
 
+summarize.sites <- function(sites) {
+  # BH-correction is applied separately to positive and negative p-values
+  sites[sites$omega < 1,'pval.adj'] <- p.adjust(sites[sites$omega < 1,'pval'],'fdr')
+  sites[sites$omega >= 1,'pval.adj'] <- p.adjust(sites[sites$omega >= 1,'pval'],'fdr')
+
+  sub.above.one <- subset(sites, omega > 1)
+
+  pos.sites <- subset(sub.above.one, pval.adj < 0.05)
+  pos.domains <- subset(pos.sites, !is.na(domain))
+  
+  n.total.domains <- nrow(unique(sites[,c('node_id','domain')]))
+  n.total.domain.types <- length(unique(sites$domain))
+  n.total.genes <- length(unique(sites$node_id))
+
+  n.pos.domains <- nrow(unique(pos.domains[,c('node_id','domain')]))
+  n.pos.domain.types <- length(unique(pos.domains$domain))
+  n.pos.genes <- length(unique(pos.sites$node_id))
+
+  n.pos.sites <- nrow(pos.sites)
+  n.sites <- nrow(sites)  
+  f.pos.sites <- n.pos.sites / n.sites
+
+  `f.less.0.5` <- nrow(subset(sites, omega < 0.5)) / nrow(sites)
+  `f.less.1` <- nrow(subset(sites, omega < 1)) / nrow(sites)
+  `f.gt.1` <- nrow(subset(sites, omega > 1)) / nrow(sites)
+  `f.gt.1.5` <- nrow(subset(sites, omega > 1.5)) / nrow(sites)
+
+  return(data.frame(
+    n.sites = n.sites,
+    'f.less.0.5' = `f.less.0.5`,
+    'f.less.1' = `f.less.1`,
+    'f.gt.1' = `f.gt.1`,
+    'f.gt.1.5' = `f.gt.1.5`,
+
+    n.total.domains = n.total.domains,
+    n.total.domain.types = n.total.domain.types,
+    n.total.genes = n.total.genes,
+    
+    n.pos.domains = n.pos.domains,
+    n.pos.domain.types = n.pos.domain.types,
+    n.pos.genes = n.pos.genes,
+
+    n.pos.sites = n.pos.sites,
+    f.pos.sites = f.pos.sites
+   ))
+}
+
 classify.genes <- function(sites) {
-  sub.above.one = subset(sites, omega > 1)
-  pvals = sub.above.one$pval
-  pvals.adj = p.adjust(pvals,method="fdr")
-  sub.above.one[,'pval.adj'] = pvals.adj
+  # BH-correction is applied separately to positive and negative p-values
+  sites[sites$omega < 1,'pval.adj'] <- p.adjust(sites[sites$omega < 1,'pval'],'fdr')
+  sites[sites$omega >= 1,'pval.adj'] <- p.adjust(sites[sites$omega >= 1,'pval'],'fdr')
 
   classify.gene <- function(gene.sites) {
     mean.dnds <- mean(gene.sites$omega)
@@ -60,6 +105,10 @@ classify.genes <- function(sites) {
 
   domain.sites <- subset(sites,!is.na(domain))
   domain.types <- ddply(domain.sites,.(domain),classify.gene)
+  
+  # Restrict to well-covered domains: > 5 genes, > 500 sites
+  domain.types <- subset(domain.types, n.genes > 5 & n > 500)
+  domain.types <- orderBy(~-pos.f,data=domain.types)
 
   assign('domain.types',domain.types,envir=.GlobalEnv)
   assign('gene.types',gene.types,envir=.GlobalEnv)
@@ -69,6 +118,19 @@ classify.genes <- function(sites) {
 
   sorted.domains <- orderBy(~ -pos.f, data=sorted.domains)
   assign('pos.domains',sorted.domains,envir=.GlobalEnv)
+}
+
+summarize.sites.sets <- function() {
+  collect.df <- data.frame()
+  for (set in c(1,2,3,4)) {
+    file.name <- paste('sites_',set,'.Rdata',sep='')
+    print(file.name)
+    load(file.name)
+    print("Summarizing...")
+    cur.df <- summarize.sites(sites)
+    collect.df <- rbind(collect.df,cur.df)
+  }
+  write.csv(collect.df,file='sites_summaries.csv')
 }
 
 classify.genes.sets <- function() {

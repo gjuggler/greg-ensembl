@@ -14,7 +14,7 @@ use Bio::EnsEMBL::Compara::DBSQL::PeptideAlignFeatureAdaptor;
 use Bio::EnsEMBL::Compara::Member;
 use Bio::EnsEMBL::Compara::ComparaUtils;
 
-#use Time::HiRes qw(time gettimeofday tv_interval sleep);
+use Time::HiRes qw(sleep);
 use POSIX qw(ceil floor);
 
 use base ('Bio::Greg::Hive::Process');
@@ -227,7 +227,7 @@ sub align_with_prank {
 
   my $executable = $params->{'alignment_executable'} || 'prank';
   my $extra_params = '';
-  $extra_params .= ' -codon ' if ( $params->{'alignment_prank_codon_model'} );
+  $extra_params .= ' -codon ' if ( $params->{'alignment_prank_codon'} );
   $extra_params .= ' +F '     if ( $params->{'alignment_prank_f'} );
 
   my $cmd = qq^$executable $extra_params -d=$aln_file -t=$tree_file -o=$output_file^;
@@ -744,7 +744,7 @@ sub parse_and_store_alignment_into_proteintree {
     #      }
     # Do a manual insert of the *scores* into the correct score output table.
 
-    sleep(1);
+    sleep(0.2);
   }
 
 }

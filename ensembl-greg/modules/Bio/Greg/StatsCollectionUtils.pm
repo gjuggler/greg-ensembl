@@ -182,8 +182,22 @@ sub genomic_gc_content {
 
   my $gene = $member->get_Gene;
   my $slice = $gene->slice;
+  my $full_chromosome;
 
-  my $seq = $slice->seq;
+  # Small spelling difference between Ensembl versions.
+  if ($slice->can('seq_region_slice')) {
+    $full_chromosome = $slice->seq_region_slice;
+  } else {
+    $full_chromosome = $slice->seq_region_Slice;    
+  }
+
+  my $start = $gene->seq_region_start;
+  my $end = $gene->seq_region_end;
+  my $strand = $gene->seq_region_strand;
+
+  my $segment = $full_chromosome->sub_Slice($start,$end,$strand);
+
+  my $seq = $segment->seq;
 
   $seq =~ s/[-nx]//gi;
   my $total_len = length($seq);
@@ -375,46 +389,46 @@ $CLEAN_WHERE;
   return $obj;
 }
 
+sub calculate_fractions {
+  my $self = shift;
+  my $psc_hash = shift;
+
+  return if ( scalar(keys %$psc_hash) == 0 );
+
+  my $cmd = qq^
+  sites[,'pval'] <- 1 - pchisq(sites[,'lrt_stat'],1)
+  pos.sites <- subset(sites,omega > 1 & pval < 0.01)
+  neg.sites <- subset(sites,omega < 1 & pval < 0.01)
+  neutral.sites <- subset(sites,pval > 0.01)
+
+  n <- nrow(sites)
+  if (n == 0) { n <- 1 }
+
+  print(c(n,nrow(pos.sites),nrow(neg.sites),nrow(neutral.sites)))
+^;
+  my @values = $self->_run_r_with_sites($psc_hash,$cmd);
+  
+  my $n = $values[0];
+
+  $self->param('n_pos',$values[1]);
+  $self->param('n_neg',$values[2]);
+  $self->param('n_neut',$values[3]);
+  $self->param('f_pos',$values[1]/$n);
+  $self->param('f_neg',$values[2]/$n);
+  $self->param('f_neut',$values[3]/$n);
+}
+
+
 sub combined_pval {
-  my $class    = shift;
+  my $self    = shift;
   my $psc_hash = shift;
   my $method   = shift || 'stouffer';
 
-  my @obj_array;
-  if ( ref($psc_hash) =~ m/array/gi ) {
-    @obj_array = @$psc_hash;
-  } else {
-    @obj_array = map { $psc_hash->{$_} } keys %$psc_hash;
-  }
+  return -2 if ( scalar(keys %$psc_hash) == 0 );
 
-  my $pval;
-  if ( scalar @obj_array > 0) {
-
-    my $first_obj = $obj_array[0];
-    my @keys      = sort keys %$first_obj;
-    
-    my $header = join( "\t", @keys );
-    my $body;
-    foreach my $obj (@obj_array) {
-      my $line = join( "\t", map { $obj->{$_} } @keys );
-      $body .= $line . "\n";
-    }
-    
-    my $temp_f = $class->worker_temp_directory . "/temp.txt";
-    open( OUT, ">$temp_f" );
-    print OUT $header . "\n";
-    
-    #print $header."\n";
-    print OUT $body . "\n";
-    
-    #print $body."\n";
-    close(OUT);
-    
-    my $combine_p = Bio::Greg::EslrUtils->baseDirectory . "/scripts/combine.p.R";
-    my $rcmd      = qq^
-sites = read.table(file="$temp_f",sep="\t",header=T)
+  my $combine_p = Bio::Greg::EslrUtils->baseDirectory . "/scripts/combine.p.R";
+  my $cmd      = qq^
 source("$combine_p")
-#print(sites)
 p.values = 1 - pchisq(sites[,'lrt_stat'],1)
 p.values[p.values <= 0] = 1e-10
 p.values[p.values >= 1] = 1
@@ -425,20 +439,59 @@ p.value = 999
 if (nrow(pos.sites) > 0) {
   comb.p = combine.p(pos.sites[,'pval'],method='$method')
   p.value = as.numeric(comb.p[['p.value']])
-} else {
+} else if (nrow(sites) > 0) {
   p.value = -1
+} else {
+  p.value = -2
 }
 print(p.value)
 ^;
-    my @values = Bio::Greg::EslrUtils->get_r_values( $rcmd, $class->worker_temp_directory );
-    
-    # P-value is either the real p-value, or -1 if there were no positive sites.
-    $pval = $values[0];
-  } else {
-    # P-value is -2 if there were no sites at all.
-    $pval = -2;
-  }
+  my @values = $self->_run_r_with_sites($psc_hash,$cmd);
+  my $pval = $values[0];
   return $pval;
+}
+
+sub _run_r_with_sites {
+  my $self = shift;
+  my $psc_hash = shift;
+  my $cmd = shift;
+
+  my @obj_array = map { $psc_hash->{$_} } keys %$psc_hash;
+
+  my $pval;
+  my $header = '';
+  my $body = '';
+  if ( scalar @obj_array > 0) {
+
+    my $first_obj = $obj_array[0];
+    my @keys      = sort keys %$first_obj;
+    
+    $header = join( "\t", @keys );
+    foreach my $obj (@obj_array) {
+      my $line = join( "\t", map { $obj->{$_} } @keys );
+      $body .= $line . "\n";
+    }
+  }
+  
+  my $ug = new Data::UUID;
+  my $filename = $ug->create_str;
+  my $temp_f = $self->worker_temp_directory . $filename . ".txt";
+  open( OUT, ">$temp_f" );
+  print OUT $header . "\n";
+  
+  #print $header."\n";
+  print OUT $body . "\n";
+  
+  #print $body."\n";
+  close(OUT);
+  
+  $cmd = qq^
+sites <- read.table(file="$temp_f",sep="\t",header=T)
+sites <- subset(sites, note != 'random')
+^ . $cmd;
+  
+  my @values = Bio::Greg::EslrUtils->get_r_values( $cmd, $self->worker_temp_directory );
+  return @values;
 }
 
 sub max_lrt {
@@ -648,6 +701,12 @@ sub get_coords_from_pep_position {
   my $asma  = $dba->get_AssemblyMapperAdaptor;
   my $csa   = $dba->get_CoordSystemAdaptor;
 
+  if ($member->taxon_id != 9606) {
+    warn("Non-human ref, not collecting coordinates!\n");
+    return {
+    };
+  }
+
   my $new_cs = $csa->fetch_by_name('chromosome');
   my $old_cs = $csa->fetch_by_name( 'chromosome', 'NCBI36' );
 
@@ -661,18 +720,29 @@ sub get_coords_from_pep_position {
     my $end    = $coord->end;
     my $strand = $coord->strand;
     
+    my $obj = {
+      chr_name => $chr,
+      chr_start => $start,
+      chr_end => $end,
+      strand => $strand
+    };
+
     # Map to old coordinates.
-    my @coords = $asm_mapper->map( $chr, $start, $end, $strand, $new_cs );
-    my ($coord) = @coords;
-    if ($coord) {
-      return {
+    my @old_coords = $asm_mapper->map( $chr, $start, $end, $strand, $new_cs );
+    my ($old_coord) = @old_coords;
+    if ($old_coord) {
+      $obj = $self->replace($obj,{
         'hg19_name' => $chr,
         'hg18_name' => $chr,
         'hg19_pos'  => $start,
         'hg18_pos'  => $coord->start,
-      };
+                            });
     }
+    return $obj;
   }
+
+  warn("No coordinates found!\n");
+  return {};
 }
 
 1;

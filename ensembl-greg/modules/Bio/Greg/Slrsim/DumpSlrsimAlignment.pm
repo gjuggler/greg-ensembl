@@ -46,7 +46,12 @@ sub run {
 
   throw("Folder doesn't exist!") unless (-d $folder);
 
-  my $base = "${folder}/${rep}_${exp}_${label}";
+  my $output_id = "${rep}_${exp}_${label}";
+  if ($self->param('aln_output_id')) {
+    $output_id = $self->param('aln_output_id');
+  }
+
+  my $base = "${folder}/${output_id}";
 
   print "$base\n";
 

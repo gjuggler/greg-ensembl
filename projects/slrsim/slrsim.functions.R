@@ -36,15 +36,13 @@ paper.table <- function(df) {
 
     auc      = rrow$auc,
     `fpr_tpr`    = rrow$tpr_at_fpr,
-    `fpr_fdr`    = rrow$tpr_at_fpr,
-    `fpr_tp`    = rrow$tp_at_fpr,
-    `fpr_fp`    = rrow$fp_at_fpr,
-
+#    `fpr_fdr`    = rrow$tpr_at_fpr,
+#    `fpr_tp`    = rrow$tp_at_fpr,
+#    `fpr_fp`    = rrow$fp_at_fpr,
     `fdr_tpr`    = rrow$tpr_at_fdr,
-    `fdr_fpr`    = rrow$fpr_at_fdr,
-    `fdr_tp`    = rrow$tp_at_fdr,
-    `fdr_fp`    = rrow$fp_at_fdr,
-
+#    `fdr_fpr`    = rrow$fpr_at_fdr,
+#    `fdr_tp`    = rrow$tp_at_fdr,
+#    `fdr_fp`    = rrow$fp_at_fdr,
     `cor`   = cor
   )
 
@@ -55,30 +53,6 @@ paper.table <- function(df) {
 
   ret.df <- ret.df[with(ret.df, order(tree,aligner,length,indel,filter)),]
   return(ret.df)
-}
-
-fig.1.summary <- function(df,thresh) {
-  
-  stats <- df.stats(df,thresh=thresh)
-  roc <- slr.roc(df,na.rm=TRUE)
-
-  # Need to copy these ROC-derived summary stats over to the 'stats' object.
-  stats$auc <- roc[1,]$auc
-  stats$tpr_at_fpr <- roc[1,]$tpr_at_fpr
-
-  print(paste("summarizing",df[1,]$experiment_name,df[1,]$slrsim_label))
-  return(cbind(df[1,],stats))
-}
-
-min.fdr.score <- function(data) {
-    roc = slr.roc(data,na.rm=F)
-    roc = subset(roc, tp > 0)
-		min.fdr = min(roc$fdr)
-    which.min = which(roc$fdr <= min.fdr)
-    best.index = max(which.min)
-    min.score = roc[best.index,]$score
-#    print(paste(roc[1,]$slrsim_label,min.fdr,best.index,min.score))
-    return(data.frame(min.score=min.score,min.fdr=min.fdr))
 }
 
 slr.roc = function(df,na.rm=F) {
@@ -264,4 +238,16 @@ df.stats = function(df,
     tn = neg_neg,
     cor = cor
   ))
+}
+
+format.numeric.df <- function(x,digits=3) {  
+  nums <- unlist(lapply(x,is.double))
+  print(nums)
+  for (col in names(x)) {
+    if (nums[col] == TRUE) {
+      x[,col] <- formatC(x[,col],digits=digits,format='fg')
+    }
+  }
+
+  return(x)
 }

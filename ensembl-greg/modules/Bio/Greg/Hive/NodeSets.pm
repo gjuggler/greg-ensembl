@@ -15,20 +15,8 @@ use Bio::Greg::Hive::Process;
 
 use base ('Bio::Greg::Hive::Process');
 
-#
-# Some global-ish variables.
-#
-my $dba;
-my $pta;
-
-sub fetch_input {
-  my ($self) = @_;
-
-  # Load up the Compara DBAdaptor.
-  $dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new( -DBCONN => $self->db->dbc );
-  $pta = $dba->get_ProteinTreeAdaptor;
-
-  ### DEFAULT PARAMETERS ###
+sub param_defaults {
+  my $self = shift;
   my $params = {
     flow_node_set            => 'Primates',
     flow_parent_and_children => 0,
@@ -36,11 +24,12 @@ sub fetch_input {
     keep_at_least_root       => 0,
     merge_by_gene_names      => 0
   };
-  ##########################
+  return $params;
+}
 
-  $self->load_all_params($params);
-
-  $self->param( 'tree', $self->get_tree );
+sub fetch_input {
+  my ($self) = @_;
+  $self->load_all_params();
 }
 
 sub run {
@@ -48,9 +37,12 @@ sub run {
 
   $self->get_output_folder;
 
-  my $tree = $self->param('tree');
+  my $tree = $self->get_tree;
+  my $genome_tree = Bio::EnsEMBL::Compara::ComparaUtils->get_genome_tree_subset($self->compara_dba,$self->params);
 
-  #print $tree->nhx_format('display_label') . "\n";
+  my $human_gene_count = scalar(grep {$_->taxon_id==9606} $tree->leaves);
+  $self->param('orig_human_gene_count',$human_gene_count);
+  $self->param('genome_species_count',scalar($genome_tree->leaves));
 
   $self->tag_root_nodes( $tree, "Primates" );
   $self->tag_root_nodes( $tree, "Glires" );
@@ -62,18 +54,14 @@ sub run {
   $self->tag_root_nodes( $tree, "Fish" );
   $self->tag_root_nodes( $tree, "Sauria" );
 
-  $self->tag_nodes_with_clade_coverage( $tree, "Primates" );
-  $self->tag_nodes_with_clade_coverage( $tree, "Glires" );
-  $self->tag_nodes_with_clade_coverage( $tree, "Laurasiatheria" );
-  $self->tag_nodes_with_clade_coverage( $tree, "Sauria" );
-  $self->tag_nodes_with_clade_coverage( $tree, "Clupeocephala" );
-
 }
 
 sub write_output {
   my $self = shift;
 
-  my $tree = $self->param('tree');
+  my $tree = $self->get_tree;
+
+  my $flowed_human_gene_count = 0;
 
   if ( defined $self->param('flow_node_set') ) {
     $self->input_job->autoflow(0);
@@ -81,24 +69,33 @@ sub write_output {
 
     foreach my $node ( $tree->nodes ) {
       next if ( $node->is_leaf );
-
       my $params = {
         orig_node_id => $self->param('node_id'),
-        node_id => $node->node_id
+        node_id => $node->node_id,
+        node_set_leaf_count => scalar($node->leaves)
       };
       my $id = $node->node_id;
 
-      if ( $node->has_tag( "cc_root_" . $flow_set ) ) {
+      if ( $self->param('cc_root_'.$flow_set.'_'.$node->node_id) == 1) {
 
         # Don't flow this node if this job has a specific target gene ID.
         if (defined $self->param('gene_id')) {
           my $gene_id = $self->param('gene_id');
+          print "Looking for gene $gene_id...\n";
           next unless ($self->tree_contains_a_gene_with_name($node,$gene_id));
+          print "Found it!\n";
           $params->{gene_id} = $gene_id;
         }
+
+        $self->new_data_id($params);
+
+        my $param_string = Bio::EnsEMBL::Compara::ComparaUtils->hash_to_string($params);
         
         my ($output_job_id) = @{ $self->dataflow_output_id( $params, 1 ) };
-        print " -> Flowed node $id (job id: $output_job_id)\n";
+        print " -> Flowed node $id [$param_string] [job id: $output_job_id]\n";
+
+        $flowed_human_gene_count += scalar(grep {$_->taxon_id==9606} $node->leaves);
+
         if ( $self->param('flow_parent_and_children') ) {
           my $i = 0;
           foreach my $child ( @{ $node->children } ) {
@@ -115,6 +112,8 @@ sub write_output {
       }
     }
   }
+
+  $self->param('flowed_human_gene_count',$flowed_human_gene_count);
 }
 
 sub tree_contains_a_gene_with_name {
@@ -151,7 +150,7 @@ sub tag_root_nodes {
   my $base_p = {
     tree             => $tree,
     subtree_function => \&does_parent_have_clade_children,
-    cc_min_size      => 4
+    min_size      => 4
   };
 
   my $params;
@@ -168,13 +167,15 @@ sub tag_root_nodes {
         cc_Primates       => 0.1,
         cc_Glires         => 0.1,
         cc_Laurasiatheria => 0.1,
+        any      => [ 'Sauria', 'Clupeocephala', 'Ciona', 'Marsupialia' ],
+        max_size => ( $self->param('genome_species_count') * 2 )
       }
     );
   } elsif ( $method_name eq 'MammalPlusOutgroup' ) {
     $params = $self->replace_params(
       $base_p, {
         cc_Eutheria => 0.1,
-        cc_any      => [ 'Sauria', 'Clupeocephala', 'Ciona', 'Marsupialia' ]
+        any      => [ 'Sauria', 'Clupeocephala', 'Ciona', 'Marsupialia' ]
       }
     );
   } elsif ( $method_name eq 'MammalPlusTwoOutgroups' ) {
@@ -196,9 +197,15 @@ sub tag_root_nodes {
   #my $subtree_function = $params->{subtree_function};
   my @root_nodes = $self->get_smallest_subtrees_from_node( $tree, $params );
 
+  # Limit the max size of trees.
+  if (defined $params->{max_size}) {
+    @root_nodes = grep {scalar($_->leaves) <= $params->{max_size} } @root_nodes;
+  }
+
   foreach my $node (@root_nodes) {
     printf " -> %s %d %d\n", $method_name, scalar $node->leaves, $node->node_id;
-    $node->store_tag( "cc_root_" . $method_name, 1 );
+    $self->param('cc_root_'.$method_name.'_'.$node->node_id,1);
+    #$node->store_tag( "cc_root_" . $method_name, 1 );
   }
 }
 
@@ -217,7 +224,7 @@ sub tag_nodes_with_clade_coverage {
     if ( $coverage_fraction > 0 ) {
 
       #printf "%.20s %.3f\n",$node->newick_format,$coverage_fraction;
-      $node->store_tag( "cc_$clade", sprintf( "%.3f", $coverage_fraction ) );
+      #$node->store_tag( "cc_$clade", sprintf( "%.3f", $coverage_fraction ) );
     }
   }
 }
@@ -229,7 +236,7 @@ sub clade_coverage_for_node {
 
   my $key = "_taxon_ids_" . $clade;
   if ( !defined $self->{$key} ) {
-    my @genomes = $self->get_genomes_within_clade( $dba, $clade );
+    my @genomes = $self->get_genomes_within_clade( $self->compara_dba, $clade );
     my @taxon_ids = map { $_->taxon_id } @genomes;
     $self->{$key} = \@taxon_ids;
   }
@@ -284,13 +291,8 @@ sub does_tree_have_clade_coverage {
   my $tree   = shift;
   my $params = shift;
 
-  #  print join "\n",map {$_->stable_id} $tree->leaves;
-
   foreach my $key ( keys %$params ) {
-    next unless ( $key =~ /cc_/ );
     my $value = $params->{$key};
-
-    $key =~ s/cc_//;
 
     # the 'cc_any' tag signifies we'll take anything from the following clades.
     if ( $key eq 'any' ) {
@@ -302,8 +304,10 @@ sub does_tree_have_clade_coverage {
       return 0 unless ($exists_any);
     } elsif ( $key eq 'min_size' ) {
       return 0 unless ( scalar( $tree->leaves ) >= $value );
-    } else {
+    } elsif ($key =~ m/cc_/) {
+      $key =~ s/cc_//;
       my $coverage = $self->clade_coverage_for_node( $tree, $key, $params );
+      #print "$key $coverage $value\n";
       return 0 unless ( $coverage >= $value );
     }
   }

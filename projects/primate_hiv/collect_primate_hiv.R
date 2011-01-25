@@ -1,4 +1,6 @@
-dbname <- 'gj1_hiv_58'
+if (!exists("dbname")) {
+  dbname <- 'gj1_hiv_58'
+}
 source("~/src/greg-ensembl/scripts/collect_sitewise.R",echo=T)
 
 all.data <- data.frame()
