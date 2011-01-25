@@ -3,11 +3,7 @@
 <head></head>
 <body>
 
-<style type="text/css">
-body {
-font-size:10pt;
-}
-</style>
+<link rel="stylesheet" typef="text/css" href="webpage_output.css"></link>
 <div style="margin:auto;width:650px;">
 
 <div>
@@ -43,20 +39,115 @@ References:<br/>
 <div style="border:2px solid #DDD;padding:1em;">
 <h2>Contents</h2>
 
-<h3>Gene summaries</h3>
+<h3>Gene Summary Tables</h3>
 <ul>
-<li><b>By chromosome:</b> CHROMOSOME_LINKS </li>
-<li><b>Top 200 by:</b> TOP_LINKS </li>
-<li><b>Bottom 200 by:</b> BOTTOM_LINKS </li>
+<li><b>By chromosome:</b><p> CHROMOSOME_LINKS </p></li>
+<li><b>Top / bottom 200 by attributes:</b><p> TOP_BOTTOM_LINKS </p></li>
+<li><b>Full list by gene name (for finding YFG):</b> <a href="./all.html">All genes</a> </li>
 </ul>
 
 <h3>UCSC Tracks</h3>
 <ul>
-<li><b>Sitewise dN/dS:</b> SITEWISE_LINKS </li>
-<li><b>Genes colored by:</b> GENE_LINKS </li>
+<li><b>Sitewise likelihood statistic:  </b> SITES_FILES
+<p> A signed version of the SLR test statistic was used to generate a
+UCSC track, provided here
+in <a href="http://genome.ucsc.edu/goldenPath/help/bigWig.html">bigWig</a>
+format.  A value below 0 indicates evidence for negative selection,
+while a value above 0 indicates evidence for positive selection. The
+larger the magnitude of the value, the stronger the evidence for
+positive or negative selection.
+</p>
+<p><em>Example UCSC views</em></p>
+<p> SITES_LINKS </p></li>
+<p><em>Previously analyzed genes</em></p>
+<p> SITES_GENES_LINKS </p></li>
+<p style="font-size:75%;"> References:<br/>
+
+&nbsp;&nbsp; [1] Kitano, T. & Saitou, N. <a href="http://dx.doi.org/10.1007/PL00006583">Evolution of Rh Blood Group
+Genes Have Experienced Gene Conversions and Positive
+Selection</a>. Journal of Molecular Evolution 49, 615-626 (1999).
+<br/>
+&nbsp;&nbsp; [2] Filip, L. C. & Mundy,
+N. I. <a href="http://dx.doi.org/10.1093/molbev/msh111">Rapid
+Evolution by Positive Darwinian Selection in the Extracellular Domain
+of the Abundant Lymphocyte Protein CD45 in Primates</a>. Molecular
+Biology and Evolution 21, 1504-1511 (2004).
+<br/>
+
+&nbsp;&nbsp; [3] Rooney, A. P., Zhang, J. & Nei, M. <a href="http://view.ncbi.nlm.nih.gov/pubmed/10677850">An unusual form of
+purifying selection in a sperm protein</a>. Molecular biology and
+evolution 17, 278-283 (2000)
+<br/>
+
+&nbsp;&nbsp; [4] Huttley, G. A. et al. <a href="http://dx.doi.org/10.1038/78092">Adaptive evolution of the
+tumour suppressor BRCA1 in humans and chimpanzees. Australian Breast
+Cancer Family Study</a>. Nature genetics 25, 410-413 (2000).
+<br/>
+
+&nbsp;&nbsp; [5] Shields, D. C., Harmon, D. L. & Whitehead,
+A. S. <a href="http://view.ncbi.nlm.nih.gov/pubmed/8557980">Evolution of hemopoietic ligands and their receptors. Influence
+of positive selection on correlated replacements throughout ligand and
+receptor proteins</a>. The Journal of Immunology 156, 1062-1070 (1996).
+<br/>
+
+&nbsp;&nbsp; [6] Wang, X. & Zhang, J. <a href="http://dx.doi.org/10.1093/hmg/ddm153">Rapid evolution of primate ESX1,
+an X-linked placenta- and testis-expressed homeobox gene</a>. Human
+Molecular Genetics 16, 2053-2060 (2007).
+<br/>
+
+&nbsp;&nbsp; [7] Elde, N. C., Child, S. J., Geballe, A. P. & Malik,
+H. S. <a href="http://dx.doi.org/10.1038/nature07529">Protein kinase R reveals an evolutionary model for defeating
+viral mimicry</a>. Nature 457, 485-489 (2008).
+<br/>
+
+&nbsp;&nbsp; [8] Gupta, R. K. et al. <a href="http://dx.doi.org/10.1073/pnas.0907075106">Simian immunodeficiency virus
+envelope glycoprotein counteracts tetherin/BST-2/CD317 by
+intracellular sequestration</a>. Proceedings of the National Academy of
+Sciences of the United States of America 106, 20889-20894 (2009).
+<br/>
+
+&nbsp;&nbsp; [9] Guernsey, D. L. et al. <a href="http://dx.doi.org/10.1016/j.ajhg.2010.06.003">Mutations in centrosomal
+protein CEP152 in primary microcephaly families linked to
+MCPH4</a>. American journal of human genetics 87, 40-51 (2010).
+</p>
+
+<li><b>Genes colored by:</b> GENES_FILES
+<p> The genes covered in this analysis were scored and colored by
+various evolutionary or sequence-based attributes, provided here as a series of 
+<a href="http://genome.ucsc.edu/goldenPath/help/bigBed.html">bigBed</a>
+files.
+</p>
+<p><em>Example UCSC views</em> (zoom in to see colors; black is low value, red is high)</p>
+<p> GENES_LINKS     </p></li>
 </ul>
 
 <h3>Raw Data</h3>
+<ul>
+<li> Tabular results from the analysis are available here: <a href="./mammals_slr_tables.Rdata">Mammals SLR Tables</a>
+<p> This compressed data file can be opened
+using <a href="http://www.r-project.org/">R</a>. A number of objects
+will become available upon loading the file using R's load() function:
+<ul>
+<li><em>sites_[m|p|g|l]</em>: data files corresponding to SLR
+estimates in four different clades: mammals, primates, glires, and laurasiatheria.</li>
+<li><em>sites_info</em>: information on the fields contained in the sites_[m|p|g|l] files.</li>
+<li><em>genes_[m|p|g|l]</em>: data files corresponding to one row per
+alignment from which the sites_[m|p|g|l] data were derived.</li>
+<li><em>genes_info</em>: information on the fields contained in the genes_[m|p|g|l] files.</li>
+</ul>
+</li>
+<li>
+All data available from this webpage (including gene alignments, trees, SLR
+results, and plots) can also be downloaded here (4gb .tar.gz): <a href="./mammals_slr_dataset.tar.gz">Mammals SLR Dataset</a>
+</li>
+</div>
+
+<div style="border: 2px solid #DDD;padding: 1em; margin-top:2em;">
+
+<h2>Summary Table Details</h2>
+<ul>
+TABLE_NOTES
+</ul>
 
 </div>
 
