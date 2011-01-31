@@ -621,6 +621,20 @@ sub all_lines {
   return \@all_lines;
 }
 
+sub parse_results {
+  my $self = shift;
+  my $aln = shift;
+  my $pep_aln = shift;
+  my $suppl_arrayref = shift;
+
+  my $results;
+
+  my $bayes_results = $self->extract_empirical_bayes($suppl_arrayref);
+  $results = Bio::EnsEMBL::Compara::ComparaUtils->replace_params($results, $bayes_results);
+
+  return $results;
+}
+
 # GJ 2009-01-08 : extracts the naive bayes predictions from the supplementary string.
 sub extract_empirical_bayes {
   my $self           = shift;
@@ -637,29 +651,26 @@ sub extract_empirical_bayes {
 # 1 M   0.03403 0.08222 0.10935 0.11735 0.11455 0.10627 0.09566 0.08451 0.07399 0.07080 0.11128 ( 4)  0.745 +-  1.067
 # NOTE FROM PAML DOCUMENTATION, p.29: "We suggest that you ignore the NEB output and use the BEB results only."
 
-  my $has_bayes_section = 0;
+  my $results;
   my $bayes_results;
-  my $bayes_se;
-  my $bayes_prob;    # Probability that a given site is greater than one.
   my $pos_sites;
 
   my $site_class_omegas;
 
-  my $naive_output_has_p_gt_one_at_end = 0;
-
+  my $has_bayes_section = 0;
   foreach my $line (@suppl) {
-
-    #      chomp($line);
-    #      next if (length($line) ==0);
     $has_bayes_section = 1 if ( $line =~ m/Bayes Empirical Bayes/i );
   }
 
   #print "Has bayes: $has_bayes_section\n";
-  my $started_bayes         = 0;
-  my $started_pos_sel_sites = 0;
-  my $started_naive         = 0;
+  my $seen_bayes         = 0;
+  my $seen_pos_sel_sites = 0;
+  my $seen_naive         = 0;
+  my $naive_output_has_p_gt_one_at_end = 0;
+
   foreach my $line (@suppl) {
     chomp($line);
+    #print "$line\n";
     next if ( length($line) == 0 );
     next
       if ( $line =~ /amino acids/i )
@@ -674,52 +685,64 @@ sub extract_empirical_bayes {
       my @toks = split( /\s+/, $stuff );
       for ( my $i = 0 ; $i < scalar(@toks) ; $i++ ) {
         $site_class_omegas->{$i} = $toks[$i];
-        print "Site class: $i " . $toks[$i] . "\n";
+        #print "Site class: $i " . $toks[$i] . "\n";
       }
     }
 
-    $started_bayes         = 1 if ( $line =~ m/Bayes Empirical Bayes/i );
-    $started_naive         = 1 if ( $line =~ m/Naive Empirical Bayes/i );
-    $started_pos_sel_sites = 1 if ( $line =~ m/positively selected sites/i && !$has_bayes_section );
-    $started_pos_sel_sites = 1
-      if ( $line =~ m/positively selected sites/i && $has_bayes_section && $started_bayes );
+    # Counts of how many times we've seen each of these 'marker' lines.
+    # When we're working with concatenated total output (main file, mlc, plus extra, rst)
+    # we want to look for the *2nd* occurrance, because these lines also show up at the bottom
+    # of the main output, but we want the data from the extra file.
+    $seen_bayes++ if ( $line =~ m/Bayes Empirical Bayes/i );
+    $seen_naive++ if ( $line =~ m/Naive Empirical Bayes/i );
+    $seen_pos_sel_sites++ if ( $line =~ m/positively selected sites/i && !$has_bayes_section );
+    $seen_pos_sel_sites ++
+      if ( $line =~ m/positively selected sites/i && $has_bayes_section && $seen_bayes );
 
-    if ( !$has_bayes_section && $started_naive && !$started_pos_sel_sites ) {
+    #print "[$seen_naive $seen_pos_sel_sites]";
+    #print "$line\n";
+    
+    if ( !$has_bayes_section && $seen_naive >= 2 && $seen_pos_sel_sites <= 1 ) {
       if ( $line =~ /empirical/i ) {
         if ( $line =~ /w>1/i ) {
           $naive_output_has_p_gt_one_at_end = 1;
         }
       }
-
- #Naive Empirical Bayes (NEB) probabilities for 10 classes& postmean_w
- # 1 M   0.00320 0.01289 0.02424 0.03656 0.04965 0.06350 0.07828 0.09450 0.11369 0.52349 (10)  0.642
+      
+      #Naive Empirical Bayes (NEB) probabilities for 10 classes& postmean_w
+      # 1 M   0.00320 0.01289 0.02424 0.03656 0.04965 0.06350 0.07828 0.09450 0.11369 0.52349 (10)  0.642
       chomp $line;
       my @bits = split( /\s+/, $line );
       my $pos = $bits[1];
 
+      # Gets rid of the header line for the NEB output.
+      next if ($line =~ m/w>1/i);
+      
       my $prob_gt_one = 0;
       if ($naive_output_has_p_gt_one_at_end) {
         $prob_gt_one = pop @bits;
       } else {
         foreach my $site_class ( keys %{$site_class_omegas} ) {
           my $post_prob = $bits[ $site_class + 3 ];
-
+          
           #print "  Post prob: ${site_class} $post_prob\n";
           if ( $site_class_omegas->{$site_class} > 1 ) {
             $prob_gt_one += $post_prob;
           }
         }
       }
-
+      
       my $omega = pop @bits;
-
-      print " -> Naive p(w>1): ${prob_gt_one}\n";
-      $bayes_results->{$pos} = $omega;
-      $bayes_prob->{$pos}    = $prob_gt_one;
-      $bayes_se->{$pos}      = '';
+      
+      my $obj = {
+        omega => $omega,
+        prob_gt_one => $prob_gt_one,
+        se => 0
+      };
+      $bayes_results->{$pos} = $obj;
     }
 
-    if ( $has_bayes_section && $started_bayes && !$started_pos_sel_sites ) {
+    if ( $has_bayes_section && $seen_bayes >= 2 && $seen_pos_sel_sites <= 1 ) {
       next if ( $line =~ /empirical/i );
 
 #Bayes Empirical Bayes (BEB) probabilities for 11 classes (class)& postmean_w
@@ -740,15 +763,19 @@ sub extract_empirical_bayes {
 # Is this true??
       my $prob_gt_one = $bits[13];
 
-      print " -> BEB p(w>1) = $prob_gt_one\n";
-      $bayes_prob->{$pos}    = $prob_gt_one;
-      $bayes_results->{$pos} = $omega;
-      $bayes_se->{$pos}      = $se;
+      print "$se\n";
+      my $obj = {
+        omega => $omega,
+        prob_gt_one => $prob_gt_one,
+        se => $se,
+        is_positive_site => 0
+      };
+      $bayes_results->{$pos} = $obj;
     }
 
-    if ($started_pos_sel_sites) {
+    if ($seen_pos_sel_sites >= 2) {
       next if ( $line =~ m/positively/i );
-      next if ( $line =~ m/Prob(w>1)/i );
+      next if ( $line =~ m/Prob\(w>1\)/i );
       last if ( $line =~ m/lnL/i );
       last if ( $line =~ m/reconstruction/i );
 
@@ -759,10 +786,13 @@ sub extract_empirical_bayes {
       #    41 S      0.830         4.654 +- 3.213
       shift @bits;
       my $site = shift @bits;
-      $pos_sites->{$site} = 1;
+      #print "$site\n";
+      $bayes_results->{$site}->{is_positive_site} = 1;
     }
   }
-  return ( $bayes_results, $bayes_se, $bayes_prob, $pos_sites );
+
+  my $results = $bayes_results;
+  return $results;
 }
 
 # GJ 2009-01-08 : Parse the tree from a block of CODEML-formatted text.
