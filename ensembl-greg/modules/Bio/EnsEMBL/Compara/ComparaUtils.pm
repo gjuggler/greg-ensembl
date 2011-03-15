@@ -5,6 +5,7 @@ use strict;
 use Bio::TreeIO;
 use Bio::EnsEMBL::Compara::LocalMember;
 use Bio::EnsEMBL::Compara::ProteinTree;
+use Bio::EnsEMBL::Compara::NestedSet;
 use Bio::EnsEMBL::Utils::Exception;
 
 use Bio::EnsEMBL::Compara::AlignUtils;
@@ -26,6 +27,38 @@ my $TREE    = "Bio::EnsEMBL::Compara::TreeUtils";
 my $ALN     = "Bio::EnsEMBL::Compara::AlignUtils";
 my $COMPARA = "Bio::EnsEMBL::Compara::ComparaUtils";
 
+*Bio::EnsEMBL::Compara::NestedSet::leaves = sub {
+  my $self = shift;
+  return @{$self->get_all_leaves};
+};
+*Bio::EnsEMBL::Compara::NestedSet::nodes = sub {
+  my $self = shift;
+  return @{$self->get_all_nodes};
+};
+*Bio::EnsEMBL::Compara::NestedSet::sorted_children = sub {
+  my $self = shift;
+
+  my @sortedkids = 
+     sort { scalar($b->leaves) <=> scalar($a->leaves)
+              ||
+            $a->is_leaf <=> $b->is_leaf
+                     ||
+            $a->get_child_count <=> $b->get_child_count
+                     ||
+            $a->distance_to_parent <=> $b->distance_to_parent
+          }  @{$self->children;};
+  return \@sortedkids;
+};
+*Bio::EnsEMBL::Compara::NestedSet::get_all_leaves = sub {
+  my $self = shift;
+  
+  my $leaves = {};
+  $self->_recursive_get_all_leaves($leaves);
+  my @leaf_list = values %{$leaves};
+#  my @leaf_list = sort {$a->node_id <=> $b->node_id} values(%{$leaves});
+  return \@leaf_list;
+};
+
 sub load_registry {
   my $class = shift;
   if ( $ENV{'USER'} =~ /gj1/ ) {
@@ -38,7 +71,8 @@ sub load_registry {
       {
         -host => 'ensdb-archive',
         -port => 5304,
-        -user => 'ensro',
+        -user => 'ensadmin',
+        -pass => 'ensembl',
         #-verbose => 1
       }
       );
@@ -172,7 +206,7 @@ sub store_SimpleAlign_into_table {
   my $pta = $tree->adaptor;
   my $mba = $pta->db->get_MemberAdaptor;
 
-  $pta->protein_tree_member($output_table);
+  #$pta->protein_tree_member($output_table);
 
   # Make sure everything's the same length.
   my $length;
@@ -935,7 +969,7 @@ sub tree_aln_cdna {
 
   my $score_aln = Bio::EnsEMBL::Compara::ComparaUtils->fetch_score_aln($aa,$tree,$params);
 
-  Bio::EnsEMBL::Compara::AlignUtils->pretty_print($score_aln,{full=>1,length=>150});
+  #Bio::EnsEMBL::Compara::AlignUtils->pretty_print($score_aln,{full=>1,length=>150});
 
   return ($tree,$filtered_aa,$filtered_cdna,$score_aln);
 }
@@ -959,7 +993,7 @@ sub get_all_as_obj {
 
   my $score_aln = Bio::EnsEMBL::Compara::ComparaUtils->fetch_score_aln($aa,$tree,$params);
 
-  Bio::EnsEMBL::Compara::AlignUtils->pretty_print($score_aln,{full=>1});
+  #Bio::EnsEMBL::Compara::AlignUtils->pretty_print($score_aln,{full=>1});
 
   return {
     tree => $tree,
@@ -1014,13 +1048,16 @@ sub restrict_aln_to_tree {
   my $ok_id_hash;
 
   foreach my $leaf ( $tree->leaves ) {
-    $ok_id_hash->{ $leaf->stable_id } = 1;
-    my $taxon = $leaf->taxon;
-    $ok_id_hash->{ $leaf->genome_db->name }    = 1;
-    $ok_id_hash->{ $taxon->taxon_id }    = 1;
-    $ok_id_hash->{ $taxon->common_name } = 1;
-    $ok_id_hash->{ $taxon->short_name }  = 1;
-    $ok_id_hash->{ $taxon->binomial }    = 1;
+    $ok_id_hash->{ $leaf->name } = 1;
+    if ($leaf->isa("Bio::EnsEMBL::Compara::Member")) {
+      $ok_id_hash->{ $leaf->stable_id } = 1;
+      my $taxon = $leaf->taxon;
+      $ok_id_hash->{ $leaf->genome_db->name }    = 1;
+      $ok_id_hash->{ $taxon->taxon_id }    = 1;
+      $ok_id_hash->{ $taxon->common_name } = 1;
+      $ok_id_hash->{ $taxon->short_name }  = 1;
+      $ok_id_hash->{ $taxon->binomial }    = 1;
+    }
   }
 
   my $new_aln = $aln->new;
@@ -1073,7 +1110,6 @@ sub get_species_subtree {
   return $species_tree;
 }
 
-# GJ 2009-01-15
 sub get_tree_for_comparative_analysis {
   my $class  = shift;
   my $dba    = shift;
@@ -1081,7 +1117,8 @@ sub get_tree_for_comparative_analysis {
 
   my $default_params = {
     keep_species   => '',
-    remove_species => ''
+    remove_species => '',
+    flow_node_set => ''
   };
   $params = $class->replace_params( $default_params, $params );
 
@@ -1099,7 +1136,7 @@ sub get_tree_for_comparative_analysis {
     # GJ 2009-09-18
     if ( $params->{'alignment_table'} ) {
       print "ALIGNMENT TABLE:" . $params->{alignment_table} . "\n";
-      $pta->protein_tree_member( $params->{'alignment_table'} );
+      #$pta->protein_tree_member( $params->{'alignment_table'} );
     }
     if ( $params->{'alignment_score_table'} ) {
       #$pta->protein_tree_score( $params->{'alignment_score_table'} );
@@ -1111,6 +1148,67 @@ sub get_tree_for_comparative_analysis {
     $tree = $params->{tree};
   }
 
+  
+  # Remove members not identified as one2one orthologs of the gene_id member.
+  if ($params->{flow_node_set} eq 'one2one') {
+    die ("Gene ID not set w/ method one2one!") unless (defined $params->{gene_id});
+
+    print "  keeping only one2one orthologs...\n";
+    #print "  original tree:" . $tree->newick_format."\n";
+
+    my $id = $params->{gene_id};
+    
+    my $gene_adaptor = Bio::EnsEMBL::Registry->get_adaptor('human', 'core', 'gene');
+    my $member_adaptor = $dba->get_MemberAdaptor;
+    my $homology_adaptor = $dba->get_HomologyAdaptor;
+
+    my @genes;
+    push @genes, @{ $gene_adaptor->fetch_all_by_external_name($id)};
+    if (scalar(@genes) == 0) {
+      my $stable_id_gene = $gene_adaptor->fetch_by_stable_id($id);
+      push @genes, $stable_id_gene if (defined $stable_id_gene);
+    }
+    my $member;
+    foreach my $gene (@genes) {
+      my $s_id = $gene->stable_id;
+      $member = $member_adaptor->fetch_by_source_stable_id(undef, $s_id);
+      last if (defined $member);
+    }
+
+    $member = $member_adaptor->fetch_by_source_stable_id(undef, $id) if (!defined $member);
+    die("Cannot find gene for id $id!") unless (defined $member);
+
+    my $gene_member = $member->gene_member;
+    #print "MEMBER: ".$member->stable_id."\n";
+
+    my $one2one_stable_ids;
+    my $homs = $homology_adaptor->fetch_all_by_Member($gene_member);
+    foreach my $hom (@$homs) {
+      #print "$hom\n";
+      next unless ($hom->description eq 'ortholog_one2one');
+      my @members = @{$hom->gene_list};
+      foreach my $m (@members) {
+        #print $m->stable_id."\n";
+        $one2one_stable_ids->{$m->stable_id} = 1;
+      }
+    }
+
+    my $keep_members;
+    foreach my $leaf ($tree->leaves) {
+      if ($one2one_stable_ids->{$leaf->gene_member->stable_id}) {
+        $keep_members->{$leaf} = $leaf;
+      }
+    }
+    #print join(",",values %$keep_members)."\n";
+    my @keeps = values %$keep_members;
+    $tree = $TREE->extract_subtree_from_leaf_objects($tree, \@keeps);
+
+    warn("Nothing left after extracting one2one!") unless ( defined $tree );
+
+    return -1 if (!defined $tree);
+  }
+
+
   my $keep_species   = $params->{'keep_species'};
   my $remove_species = $params->{'remove_species'};
   print "$keep_species $remove_species\n";
@@ -1118,13 +1216,14 @@ sub get_tree_for_comparative_analysis {
   my %keep_hash;
   my %remove_hash;
 
-  # Collect all taxon IDs within the tree.
-  @all_ids = $TREE->get_species_in_tree($tree);
-
   # Remove nodes not within our desired taxonomic subtree.
   if ( $keep_species ne '' ) {
-
-# Find a list of all species in the tree, and add any species NOT in the keepers list to the remove list.
+    
+    # Collect all taxon IDs within the tree.
+    @all_ids = $TREE->get_species_in_tree($tree);
+    
+    
+    # Find a list of all species in the tree, and add any species NOT in the keepers list to the remove list.
     my @ks = $class->get_taxon_ids_from_keepers_list( $dba, $keep_species );
     map { $keep_hash{$_} = 1 } @ks;
     foreach my $tax_id (@all_ids) {
@@ -1307,32 +1406,54 @@ sub fix_genome_polytomies {
   # Fix up any multifurcations in the tree. For now we'll follow:
   # http://mbe.oxfordjournals.org/cgi/content/full/26/6/1259/FIG6
 
-  # Fix homo/pan/gor.
-  my $hom = $tree->find_node_by_name('Homininae');
-  if ( defined $hom && $TREE->is_polytomy($hom) ) {
-    $class->_fix_multifurcation( $hom, [ 'Homo sapiens', 'Pan troglodytes' ] );
-  }
+  my $node;
+  my $new_node;
 
-  # Fix pig/cow, dog/cat, horse.
-  my $laura = $tree->find_node_by_name('Laurasiatheria');
-  if ( defined $laura && $TREE->is_polytomy($laura) ) {
-    $class->_fix_multifurcation( $laura, [ 'Equus caballus', 'Bos taurus' ] );
-  }
+  # Fix homo/pan/gor.
+  $class->_fix_multifurcation($tree, 'Homininae', [ 'Homo sapiens', 'Pan troglodytes' ] );
+
+  # Fix squirrel and rodents.
+  $class->_fix_multifurcation( $tree, 'Sciurognathi', [ 'Murinae', 'Dipodomys ordii' ] );  
+
+  ### Fix the laurasiatheria mess.
+  # Fix cow & dolphin.
+  $new_node = $class->_fix_multifurcation( $tree, 'Cetartiodactyla', [ 'Bos taurus', 'Tursiops truncatus' ] );  
+  $new_node->name('cow-dolphin');
+  # Bring horse out next to the cetartiodactyla.
+  $new_node = $class->_fix_multifurcation( $tree, 'Laurasiatheria', [ 'Cetartiodactyla', 'Equus caballus' ] );  
+  $new_node->name('horse-et-al');
+  $new_node = $class->_fix_multifurcation( $tree, 'Laurasiatheria', [ 'Chiroptera', 'Carnivora' ] );  
+  $new_node->name('bats-carnivores');
+  $new_node = $class->_fix_multifurcation( $tree, 'Laurasiatheria', [ 'horse-et-al', 'bats-carnivores' ] );    
+  # Fix cow & dolphin.
+  $class->_fix_multifurcation( $tree, 'Cetartiodactyla', [ 'cow-dolphin', 'Vicugna pacos' ] );  
+
+  # Fix Afrotheria.
+  $class->_fix_multifurcation( $tree, 'Afrotheria', [ 'Procavia capensis', 'Loxodonta africana' ] );
 
   # Fix Euarchontoglires, Laurasiatheria, Afrotheria.
-  my $eutheria = $tree->find_node_by_name('Eutheria');
-  if ( defined $eutheria && $TREE->is_polytomy($eutheria) ) {
-    $class->_fix_multifurcation( $eutheria, [ 'Laurasiatheria', 'Euarchontoglires' ] );
-  }
+  $class->_fix_multifurcation( $tree, 'Eutheria', [ 'Afrotheria', 'Xenarthra' ] );
+
+  $class->_fix_multifurcation( $tree, 'Eutheria', [ 'Laurasiatheria', 'Euarchontoglires' ] );
+
+  $class->_fix_multifurcation( $tree, 'Euarchontoglires', [ 'Primates', 'Tupaia belangeri'] );
 
   return $tree;
 }
 
 sub _fix_multifurcation {
   my $class                   = shift;
-  my $polytomy                = shift;
+  my $tree = shift;
+  my $polytomy_name                = shift;
   my $new_group_name_arrayref = shift;
 
+  my $polytomy = $tree->find_node_by_name($polytomy_name);
+  
+  if (!defined $polytomy || !$TREE->is_polytomy($polytomy)) {
+    return undef;
+  }
+
+  #print "Polytomy: ". $polytomy->newick_format . "\n";
   #print "Fixing multifurcation: " . $polytomy->newick_format . "\n";
 
   my @new_group_names = @$new_group_name_arrayref;
@@ -1345,9 +1466,12 @@ sub _fix_multifurcation {
 
   foreach my $name (@new_group_names) {
     my ($node) = grep { $_->find_node_by_name($name) } @children;
-    warn("No node found for $name!") unless ($node);
+    die("No node found for $name!") unless ($node);
     $new_group->add_child($node);
   }
+
+  #print "New group: ". $new_group->newick_format . "\n";
+  return $new_group;
 }
 
 # Gets the genome tree representing the current species being analyzed.
@@ -1358,7 +1482,7 @@ sub get_genome_tree_subset {
   my $params = shift;
 
   my $full_tree = $class->get_genome_tree($dba);
-  print $full_tree->newick_format."\n";
+  #print $full_tree->newick_format."\n";
   my @keepers = $class->get_taxon_ids_from_keepers_list( $dba, $params->{keep_species} );
 
   my $tree = $full_tree;
@@ -1812,7 +1936,7 @@ sub restrict_tree_to_aln {
 
   my $used_seqs;
 
-  Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $aln, { width => 150,full => 1});
+  #Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $aln, { width => 150,full => 1});
   
   my @keepers;
   foreach my $leaf ( $tree->leaves ) {
@@ -1870,6 +1994,10 @@ sub get_compara_or_genomic_aln {
   my $params     = shift;
 
   my $num_species = Bio::EnsEMBL::Compara::TreeUtils->species_count($tree);
+  my $taxon_id_hashref;
+  map {
+    $taxon_id_hashref->{$_->taxon_id} = 1;
+  } $tree->leaves;
 
   my $quality_threshold = $params->{quality_threshold};
   $quality_threshold = $class->default_sequence_quality_threshold
@@ -1900,19 +2028,34 @@ sub get_compara_or_genomic_aln {
   if ( $aln_type =~ m/genomic/i ) {
     my ( $cdna, $aa );
     if ( $aln_type eq 'genomic_primates' ) {
+      my $params = {
+        mlss_type => 'epo',
+        species_set => 'primates',
+        quality_threshold => $quality_threshold,
+        restrict_to_species => $taxon_id_hashref
+      };
       ( $cdna, $aa, $extra_info ) = Bio::EnsEMBL::Compara::ComparaUtils->genomic_aln_for_member(
         $c_dba,
         $ref_member,
-        { mlss_type => 'epo', species_set => 'primates', quality_threshold => $quality_threshold }
+        $params
       );
     } elsif ( $aln_type eq 'genomic_mammals' ) {
+      my $params = {
+        mlss_type => 'epo',
+        species_set => 'mammals',
+        quality_threshold => $quality_threshold,
+        restrict_to_species => $taxon_id_hashref
+      };
       ( $cdna, $aa, $extra_info ) =
-        Bio::EnsEMBL::Compara::ComparaUtils->genomic_aln_for_member( $c_dba, $ref_member,
-        { mlss_type => 'epo', species_set => 'mammals', quality_threshold => $quality_threshold } );
+        Bio::EnsEMBL::Compara::ComparaUtils->genomic_aln_for_member( $c_dba, $ref_member, $params);
     } elsif ( $aln_type eq 'genomic_all' ) {
+      my $params = {
+        mlss_type => 'epo_low_coverage',
+        quality_threshold => $quality_threshold,
+        restrict_to_species => $taxon_id_hashref
+      };
       ( $cdna, $aa, $extra_info ) =
-        Bio::EnsEMBL::Compara::ComparaUtils->genomic_aln_for_member( $c_dba, $ref_member,
-        { mlss_type => 'epo_low_coverage', quality_threshold => $quality_threshold } );
+        Bio::EnsEMBL::Compara::ComparaUtils->genomic_aln_for_member( $c_dba, $ref_member, $params);
     }
     $aln = $cdna;
     $aln = Bio::EnsEMBL::Compara::ComparaUtils->restrict_aln_to_tree( $aln, $tree );
@@ -1938,7 +2081,9 @@ sub get_compara_or_genomic_aln {
       $extra_info->{$key} = $val->value;
     }
     
-    $aln = Bio::EnsEMBL::Compara::AlignUtils->remove_blank_columns_in_threes($aln);
+    unless ($params->{keep_blank_columns}) {
+      $aln = Bio::EnsEMBL::Compara::AlignUtils->remove_blank_columns_in_threes($aln);
+    }
     #Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $aln, { width => 150, full => 1 } );
 
     if ( $params->{realign_with_prank} ) {
@@ -1953,6 +2098,10 @@ sub get_compara_or_genomic_aln {
 #    $class->hash_print($extra_info);
 
     $tree = Bio::EnsEMBL::Compara::ComparaUtils->restrict_tree_to_aln( $tree, $aln );
+  }
+
+  if (!defined $tree || scalar($tree->leaves) < 2) {
+    return -1;
   }
 
   if ($params->{rename_sequences_by_taxon}) {
@@ -2078,7 +2227,7 @@ sub genomic_aln_for_tree {
   my $ref_member = $ref_members[0];
 
   #print $ref_member->stable_id . "\n";
-  return $class->genomic_aln_for_member($ref_member);
+  #return $class->genomic_aln_for_member($ref_member);
 }
 
 sub get_bases_for_slice {
@@ -2270,11 +2419,17 @@ sub genomic_aln_for_transcript {
   my $params      = shift;
 
   my $debug = $params->{debug};
-  $debug = 0 unless ( defined $debug );
+  $debug = 1 unless ( defined $debug );
 
   my $quality_threshold = $params->{quality_threshold};
   $quality_threshold = $class->default_sequence_quality_threshold
     unless ( defined $quality_threshold );
+
+  my $taxon_id_hashref = $params->{restrict_to_species};
+
+  if (defined $taxon_id_hashref) {
+    print "  restricting to species: " . join(',', keys %$taxon_id_hashref) . "\n";
+  }
 
   my $mirror_dba = $compara_dba;
   my $as_a       = $mirror_dba->get_AlignSliceAdaptor;
@@ -2325,7 +2480,12 @@ sub genomic_aln_for_transcript {
     foreach my $a_s_slice ( @{ $align_slice->get_all_Slices } ) {
       my $gdb  = $a_s_slice->genome_db;
       my $name = $gdb->name;
+
+      # Skip if this genome is outside our taxon_id list.
+      next if (defined $taxon_id_hashref && !defined $taxon_id_hashref->{$gdb->taxon_id});
+
       if ( $name !~ m/ancestral/gi ) {
+        print "  $name\n" if ($debug);
         $all_species->{$name} = 1;
         $seq_hash->{$name}    = '' if ( !defined $seq_hash->{$name} );
         $qual_hash->{$name}   = [] if ( !defined $qual_hash->{$name} );
@@ -2338,7 +2498,7 @@ sub genomic_aln_for_transcript {
   foreach my $exon (@exons) {
     $exon_i++;
     my $slice = $exon->slice;
-    #print $slice->seq_region_name . " " . $exon->stable_id." ".$exon->start . " " . $exon->end . "\n";
+    print $slice->seq_region_name . " " . $exon->stable_id." ".$exon->start . " " . $exon->end . "\n" if ($debug);
 
     my $start     = $exon->coding_region_start($tx);
     my $end       = $exon->coding_region_end($tx);
@@ -2383,7 +2543,10 @@ sub genomic_aln_for_transcript {
         my $gdb       = $a_s_slice->genome_db;
         my $name      = $gdb->name;
         $gdb_hash->{$name} = $gdb;
-        #printf "%-20s %-6s %-6s\n",$name,$aln_start,$aln_end;
+        printf "%-20s %-6s %-6s\n",$name,$aln_start,$aln_end if ($debug);
+
+        # Skip if it's outside our taxon ID list.
+        next if (defined $taxon_id_hashref && !defined $taxon_id_hashref->{$gdb->taxon_id});
 
         my $cache_object = {};
 
@@ -2391,16 +2554,21 @@ sub genomic_aln_for_transcript {
           && $name !~ m/ancestral/gi ) {
           my $slice_a =
             Bio::EnsEMBL::Registry->get_adaptor( $gdb->taxon->ensembl_alias, 'core', 'slice' );
+          print "  orig position\n" if ($debug);
 
           my @orig_positions;
           for ( my $i = 1 ; $i <= $a_s_slice->length ; $i++ ) {
             my ( $slice, $orig_position ) = $a_s_slice->get_original_seq_region_position($i);
 
+            #print " $i " if ($debug);
             #print "$name $i $orig_position\n" if ($name eq 'Macaca mulatta');
             push @orig_positions, [ $slice, $orig_position ];
           }
+          #print "\n" if ($debug);
           my $slice_ranges = $class->combine_slice_positions_into_ranges( \@orig_positions );
 
+
+          print "  slice ranges\n" if ($debug);
           my @slices = ();
           foreach my $slice_range (@$slice_ranges) {
             my $start = $slice_range->{start};
@@ -2439,6 +2607,7 @@ sub genomic_aln_for_transcript {
 
               #print "$name $dna $qual\n";
             } else {
+              print "  getting quality...\n" if ($debug);
               ($dna,$qual) = $class->get_bases_for_slice( $p_slice, $gdb, $cache_object );
               @q_arr = split( ' ', $qual );
             }
@@ -2488,8 +2657,8 @@ sub genomic_aln_for_transcript {
               my @q = (99) x $p_slice->length;
               push @{ $qual_hash->{$name} }, @q;
               $composed_a_s_seq .= $p_slice->seq;
-
-              #warn( "No DNA for $name " . $p_slice->name );
+              
+              warn( "No DNA for $name " . $p_slice->name );
             }
           }
 
@@ -2546,64 +2715,72 @@ sub genomic_aln_for_transcript {
     foreach my $seq (@remove_seqs) {
       $sa = Bio::EnsEMBL::Compara::AlignUtils->remove_seq_from_aln($sa,$seq->id);
     }
-    #Bio::EnsEMBL::Compara::AlignUtils->pretty_print($sa,{full => 1});
+    #Bio::EnsEMBL::Compara::AlignUtils->pretty_print($sa,{full => 1}) if ($debug);
 
     my $ann = $sa->annotation;
     $ann->{_genomic_coords} = {};
 
     # Store the genomic coordinates for each species at each position (ya this is wasteful,
     # but I think it's the only way...)
-    my $genome_db_name_counter;
-    foreach my $a_s_slice ( @{ $align_slice->get_all_Slices } ) {
-      next unless ( defined $a_s_slice->genome_db->taxon_id );
-      my $gdb = $a_s_slice->genome_db;
-      next if ( $gdb->name =~ m/ancestral/gi );
-      
-      my $name_in_aln = $a_s_slice->genome_db->name.($genome_db_name_counter->{$a_s_slice->genome_db->name} or "");
-      if (!defined($genome_db_name_counter->{$a_s_slice->genome_db->name})) {
-        $genome_db_name_counter->{$a_s_slice->genome_db->name} = 2;
-      } else {
-        $genome_db_name_counter->{$a_s_slice->genome_db->name}++;
-      }
+    print "  storing coordinates...\n" if ($debug);
 
-      foreach my $i ( 1 .. $sa->length ) {
-        my ( $slice, $pos ) = $a_s_slice->get_original_seq_region_position($i);
+    my $should_store_coordinates = 0;
+    if ($should_store_coordinates) {
 
-        my $global_aln_pos = $cur_aln_col + $i;
-        my $coordinate     = Bio::EnsEMBL::Mapper::Coordinate->new();
-        my $char = $a_s_slice->sub_Slice($i,$i)->seq;
-        #print "$global_aln_pos ".$slice->name." char[$char]\n" if ($gdb->taxon_id==9606);
-        $coordinate->start($pos);
-        $coordinate->end($pos);
-        $coordinate->coord_system( $slice->coord_system );
-        $coordinate->id( $slice->seq_region_name );
-        $coordinate->strand( $slice->strand );
-
-        #print $global_aln_pos." ". $coordinate->start."\n";
-
-        if (defined $ann->{_genomic_coords}->{ $name_in_aln . '_' . $global_aln_pos }) {
-          my $orig = $ann->{_genomic_coords}->{ $name_in_aln . '_' . $global_aln_pos };
-          my $new = $coordinate;
-
-          if ($new->id =~ m/gap/i) {
-            # Do nothing.
-          } elsif ($new->id !~ m/gap/i && $orig->id =~ m/gap/i) {
-            # Replace the original with the current one.
-            $ann->{_genomic_coords}->{ $name_in_aln . '_' . $global_aln_pos } = $new;
-          } elsif ($new->id !~ m/gap/i && $orig->id !~ m/gap/i) {
-            warn("Overlapping duplicate genomic coordinates for [$name_in_aln $global_aln_pos]!");
-            my $cur = $orig;
-            printf "ORIG: %s %s %d-%d\n",$cur->id,$cur->coord_system->name,$cur->start,$cur->end;
-            my $cur = $new;
-            printf "CURR: %s %s %d-%d\n",$cur->id,$cur->coord_system->name,$cur->start,$cur->end;
+      my $genome_db_name_counter;
+      foreach my $a_s_slice ( @{ $align_slice->get_all_Slices } ) {
+        next unless ( defined $a_s_slice->genome_db->taxon_id );
+        my $gdb = $a_s_slice->genome_db;
+        next if ( $gdb->name =~ m/ancestral/gi );
+        
+        my $name_in_aln = $a_s_slice->genome_db->name.($genome_db_name_counter->{$a_s_slice->genome_db->name} or "");
+        if (!defined($genome_db_name_counter->{$a_s_slice->genome_db->name})) {
+          $genome_db_name_counter->{$a_s_slice->genome_db->name} = 2;
+        } else {
+          $genome_db_name_counter->{$a_s_slice->genome_db->name}++;
+        }
+  
+        foreach my $i ( 1 .. $sa->length ) {
+          my ( $slice, $pos ) = $a_s_slice->get_original_seq_region_position($i);
+  
+          my $global_aln_pos = $cur_aln_col + $i;
+          my $coordinate     = Bio::EnsEMBL::Mapper::Coordinate->new();
+          my $char = $a_s_slice->sub_Slice($i,$i)->seq;
+          #print "$global_aln_pos ".$slice->name." char[$char]\n" if ($gdb->taxon_id==9606);
+          $coordinate->start($pos);
+          $coordinate->end($pos);
+          $coordinate->coord_system( $slice->coord_system );
+          $coordinate->id( $slice->seq_region_name );
+          $coordinate->strand( $slice->strand );
+  
+          #print $global_aln_pos." ". $coordinate->start."\n";
+  
+          if (defined $ann->{_genomic_coords}->{ $name_in_aln . '_' . $global_aln_pos }) {
+            my $orig = $ann->{_genomic_coords}->{ $name_in_aln . '_' . $global_aln_pos };
+            my $new = $coordinate;
+  
+            if ($new->id =~ m/gap/i) {
+              # Do nothing.
+            } elsif ($new->id !~ m/gap/i && $orig->id =~ m/gap/i) {
+              # Replace the original with the current one.
+              $ann->{_genomic_coords}->{ $name_in_aln . '_' . $global_aln_pos } = $new;
+            } elsif ($new->id !~ m/gap/i && $orig->id !~ m/gap/i) {
+              warn("Overlapping duplicate genomic coordinates for [$name_in_aln $global_aln_pos]!");
+              my $cur = $orig;
+              printf "ORIG: %s %s %d-%d\n",$cur->id,$cur->coord_system->name,$cur->start,$cur->end;
+              my $cur = $new;
+              printf "CURR: %s %s %d-%d\n",$cur->id,$cur->coord_system->name,$cur->start,$cur->end;
+            }
+          }  else {
+            $ann->{_genomic_coords}->{ $name_in_aln . '_' . $global_aln_pos } = $coordinate;
           }
-        }  else {
-          $ann->{_genomic_coords}->{ $name_in_aln . '_' . $global_aln_pos } = $coordinate;
         }
       }
+    } else {
+      warn("Skipping storing coordinates -- you won't get nuc-level coordinates now!");
     }
 
-    Bio::EnsEMBL::Compara::AlignUtils->pretty_print($sa,{full=>1,length=>150});
+    #Bio::EnsEMBL::Compara::AlignUtils->pretty_print($sa,{full=>1,length=>150});
     push @alns, $sa;
     $cur_aln_col += $sa->length;
   }
