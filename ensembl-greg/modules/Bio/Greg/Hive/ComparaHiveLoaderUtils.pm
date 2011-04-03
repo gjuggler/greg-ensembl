@@ -72,7 +72,8 @@ sub add_genes_to_analysis {
     }
     $self->add_job_to_analysis( $analysis_name, {
       node_id => $tree->node_id,
-      gene_id => $gene_id
+      gene_id => $gene_id,
+      flow_node_set => 'one2one'
                                 } );
     $tree->release_tree;
   }

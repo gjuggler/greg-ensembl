@@ -72,12 +72,6 @@ plot.fn = function(ft,col) {
 #fit.fn(df,'gamma','green')
 #fit.fn(df,'weibull','purple')
 
-sign.lrt <- function(df) {
-  df[,'signed_lrt'] = df$lrt_stat
-  df[df$omega < 1,]$signed_lrt = -df[df$omega < 1,]$signed_lrt
-  return(df)
-}
-
 ggplot.gene <- function(df,field) {
   df <- sign.lrt(df)
   df$x_pos <- df[,field]

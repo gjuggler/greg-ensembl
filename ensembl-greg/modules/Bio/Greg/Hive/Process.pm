@@ -30,6 +30,11 @@ sub get_tree {
   my $tree =
     Bio::EnsEMBL::Compara::ComparaUtils->get_tree_for_comparative_analysis( $self->compara_dba,
     $params );
+
+  if ($tree == -1) {
+    $self->fail_and_die("Failed to get tree (maybe too few nodes)");
+  }
+
   return $tree;
 }
 
@@ -130,8 +135,35 @@ sub fail_and_die {
   my $self    = shift;
   my $message = shift;
 
+  $self->create_table_from_params($self->hive_dba, 'failed_jobs', $self->failed_job_table_structure);
+
+
+  # Create an entry in the failed job table structure.
+  $self->param('analysis_id', $self->input_job->analysis_id);
+  my $analysis = $self->hive_dba->get_AnalysisAdaptor->fetch_by_dbID($self->input_job->analysis_id);
+  $self->param('logic_name', $analysis->logic_name);
+  $self->param('job_id', $self->input_job->dbID);
+  $self->param('why_failed', $message);
+  $self->store_params_in_table($self->hive_dba, 'failed_jobs', $self->params);
+
   $self->input_job->update_status('FAILED');
-  throw($message);
+  die($message);
+}
+
+sub failed_job_table_structure {
+  return {
+    job_id => 'int',
+    analysis_id => 'int',
+    logic_name => 'string',
+    
+    node_id => 'int',
+    gene_name => 'string',
+    gene_id => 'string',
+
+    why_failed => 'string',
+
+    unique_keys => 'job_id,analysis_id,node_id'
+  };
 }
 
 sub check_tree_aln {
@@ -290,11 +322,6 @@ sub within_hive {
   return $self->db != undef;
 }
 
-sub worker_temp_directory {
-  my $self = shift;
-
-}
-
 sub dbc {
   my $self = shift;
 
@@ -376,7 +403,8 @@ sub worker_temp_directory {
   my $wtd = $self->SUPER::worker_temp_directory;
 
   if (!$self->within_hive) {
-    $wtd = '/tmp/process_tmp/';
+    my $pid = $$;
+    $wtd = "/tmp/process_tmp_${pid}/";
     make_path($wtd);
   }
 
@@ -477,10 +505,11 @@ sub param {
   }
 
   my $param_value;
+  my $orig_value = $self->SUPER::param($param);
   if (@_) {
     $self->SUPER::param( $param, shift @_ );
     $param_value = $self->SUPER::param($param);
-    if ($self->debug) {
+    if ($self->debug && $param_value ne $orig_value) {
       print "Set $param => [$param_value]\n";
     }
   } else {
@@ -498,7 +527,7 @@ sub params {
     my $param_hash;
     foreach my $key (keys %{$self}) {
       next unless ($key =~ m/^_/);
-      print $key."\n";
+      #print $key."\n";
       my $fixed_key = substr($key,1);
       $param_hash->{$fixed_key} = $self->{$key};
     }
@@ -537,13 +566,18 @@ sub load_all_params {
     $self->param( 'parameter_set_id', 0 );
   }
   if ( !defined $self->param('job_id')) {
-    $self->param('job_id',$self->input_job->dbID);
+    $self->param('job_id',$self->job_id);
   }
 
   if ($self->debug) {
     print "Bio::Greg::Hive::Process.pm - load all params\n";
     $self->hash_print( $self->params );
   }
+}
+
+sub job_id {
+  my $self = shift;
+  return $self->input_job->dbID;
 }
 
 sub get_params_from_tree_tags {
@@ -659,9 +693,15 @@ sub set_params {
   my $self = shift;
   my $params = shift;
 
+  my $debug_state = $self->debug;
+  $self->debug(0);
+  print("Set params [".$params."]\n");
+
   foreach my $key (keys %$params) {
     $self->param($key,$params->{$key});
   }
+
+  $self->debug($debug_state);
 }
 
 sub get_params_from_string {
@@ -890,7 +930,7 @@ sub get_output_folder {
   if ( defined $self->param('output_folder') ) {
     my $folder = $self->param('output_folder');
 
-    print "Output folder: $folder\n" if ($self->debug);
+    #print "Output folder: $folder\n" if ($self->debug);
     if ( !-e $folder ) {
       print
         "Warning: Output folder was already stored in the database, but the folder did not exist.\n";
@@ -902,7 +942,7 @@ sub get_output_folder {
 
   my $output_base = Bio::Greg::EslrUtils->scratchDirectory.'/'.$self->hive_dba->dbc->dbname;
 
-  print "output_base: $output_base\n";
+  #print "output_base: $output_base\n";
 
   my $date_string = strftime( "%Y-%m-%d", localtime );
   my $i = 0;
@@ -1042,7 +1082,11 @@ sub get_taxon_ids_from_keepers_list {
 sub DESTROY {
   my $self = shift;
 
-#  $self->cleanup_temp;
+  if (!$self->within_hive) {
+    my $tmp = $self->worker_temp_directory;
+    rmtree($tmp);
+    #$self->cleanup_temp;
+  }
 
   delete $self->{_param_hash};
   $self->SUPER::DESTROY if $self->can("SUPER::DESTROY");

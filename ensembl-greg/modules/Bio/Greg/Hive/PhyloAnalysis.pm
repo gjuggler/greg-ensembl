@@ -11,6 +11,8 @@ use Bio::AlignIO;
 use Bio::EnsEMBL::Compara::ComparaUtils;
 use Bio::EnsEMBL::Compara::NestedSet;
 
+use File::Path;
+
 use Bio::Greg::Codeml;
 
 use base ('Bio::Greg::Hive::Process');
@@ -57,8 +59,18 @@ sub param_defaults {
     slr_malloc_check => 0,
     
     # PAML Parameters
-    paml_model                  => 'M3',                 # Used for Bayes Empirical Bayes sitewise analysis.
+    paml_model                  => 'M8',                 # Used for Bayes Empirical Bayes sitewise analysis.
+
+
     paml_model_b                => 'M7',                 # Used for the likelihood ratio tests.
+    paml_model_a                => 'M8',
+    paml_branch_model => 0,
+    paml_fix_kappa => 0,
+    paml_kappa => 2,
+    paml_fix_omega => 0,
+    paml_omega => 0.8,
+    paml_fix_alpha => 1,
+    paml_alpha => 0,
 
     # HYPHY Parameters
     hyphy_codon_model => 'mg94',
@@ -570,9 +582,10 @@ sub run_sitewise_analysis {
   my $params = $self->replace($self->param_defaults, $self->params);
   $self->set_params($params);
 
-  if ($self->param('analysis_action') eq 'slr') {
+  my $action = $self->param('analysis_action');
+  if ($action eq 'slr') {
     $result_arrayref = $self->run_sitewise_dNdS($tree, $aln, $self->params);
-  } elsif ($self->param('analysis_action') eq 'paml') {
+  } elsif ($action eq 'paml' || $action eq 'paml_m2' || $action eq 'paml_m8') {
     $result_arrayref = $self->run_paml_sitewise($tree, $aln, $self->params);
   }
   return $result_arrayref;
@@ -629,7 +642,10 @@ sub run_sitewise_dNdS {
   $alnout->close();
 
   # OUTPUT THE TREE.
-  my $tree_newick = Bio::EnsEMBL::Compara::TreeUtils->to_newick($tree,{hide_internal_ids => 1});
+  my $tree_copy = Bio::EnsEMBL::Compara::TreeUtils->copy_tree($tree);
+  map {$_->name('') if (!$_->is_leaf) } $tree_copy->nodes;
+
+  my $tree_newick = Bio::EnsEMBL::Compara::TreeUtils->to_newick($tree_copy);
   #print "Newick: [$tree_newick]\n";
   open( OUT, ">$tmpdir/tree" );
   print OUT sprintf( "%d 1\n", $num_leaves );
@@ -701,6 +717,26 @@ sub run_sitewise_dNdS {
 }
 
 
+sub parse_sitewise_output_lines {
+  my $self = shift;
+  my $tree = shift;
+  my $aln = shift;
+  my $pep_aln = shift;
+  my $output_arrayref = shift;
+
+  # The results hash contains objects keyed by the amino acid site position
+  my $results_hash;
+  
+  my $action = $self->param('analysis_action');
+  if ($action eq 'slr') {
+    $results_hash = $self->parse_slr_output($tree, $aln, $pep_aln, $output_arrayref);
+  } elsif ($action eq 'paml' || $action eq 'paml_m2' || $action eq 'paml_m8') {
+    $results_hash = $self->parse_paml_output($tree, $aln, $pep_aln, $output_arrayref);
+  }
+
+  return $results_hash;
+}
+
 sub parse_sitewise_file {
   my $self = shift;
   my $tree = shift;
@@ -712,15 +748,7 @@ sub parse_sitewise_file {
   my @output = <IN>;
   close(IN);
 
-  # The results hash contains objects keyed by the amino acid site position
-  my $results_hash;
-  if ($self->param('analysis_action') eq 'slr') {
-    $results_hash = $self->parse_slr_output($tree, $aln, $pep_aln, \@output);
-  } elsif ($self->param('analysis_action') eq 'paml') {
-    $results_hash = $self->parse_paml_output($tree, $aln, $pep_aln, \@output);
-  }
-
-  return $results_hash;
+  return $self->parse_sitewise_output_lines($tree, $aln, $pep_aln, \@output);
 }
 
 sub parse_slr_output {
@@ -858,35 +886,109 @@ sub run_paml_sitewise {
 
   print "  running PAML...\n" if ($self->debug);
 
-  # PAML has a problem with sequences that start with a number... we need to map
-  # IDs to avoid this.
-  my $seq_id_map;
-  map {$seq_id_map->{$_->id} = 's_'.$_->id} $input_cdna->each_seq;
+  my $tmp = $self->worker_temp_directory;
+  mkpath([$tmp]);
 
-  $tree = Bio::EnsEMBL::Compara::TreeUtils->translate_ids($tree, $seq_id_map);
-  $input_cdna = Bio::EnsEMBL::Compara::AlignUtils->translate_ids($input_cdna, $seq_id_map);
+  foreach my $file (qw(mlc rst rub lnf)) {
+    if (-e "${tmp}/${file}") {
+      unlink "${tmp}/${file}";
+    }
+  }
+
+  # PAML has a problem with sequences that start with a number... we need to map
+  # the IDs to avoid this.
+  my $leaf_map;
+  my $seq_map;
+  map {$leaf_map->{$_->node_id} = 's_'.$_->name;} $tree->leaves;
+  map {$seq_map->{$_->id} = 's_'.$_->id} $input_cdna->each_seq;
+  $tree = Bio::EnsEMBL::Compara::TreeUtils->translate_ids($tree, $leaf_map);
+  $input_cdna = Bio::EnsEMBL::Compara::AlignUtils->translate_ids($input_cdna, $seq_map);
 
   my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
-  $treeI->get_root_node->branch_length(0);
+  #$treeI->get_root_node->branch_length(0);
 
-  my $model = $params->{'paml_model'} || $params->{'paml_model_b'};
-  $model =~ s/m//i;
-  my $codeml_params = {
-    NSsites => $model,
-    ncatG   => 10
-  };
-  my $codeml = Bio::Greg::Codeml->new(
-    -params    => $codeml_params,
-    -alignment => $input_cdna,
-    -tree      => $treeI,
-    -tempdir   => $self->worker_temp_directory
-    );
-  $codeml->save_tempfiles(1);
-  $codeml->run();
-  
+  # Output the tree and alignment files
+  my $aln_file = ">${tmp}/aln.phy";
+  my $aln_out = Bio::AlignIO->new(
+      '-format'      => 'phylip',
+      '-file'          => $aln_file,
+      '-interleaved' => 0,
+      '-idlength'    => $input_cdna->maxdisplayname_length() + 1
+  );
+  $aln_out->write_aln($input_cdna);
+
+  my $tree_file = "${tmp}/tree.nh";
+  Bio::EnsEMBL::Compara::TreeUtils->to_file($tree, $tree_file);
+
+  # Create a codeml.ctl file here.
+
+  my $sites_model = $params->{paml_model};
+  $sites_model =~ s/M//gi;
+  my $branch_model = $params->{paml_branch_model};
+  my $fix_kappa = $params->{paml_fix_kappa};
+  my $kappa = $params->{paml_kappa};
+  my $fix_omega = $params->{paml_fix_omega};
+  my $omega = $params->{paml_omega};
+  my $fix_alpha = $params->{paml_fix_alpha};
+  my $alpha = $params->{paml_alpha};
+
+  if ($params->{analysis_action} eq 'paml_m2') {
+    $sites_model = '2';
+  } elsif ($params->{analysis_action} eq 'paml_m8') {
+    $sites_model = '8';
+  }
+
+  my $ctl_string = qq^
+seqfile = aln.phy
+treefile = tree.nh
+
+* Interesting stuff we want to change.
+model = ${branch_model}
+NSsites = ${sites_model}
+fix_kappa = ${fix_kappa}
+kappa = ${kappa}
+fix_omega = ${fix_omega}
+omega = ${omega}
+
+* Boring stuff that doesn't change.
+fix_alpha = 1
+alpha = 0
+outfile = mlc
+noisy = 0
+verbose = 1
+runmode = 0
+seqtype = 1
+CodonFreq = 2
+clock = 0
+icode = 0
+Malpha = 0
+getSE = 0
+RateAncestor = 1
+fix_blength = 1
+method = 0
+^;  
+  print $ctl_string."\n";
+  my $cwd = cwd();
+  chdir $tmp;
+  open(OUT, ">codeml.ctl");
+  print OUT $ctl_string."\n";
+  close(OUT);
+
+  system("codeml");
+
+  open(IN, "mlc");
+  my @main_lines = <IN>;
+  close(IN);
+  open(IN, "rst");
+  my @supp_lines = <IN>;
+  close(IN);
+
   my @results_lines;
-  push @results_lines, @{$codeml->main_results};
-  push @results_lines, @{$codeml->supplementary_results};
+  push @results_lines, split("\n", $ctl_string);
+  push @results_lines, @main_lines;
+  push @results_lines, @supp_lines;
+
+  chdir $cwd;
   return \@results_lines;
 }
 
@@ -897,7 +999,7 @@ sub parse_paml_output {
   my $pep_aln = shift;
   my $output_lines_arrayref = shift;
 
-  print "  parsing paml output\n";
+  print "    parsing paml output\n";
 
   my $codeml = Bio::Greg::Codeml->new();
   my $codeml_results = $codeml->parse_results($aln, $pep_aln, $output_lines_arrayref);
@@ -910,7 +1012,7 @@ sub parse_paml_output {
     my $omega = $obj->{omega};
     my $se = $obj->{se};
     my $prob = $obj->{prob_gt_one};
-    my $pos = $obj->{pos};
+    my $pos = $obj->{is_positive_site};
 
     my $lower = $omega - $se;
     my $upper = $omega + $se;
@@ -950,24 +1052,6 @@ sub run_paml {
 
   my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
   $treeI->get_root_node->branch_length(0);
-
-  if ( $self->param('analysis_action') =~ m/reoptimize/i ) {
-
-    # Not sure if this works. GJ 2009-10-09
-    ### Reoptimize branch lengths.
-    print $tree->newick_format . "\n";
-    my $new_treeI = Bio::Greg::Codeml->get_m0_tree( $treeI, $input_cdna );
-    my $new_pt = Bio::EnsEMBL::Compara::TreeUtils->from_treeI($new_treeI);
-    print $new_pt->newick_format . "\n";
-
-    # Store new branch lengths back in the original protein_tree_node table.
-    foreach my $leaf ( $tree->leaves ) {
-      my $new_leaf = $new_pt->find_leaf_by_name( $leaf->name );
-      $leaf->distance_to_parent( $new_leaf->distance_to_parent );
-      $leaf->store;
-      print "  -> Branch lengths updated!\n";
-    }
-  }
 
   if ( $self->param('analysis_action') =~ m/lrt/i ) {
 

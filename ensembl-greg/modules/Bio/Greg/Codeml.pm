@@ -557,7 +557,7 @@ sub run {
     if ( ( grep { /error/io } @output ) || !$exit_status ) {
 
       #       if (!$exit_status) {
-      $self->warn( "ERROR RUNNING CODEML:\n" . $self->error_string );
+      $self->throw( "ERROR RUNNING CODEML:\n" . $self->error_string );
       $rc = 0;
     }
 
@@ -625,12 +625,15 @@ sub parse_results {
   my $self = shift;
   my $aln = shift;
   my $pep_aln = shift;
-  my $suppl_arrayref = shift;
+  my $lines_arrayref = shift;
 
   my $results;
 
-  my $bayes_results = $self->extract_empirical_bayes($suppl_arrayref);
+  my $bayes_results = $self->extract_empirical_bayes($lines_arrayref);
   $results = Bio::EnsEMBL::Compara::ComparaUtils->replace_params($results, $bayes_results);
+
+  my $lnl = $self->extract_lnL($lines_arrayref);
+  print "LNL: $lnl\n";
 
   return $results;
 }
@@ -659,25 +662,32 @@ sub extract_empirical_bayes {
 
   my $has_bayes_section = 0;
   foreach my $line (@suppl) {
+    #print "$line";
     $has_bayes_section = 1 if ( $line =~ m/Bayes Empirical Bayes/i );
   }
 
   #print "Has bayes: $has_bayes_section\n";
+  my $in_supplement = 0;
   my $seen_bayes         = 0;
+  my $number_of_bayes_classes = 0;
   my $seen_pos_sel_sites = 0;
   my $seen_naive         = 0;
   my $naive_output_has_p_gt_one_at_end = 0;
 
   foreach my $line (@suppl) {
     chomp($line);
+    $line = strip($line);
     #print "$line\n";
     next if ( length($line) == 0 );
     next
       if ( $line =~ /amino acids/i )
       ;    # Skip lines like: (amino acids refer to 1st sequence: ENSDARP00000087283)
 
-    #      next if ($line =~ /prob/i);
-    #      next if ($line =~ /lnL/i);
+    # Wait until we get to the supplemental part
+    $in_supplement = 1 if ( $line =~ m/supplemental results/i);
+    next unless ($in_supplement);
+
+    
 
     if ( $line =~ /w:\s+(.*)/ ) {
       my $stuff = $1;
@@ -685,24 +695,28 @@ sub extract_empirical_bayes {
       my @toks = split( /\s+/, $stuff );
       for ( my $i = 0 ; $i < scalar(@toks) ; $i++ ) {
         $site_class_omegas->{$i} = $toks[$i];
-        #print "Site class: $i " . $toks[$i] . "\n";
+        #print "Site class:$i w:" . $toks[$i] . "\n";
       }
     }
 
-    # Counts of how many times we've seen each of these 'marker' lines.
-    # When we're working with concatenated total output (main file, mlc, plus extra, rst)
-    # we want to look for the *2nd* occurrance, because these lines also show up at the bottom
-    # of the main output, but we want the data from the extra file.
     $seen_bayes++ if ( $line =~ m/Bayes Empirical Bayes/i );
     $seen_naive++ if ( $line =~ m/Naive Empirical Bayes/i );
-    $seen_pos_sel_sites++ if ( $line =~ m/positively selected sites/i && !$has_bayes_section );
-    $seen_pos_sel_sites ++
-      if ( $line =~ m/positively selected sites/i && $has_bayes_section && $seen_bayes );
 
-    #print "[$seen_naive $seen_pos_sel_sites]";
+    if ($seen_bayes && $line =~ m/probabilities for (\d+) classes/i) {
+      $number_of_bayes_classes = $1;
+      #print "  NUMBER OF CLASSES: $number_of_bayes_classes\n";
+    }
+
+    # If we have a bayes section, wait for that one.
+    next if ($has_bayes_section && $seen_naive && !$seen_bayes);
+
+    $seen_pos_sel_sites++ if ( $line =~ m/positively selected sites/i );
+
+    #print "[$seen_bayes $seen_naive $seen_pos_sel_sites]";
     #print "$line\n";
     
-    if ( !$has_bayes_section && $seen_naive >= 2 && $seen_pos_sel_sites <= 1 ) {
+    if ( !$has_bayes_section && $seen_naive && !$seen_pos_sel_sites ) {
+
       if ( $line =~ /empirical/i ) {
         if ( $line =~ /w>1/i ) {
           $naive_output_has_p_gt_one_at_end = 1;
@@ -713,7 +727,8 @@ sub extract_empirical_bayes {
       # 1 M   0.00320 0.01289 0.02424 0.03656 0.04965 0.06350 0.07828 0.09450 0.11369 0.52349 (10)  0.642
       chomp $line;
       my @bits = split( /\s+/, $line );
-      my $pos = $bits[1];
+      my $pos = shift @bits;
+      my $residue = shift @bits;
 
       # Gets rid of the header line for the NEB output.
       next if ($line =~ m/w>1/i);
@@ -722,48 +737,60 @@ sub extract_empirical_bayes {
       if ($naive_output_has_p_gt_one_at_end) {
         $prob_gt_one = pop @bits;
       } else {
-        foreach my $site_class ( keys %{$site_class_omegas} ) {
+        foreach my $site_class ( sort keys %{$site_class_omegas} ) {
           my $post_prob = $bits[ $site_class + 3 ];
           
-          #print "  Post prob: ${site_class} $post_prob\n";
+          print "  Post prob: ${site_class} $post_prob\n";
           if ( $site_class_omegas->{$site_class} > 1 ) {
             $prob_gt_one += $post_prob;
           }
         }
       }
-      
+
       my $omega = pop @bits;
       
       my $obj = {
         omega => $omega,
         prob_gt_one => $prob_gt_one,
-        se => 0
+        se => 0,
+        is_positive_site => 0
       };
       $bayes_results->{$pos} = $obj;
     }
 
-    if ( $has_bayes_section && $seen_bayes >= 2 && $seen_pos_sel_sites <= 1 ) {
+    if ( $has_bayes_section && $seen_bayes && !$seen_pos_sel_sites) {
       next if ( $line =~ /empirical/i );
 
-#Bayes Empirical Bayes (BEB) probabilities for 11 classes (class)& postmean_w
-# 1 M   0.03403 0.08222 0.10935 0.11735 0.11455 0.10627 0.09566 0.08451 0.07399 0.07080 0.11128 ( 4)  0.745 +-  1.067
+      #Bayes Empirical Bayes (BEB) probabilities for 11 classes (class)& postmean_w
+      # 1 M   0.03403 0.08222 0.10935 0.11735 0.11455 0.10627 0.09566 0.08451 0.07399 0.07080 0.11128 ( 4)  0.745 +-  1.067
 
-# GJ 2010-01-25 - the first 10 classes are probably equivalent to a 10-site class model, with the 11th position
-# position being the probability of w>1 integrated over all possible parameter values. So we'll take the last
-# category as the p(w>1) and ignore the rest of the site classes.
-#
+      # GJ 2010-01-25 - PAML docs say nothing, but the the first 10 classes are probably 
+      # equivalent to a 10-site class model, with the 11th position position being the
+      # probability of w>1 integrated over all possible parameter values. So we'll take 
+      # the last category as the p(w>1) and ignore the rest of the site classes.
 
       my @bits            = split( /\s+/, $line );
-      my $pos             = $bits[1];
+
+      # Shave off the beginning.
+      my $pos = shift @bits;
+      my $residue = shift @bits;
+      # Shave off the end.
       my $se              = pop @bits;
       my $plus_minus_sign = pop @bits;
       my $omega           = pop @bits;
 
-# GJ 2010-01-25 ASSUMPTION: we assume the BEB output always gives 11 classes, where the last class is the p(w>1).
-# Is this true??
-      my $prob_gt_one = $bits[13];
+      my $prob_gt_one = 0;
 
-      print "$se\n";
+      #print "$residue $pos $omega\n";
+
+      # The rest of @bits is the probability of being in each site class.
+      # NOTE: these are NOT necessarily the same number of site classes as chosen in the NSSites
+      # config parameter. Apparently, PAML has a hard-coded 5 classes for M2 and 11 classes for M8.
+      # With both situations, the last class is the only one with p(w)>1, so we'll use the
+      # posterior of being in that class as the posterior of being under pos-sel.
+      my $last_class_posterior = $bits[ $number_of_bayes_classes - 1 ];
+      my $prob_gt_one = $last_class_posterior;
+
       my $obj = {
         omega => $omega,
         prob_gt_one => $prob_gt_one,
@@ -773,7 +800,7 @@ sub extract_empirical_bayes {
       $bayes_results->{$pos} = $obj;
     }
 
-    if ($seen_pos_sel_sites >= 2) {
+    if ($seen_pos_sel_sites) {
       next if ( $line =~ m/positively/i );
       next if ( $line =~ m/Prob\(w>1\)/i );
       last if ( $line =~ m/lnL/i );
@@ -784,7 +811,6 @@ sub extract_empirical_bayes {
       #Positively selected sites
       #     7 T      0.705         3.979 +- 3.258
       #    41 S      0.830         4.654 +- 3.213
-      shift @bits;
       my $site = shift @bits;
       #print "$site\n";
       $bayes_results->{$site}->{is_positive_site} = 1;

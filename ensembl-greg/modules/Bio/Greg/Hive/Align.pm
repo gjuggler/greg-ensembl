@@ -29,14 +29,14 @@ sub param_defaults {
   my $params = {
     alignment_table               => 'protein_tree_member',
     alignment_score_table         => 'protein_tree_member_score',
-    alignment_method              => 'cmcoffee',
+    aligner              => 'cmcoffee',
     alignment_max_gene_count      => 10000,
     alignment_use_exon_boundaries => 0,
     alignment_executable          => '',
     t_coffee_executable           => '',
 
     alignment_prank_codon_model => 0,
-    alignment_prank_f           => 0
+    alignment_prank_f           => 1
   };
   return $params;
 }
@@ -52,7 +52,7 @@ sub fetch_input {
   my $tree = $self->get_tree();
   $self->param( 'alignment_table', $out_table );
 
-  my $method = $self->param('alignment_method');
+  my $method = $self->param('aligner');
 
   foreach my $leaf ( $tree->leaves ) {
     if ( $leaf->distance_to_parent > 20 ) {
@@ -65,13 +65,13 @@ sub fetch_input {
 
     # Switch to fmcoffee if we have > 300 genes.
     if ( $num_leaves > 300 ) {
-      $self->param( 'alignment_method', 'fmcoffee' );
+      $self->param( 'aligner', 'fmcoffee' );
     }
   }
 
   my $retry_count = $self->input_job->retry_count;
 
-  print "Alignment method: " . $self->param('alignment_method') . "\n";
+  print "Alignment method: " . $self->param('aligner') . "\n";
 
   # Fail if the gene count is too big.
   my $num_leaves = scalar( @{ $tree->get_all_leaves } );
@@ -106,40 +106,10 @@ sub run {
   my $sa     = $self->param('aln');
   my $tree   = $self->param('tree');
   my $params = $self->params;
+  my $sa_cds = $tree->get_SimpleAlign( -cdna => 1 );
 
-  my $sa_aligned;
-
-  my $method = $self->param('alignment_method');
-  if ( $method =~ m/clustalw/ ) {
-    $sa_aligned = $self->align_with_clustalw( $sa, $tree, $params );
-    $sa_aligned->map_chars( '\.', '-' );    # Clustalw sucks and puts gaps as periods.
-  } elsif ( $method =~ m/muscle/ ) {
-    $sa_aligned = $self->align_with_muscle( $sa, $tree, $params );
-  } elsif ( $method =~ m/coffee/ ) {
-    $sa_aligned = $self->align_with_mcoffee( $sa, $tree, $params );
-  } elsif ( $method =~ m/prank/ ) {
-    if ( $method =~ m/_f/ ) {
-      $params->{alignment_prank_f} = 1;
-    }
-    if ( $method =~ m/_codon/ ) {
-      $params->{alignment_prank_codon_model} = 1;
-      my $sa_cds = $tree->get_SimpleAlign( -cdna => 1 );
-      my $cds_aligned = $self->align_with_prank( $sa_cds, $tree, $params );
-      $sa_aligned = Bio::EnsEMBL::Compara::AlignUtils->translate($cds_aligned);
-    } else {
-      $sa_aligned = $self->align_with_prank( $sa, $tree, $params );
-    }
-  } elsif ( $method =~ m/papaya/i ) {
-    $sa_aligned = $self->align_with_papaya( $sa, $tree, $params );
-  } elsif ( $method =~ m/probcons/i ) {
-    $sa_aligned = $self->align_with_probcons( $sa, $tree, $params );
-  } elsif ( $method =~ m/mafft/i ) {
-    $sa_aligned = $self->align_with_mafft( $sa, $tree, $params );
-  } elsif ( $method =~ m/none/i ) {
-    $sa_aligned = $self->no_align( $sa, $tree, $params );
-  } else {
-    $self->throw("Alignment method [$method] not implemented!");
-  }
+  #my $method = $self->param('aligner');
+  my $sa_aligned = $self->align($tree, $sa_cds, $sa);
 
   print "BEFORE: \n";
   Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $sa, { full => 0} );
@@ -148,6 +118,66 @@ sub run {
   Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $sa_aligned, { full => 0} );
 
   $self->param( 'sa_aligned', $sa_aligned );
+}
+
+sub align {
+  my $self = shift;
+  my $tree = shift;
+  my $cdna_aln = shift;
+  my $pep_aln = shift;
+
+  my $aln = $pep_aln;
+  
+  my $method = $self->param('aligner');
+  my $params = $self->params;
+
+  if ( $method =~ m/clustalw/ ) {
+    $aln = $self->align_with_clustalw( $aln, $tree, $params );
+    $aln->map_chars( '\.', '-' );    # Clustalw sucks and puts gaps as periods.
+  } elsif ( $method =~ m/muscle/ ) {
+    $aln = $self->align_with_muscle( $aln, $tree, $params );
+  } elsif ( $method =~ m/coffee/ ) {
+    $aln = $self->align_with_mcoffee( $aln, $tree, $params );
+  } elsif ( $method =~ m/prank/ ) {
+    if ( $method =~ m/_nof/ ) {
+      $params->{alignment_prank_f} = 0;
+    } else {
+      $params->{alignment_prank_f} = 1;
+    }
+    if ( $method =~ m/codon/i ) {
+      $params->{alignment_prank_codon_model} = 1;
+      $cdna_aln = $self->align_with_prank( $cdna_aln, $tree, $params );
+      $aln = Bio::EnsEMBL::Compara::AlignUtils->translate($cdna_aln);
+    } else {
+      $aln = $self->align_with_prank( $aln, $tree, $params );
+    }
+  } elsif ($method =~ m/pagan/i) {
+    if ($method =~ m/groups/i) {
+      $params->{alignment_pagan_aa_groups} = 1;
+    }
+    if ($method =~ m/codon/i) {
+      $params->{alignment_pagan_codon_model} = 1;
+      $cdna_aln = $self->align_with_pagan( $cdna_aln, $tree, $params );
+      $aln = Bio::EnsEMBL::Compara::AlignUtils->translate($cdna_aln);
+    } else {
+      $aln = $self->align_with_pagan( $aln, $tree, $params );
+    }
+  } elsif ( $method =~ m/probcons/i ) {
+    $aln = $self->align_with_probcons( $aln, $tree, $params );
+  } elsif ( $method =~ m/mafft/i ) {
+    $aln = $self->align_with_mafft( $aln, $tree, $params );
+  } elsif ( $method =~ m/fsa/i ) {
+    $aln = $self->align_with_fsa( $aln, $tree, $params );
+  } elsif ( $method =~ m/none/i ) {
+    $aln = $self->no_align( $aln, $tree, $params );
+  } else {
+    $self->throw("Alignment method [$method] not implemented!");
+  }
+
+  $self->pretty_print($aln, {full => 1});
+
+  my $new_cdna_aln = Bio::EnsEMBL::Compara::AlignUtils->apply_peptide_alignment_to_cdna_alignment($aln, $cdna_aln);
+  return $new_cdna_aln;
 }
 
 sub write_output {
@@ -165,8 +195,8 @@ sub write_output {
 sub DESTROY {
   my $self = shift;
 
-  $self->param('tree',undef);
-  $self->param('sa_aligned',undef);
+#  $self->param('tree',undef);
+#  $self->param('sa_aligned',undef);
 
   $self->SUPER::DESTROY if $self->can("SUPER::DESTROY");
 }
@@ -212,8 +242,8 @@ sub align_with_prank {
   # Output alignment.
   my $aln_file = $tmp . "aln.fasta";
   rmtree( [$aln_file] ) if ( -e $aln_file );
-  Bio::EnsEMBL::Compara::AlignUtils->dump_ungapped_seqs( $aln, $aln_file )
-    ;    # Write the alignment out to file.
+  # Write the alignment out to file.
+  Bio::EnsEMBL::Compara::AlignUtils->dump_ungapped_seqs( $aln, $aln_file );
 
   my $tree_file;
   if (defined $tree) {
@@ -227,15 +257,21 @@ sub align_with_prank {
 
   my $executable = $params->{'alignment_executable'} || 'prank';
   my $extra_params = '';
-  $extra_params .= ' -codon ' if ( $params->{'alignment_prank_codon'} );
+  $extra_params .= ' -codon ' if ( $params->{'alignment_prank_codon_model'} );
   $extra_params .= ' +F '     if ( $params->{'alignment_prank_f'} );
+  $extra_params .= ' ' . $params->{extra_prank_params} if ($params->{extra_prank_params});
 
-  my $cmd = qq^$executable $extra_params -d=$aln_file -t=$tree_file -o=$output_file^;
+  my $null = '';
+  $null = "&>/dev/null" if ($params->{quiet});
+
+  my $cmd = qq^$executable $extra_params -d=$aln_file -t=$tree_file -o=$output_file $null^;
   if (!defined $tree) {
-    $cmd = qq^$executable $extra_params -d=$aln_file -o=$output_file^;
+    $cmd = qq^$executable $extra_params -d=$aln_file -o=$output_file $null^;
   }
 
-  $output_file .= '.1.fas';
+  my $full_output_file = $output_file . '.1.fas';
+
+  print "PRANK CMD: $cmd\n";
 
   # Run the command.
   if ($self->within_hive) {
@@ -251,16 +287,29 @@ sub align_with_prank {
     die;
   }
 
+  if (!-e $full_output_file) {
+    # Can't find the .1.fas file. Try .nuc.1.fas
+    $full_output_file = $output_file . '.nuc.1.fas';
+  }
+  if (!-e $full_output_file) {
+    # Still not found... try .pep.1.fas
+    $full_output_file = $output_file . '.pep.1.fas';    
+  }
+
+  if (!-e $full_output_file) {
+    $self->throw("Cannot find Prank output file [$full_output_file]!");
+  }
+
   use Bio::AlignIO;
   my $alignio = Bio::AlignIO->new(
-    -file   => $output_file,
+    -file   => $full_output_file,
     -format => "fasta"
   );
   my $aln = $alignio->next_aln();
   return $aln;
 }
 
-sub align_with_papaya {
+sub align_with_pagan {
   my $self   = shift;
   my $aln    = shift;
   my $tree   = shift;
@@ -280,30 +329,27 @@ sub align_with_papaya {
 
   my $output_file = $tmp . "output";
 
-  my $executable = $params->{'alignment_executable'} || 'papaya';
+  my $executable = $params->{'alignment_executable'} || 'pagan';
   my $extra_params = '';
-
+  $extra_params .= ' --codons ' if ( $params->{'alignment_pagan_codon_model'} );
+  $extra_params .= ' --use-aa-groups ' if ( $params->{'alignment_pagan_aa_groups'} );
   my $cmd =
-    qq^$executable $extra_params --seqfile $aln_file --treefile $tree_file --outfile $output_file^;
+    qq^$executable --seqfile $aln_file --treefile $tree_file --outfile $output_file $extra_params^;
 
+  print "CMD: [$cmd]\n";
   # Run the command.
   $self->compara_dba->dbc->disconnect_when_inactive(1);
   my $rc = system($cmd);
   $self->compara_dba->dbc->disconnect_when_inactive(0);
 
   unless ( $rc == 0 ) {
-    print "Papaya error!\n";
+    print "Pagan error!\n";
     die;
   }
 
   $output_file .= '.fas';
 
-  use Bio::AlignIO;
-  my $alignio = Bio::AlignIO->new(
-    -file   => $output_file,
-    -format => "fasta"
-  );
-  my $aln = $alignio->next_aln();
+  my $aln = Bio::EnsEMBL::Compara::AlignUtils->from_file($output_file);
   return $aln;
 }
 
@@ -420,17 +466,58 @@ sub align_with_mafft {
 
   my $output_file = "$tmp/output.fasta";
 
-  my $executable   = $params->{'alignment_executable'} || 'mafft ';
+  my $executable   = 'mafft ';
   my $extra_params = '';
   my $cmd          = qq^${executable}${extra_params}${aln_file} > "$output_file"^;
   
-  my $prefix = "export MAFFT_BINARIES=/homes/greg/lib/greg-ensembl/bin/linux64/mafft-libs;";
-  if (!Bio::Greg::EslrUtils->is_ebi) {
-    $prefix = "export MAFFT_BINARIES=/nfs/users/nfs_g/gj1/src/greg-ensembl/bin/linux64/mafft-libs;";
-  }  
+  print $cmd."\n";
 
-  $cmd = $prefix . $cmd;
+  # Run the command.
+#  $self->dbc->disconnect_when_inactive(1);
+  my $rc = system($cmd);
+#  $self->dbc->disconnect_when_inactive(0);
 
+  unless ( $rc == 0 ) {
+    $self->throw("Alignment error!");
+  }
+
+  use Bio::AlignIO;
+  my $alignio = Bio::AlignIO->new(
+    -file   => $output_file,
+    -format => "fasta"
+  );
+  my $aln = $alignio->next_aln();
+  return $aln;
+}
+
+sub align_with_fsa {
+  my $self   = shift;
+  my $aln    = shift;
+  my $tree   = shift;
+  my $params = shift;
+
+  my $tmp = $self->worker_temp_directory;
+
+  # Output alignment.
+  my $aln_file = $tmp . "aln.fasta";
+  rmtree( [$aln_file] ) if ( -e $aln_file );
+  Bio::EnsEMBL::Compara::AlignUtils->dump_ungapped_seqs( $aln, $aln_file );
+
+  my $tree_file = $tmp . "tree.nh";
+  rmtree( [$tree_file] ) if ( -e $tree_file );
+  my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
+  Bio::EnsEMBL::Compara::TreeUtils->to_file( $treeI, $tree_file );
+
+  my $output_file = "$tmp/output.fasta";
+
+  my $executable   = 'fsa ';
+
+  my $extra_params = '';
+  if ($params->{aligner} eq 'fsa_careful') {
+    $extra_params .= '--gapfactor 5 ';
+  }
+  my $cmd          = qq^${executable}${extra_params}${aln_file} > "$output_file"^;
+  
   print $cmd."\n";
 
   # Run the command.
@@ -549,7 +636,7 @@ sub align_with_mcoffee {
 
   # GJ 2008-11-04: Variable args depending on method choice.
   my $method_string = '-method=';
-  my $method        = $params->{'alignment_method'};
+  my $method        = $params->{'aligner'};
 
   $method = "cmcoffee" unless ( defined $method );
   if ( $method eq 'cmcoffee' || $method eq 'mcoffee' ) {
@@ -632,6 +719,9 @@ sub align_with_mcoffee {
   my $aln = $alignio->next_aln();
   return $aln;
 }
+
+
+
 
 ########################################################
 #

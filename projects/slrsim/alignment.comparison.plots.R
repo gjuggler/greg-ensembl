@@ -7,19 +7,31 @@ figure.ari <- function() {
 
   print("  table")
   tbl <- read.csv(file=tbl.file)
-  tbl <- tbl[with(ret.df, order(length,ins_rate, aligner)),]
+  tbl <- tbl[with(tbl, order(length,ins_rate, aligner)),]
   tbl <- tbl[, c(
-    'sum_of_pairs_score', 'total_column_score', 'mean_bl_mismatch', 'aln_length', 'lambda', 
+    'length', 'ins_rate', 'aligner',
+    'sum_of_pairs_score', 'total_column_score', 'aln_length', 'lambda', 
+    #'mean_bl_mismatch',
     'auc', 'tpr_at_fpr', 'tpr_at_fdr', 'fdr_at_thresh'
   )]
-  tbl.table <- xtable(tbl)
-  print(tbl.table, file="ari_indels_table.html", type='html')
-  return()
+  
+  tbl$lbl <- paste('MPL=',tbl$length, '\n', 'Ins. Rate=',tbl$ins_rate, sep='')
+  all.strings <- ''
+  for (cur.lbl in unique(tbl$lbl)) {
+    cur.tbl <- subset(tbl, lbl == cur.lbl)
+    x.tbl <- xtable(cur.tbl)
+    tbl.string <- print(x.tbl, type='html')
+    all.strings <- paste(all.strings, tbl.string)
+  }
+  f.con <- file("ari_indels_table.html")
+  writeLines(all.strings, con=f.con)
+  close(f.con)  
 
   print("  bars")
-  pdf(file="ari_indels_bars.pdf")  
+  pdf(file="ari_indels_bars.pdf", width=20, height=5)  
   tbl <- read.csv(file=tbl.file)
-  tbl$lbl <- paste(tbl$aligner, tbl$ins_rate, tbl$length, sep='--')
+  tbl$lbl <- paste('MPL=',tbl$length, '\n', 'Ins. Rate=',tbl$ins_rate, sep='')
+  #tbl$lbl <- paste(tbl$ins_rate, tbl$length, sep='--')
 
   tbl <- aln.factors(tbl)
   tbl <- ins.mpl.factors(tbl)
@@ -28,16 +40,19 @@ figure.ari <- function() {
   tbl$dx <- 0.3
     p <- ggplot(tbl, aes(fill=aligner))
     p <- p + geom_rect(aes(xmin=x-dx, xmax=x+dx, ymin=0, ymax=tpr_at_fpr))
-    x.lbl <- aln.labels
+    x.lbl <- levels(tbl$aligner)
+    #print(x.lbl)
     p <- p + scale_x_continuous("Aligner", breaks=c(1:length(x.lbl)), labels=x.lbl)
     p <- p + scale_y_continuous("Sitewise TPR at FPR<0.05")
-    p <- p + facet_grid(ins_rate ~ length)
+    p <- p + facet_grid(. ~ lbl)
     p <- p + opts(
     axis.text.x = theme_text(angle=90, hjust=1),
     legend.position = 'none'
     )
     print(p)
   dev.off()
+
+  return()
 
   print("  ROC")
   roc.file <- paste(dir, '/', 'fig_roc.Rdata', sep='')

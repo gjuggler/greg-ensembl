@@ -1,5 +1,7 @@
 library(phylosim)
 library(RColorBrewer)
+library(xtable)
+library(plyr)
 source("~/src/greg-ensembl/projects/phylosim/PhyloSimPlots.R")
 source("~/src/greg-ensembl/projects/slrsim/slrsim.functions.R")
 source("~/src/greg-ensembl/projects/slrsim/slrsim.plots.R")
@@ -243,364 +245,7 @@ multi.plot <- function() {
 
 }
 
-figure.x <- function() {
-  tbl.a <- read.csv('~/scratch/gj1_fig_one_a/current/table.csv')
-  tbl.b <- read.csv('~/scratch/gj1_fig_one_b/current/table.csv')
-  tbl.c <- read.csv('~/scratch/gj1_fig_one_c/current/table.csv')
-  all.tbls <- data.frame()
-  for (cur.tbl in list(tbl.a, tbl.b, tbl.c)) {
-    cur.tbl <- subset(cur.tbl, analysis == 'SLR Sitewise')
-    all.tbls <- rbind(all.tbls, cur.tbl)
-  }
 
-  power.field <- 'tpr_at_fpr'
-
-  tbl <- all.tbls
-  for (i in 1:nrow(tbl)) {
-    cur.row <- tbl[i,]
-    true.row <- subset(tbl, 
-      ins_rate==cur.row$ins_rate &
-      length==cur.row$length &
-      aligner=='True_Alignment' &
-      tree==cur.row$tree
-    )
-    true.row[, power.field] <- pmax(0.001, true.row[, power.field])
-    tbl[i, 'rel_power'] <- cur.row[, power.field] / true.row[, power.field]
-  }
-
-  p.f <- function(aln, cmp) {
-
-    tbl <- subset(tbl, length == 1)
-    tbl <- subset(tbl, aligner != 'True_Alignment')
-    tbl <- subset(tbl, aligner == aln)
-
-    if (cmp == '6-17') {
-      tbl <- subset(tbl, tree != 'encode.nh')
-    } else {    
-      tbl <- subset(tbl, tree != 'artificial.nh')
-    }
-    tbl <- aln.factors(tbl) 
-    tbl <- tree.factors(tbl) 
-
-    print(str(tbl))
-
-    combined.tbl <- data.frame()
-    lines <- data.frame()
-    
-    tbl[, 'match_fraction'] <- (tbl$mean_bl_match) / tbl$mean_bl_aligned
-    tbl[, 'bl_mismatch'] <- (tbl$mean_bl_mismatch)
-    for (field in c('total_column_score', 'sum_of_pairs_score', 'match_fraction', 'bl_mismatch')) {
-      cur.tbl <- tbl
-      cur.tbl$score <- cur.tbl[,field]
-      cur.tbl$score_field <- field
-  
-      sm <- subset(cur.tbl, tree == '6-Taxon')
-      md <- subset(cur.tbl, tree == '17-Taxon')
-      lg <- subset(cur.tbl, tree == '44-Taxon')
-
-      if (cmp == '6-17') {  
-      line.df <- merge(sm, md, by=c('ins_rate', 'length', 'aligner', 'score_field'))
-      line.df$tree <- line.df$tree.x
-      lines <- rbind(lines, line.df)
-      } else {
-        line.df <- merge(md, lg, by=c('ins_rate', 'length', 'aligner', 'score_field'))
-        line.df$tree <- line.df$tree.x
-        lines <- rbind(lines, line.df)
-      }
-  
-      combined.tbl <- rbind(combined.tbl, cur.tbl)
-    }
-
-    p <- ggplot(combined.tbl, aes(x=score, y=rel_power, colour=tree, group=tree))    
-    p <- p + theme_bw()
-#    p <- p + geom_point(size=0.5, alpha=0.8)
-
-    p <- p + stat_smooth(method='lm', alpha=0.3, fullrange=FALSE, se=TRUE, linewidth=0.5)
-    p <- p + geom_segment(data=lines,
-      aes(x=score.x, y=rel_power.x, xend=score.y, yend=rel_power.y),
-      linewidth=0.1, alpha=0.6, colour='black',
-      arrow=arrow(length=unit(0.15,"cm"))
-      )
-    p <- p + scale_colour_hue(name="Tree", l=50)
-  
-    p <- p + scale_x_continuous("Alignment Score")
-    p <- p + scale_y_continuous("Relative Sitewise Power")
-    p <- p + facet_grid(aligner ~ score_field, scales="free")
-    p <- p + opts(
-      title=paste(combined.tbl[1,'aligner'])
-    )
-    return(p)
-  }
-
-  pdf("figure_x.pdf", height=10, width=10)
-  vplayout(1, 3)
-  p <- p.f('clustalw', '6-17')
-  print(p, vp=subplot(1,1))
-  p <- p.f('mafft', '6-17')
-  print(p, vp=subplot(1,2))
-  p <- p.f('prank_codon', '6-17')
-  print(p, vp=subplot(1,3))
-  dev.off()
-
-  pdf("figure_y.pdf", height=10, width=10)
-  vplayout(1, 3)
-  p <- p.f('clustalw', '17-44')
-  print(p, vp=subplot(1,1))
-  p <- p.f('mafft', '17-44')
-  print(p, vp=subplot(1,2))
-  p <- p.f('prank_codon', '17-44')
-  print(p, vp=subplot(1,3))
-  dev.off()
-
-}
-
-try.test <- function() {
-
-  f <- 3
-
-  try({
-    f <- 10 + 3
-  })
-  
-  print(f)
-}
-
-
-#
-# Figure 3 - Sitewise power vs alignment accuracy, and equivalent alignment
-# accuracy in the 17-taxon vs 44-taxon trees.
-#
-figure.three <- function() {
-
-  tbl.a <- read.csv('~/scratch/gj1_fig_one_a/current/table.csv')
-  tbl.b <- read.csv('~/scratch/gj1_fig_one_b/current/table.csv')
-  tbl.c <- read.csv('~/scratch/gj1_fig_one_c/current/table.csv')
-  all.tbls <- data.frame()
-  for (cur.tbl in list(tbl.a, tbl.b, tbl.c)) {
-    cur.tbl <- subset(cur.tbl, analysis == 'SLR Sitewise')
-    all.tbls <- rbind(all.tbls, cur.tbl)
-  }
-
-  tbl <- all.tbls
-  #tbl <- subset(tbl, aligner != 'clustalw')
-
-  for (i in 1:nrow(tbl)) {
-    cur.row <- tbl[i,]
-
-    true.row <- subset(tbl, 
-      ins_rate==cur.row$ins_rate &
-      length==cur.row$length &
-      aligner=='True_Alignment' &
-      tree==cur.row$tree
-    )
-    tbl[i, 'tpr_reduction'] <- cur.row$tpr_at_fpr / (true.row$tpr_at_fpr+0.001)
-  }
-  tbl[, 'tree'] <- factor(tbl[, 'tree'], 
-    levels=c('artificial.nh', 'bglobin.nh', 'encode.nh'), 
-    labels=c('6-taxon', '17-taxon', '44-taxon')
-  )
-
-  plot.f <- function(df, aln_score_field, lbl) {
-    df[,'score'] <- df[,aln_score_field]
-    p <- ggplot(df, aes(
-      x=score,
-      y=tpr_reduction,
-      group=tree,
-      colour=tree
-    ))
-    p <- p + stat_smooth(method='loess', alpha=0.4)
-    p <- p + geom_point(size=1, alpha=0.9)
-    p <- p + scale_colour_hue(name="Tree", l=50)
-    p <- p + scale_x_continuous(lbl)
-    p <- p + scale_y_continuous("Power (Relative to True Alignment)", limits=c(0,1))
-    p <- p + opts(
-      title=paste("Loss in Power vs ", lbl, sep='')
-    )
-    p <- p + facet_grid( . ~ aligner)
-    return(p)
-  }
-
-  plot.g <- function(df, tree_a, tree_b, field, lbl) {
-    # Find the equivalent rows for tree A and tree B
-    a <- subset(df, tree==tree_a)
-    a <- subset(a, aligner!='True_Alignment')
-
-    for (i in 1:nrow(a)) {
-      row.b <- subset(df, 
-        tree==tree_b &
-        ins_rate==a[i,]$ins_rate &
-        length==a[i,]$length &
-        aligner==a[i,]$aligner
-      )
-      a[i, 'tree_b_score'] <- row.b[,field]
-    }
-    
-    a[,'value'] <- a[,field]
-
-    a <- aln.factors(a)
-
-    p <- ggplot(a, aes(x=value, y=tree_b_score, group=aligner, colour=aligner))
-    p <- p + geom_abline(intercept=0, slope=1, colour='black', linetype='dashed')
-    p <- p + scale_colour_hue("Alignment Method", l=50)
-    p <- p + stat_smooth(method='loess', alpha=0.4)
-    p <- p + geom_point(size=1, alpha=0.9)
-    p <- p + scale_x_continuous(paste(lbl, " in ", tree_a, " tree", sep=''))
-    p <- p + scale_y_continuous(paste(lbl, " in ", tree_b, " tree", sep=''))
-    p <- p + opts(
-      title=paste(lbl, " in ",tree_b," vs ", tree_a, " Tree", sep='')
-    )
-
-    return(p)
-  }
-
-  plot.h <- function(df, tree_a, tree_b, field, lbl) {
-    # Find the equivalent rows for tree A and tree B
-    a <- subset(df, tree==tree_a)
-    a <- subset(a, aligner!='True_Alignment')
-
-    a[, 'tree_a_score'] <- a[, field]
-    for (i in 1:nrow(a)) {
-      row.b <- subset(df, 
-        tree==tree_b &
-        ins_rate==a[i,]$ins_rate &
-        length==a[i,]$length &
-        aligner==a[i,]$aligner
-      )
-      a[i, 'tree_b_score'] <- row.b[,field]
-    }    
-    a[, 'tree_score_ratio'] <- a$tree_b_score - a$tree_a_score
-    a <- aln.factors(a)
-
-    p <- ggplot(a, aes(x=tree_score_ratio, fill=aligner))
-    p <- p + geom_histogram()
-    p <- p + geom_vline(xintercept=0)
-    p <- p + scale_fill_hue("Aligner", l=50)
-    p <- p + scale_x_continuous(substitute(paste(Delta, lbl))) #, limits=c(-0.1, 0.1))
-    p <- p + facet_grid(aligner ~ .)
-    p <- p + opts(
-      title=substitute(paste(Delta, lbl, " (",tree_b," vs ", tree_a, ")", sep=''))
-    )
-    return(p)
-  }
-
-  plot.i <- function(df, low.tree, field, lbl) {
-    power.field <- 'tpr_at_fpr'
-
-    # Find the equivalent rows for tree A and tree B
-    get.tree.comparison <- function(df, tree_a, tree_b) {
-      a <- subset(df, tree==tree_a)
-      a <- subset(a, aligner!='True_Alignment')
-      a[, 'tree_a_score'] <- a[, field]
-      a[, 'tree_a_power'] <- a[, power.field]
-      for (i in 1:nrow(a)) {
-        row.b <- subset(df, 
-          tree==tree_b &
-          ins_rate==a[i,]$ins_rate &
-          length==a[i,]$length &
-          aligner==a[i,]$aligner
-        )
-        a[i, 'tree_b_score'] <- row.b[,field]
-        a[i, 'tree_b_power'] <- row.b[, power.field]
-      }    
-      a[, 'tree_score_ratio'] <- a$tree_b_score - a$tree_a_score
-      a <- aln.factors(a)
-    a[, 'tree_power_ratio'] <- a$tree_b_power - a$tree_a_power
-    return(a)
-  }
-
-  tree_a <- '6-taxon'
-  tree_b <- '17-taxon'
-  if (low.tree == '17-taxon') {
-    tree_a <- '17-taxon'
-    tree_b <- '44-taxon'
-  }
-  all.df <- get.tree.comparison(df, tree_a, tree_b)
-
-    p <- ggplot(all.df, aes(x=tree_score_ratio, y=tree_power_ratio, colour=aligner))
-    p <- p + geom_hline(yintercept=0, colour='black')
-    p <- p + geom_vline(yintercept=0, colour='black')
-    p <- p + scale_colour_hue("Aligner", l=50)
-    p <- p + stat_smooth(method='lm', alpha=0.4, fullrange=FALSE, se=FALSE)
-    p <- p + geom_point(size=1.3, alpha=0.8)
-    p <- p + scale_x_continuous(substitute(paste(Delta, lbl))) #, limits=c(-0.1, 0.1))
-    p <- p + scale_y_continuous(substitute(paste(Delta, power.field)))
-    p <- p + opts(
-      title=substitute(paste(Delta, power.field, " vs ", Delta, lbl, " (", tree_b, " vs ",tree_a,")",sep=""))
-    )
-    return(p)
-  }
-
-  tbl <- subset(tbl, aligner != 'True_Alignment')
-
-  print(str(tbl))
-  tbl[, 'new_score'] <- tbl$mean_bl_match * tbl$aln_length - tbl$mean_bl_mismatch * tbl$aln_length
-
-  pdf(file="figure_three.pdf", width=20, height=16)
-  vplayout(3, 4)
-
-#  sub.tbl <- subset(tbl, aligner != 'clustalw')
-  sub.tbl <- tbl
-  p <- plot.i(sub.tbl, '17-taxon', 'total_column_score', 'TCS')
-  print(p, vp=subplot(1,4))
-  p <- plot.i(sub.tbl, '17-taxon', 'sum_of_pairs_score', 'SPS')
-  print(p, vp=subplot(2,4))
-  p <- plot.i(sub.tbl, '17-taxon', 'new_score', 'new_score')
-  print(p, vp=subplot(3,4))
-
-  sub.tbl <- tbl
-  p <- plot.i(sub.tbl, '6-taxon', 'total_column_score', 'TCS')
-  print(p, vp=subplot(1,2))
-  p <- plot.i(sub.tbl, '6-taxon', 'sum_of_pairs_score', 'SPS')
-  print(p, vp=subplot(2,2))
-  p <- plot.i(sub.tbl, '6-taxon', 'new_score', 'new_score')
-  print(p, vp=subplot(3,2))
-
-  p <- plot.h(tbl, '6-taxon', '17-taxon', 'total_column_score', 'TCS')
-  print(p, vp=subplot(1,1))
-  p <- plot.h(tbl, '17-taxon', '44-taxon', 'total_column_score', 'TCS')
-  print(p, vp=subplot(1,3))
-
-  p <- plot.h(tbl, '6-taxon', '17-taxon', 'sum_of_pairs_score', 'SPS')
-  print(p, vp=subplot(2,1))
-  p <- plot.h(tbl, '17-taxon', '44-taxon', 'sum_of_pairs_score', 'SPS')
-  print(p, vp=subplot(2,3))
-
-  p <- plot.h(tbl, '6-taxon', '17-taxon', 'new_score', 'new_score')
-  print(p, vp=subplot(3,1))
-  p <- plot.h(tbl, '17-taxon', '44-taxon', 'new_score', 'new_score')
-  print(p, vp=subplot(3,3))
-
-  dev.off()
-
-  return()
-
-  pdf(file="supp_figure_one.pdf", width=24, height=24)
-  vplayout(3, 3)
-
-  p <- plot.g(tbl, '6-taxon', '17-taxon', 'total_column_score', "Total Column Score")
-  print(p, vp=subplot(1,1))
-  p <- plot.g(tbl, '6-taxon', '17-taxon', 'sum_of_pairs_score', "Sum of Pairs Score")
-  print(p, vp=subplot(2,1))
-  p <- plot.g(tbl, '6-taxon', '17-taxon', 'match_bl_score', "Match BL Score")
-  print(p, vp=subplot(3,1))
-
-  p <- plot.g(tbl, '17-taxon', '44-taxon', 'total_column_score', "Total Column Score")
-  print(p, vp=subplot(1,2))
-  p <- plot.g(tbl, '17-taxon', '44-taxon', 'sum_of_pairs_score', "Sum of Pairs Score")
-  print(p, vp=subplot(2,2))
-  p <- plot.g(tbl, '17-taxon', '44-taxon', 'match_bl_score', "Match BL Score")
-  print(p, vp=subplot(3,2))
-
-  p <- plot.f(tbl, 'total_column_score', 'Total Column Score')
-  print(p, vp=subplot(1, 3))
-  p <- plot.f(tbl, 'sum_of_pairs_score', 'Sum of Pairs Score')
-  print(p, vp=subplot(2, 3))
-  p <- plot.f(tbl, 'match_bl_score', 'Match BL Score')
-  print(p, vp=subplot(3, 3))
-
-  dev.off()
-  
-}
 
 #
 # Figure 4 - FPR vs TPR ROC plot for filters in three trees (A/B/C)
@@ -617,60 +262,49 @@ figure.six <- function() {
   )
 }
 
+filter.rocs <- function() {
+  roc.a <- load.roc('~/scratch/gj1_fig_two_a/current')
+  roc.b <- load.roc('~/scratch/gj1_fig_two_b/current')
+  roc.c <- load.roc('~/scratch/gj1_fig_two_c/current')
+  roc.d <- load.roc('~/scratch/gj1_fig_two_d/current')  
+
+}
+
 figure.four.new <- function() {
 
-  load.roc <- function(d) {
-    sites.file <- paste(d, '/', 'sites.Rdata', sep='')
-    figure.roc.file <- paste(d, '/', 'figure_roc.Rdata', sep='')
-    if (!file.exists(figure.roc.file)) {
-      load(sites.file)    
-      f <- function(df, thresh) {return(slr.roc(df, na.rm=T))}
-      roc <- summarize.by.labels(sites, f)
-      save(roc, file=figure.roc.file)
-    }
-    load(figure.roc.file)
-    return(roc)
-  }
-  
-  roc.b <- load.roc('~/scratch/gj1_fig_two_b/current')
-  print(str(roc.b))
-  roc.e <- load.roc('~/scratch/gj1_fig_two_e/current')
+  roc <- load.roc('gj1_fig_two_a', return.merged=F)
+  roc <- rbind(roc, load.roc('gj1_fig_two_b', return.merged=F))
+  roc <- rbind(roc, load.roc('gj1_fig_two_c', return.merged=F))
+  roc <- rbind(roc, load.roc('gj1_fig_two_clustalw', return.merged=F))
 
-  roc <- rbind(roc.b, roc.e)
+  keep.filters <- c('none', 'branchlength_hi', 'guidance_hi', 'tcoffee_hi', 'optimal_hi', 'true')
+  roc <- subset(roc, filter %in% keep.filters)
 
-  roc <- subset(roc, 
-    (ins_rate == 0.025 & tree_length == 1) |
-    (ins_rate == 0.05 & tree_length == 1) |
-    (ins_rate == 0.05 & tree_length == 2) |
-    (ins_rate == 0.1 & tree_length == 2)
-  )
-  roc <- subset(roc, filter != 'columns')
-  roc <- filter.factors(roc)
-  roc <- ins.mpl.factors(roc, short=T)
+  roc <- ins.mpl.factors(roc)
   roc <- aln.factors(roc)
+  roc <- filter.factors(roc)
+  roc <- roc[ order(roc$filter, roc$aligner), ]
+  roc$analysis <- paste(roc$aligner, roc$filter, sep=" / ")
+  roc$analysis <- factor(roc$analysis, levels=unique(roc$analysis))
+  roc$simulation <- paste(roc$tree_length, roc$ins_rate, sep="\n")
 
-  roc$grp <- paste(roc$tree_length, roc$ins_rate, sep=" ")
-  print(unique(roc$grp))
-  print(unique(roc$aligner))
+  roc <- subset(roc, fpr <= 0.1)
 
   p <- plot.roc(roc,plot=F,plot.x='fpr',plot.y='tpr', color.by='filter')
-  p <- p + geom_vline(x=0.01, colour='gray', linetype='dashed')
-  p <- p + geom_vline(x=0.05, colour='black', linetype='dashed')
+  p <- p + theme_bw()
+  p <- p + geom_vline(x=0.05, colour='gray', linetype='dashed')
+  p <- p + geom_hline(y=0.5, colour='gray', linetype='dashed')
   p <- p + scale_colour_brewer(name="Filtering Method", palette="Set1")
-  p <- p + facet_grid(aligner ~ grp)
+  p <- p + facet_grid(aligner ~ simulation)
+  p <- p + scale_y_continuous(name="True Positive Rate", limits=c(0,1.0), breaks=c(0, 0.2, 0.4, 0.6, 0.8, 1))
+  p <- p + scale_x_continuous(name="False Positive Rate", limits=c(0,0.1), breaks=c(0, 0.02, 0.04, 0.06, 0.08, 0.1))
   p <- p + opts(
-    panel.margin=unit(rep(0.5, times=4), "lines"),
-    title='TPR vs FPR for 17-Taxon Tree'
+    panel.margin=unit(rep(0.5, times=4), "lines")
   )
-  p <- p + scale_y_continuous(name="True Positive Rate", limits=c(0,1.0), breaks=c(0,0.5,1))
-  p <- p + scale_x_continuous(name="False Positive Rate", limits=c(0,0.1), breaks=c(0, 0.05, 0.1))
 
-  pdf(file="figure_four_new.pdf",width=16,height=8)
-  print(p)
+  pdf(file="figure_four_new.pdf",width=16,height=12)
+    print(p)
   dev.off()
-
-  
-
 }
 
 .figure.four <- function(file, dir, title) {
@@ -917,287 +551,434 @@ supp.figure.two.through.four <- function() {
   return(p)
 }
 
-figure.ari <- function() {
-  dir <- '~/scratch/gj1_ari_indels/current'
-  sites.file <- paste(dir, '/', 'sites.Rdata', sep='')
-  roc.file <- paste(dir, '/', 'roc.Rdata', sep='')
-  tbl.file <- paste(dir, '/', 'table.csv', sep='')
-
-  print("  scatter")
-  pdf(file="ari_bars.pdf")  
-  tbl <- read.csv(file=tbl.file)
-
-  tbl <- aln.factors(tbl)
-  tbl <- ins.mpl.factors(tbl)
-
-  tbl$x <- as.integer(tbl$aligner)
-  tbl$dx <- 0.3
-    p <- ggplot(tbl, aes(fill=aligner))
-    p <- p + geom_rect(aes(xmin=x-dx, xmax=x+dx, ymin=0, ymax=tpr_at_fpr))
-    x.lbl <- aln.labels
-    p <- p + scale_x_continuous("Aligner", breaks=c(1:length(x.lbl)), labels=x.lbl)
-    p <- p + scale_y_continuous("Sitewise TPR at FPR<0.05")
-    p <- p + facet_grid(ins_rate ~ length)
-    p <- p + opts(
-    axis.text.x = theme_text(angle=90, hjust=1),
-    legend.position = 'none'
-    )
-    print(p)
-  dev.off()
-
-  print("  ROC")
-  if (!file.exists(roc.file)) {
-    load(sites.file)
-
-    f <- function(df, thresh) {return(slr.roc(df, na.rm=T))}
-    roc <- summarize.by.labels(sites, f)
-    save(roc, file=roc.file)
-  }
-  load(roc.file)
-
-  roc <- subset(roc, aligner != 'clustalw')
-  roc <- subset(roc, aligner != 'mafft')
-
-  roc <- aln.factors(roc)
-  roc <- ins.mpl.factors(roc)
-
-  p <- plot.roc(roc,plot=F,plot.x='fpr',plot.y='tpr', color.by='aligner')
-  p <- p + geom_vline(x=0.01, colour='gray', linetype='dashed')
-  p <- p + geom_vline(x=0.05, colour='black', linetype='dashed')
-  p <- p + facet_grid(ins_rate ~ tree_length)
-  p <- p + opts(
-    panel.margin=unit(rep(0.5, times=4), "lines"),
-    title="True Positive Rate vs False Positive Rate for 17-Taxon Tree"
-  )
-  p <- p + scale_y_continuous(name="True Positive Rate", limits=c(0,1.0), breaks=c(0,0.5,1))
-  p <- p + scale_x_continuous(name="False Positive Rate", limits=c(0,0.1), breaks=c(0, 0.05, 0.1))
-
-  pdf(file="ari_roc.pdf",width=10,height=10)
-  print(p)
-  dev.off()
-}
 
 false.pos.stats <- function() {
 
-  p.s <- function(dir, filter, field, xlim, plot.diff=F) {
-    roc.file <- paste(dir, '/', 'false.pos.stats.Rdata', sep='')
-    sites.file <- paste(dir, '/', 'sites.Rdata', sep='')
-    if (!file.exists(roc.file)) {
-      load(sites.file)
-  
-      sites <- subset(sites, tree_length == 1 & ins_rate == 0.025)
-      print(nrow(sites))
-      roc <- summarize.by.labels(sites, slr.roc)
-  
-      roc.aln <- subset(roc, filter != 'True Alignment')
-      print(nrow(roc.aln))
-      roc.true <- subset(roc, filter == 'True Alignment')
-      print(nrow(roc.true))
-  
-      # For some reason we get duplicates for a given rep and seq_position. Remove them for both sets.
-      remove.dups <- function(df) {
-        return(df[!duplicated(df[, c('slrsim_rep', 'seq_position')]),])
-      }
-      roc.true <- remove.dups(roc.true)
-
-      all.merged <- data.frame()
-      filters <- unique(roc.aln$filter)
-      for (i in 1:length(filters)) {
-        cur.f <- filters[i]
-        sub.roc.aln <- subset(roc.aln, filter == cur.f)
-        sub.roc.aln <- remove.dups(sub.roc.aln)
-        roc.merged <- merge(
-          sub.roc.aln, 
-          roc.true,
-          by=c('tree_length', 'ins_rate', 'slrsim_rep', 'seq_position'),
-          suffixes=c('.aln', '.true')
-        )
-        print(paste(cur.f, nrow(roc.merged)))
-        all.merged <- rbind(all.merged, roc.merged)
-      }
-      roc <- all.merged
-      print(nrow(roc))
-      save(roc, file=roc.file)
-    }
-    load(roc.file)
-
+  plot.distributions <- function(roc, field, xlim=c(0,15), plot.diff=F) {
+    print(paste("Plotting FP distributions for",field))
     df <- roc
 
-    print(paste(filter, field))
-    roc <- subset(df, filter.aln == filter)
-    #print(nrow(roc))
+    # Keep only sites that are FPs in the inferred alignment and TNs in the true alignment.
+    # IMPORTANT DETAIL: I use the FPR<0.05 threshold from the TRUE alignment to define
+    # our threshold for FPs and TPs...
 
-    score.thresh <- roc[1, 'thresh_at_fpr.true']
-    roc <- subset(roc, truth.aln == 0 & score.aln > score.thresh & score.true < score.thresh)
+    roc$aligner <- roc$aligner.aln
+    roc$filter <- roc$filter.aln
+    roc <- ins.mpl.factors(roc)
+    roc <- aln.factors(roc)
+    roc <- filter.factors(roc)
+    roc <- roc[ order(roc$filter, roc$aligner), ]
+    roc$analysis <- paste(roc$aligner, roc$filter, sep=" / ")
+    roc$analysis <- factor(roc$analysis, levels=unique(roc$analysis))
+    roc$simulation <- paste(roc$tree_length, roc$ins_rate, sep="\n")
 
-    print(nrow(roc))
+    for (cur.set in unique(roc$analysis)) {
+      print(paste("  ",cur.set, ":", nrow(subset(roc, analysis == cur.set))))
+    }
+    for (cur.set in unique(roc$simulation)) {
+      print(paste("  ",cur.set, ":", nrow(subset(roc, simulation == cur.set))))
+    }
  
     roc[, 'bl_mismatch.aln'] <- roc$bl_aligned.aln - roc$bl_match.aln
     roc[, 'bl_mismatch.true'] <- 0
 
     cur.roc <- roc
-    cur.roc[, 'stat_aln'] <- cur.roc[, paste(field,'.aln',sep='')]
-    cur.roc[, 'stat_true'] <- cur.roc[, paste(field,'.true',sep='')]
+    cur.roc$stat_aln <- cur.roc[, paste(field,'.aln',sep='')]
+    cur.roc$stat_true <- cur.roc[, paste(field,'.true',sep='')]
 
+    if (plot.diff) {
+      cur.roc$stat_aln <- cur.roc$stat_aln - cur.roc$stat_true
+    }
+
+    # Color by the aln - true score difference.
     cur.roc$score_diff <- cur.roc$score.aln - cur.roc$score.true;
-
     cur.roc$score_diff <- round(cur.roc$score_diff)
     cur.roc[cur.roc$score_diff > 4, 'score_diff'] <- 4
     cur.roc$score_diff <- factor(cur.roc$score_diff, levels=rev(c(0:4)))
     cur.roc <- cur.roc[order(cur.roc$score_diff),]
 
     bin.width <- diff(xlim) / 20
-
     ramp <- colorRampPalette(c('blue','red'))
 
-    p <- ggplot(cur.roc, aes(x=stat_aln, fill=score_diff))
+    p <- ggplot(cur.roc, aes(x=stat_aln))
     p <- p + theme_bw()
     p <- p + geom_bar(binwidth=bin.width)
-    p <- p + scale_fill_manual(values=rev(ramp(5)))
-    p <- p + geom_vline(xintercept=0)
-    p <- p + scale_x_continuous(paste(field, "(aln)",sep=' '), limits=xlim)
+    #p <- p + scale_fill_manual(values=rev(ramp(5)))
+    #p <- p + geom_vline(xintercept=0)
+    x.lbl <- paste(field, "(aln)", sep=' ')
+    if (plot.diff) {
+      x.lbl <- paste(field, "(aln - true)", sep=' ')
+    }
+    p <- p + scale_x_continuous(x.lbl)
+    p <- p + facet_grid( analysis ~ simulation)
+    p <- p + opts(strip.text.y = theme_text())
     p <- p + opts(
-     title=paste(filter, field)
+     legend.position = 'none'
     )
     return(p)
   }
 
-  p.f <- function(dir, filter, row) {
-    p <- p.s(dir, filter, 'bl_aligned', c(-0.5, 4.5))
-    print(p, vp=subplot(1,row))
-    p <- p.s(dir, filter, 'bl_mismatch', c(-0.5,4.5))
-    print(p, vp=subplot(2,row))
+  combine.fp.rocs.from.dirs <- function(dbs) {
+    all.stats <- data.frame()
+    for (db in dbs) {
+      stats <- load.roc(db, return.fps=T)
+      all.stats <- rbind(all.stats, stats)  
+    }
+    return(all.stats)
   }
 
-  dir.b <- '~/scratch/gj1_fig_two_b/current'
-  dir.e <- '~/scratch/gj1_fig_two_e/current'
+  db.a <- 'gj1_fig_two_a'
+  db.b <- 'gj1_fig_two_b'
+  db.c <- 'gj1_fig_two_c'
+  db.clustalw <- 'gj1_fig_two_clustalw'
 
-  pdf("figure_seven_mafft.pdf")
-  vplayout(2, 4)
-  p.f(dir.b, 'No filter', 1)
-  p.f(dir.b, 'branchlength', 2)
-  p.f(dir.b, 'tcoffee', 3)
-  p.f(dir.b, 'optimal', 4)
+  comb.stats <- combine.fp.rocs.from.dirs(c(db.a, db.b, db.c, db.clustalw))
+  print(str(comb.stats))
+
+  comb.stats$filter <- comb.stats$filter.aln
+  comb.stats$aligner <- comb.stats$aligner.aln
+  
+  comb.stats <- subset(comb.stats, 
+    filter == 'none'
+  )
+
+  pdf("fp.stats.pdf", width=10, height=14)
+    vplayout(1, 3)
+    p <- plot.distributions(comb.stats, 'bl_aligned')
+    print(p, vp=subplot(1,1))
+    p <- plot.distributions(comb.stats, 'bl_aligned', plot.diff=T)
+    print(p, vp=subplot(1,2))
+    p <- plot.distributions(comb.stats, 'bl_mismatch')
+    print(p, vp=subplot(1,3))
   dev.off()
 
-  pdf("figure_seven_prank.pdf")
-  vplayout(2, 4)
-  p.f(dir.e, 'No filter', 1)
-  p.f(dir.e, 'branchlength', 2)
-  p.f(dir.e, 'tcoffee', 3)
-  p.f(dir.e, 'optimal', 4)
-  dev.off()
 }
 
 
-false.positives <- function(cur_aligner) {
-  dir <- '~/scratch/gj1_ari_indels/current'
-  data.dir <- paste(dir, '/', 'data', sep='')
-  sites.file <- paste(dir, '/', 'sites.Rdata', sep='')
-  genes.file <- paste(dir, '/', 'genes.Rdata', sep='')
-  roc.file <- paste(dir, '/', 'roc.Rdata', sep='')
-  tbl.file <- paste(dir, '/', 'table.csv', sep='')
+false.positives <- function(fp_index=1, file="test.pdf") {
+  dbs <- c('gj1_fig_two_a', 'gj1_fig_two_b', 
+           'gj1_fig_two_c',  'gj1_fig_two_clustalw')
 
-  if (!file.exists(roc.file)) {
-    load(sites.file)
-    roc <- summarize.by.labels(sites, slr.roc)
-    save(roc, file=roc.file)
-  }
-  load(roc.file)
-  load(genes.file)
+  losers.f <- 'losers.Rdata'
+  if (!file.exists(losers.f)) {
+    print("  loading genes")
+    genes <- load.all.genes(dbs)
+    print("  loading rocs")
 
-  for (cur_ins_rate in unique(roc$ins_rate)) {
-    for (cur_tree_length in unique(roc$tree_length)) {
-      if (cur_tree_length != 1) {
-        next
-      }
-      if (cur_ins_rate != 0.025) {
-        next
-      }
+    keep.fields <- c('truth.aln', 'score.aln', 'score.true',
+      'tree_length', 'ins_rate',
+      'slrsim_rep', 'seq_position',
+      'aligner.aln', 'filter.aln',
+      'db'
+    )
+    all.sites <- load.all.rocs(dbs, keep.fields=keep.fields)
+    print(nrow(all.sites))
 
-      cur.sub <- subset(roc, tree_length == cur_tree_length & ins_rate == cur_ins_rate & aligner == cur_aligner)
-      true.sub <- subset(roc, tree_length == cur_tree_length & ins_rate == cur_ins_rate & aligner == "True_Alignment")
-      test <- merge(cur.sub, true.sub[, c('slrsim_rep', 'seq_position', 'score')], by=c('slrsim_rep', 'seq_position'), suffixes=c('.aln', '.true'))
-      losers <- subset(test, truth == 0 & score.aln > 2.71 & score.true < 2.71)
+    fp.db <- 'gj1_fig_two_c'
+    ins <- 0.05
+    mpl <- 1
 
-      top.fps <- losers
-      if (nrow(top.fps) > 5) {
-        top.fps <- top.fps[1:5,]
-      }
+    all.sites <- subset(all.sites, tree_length == mpl & ins_rate == ins)
+    print(nrow(all.sites))
 
-      load.window <- function(x, seq_id, seq_position, flank.width) {
-        tree.f <- paste(data.dir, '/', x$tree_file, sep='')
-        aln.f <- paste(data.dir, '/', x$aln_file, sep='')
-#        if (file.exists(tree.f)) {
-#          tree <- read.tree(tree.f)
-#        }
-        aln <- read.aln(aln.f)
-        pep.aln <- aln.tx(aln)
+    cur.sub <- subset(all.sites, 
+      filter.aln == 'none' & db == fp.db
+    )
+    print(nrow(cur.sub))
+    losers <- subset(cur.sub, truth.aln == 0 & score.aln > 2.71 & score.true < 2.71)
+    print(nrow(losers))
 
-        seq_id = 'human'
-        aln.col <- aln.col.position(pep.aln, seq_id, seq_position)
+    loser.others <- data.frame()
+    for (i in 1:nrow(losers)) {
+      cur.loser <- losers[i,]
+      print(paste(cur.loser$slrsim_rep, cur.loser$seq_position))
 
-        col.lo <- max(1, aln.col - flank.width)
-        col.hi <- min(aln.length(pep.aln), aln.col + flank.width)
-
-        below <- aln.slice(pep.aln, col.lo, aln.col-1)
-        at <- aln.slice(pep.aln, aln.col, aln.col)
-        above <- aln.slice(pep.aln, aln.col+1, col.hi)
-        
-        spliced <- aln.splice(below, at, empty.space=0)
-        spliced <- aln.splice(spliced, above, empty.space=0)
-        return(spliced)
-      }
-
-      window.width <- 20
-
-      all.alignments <- list()
-      aligners <- unique(c(cur_aligner, 'mafft', 'prank', 'prank_codon', 'True_Alignment'))
-      for (i in 1:length(aligners)) {
-        a <- aligners[i]
-        cur.list <- list()
-
-        for (j in 1:nrow(top.fps)) {
-          cur.site <- top.fps[j,]
-          cur_seq_position <- cur.site$seq_position
-          cur_slrsim_rep = cur.site$slrsim_rep
-
-          cur.gene <- subset(genes,
-            ins_rate == cur_ins_rate &
-            tree_length == cur_tree_length &
-            slrsim_rep == cur_slrsim_rep & 
-            aligner == a
-          )
-          aln <- load.window(cur.gene, 'human', cur_seq_position, window.width)
-
-          cur.list[[j]] <- aln
-        }
-        all.alignments[[i]] <- cur.list
-      }
-      names(all.alignments) <- aligners
-
-      pdf.width <- nrow(top.fps) * (window.width*2+3)
-      pdf.height <- 17 * length(all.alignments)
-      pdf(file="test.pdf", width=pdf.width/5, height=pdf.height/5)
-      vplayout(nrow(top.fps), length(all.alignments))
-      for (i in 1:length(all.alignments)) {
-        cur.alns <- all.alignments[[i]]
-        aln.name <- names(all.alignments)[i]
-        print(aln.name)
-        for (j in 1:nrow(top.fps)) {
-          print(j)
-          cur.aln <- cur.alns[[j]]
-          n.seqs <- aln.num.seqs(cur.aln)
-          p <- aln.plot(cur.aln)
-          p <- p + geom_rect(xmin=window.width+.5, xmax=window.width+1.5, ymin=0.5, ymax=n.seqs+0.5, fill=NA, colour='black', border=1, alpha=0.5)
-          p <- p + opts(title=aln.name)
-          print(p, vp=subplot(j,i))
-        }
-      }
-      dev.off()
-      return()
+      cur.others <- subset(all.sites, 
+        slrsim_rep == cur.loser$slrsim_rep & 
+        seq_position == cur.loser$seq_position
+      )
+      print(paste(i, nrow(cur.others)))
+      print(unique(cur.others$filter.aln))
+      loser.others <- rbind(loser.others, cur.others)
     }
+
+    genes<- subset(genes, tree_length == mpl & ins_rate == ins)
+    save(losers, loser.others, genes, ins, mpl, file=losers.f)
   }
+  load(losers.f)
+
+  print(nrow(losers))
+  cur.fp <- losers[fp_index,]
+
+  load.window <- function(x, seq_id, seq_position, flank.width) {
+    db <- x$db
+    data.dir <- paste('~/scratch/',db,'/current/data', sep='')
+    tree.f <- paste(data.dir, '/', x$tree_file, sep='')
+    aln.f <- paste(data.dir, '/', x$masked_aln_file, sep='')
+    print(aln.f)
+    aln <- read.aln(aln.f)
+    pep.aln <- aln.tx(aln)
+
+    tree <- NULL
+    if (file.exists(tree.f)) {
+      print(tree.f)
+      tree <- read.tree(tree.f)
+    }
+
+    seq_id = 'human'
+    aln.col <- aln.col.position(pep.aln, seq_id, seq_position)
+
+    col.lo <- max(1, aln.col - flank.width)
+    col.hi <- min(aln.length(pep.aln), aln.col + flank.width)
+
+    below <- aln.slice(pep.aln, col.lo, aln.col-1)
+    at <- aln.slice(pep.aln, aln.col, aln.col)
+    above <- aln.slice(pep.aln, aln.col+1, col.hi)
+        
+    spliced <- aln.splice(below, at, empty.space=0)
+    spliced <- aln.splice(spliced, above, empty.space=0)
+    return(list(aln=spliced, tree=tree))
+  }
+
+  window.width <- 19
+
+  filters.alns <- list(
+    c('none', 'mafft'),
+    c('none', 'clustalw'),
+    c('none', 'prank'),
+    c('none', 'prank_codon'),
+    c('branchlength_hi', 'prank_codon'),
+    c('tcoffee_hi', 'prank_codon'),
+    c('true', 'prank_codon')
+  )
+
+  pdf.width <- 1.5 * (window.width*2+3)
+  pdf.height <- 17 * length(filters.alns)
+  pdf(file=file, width=pdf.width/5, height=pdf.height/5)
+  vplayout(1, length(filters.alns))
+
+  for (i in 1:length(filters.alns)) {
+    filt.aln <- filters.alns[[i]]
+    cur.filter <- filt.aln[1]
+    cur.aln <- filt.aln[2]
+    print(paste(cur.filter, cur.aln))
+
+    cur.site <- cur.fp
+    cur_seq_position <- cur.site$seq_position
+    cur_slrsim_rep <- cur.site$slrsim_rep
+
+    cur.gene <- subset(genes,
+      slrsim_rep == cur_slrsim_rep & 
+      filter == cur.filter &
+      aligner == cur.aln
+    )
+
+    cur.site <- subset(loser.others,
+      slrsim_rep == cur_slrsim_rep & 
+      filter.aln == cur.filter &
+      aligner.aln == cur.aln &
+      seq_position == cur_seq_position
+    )
+
+    if (nrow(cur.gene) != 1) {
+      if (nrow(cur.gene) == 0) {
+         stop("No gene found!")
+      }
+      stop("Need just one gene!")
+    }
+
+    if (cur.filter == 'true') {
+      cur.score <- cur.fp$score.true
+    } else if (nrow(cur.site) != 1 && cur.filter != 'none') {
+      cur.score <- -1
+    } else if (nrow(cur.site) == 1) {
+      cur.score <- cur.site$score.aln
+    } else {
+      if (nrow(cur.site) == 0) {
+        stop("No site found!")
+      } else {
+        stop("More than one site found!")
+      }
+    }
+
+    lbl <- sprintf("Aligner=%s / Filter=%s / score=%.3f", cur.aln, cur.filter, cur.score)
+
+    alntree <- load.window(cur.gene, 'human', cur_seq_position, window.width)
+    aln <- alntree$aln
+    tree <- alntree$tree
+
+    n.seqs <- aln.num.seqs(aln)
+    aln.modifier <- function(x) {
+        x = x + geom_rect(xmin=window.width+.5, xmax=window.width+1.5, ymin=0.5, ymax=n.seqs+0.5, fill=NA, colour='black', border=1, alpha=0.5)
+        return(x)
+    }
+
+    p <- aln.plot(aln,
+      aln.plot.xlabel='', 
+      tree=tree,
+      aln.mod=aln.modifier,
+      tree.labels.in.tree=F,
+      aln.to.tree.size = 5,
+      plot.title = lbl
+    )
+    pushViewport(subplot(1,i))
+    grid.draw(p$grob)
+    upViewport()
+  }
+  dev.off()
+  
+}
+
+lots.of.fps <- function() {
+  for (i in 1:20) {
+    false.positives(i, file=paste("fps/",i,".pdf",sep=''))
+  }
+}
+
+merged.datasets <- function(tbl) {
+
+  merged.data.f <- 'merged_data.csv'
+  if (!file.exists(merged.data.f)) {
+    print(paste("Creating merged datasets..."))
+
+    load.s <- function(db) {return(subset(load.sites(db), filter=='none'))} 
+    sites <- load.s('gj1_fig_two_c')
+    mafft <- load.s('gj1_fig_two_a')
+    prank <- load.s('gj1_fig_two_b')
+    probcons <- load.s('gj1_fig_two_d')
+    pagan <- load.s('gj1_fig_two_e')
+    clustalw <- load.s('gj1_fig_two_clustalw')
+    tc_lo <- subset(load.sites('gj1_fig_two_c'), filter=='tcoffee_lo')
+    bl_lo <- subset(load.sites('gj1_fig_two_c'), filter=='branchlength_lo')
+    tc_hi <- subset(load.sites('gj1_fig_two_c'), filter=='tcoffee_hi')
+    bl_hi <- subset(load.sites('gj1_fig_two_c'), filter=='branchlength_hi')
+
+    true <- subset(load.sites('gj1_fig_two_c'), filter=='true')
+    true$aligner <- 'True Alignment'
+    aln <- subset(load.sites('gj1_fig_two_c'), filter=='none')
+
+    print(nrow(sites))
+    print(nrow(tc_lo))
+    print(nrow(bl_lo))
+
+    print("  Combining pvals...")
+  
+    add.rows <- function(input, a, b, lbl) {
+      return(rbind(input, combine.pvals(a, b, lbl)))
+    }
+
+    rows <- data.frame()
+    
+    rows <- rbind(rows, true)
+    rows <- rbind(rows, aln)    
+
+    rows <- add.rows(rows, sites, clustalw, 'prank(codon)+clustalw')
+    rows <- add.rows(rows, sites, mafft,    'prank(codon)+mafft')
+    rows <- add.rows(rows, sites, prank,    'prank(codon)+prank')
+    rows <- add.rows(rows, sites, pagan,    'prank(codon)+pagan')
+    rows <- add.rows(rows, sites, probcons, 'prank(codon)+probcons')
+
+    codon.pagan <- combine.pvals(sites, pagan, 'prank(codon)+pagan')
+    codon.pagan.prank <- combine.pvals(codon.pagan, prank, 'prank(codon)+pagan+prank')
+    codon.pagan.tc_lo <- combine.pvals(codon.pagan, tc_lo, 'prank(codon)+pagan+tc(low)')
+    codon.pagan.prank.tc_lo <- combine.pvals(codon.pagan.prank, tc_lo, 'prank(codon)+pagan+prank+tc(low)')
+
+    rows <- add.rows(rows, codon.pagan, prank,             'prank(codon)+pagan+prank')
+    rows <- add.rows(rows, codon.pagan, tc_lo,             'prank(codon)+pagan+tc(low)')
+    rows <- add.rows(rows, codon.pagan, bl_lo,             'prank(codon)+pagan+bl(low)')
+    rows <- add.rows(rows, codon.pagan.tc_lo, bl_lo,       'prank(codon)+pagan+tc(low)+bl(low)')
+    rows <- add.rows(rows, codon.pagan.prank, tc_lo,       'prank(codon)+pagan+prank+tc(low)')
+    rows <- add.rows(rows, codon.pagan.prank, bl_lo,       'prank(codon)+pagan+prank+bl(low)')
+    rows <- add.rows(rows, codon.pagan.prank.tc_lo, bl_lo, 'prank(codon)+pagan+prank+tc(low)+bl(low)')
+
+    codon.prank <- combine.pvals(sites, prank, 'prank(codon)+prank')
+    codon.prank.tc_lo <- combine.pvals(codon.prank, tc_lo, 'prank(codon)+prank+tc(low)')
+
+    rows <- add.rows(rows, codon.prank, mafft,       'prank(codon)+prank+mafft')
+    rows <- add.rows(rows, codon.prank, tc_lo,       'prank(codon)+prank+tc(low)')
+    rows <- add.rows(rows, codon.prank, bl_lo,       'prank(codon)+prank+bl(low)')
+    rows <- add.rows(rows, codon.prank.tc_lo, bl_lo, 'prank(codon)+prank+tc(low)+bl(low)')
+
+    rows <- add.rows(rows, sites, bl_lo, 'prank(codon)+bl(low)')
+    rows <- add.rows(rows, sites, bl_hi, 'prank(codon)+bl(high)')
+    rows <- add.rows(rows, sites, tc_lo, 'prank(codon)+tc(low)')
+    rows <- add.rows(rows, sites, tc_hi, 'prank(codon)+tc(high)')
+    rows <- add.rows(rows, tc_lo, bl_lo, 'prank(codon)+tc(low)+bl(low)')
+    rows <- add.rows(rows, tc_lo, bl_hi, 'prank(codon)+tc(low)+bl(high)')
+    rows <- add.rows(rows, tc_hi, bl_lo, 'prank(codon)+tc(high)+bl(low)')
+    rows <- add.rows(rows, tc_hi, bl_hi, 'prank(codon)+tc(high)+bl(high)')
+
+    print("  Gathering data from combined sites...")
+    pt <- summarize.by.labels(rows, paper.table)
+    write.csv(pt, file=merged.data.f, row.names=F)
+  }
+  tbl <- read.csv(merged.data.f)
+  tbl$filter <- ''
+
+#  tbl <- aln.factors(tbl)
+#  tbl <- filter.factors(tbl)
+  #tbl <- ins.mpl.factors(tbl)
+  output.tables.long(tbl, "merged")
+
+  return(tbl)
+}
+
+filter.tables <- function() {
+  tbl.a <- load.tbl('gj1_fig_two_a')
+  tbl.b <- load.tbl('gj1_fig_two_b')
+  tbl.c <- load.tbl('gj1_fig_two_c')
+  tbl.clustalw <- load.tbl('gj1_fig_two_clustalw')
+  tbl <- rbind(tbl.a, tbl.b, tbl.c, tbl.clustalw)
+
+  tbl <- aln.factors(tbl)
+  tbl <- filter.factors(tbl)
+  #tbl <- ins.mpl.factors(tbl)
+
+  output.tables.long(tbl, "filters")
+}
+
+output.tables.long <- function(tbl, file) {
+  tbl$tree_length <- tbl$length
+  tbl <- tbl[with(tbl, order(tree_length, ins_rate, aligner, filter)),]
+  tbl$conditions <- paste(tbl$tree_length, tbl$ins_rate, sep=' / ')
+
+  id.fields <- c(
+    'aligner', 'filter'
+  )
+  variable.fields <- c(
+    'n_sites', 'tpr_at_fpr', 'tp_at_fdr', 'fdr_at_thresh', 'tp_at_thresh'
+  )
+
+  df <- unique(tbl[, id.fields])
+  tables <- list()
+  for (cond in unique(tbl$conditions)) {
+    print(cond)
+    cur.tbl <- subset(tbl, conditions == cond)
+    cur.tbl <- cur.tbl[, c(id.fields, variable.fields)]
+    names(cur.tbl) <- c(
+      names(cur.tbl[, id.fields]),
+      paste(cond, "\n", names(cur.tbl[,variable.fields]), sep=' ')
+    )
+    df <- merge(df, cur.tbl, by=id.fields)
+  }
+
+  df <- df[with(df, order(aligner, filter)),]
+  print.tables(list(df), file=paste(file,'.html',sep=''))
+
+  write.csv(df, file=paste(file,'.csv', sep=''), row.names=F)
+  
+}
+
+print.tables <- function(tables, file) {
+  all.strings <- ''
+  for (i in 1:length(tables)) {
+    cur.tbl <- tables[[i]]
+    print(str(cur.tbl))
+    x.tbl <- xtable(cur.tbl, digits=3)
+    tbl.string <- print(x.tbl, type='html')
+    all.strings <- paste(all.strings, tbl.string)
+  }
+  cat(all.strings, file=file)
 }
 
 
@@ -1256,17 +1037,12 @@ combined.tests <- function() {
 
 
 
-
-
-
-
 aln.factors <- function(data) {
   aligners <- unique(data$aligner)
+  filters <- unique(data$filter)
 
-  if (is.factor(aligners)) {
-    #print(levels(aligners))
-    #return(data)
-  }
+  ordered.f <- c('clustalw', 'mafft', 'probcons', 'fsa', 'fsa_careful', 'prank', 'pagan', 'prank_codon', 'true')
+  aligners <- unique(c(ordered.f[ordered.f %in% aligners], as.character(aligners)))
 
   levels <- c()
   labels <- c()
@@ -1276,6 +1052,9 @@ aln.factors <- function(data) {
       switch(aligner,
         clustalw = 'ClustalW',
         mafft = 'MAFFT',
+        fsa = 'FSA',
+        fsa_careful = 'FSA (high specificity)',
+        probcons = 'Probcons',
         prank = 'PRANK',
         prank_codon = 'PRANK(codon)',
         pagan = 'PAGAN',
@@ -1283,7 +1062,9 @@ aln.factors <- function(data) {
         pagan_codon = 'PAGAN(codon)',
         True_Alignment = 'True Alignment',
         'True Alignment' = 'True Alignment',
-        true = 'True Alignment'
+        true = 'True Alignment',
+        none = 'True Alignment',
+        aligner
       )
     )
   }
@@ -1292,6 +1073,9 @@ aln.factors <- function(data) {
 }
 
 ins.mpl.factors <- function(data, short=F) {
+  if (is.null(data$tree_length)) {
+    data$tree_length <- data$length
+  }
   # First, take the insertion rate and multiply by two to get the indel rate
   data$ins_rate <- data$ins_rate * 2
   if (short) {
@@ -1330,10 +1114,15 @@ tree.factors <- function(data) {
 filter.factors <- function(data) {
   filters <- unique(data$filter)
 
-  ordered.f <- c('No filter', 'gblocks', 'guidance', 
-    'columns', 'branchlength', 'tcoffee',
-    'optimal', 'True Alignment', 'True_Alignment', 'true')
-  filters <- ordered.f[ordered.f %in% filters]
+  ordered.f <- c('No filter', 'none',
+    'gblocks', 
+    'guidance', 'guidance_lo', 'guidance_hi',
+    'columns', 
+    'branchlength', 'branchlength_lo', 'branchlength_hi',
+    'tcoffee', 'tcoffee_lo', 'tcoffee_hi',
+    'optimal', 'optimal_lo', 'optimal_hi',
+    'True Alignment', 'True_Alignment', 'true')
+  filters <- unique(c(ordered.f[ordered.f %in% filters], filters))
   
   levels <- c()
   labels <- c()
@@ -1343,11 +1132,20 @@ filter.factors <- function(data) {
       switch(f,
         gblocks = 'Gblocks',
         optimal = 'Optimal',
+        'optimal_lo' = 'Optimal(low)',
+        'optimal_hi' = 'Optimal(high)',
         tcoffee = 'T-Coffee',
+        'tcoffee_lo' = 'T-Coffee(low)',
+        'tcoffee_hi' = 'T-Coffee(high)',
         guidance = 'GUIDANCE',
-        'No filter' = 'None',
+        'guidance_lo' = 'GUIDANCE(low)',
+        'guidance_hi' = 'GUIDANCE(high)',
         columns = 'Non-gap Sequences',
         branchlength = 'Branch Length',
+        'branchlength_lo' = 'Branch Length(low)',
+        'branchlength_hi' = 'Branch Length(high)',
+        'No filter' = 'None',
+        'none' = 'None',
         'True Alignment' = 'True Alignment',
         True_Alignment = 'True Alignment',
         true = 'True Alignment'
@@ -1356,4 +1154,124 @@ filter.factors <- function(data) {
   }
   data$filter <- factor(data$filter, levels=levels, labels=labels)
   return(data)
+}
+
+load.tbl <- function(db) {
+  dir = paste('~/scratch/',db,'/current', sep='')
+  tbl.file <- paste(dir, '/', 'table.csv', sep='')
+  tbl <- read.csv(file=tbl.file, stringsAsFactors=F)
+  return(tbl)
+}
+
+load.sites <- function(db) {
+  dir = paste('~/scratch/',db,'/current', sep='')
+  sites.file <- paste(dir, '/', 'sites.Rdata', sep='')
+  load(sites.file)
+  return(sites)
+}
+
+load.genes <- function(db) {
+  dir = paste('~/scratch/',db,'/current', sep='')
+  genes.file <- paste(dir, '/', 'genes.Rdata', sep='')
+  load(genes.file)
+  return(genes)
+}
+
+load.all.genes <- function(dbs) {
+  all.genes <- data.frame()
+  for (i in 1:length(dbs)) {
+    db <- dbs[i]
+    dir = paste('~/scratch/',db,'/current', sep='')
+    genes.file <- paste(dir, '/', 'genes.Rdata', sep='')
+    load(genes.file)
+    genes$db <- db
+    all.genes <- rbind(all.genes, genes)
+  }
+  return(all.genes)
+}
+
+load.all.rocs <- function(dbs, return.merged=T, return.fps=F, keep.fields=NULL) {
+
+  df <- data.frame()
+  for (i in 1:length(dbs)) {
+    cur.df <- load.roc(dbs[i], return.merged=return.merged, return.fps=return.fps)
+    cur.df$db <- dbs[i]
+    if (!is.null(keep.fields)) {
+      cur.df <- subset(cur.df, select=keep.fields)
+    }
+    df <- rbind(df, cur.df)
+  }
+  return(df)
+}
+
+load.roc <- function(db, return.merged=T, return.fps=F) {
+  dir <- paste('~/scratch/', db, '/current', sep='')
+  sites.file <- paste(dir, '/sites.Rdata', sep='')
+  rocs.file <- paste(dir, '/rocs.Rdata', sep='')
+  merged.file <- paste(dir, '/rocs_merged.Rdata', sep='')
+  fps.file <- paste(dir, '/rocs_fps.Rdata', sep='')
+
+  if (!file.exists(rocs.file)) {
+    print(paste("Making roc for",db,"..."))
+    load(sites.file)
+    roc <- summarize.by.labels(sites, slr.roc)
+    save(roc, file=rocs.file)
+  }
+  print(paste("Loading roc for",db,"..."))
+
+  if (!return.merged && !return.fps) {
+    load(rocs.file)
+    return(roc)
+  }
+
+  if (!file.exists(merged.file)) {
+    print(paste("Making merged roc for",db,"..."))
+    load(rocs.file)
+    roc$alnfilter <- paste(roc$align, roc$filter, sep='')
+
+    roc.aln <- subset(roc, filter != 'true')
+    roc.true <- subset(roc, filter == 'true')
+    
+    merge.fields <- c('tree_length', 'ins_rate', 'slrsim_rep', 'seq_position')
+  
+    # For some reason we get duplicates for a given rep and seq_position. Remove them for both sets.
+    remove.dups <- function(df) {
+      return(df[!duplicated(df[, merge.fields]),])
+    }
+    roc.true <- remove.dups(roc.true)
+  
+    all.merged <- data.frame()
+
+    filters <- unique(roc.aln$alnfilter)
+    for (i in 1:length(filters)) {
+      cur.f <- filters[i]
+      sub.roc.aln <- subset(roc.aln, alnfilter == cur.f)
+      sub.roc.aln <- remove.dups(sub.roc.aln)
+      roc.merged <- merge(
+        sub.roc.aln, 
+        roc.true,
+        by=merge.fields,
+        suffixes=c('.aln', '.true')
+      )
+      print(paste("  ",cur.f, nrow(roc.merged)))
+      all.merged <- rbind(all.merged, roc.merged)
+    }
+    roc <- all.merged
+    rm(all.merged)
+    save(roc, file=merged.file)
+  }
+  if (!return.fps) {
+    load(merged.file)
+    return(roc)
+  }
+
+  if (!file.exists(fps.file)) {
+    print(paste("Making FPs roc for",db,"..."))
+    load(merged.file)
+    roc <- subset(roc, truth.aln == 0 & score.aln > thresh_at_fpr.true & score.true < thresh_at_fpr.true)
+    save(roc, file=fps.file)
+  }    
+  load(fps.file)
+
+  return(roc)
 }

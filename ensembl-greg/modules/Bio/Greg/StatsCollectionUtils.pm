@@ -389,6 +389,49 @@ $CLEAN_WHERE;
   return $obj;
 }
 
+sub add_ungapped_branch_lengths {
+  my $self = shift;
+  my $tree = shift;
+  my $pep_aln = shift;
+  my $psc_hash = shift;
+
+  print "  calculating ungapped branch length...\n";
+
+  my $tmp = $self->worker_temp_directory;
+  my $tree_f = "${tmp}/tree.nh";
+  my $aln_f = "${tmp}/aln.fasta";
+
+  Bio::EnsEMBL::Compara::TreeUtils->to_file($tree, $tree_f);
+  Bio::EnsEMBL::Compara::AlignUtils->to_file($pep_aln, $aln_f);
+
+  my $csr = Bio::Greg::EslrUtils->baseDirectory . "/scripts/collect_sitewise.R";
+  my $cmd = qq^
+source("${csr}")
+library(phylosim)
+
+sim <- PhyloSim()
+readTree(sim, "${tree_f}")
+readAlignment(sim, "${aln_f}")
+
+sites <- add.nongap.bl(sites, sim\$.phylo, sim\$.alignment)
+sites <- sites[order(sites[,'aln_position']),]
+
+for (i in 1:nrow(sites)) {
+  print(sites[i,'aln_position'])
+  print(sites[i,'nongap.bl'])
+}
+^;
+  my @values = $self->_run_r_with_sites($psc_hash,$cmd);
+
+  for (my $i=0; $i < scalar(@values); $i++) {
+    my $pos = $values[$i];
+    $i++;
+    my $nongap_bl = $values[$i];
+
+    $psc_hash->{$pos}->{nongap_bl} = $nongap_bl;
+  }
+}
+
 sub calculate_fractions {
   my $self = shift;
   my $psc_hash = shift;
@@ -396,6 +439,8 @@ sub calculate_fractions {
   return if ( scalar(keys %$psc_hash) == 0 );
 
   my $cmd = qq^
+  sites <- subset(sites, note != 'random')
+
   sites[,'pval'] <- 1 - pchisq(sites[,'lrt_stat'],1)
   pos.sites <- subset(sites,omega > 1 & pval < 0.01)
   neg.sites <- subset(sites,omega < 1 & pval < 0.01)
@@ -429,6 +474,8 @@ sub combined_pval {
   my $combine_p = Bio::Greg::EslrUtils->baseDirectory . "/scripts/combine.p.R";
   my $cmd      = qq^
 source("$combine_p")
+sites <- subset(sites, note != 'random')
+
 p.values = 1 - pchisq(sites[,'lrt_stat'],1)
 p.values[p.values <= 0] = 1e-10
 p.values[p.values >= 1] = 1
@@ -487,7 +534,6 @@ sub _run_r_with_sites {
   
   $cmd = qq^
 sites <- read.table(file="$temp_f",sep="\t",header=T)
-sites <- subset(sites, note != 'random')
 ^ . $cmd;
   
   my @values = Bio::Greg::EslrUtils->get_r_values( $cmd, $self->worker_temp_directory );
@@ -744,5 +790,29 @@ sub get_coords_from_pep_position {
   warn("No coordinates found!\n");
   return {};
 }
+
+sub get_ref_member {
+  my $self = shift;
+  my $tree = shift;
+
+  my $ref_member;
+  my @members = $tree->leaves;
+
+  # Try for human first.
+  ($ref_member) = grep { $_->taxon_id == 9606 } @members;
+  
+  # Then mouse.
+  ($ref_member) = grep { $_->taxon_id == 10090 } @members if (!defined $ref_member);
+
+  # Then dog.
+  ($ref_member) = grep { $_->taxon_id == 9615 } @members if (!defined $ref_member);
+
+  # Then, take whatever we can get.
+  ($ref_member) = $members[0] if (!defined $ref_member);
+  
+  $self->param('ref_member_id',$ref_member->stable_id);
+  return $ref_member;
+}
+
 
 1;

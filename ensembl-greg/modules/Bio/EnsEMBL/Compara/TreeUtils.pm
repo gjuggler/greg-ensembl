@@ -471,16 +471,6 @@ sub scale_max_to {
   return $class->scale($tree,$scale_factor);
 }
 
-sub scale_max_to {
-  my $class = shift;
-  my $tree = shift;
-  my $new_max = shift;
-
-  my $max_dist = $tree->max_distance;
-  my $scale_factor = $new_max / $max_dist;
-  return $class->scale($tree,$scale_factor);
-}
-
 
 # Scales a tree to a certain total branch length.
 # NOTE: Tree is modified in-place!
@@ -497,6 +487,7 @@ sub scale_to {
   } elsif ($tree->isa("Bio::EnsEMBL::Compara::NestedSet")) {
 #    my $total_dist = $tree->max_distance;
 #    my $total_dist = $class->max_distance_unrooted($tree);
+
     my $total_dist = $class->total_distance($tree);
     $scale_factor = $new_total / $total_dist;
   }
@@ -959,11 +950,13 @@ sub extract_subtree_from_leaves {
   my $class = shift;
   my $tree = shift;
   my $node_ids = shift;	# Array ref of node_ids.
+  my $return_copy = shift;
+
+  $return_copy = 1 unless (defined $return_copy);
 
   die("Object not a NestedSet!") unless ($tree->isa("Bio::EnsEMBL::Compara::NestedSet"));
 
   my @keepers = @{$node_ids};
-
 
   if (scalar @keepers == 1) {
     # Special case: a single keeper node.
@@ -1001,24 +994,30 @@ sub extract_subtree_from_leaves {
       push @remove_me, $node;
     }
   }
-  
-  my $copy = $class->copy_tree($tree);
 
-  my @nodes = $copy->nodes; # Store a cache of all nodes to use for grepping in the sub.
-
-  # Get the list of all nodes to remove by finding them in the copied tree. We use the node_id
-  # as the connection between the original and copied tree.
-  my @copy_remove_me = map {
-    my $target;
-    my $node_id = $_->node_id;
-    ($target) = grep {$_->node_id == $node_id} @nodes;
-    die("Node ".$_->node_id." ".$_->name." not found in copied tree!") unless (defined $target);
-    $target;
-  } @remove_me;
-
-  $copy = $copy->remove_nodes(\@copy_remove_me);
-  $copy = $copy->minimize_tree if (defined $copy);
-  return $copy;
+  if ($return_copy) {
+    my $copy = $class->copy_tree($tree);
+    
+    my @nodes = $copy->nodes; # Store a cache of all nodes to use for grepping in the sub.
+    
+    # Get the list of all nodes to remove by finding them in the copied tree. We use the node_id
+    # as the connection between the original and copied tree.
+    my @copy_remove_me = map {
+      my $target;
+      my $node_id = $_->node_id;
+      ($target) = grep {$_->node_id == $node_id} @nodes;
+      die("Node ".$_->node_id." ".$_->name." not found in copied tree!") unless (defined $target);
+      $target;
+    } @remove_me;
+    
+    $copy = $copy->remove_nodes(\@copy_remove_me);
+    $copy = $copy->minimize_tree if (defined $copy);
+    return $copy;
+  } else {
+    $tree = $tree->remove_nodes(\@remove_me);
+    $tree = $tree->minimize_tree if (defined $tree);
+    return $tree;
+  }
 }
 
 sub get_minimum_ancestor_from_leaves {

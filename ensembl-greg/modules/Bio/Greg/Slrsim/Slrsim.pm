@@ -7,6 +7,7 @@ use File::Path;
 use FreezeThaw qw(freeze thaw cmpStr safeFreeze cmpStrHard);
 
 use base (
+  'Bio::Greg::StatsCollectionUtils',
   'Bio::Greg::Hive::Process',
   'Bio::Greg::Hive::PhyloSim',
   'Bio::Greg::Hive::Align',
@@ -26,6 +27,7 @@ sub param_defaults {
   return $self->replace($phylosim, $align, $alignment_scores, $phylo_analysis, {
     genes_table                        => 'genes',
     sites_table                        => 'sites',
+    force_recalc => 0
                         });
 }
 
@@ -39,38 +41,56 @@ sub fetch_input {
   
   $self->create_table_from_params( $self->compara_dba, $self->param('genes_table'),
                                    $self->_genes_table_structure );
-  
+
+  print $self->get_output_folder."\n";
+  my $data_file = $self->get_output_folder . "/data.tar.gz";
+  $self->param('data_tarball', $data_file) if (-e $data_file);  
 }
 
 sub run {
   my $self = shift;
 
+#  $self->param('force_recalc', 1);
+#  $self->param('filter', 'none');
+#  $self->param('maximum_mask_fraction', 0.6);
+#  $self->param('alignment_score_filtering', 1);
+
   my $tree = $self->get_tree;
 
-  $self->param('phylosim_seq_length', '50');
-  $self->param('analysis_action', 'paml');
+  my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
+
+  # Output the tree to file.
+  my $tree_f = $self->_save_file('tree', 'nh');
+  my $out_file = $tree_f->{full_file};
+  $self->param('tree_file', $tree_f->{rel_file});
+  Bio::EnsEMBL::Compara::TreeUtils->to_file($tree, $out_file);
 
   # First, simulate the true alignment.
   my $sim_obj = $self->_simulate_alignment($tree);
   my $true_aln = $sim_obj->{aln};
   my $true_sitewise_hash = $sim_obj->{omegas};
   my $true_pep_aln = Bio::EnsEMBL::Compara::AlignUtils->translate($true_aln);
+
+  $self->param('true_aln', $true_aln);
+  $self->param('true_pep_aln', $true_pep_aln);
   
   # Now, align the sequences.
   my $inferred_aln = $self->_align($tree, $true_aln, $true_pep_aln);
   my $inferred_pep_aln = Bio::EnsEMBL::Compara::AlignUtils->translate($inferred_aln);
 
   # Mask the alignment if needed.
-  my $masked_aln = $self->_mask_alignment($tree, $inferred_aln);
+  my $masked_aln = $self->_mask_alignment($tree, $inferred_aln, $inferred_pep_aln);
   my $masked_pep_aln = Bio::EnsEMBL::Compara::AlignUtils->translate($masked_aln);
 
   # Run the sitewise analysis.
   my $sitewise_hash = $self->_run_sitewise($tree, $masked_aln, $masked_pep_aln);
 
   # Collect and store results.
-  $self->_collect_and_store_results($tree, 
+  $self->_collect_and_store_results($tree, $treeI,
                                     $masked_aln, $masked_pep_aln, $sitewise_hash, 
-                                    $true_aln, $true_pep_aln, $true_sitewise_hash);
+                                    $true_aln, $true_pep_aln, $true_sitewise_hash,
+                                    $inferred_aln, $inferred_pep_aln
+    );
 
 }
 
@@ -80,8 +100,9 @@ sub _simulate_alignment {
 
   my $out_f = $self->_save_file('sim', 'perlobj');
   my $out_file = $out_f->{full_file};
+  $self->param('sim_file', $out_f->{rel_file});
   
-  if (!-e $out_file) {
+  if (!-e $out_file || $self->param('force_recalc')) {
     print "  running simulation\n";
     my $obj = $self->simulate_alignment($tree);
     my $str = freeze($obj);
@@ -89,7 +110,7 @@ sub _simulate_alignment {
     print OUT freeze($obj);
     close(OUT);
   } else {
-    print "  loading simulated aln from file\n";
+    print "  loading simulated aln from file [$out_file]\n";
   }
 
   open(IN, $out_file);
@@ -108,14 +129,15 @@ sub _align {
 
   my $out_f = $self->_save_file('inferred_aln', 'fasta');
   my $out_file = $out_f->{full_file};
+  $self->param('aln_file', $out_f->{rel_file});
   
-  if (!-e $out_file) {
+  if (!-e $out_file || $self->param('force_recalc')) {
     print "  running alignment\n";
     # Calls Bio::Greg::Hive::Align->align
     my $inferred_aln = $self->align($tree, $true_aln, $true_pep_aln);
     Bio::EnsEMBL::Compara::AlignUtils->to_file($inferred_aln, $out_file);
   } else {
-    print "  loading inferred aln from file\n";
+    print "  loading inferred aln from file [$out_file]\n";
   }
 
   my $inferred_aln = Bio::EnsEMBL::Compara::AlignUtils->from_file($out_file);
@@ -128,19 +150,45 @@ sub _mask_alignment {
   my $aln = shift;
   my $pep_aln = shift;
 
+  my $scores_f = $self->_save_file('aln_scores', 'perlobj');
+  my $scores_file = $scores_f->{full_file};
+  $self->param('aln_scores_file', $scores_f->{rel_file});
+  if (!-e $scores_file || $self->param('force_recalc')) {
+    print "  calculating alignment scores\n";
+    my $scores_hash = $self->_get_alignment_scores($tree, $aln, $pep_aln);
+    open(OUT,">$scores_file");
+    print OUT freeze($scores_hash);
+    close(OUT);
+  } else {
+    print "  loading scores from file [$scores_file]\n";
+  }
+  open(IN, $scores_file);
+  my @lines = <IN>;
+  close(IN);
+  my ($scores_hash) = thaw(join('',@lines));
+
   my $out_f = $self->_save_file('masked_aln', 'fasta');
   my $out_file = $out_f->{full_file};
-  
-  if (!-e $out_file) {
+  $self->param('masked_aln_file', $out_f->{rel_file});
+
+  print "Pep aln:\n";
+  $self->pretty_print($pep_aln);
+
+  if (!-e $out_file || $self->param('force_recalc')) {
     print "  masking alignment\n";
     # Calls Bio::Greg::Hive::AlignmentScores->mask_alignment
-    my $masked_aln = $self->mask_alignment($tree, $aln, $pep_aln);
+    my $masked_aln = $self->mask_alignment($tree, $aln, $pep_aln, $scores_hash);
     Bio::EnsEMBL::Compara::AlignUtils->to_file($masked_aln, $out_file);
   } else {
-    print "  loading masked aln from file\n";
+    print "  loading masked aln from file [$out_file]\n";
   }
 
   my $masked_aln = Bio::EnsEMBL::Compara::AlignUtils->from_file($out_file);
+
+  print "Masked:\n";
+  my $tx_masked = Bio::EnsEMBL::Compara::AlignUtils->translate($masked_aln);
+  $self->pretty_print($tx_masked);
+
   return $masked_aln;
 }
 
@@ -151,17 +199,27 @@ sub _run_sitewise {
   my $aln = shift;
   my $pep_aln = shift;
 
-  my $out_f = $self->_save_file('sitewise', 'out');
-  my $out_file = $out_f->{full_file};
+  my $out_suffix = 'sitewise';
+  if ($self->param('analysis_action') =~ m/paml/i) {
+    my $model = $self->param('paml_model');
+    if ($model) {
+      $out_suffix .= '_'.$model;
+    }
+  }
 
-  if (!-e $out_file) {
+  my $out_f = $self->_save_file($out_suffix, 'out');
+  my $out_file = $out_f->{full_file};
+  $self->param('sitewise_file', $out_f->{rel_file});
+
+  print "$out_file\n";
+  if (!-e $out_file || $self->param('force_recalc')) {
     print("  running sitewise analysis\n");
     my $output_lines = $self->run_sitewise_analysis($tree,$aln, $pep_aln);
     open(OUT, ">$out_file");
     print OUT join("", @{$output_lines});
     close(OUT);
   } else {
-    print("  parsing sitewise results\n");
+    print("  parsing sitewise results [$out_file]\n");
   }
 
   my $sitewise_results = $self->parse_sitewise_file($tree, $aln, $pep_aln, $out_file);
@@ -171,62 +229,125 @@ sub _run_sitewise {
 sub _collect_and_store_results {
   my $self = shift;
   my $tree = shift;
+  my $treeI = shift;
   my $aln = shift;
   my $pep_aln = shift;
   my $sitewise_hash = shift;
   my $true_aln = shift;
   my $true_pep_aln = shift;
   my $true_sitewise_hash = shift;
+  my $unfiltered_aln = shift;
+  my $unfiltered_pep_aln = shift;
+
+  $self->pretty_print($pep_aln);
+  $self->pretty_print($true_pep_aln);
 
   # Get the sequence to act as a reference in site-wise value comparisons.
-  my $reference_id = $self->param('slrsim_ref') || '';
+  my $reference_id = $self->param('slrsim_ref') || 'human';
   my @seqs = $pep_aln->each_seq;
   my ($ref_seq) = grep { $_->id eq $reference_id } @seqs;
   $ref_seq = $seqs[0] unless ( defined $ref_seq );
   my $seq_str = $ref_seq->seq;
   $seq_str =~ s/-//g;
   my $id = $ref_seq->id;
-  
+
+  #$self->dbc->do('LOCK TABLES sites WRITE');
+  #$self->dbc->do('UNLOCK TABLES');
+
+  my $aln_scores_calc = Bio::EnsEMBL::Compara::AlignUtils->_correct_subtree_calc($treeI, $true_pep_aln, $pep_aln);
+  my @aln_entropies = Bio::EnsEMBL::Compara::AlignUtils->column_entropies($aln);
+  my @aln_aligned = @{$aln_scores_calc->{aligned_branchlengths}};
+  my @aln_match = @{$aln_scores_calc->{match_branchlengths}};
+
   foreach my $seq_position ( 1 .. length($seq_str) ) {
     my $true_column = $true_pep_aln->column_from_residue_number( $id, $seq_position );
     my $aln_column = $pep_aln->column_from_residue_number( $id, $seq_position );
     my $true_dnds = $true_sitewise_hash->{$true_column}->{omega};
     my $aln_dnds = $sitewise_hash->{$aln_column}->{omega};
     
+    $true_dnds = 0;
+    $aln_dnds = 0;
+
     if ( !( defined $aln_dnds && defined $true_dnds ) ) {
       if ( !defined $true_dnds ) {
         my $str = sprintf("No true dnds! aln:%s true:%s\n", $aln_column, $true_column);
         die($str);
       } elsif ( !defined $aln_dnds ) {
-        sprintf("  no aln dnds! aln:%s true:%s\n", $aln_column, $true_column);
+        die(sprintf("  no aln dnds! aln:%s true:%s\n", $aln_column, $true_column));
       }
-    }
+    }    
 
-    my $obj;
+    my $obj = {};
     $obj->{true_type}      = $true_sitewise_hash->{$true_column}->{'type'}      || '';
-    $obj->{true_ncod}      = $true_sitewise_hash->{$true_column}->{'ncod'}      || '';
     $obj->{true_dnds}      = $true_sitewise_hash->{$true_column}->{'omega'} || '';
 
     $obj->{aln_type}       = $sitewise_hash->{$aln_column}->{'type'}        || '';
-    $obj->{aln_ncod}       = $sitewise_hash->{$aln_column}->{'ncod'}        || '';
     $obj->{aln_dnds}       = $sitewise_hash->{$aln_column}->{'omega'} || '';
     $obj->{aln_note}       = $sitewise_hash->{$aln_column}->{'note'}        || '';
-    $obj->{aln_lrt}        = $sitewise_hash->{$aln_column}->{'lrt_stat'}    || '';
+    $obj->{lrt_stat}        = $sitewise_hash->{$aln_column}->{'lrt_stat'}    || '';
     $obj->{aln_dnds_lower} = $sitewise_hash->{$aln_column}->{'omega_lower'} || '';
     $obj->{aln_dnds_upper} = $sitewise_hash->{$aln_column}->{'omega_upper'} || '';
 
+    $obj->{entropy} = $aln_entropies[$aln_column-1];
+    $obj->{bl_aligned} = $aln_aligned[$aln_column-1];    
+    $obj->{bl_match} = $aln_match[$aln_column-1];
+
     $obj->{aln_position} = $aln_column;
     $obj->{seq_position} = $seq_position;
+
+    # Important: delete lrt_stat value if this column is all_gaps or single_char
+    if ($obj->{aln_note} eq 'all_gaps' || $obj->{aln_note} eq 'single_char') {
+      delete $obj->{lrt_stat};
+    }
     
     my $params = $self->params;
     $params = $self->replace($params, $obj);
-
+    #printf "%d %d %f %f\n", $true_column, $aln_column, $obj->{true_dnds}, $obj->{lrt_stat} if ($seq_position < 20);
     $self->store_params_in_table( $self->dbc, $self->param('sites_table'), $params );
   }
 
-  $self->store_params_in_table( $self->dbc, $self->param('genes_table'), $self->params);
+  # Collect some alignment-wide calculations.
+  # Alignment.
+  my $aln_length = $pep_aln->length;
+  $self->param('aln_length', $aln_length);
 
-  
+  # Mean branch lengths.
+  my $aligned_per_site = $aln_scores_calc->{aligned_bl} / $aln_length;
+  my $match_per_site = $aln_scores_calc->{match_bl} / $aln_length;
+  my $mismatch_per_site = $aln_scores_calc->{mismatch_bl} / $aln_length;
+  $self->param('mean_bl_aligned', $aligned_per_site);
+  $self->param('mean_bl_match', $match_per_site);
+  $self->param('mean_bl_mismatch', $mismatch_per_site);
+
+  my $sps = Bio::EnsEMBL::Compara::AlignUtils->sum_of_pairs_score($true_pep_aln, $pep_aln);
+  $self->param('sum_of_pairs_score', $sps);
+  my $tcs = Bio::EnsEMBL::Compara::AlignUtils->total_column_score($true_pep_aln, $pep_aln);
+  $self->param('total_column_score', $tcs);
+  my $match_bl_score = $aln_scores_calc->{match_bl} / $aln_scores_calc->{aligned_bl};
+  $self->param('match_bl_score', $match_bl_score);
+  my $mismatch_bl_score = $aln_scores_calc->{mismatch_bl} / $aln_scores_calc->{aligned_bl};
+  $self->param('mismatch_bl_score', $mismatch_bl_score);
+  my $lambda = Bio::EnsEMBL::Compara::AlignUtils->dawg_lambda($pep_aln, $tree, $self->params, $self->worker_temp_directory);
+  $self->param('lambda', $lambda);
+
+  # Column entropies.
+  my $ce_aln = Bio::EnsEMBL::Compara::AlignUtils->average_column_entropy($aln);
+  $self->param('mean_entropy', $ce_aln);
+
+  # Masked fraction.
+  my $unmasked_n = Bio::EnsEMBL::Compara::AlignUtils->count_residues($unfiltered_pep_aln);
+  my $masked_n = Bio::EnsEMBL::Compara::AlignUtils->count_residues($pep_aln);
+  $self->param('unmasked_residue_count', $unmasked_n);
+  $self->param('residue_count', $masked_n);
+
+  # Tree length.
+  my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
+  my $tree_length = $treeI->total_branch_length;
+  $self->param('tree_total_length', $tree_length);
+  $self->param('tree_mean_path', $self->param('slrsim_tree_mean_path'));
+
+  $self->param('job_id', $self->job_id);
+  $self->store_params_in_table( $self->dbc, $self->param('genes_table'), $self->params);
 }
 
 sub _save_file {
@@ -247,76 +368,102 @@ sub _save_file {
   };
 
   my $file_obj = $self->save_file($file_params);
+
+  if ($self->param('data_tarball') && !-e $file_obj->{full_file}) {
+    # Load the file from the tarball into our temp directory.
+    #my $tarball = $self->param('data_tarball');
+    #my $tmp = $self->worker_temp_directory;
+    #my $rel_f = $file_obj->{rel_file};
+
+    #my $cmd = qq^tar -zxvf $tarball $rel_f^;
+    #print $cmd."\n";
+    #$file_obj->{full_file} = $tmp . $filename;
+  }
+
   return $file_obj;
 }
 
 sub _genes_table_structure {
   my $structure = {
-    experiment_name => 'char64',
+    node_id => 'int',
+    job_id => 'int',
 
     slrsim_label                        => 'char64',
-    alignment_score_threshold           => 'float',
-    alignment_score_mask_character_cdna => 'char8',
+    slrsim_analysis_name                => 'string',
+
     filtering_name                      => 'string',
     alignment_name                      => 'string',
-    alignment_type                      => 'string',
-    sitewise_action                     => 'string',
+    aligner => 'string',
+    filter => 'string',
+    analysis_action                     => 'string',
     sitewise_filter_order               => 'string',
+    alignment_score_threshold           => 'float',
 
     slrsim_rep         => 'int',
     slrsim_tree_file   => 'string',
-    slrsim_tree_length => 'float',
     slrsim_ref         => 'string',
 
     phylosim_seq_length         => 'int',
     phylosim_omega_distribution => 'string',
     phylosim_meanlog            => 'float',
     phylosim_sdlog              => 'float',
-
     phylosim_insertrate  => 'float',
     phylosim_deleterate  => 'float',
     phylosim_insertmodel => 'string',
     phylosim_deletemodel => 'string',
 
-    tree_length_slr  => 'float',
-    tree_max_branch  => 'float',
-    tree_mean_branch => 'float',
+    aln_length => 'int',
+    mean_bl_aligned => 'float',
+    mean_bl_match => 'float',
+    mean_bl_mismatch => 'float',
 
     sum_of_pairs_score => 'float',
     total_column_score => 'float',
+    match_bl_score => 'float',
+    mismatch_bl_score => 'float',
+    lambda => 'float',
+    mean_entropy  => 'float',
 
-    column_entropy_mean_true => 'float',
-    column_entropy_mean_aln  => 'float',
+    maximum_mask_fraction => 'float',
+    unmasked_residue_count    => 'int',
+    residue_count    => 'int',
 
-    site_count               => 'float',
-    unfiltered_site_count    => 'float',
-    unfiltered_site_fraction => 'float',
-    unique_keys              => 'data_id,experiment_name,slrsim_label'
+    tree_total_length => 'float',
+    tree_mean_path => 'float',
+
+    sim_file => 'string',
+    aln_file => 'string',
+    tree_file => 'string',
+    aln_scores_file => 'string',
+    masked_aln_file => 'string',
+    sitewise_file => 'string',
+
+    unique_keys              => 'node_id'
   };
   return $structure;
 }
 
 sub _sites_table_structure {
   my $structure = {
-    data_id          => 'int',
-    parameter_set_id => 'int',
     node_id          => 'int',
 
     # Site-wise stuff.
     aln_position => 'int',
     seq_position => 'int',
 
+    bl_match => 'float',
+    bl_aligned => 'float',
+    entropy => 'float',
+
     true_dnds    => 'float',
     true_type    => 'char16',
 
     aln_dnds       => 'float',
-    aln_dnds_lower => 'float',
-    aln_dnds_upper => 'float',
     aln_type       => 'char16',
     aln_note       => 'char16',
-    aln_lrt => 'float',
+    lrt_stat => 'float',
 
-    unique_keys => 'data_id,parameter_set_id,aln_position'
+    unique_keys => 'node_id,aln_position'
   };
   return $structure;
 }

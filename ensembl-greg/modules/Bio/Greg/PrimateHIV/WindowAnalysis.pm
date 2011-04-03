@@ -42,8 +42,7 @@ sub run {
 
   my $params = $self->params;
   my $tree   = $self->get_tree;
-  print $tree->newick_format."\n" if ($self->debug);
-  
+
   $params->{'fail_on_altered_tree'} = 0;
 
   $self->param( 'reference_species', 9606 );
@@ -66,98 +65,148 @@ sub run {
 
   my $gene_name = $ref_member->get_Gene->external_name || $ref_member->gene_member->stable_id;
   $self->param('gene_name',$gene_name);
+  $self->param('gene_id',$gene_name);
 
   my $c_dba = $self->compara_dba;
   my $params = $self->params;
 
-  my $tree_aln_obj =
-    Bio::EnsEMBL::Compara::ComparaUtils->get_compara_or_genomic_aln( $c_dba, $tree, $ref_member,
-    $self->params );
-  my $aln = $tree_aln_obj->{aln};
-  $tree = $tree_aln_obj->{tree};
-  my $extra  = $tree_aln_obj->{extra};
-  $self->set_params($extra);
+  my ($tree, $aln) = $self->_get_aln($tree, $ref_member);
 
-  Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $aln, { width => 150, full => 1 } ) if ($self->debug);
+  my $out_f = $self->_save_file('tree', 'nh');
+  my $out_full = $out_f->{full_file};
+  Bio::EnsEMBL::Compara::TreeUtils->to_file($tree, $out_full);
 
-  if (!defined $tree) {
-    $self->fail_and_die("Tree undefined: [$tree]\n");
-  }
-  
-  if (scalar($tree->leaves) < 2) {
-    $self->fail_and_die("Tree too small!".' '.$self->param('aln_type').' '.$tree->newick_format);
-  }
+  $self->param('tree_file', $out_f->{rel_file});
 
-  if ($aln->length < 50) {
-    $self->fail_and_die("Alignment too short!".' '.$self->param('aln_type').' '.$tree->newick_format.' '.$aln->length);
-  }
-
-  $aln = Bio::EnsEMBL::Compara::AlignUtils->sort_by_tree($aln,$tree);
-
-  Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $aln, { width => 150, full => 1 } ) if ($self->debug);
-  my $pep_aln = Bio::EnsEMBL::Compara::AlignUtils->translate($aln);
-  Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $pep_aln, { width => 150, full => 1 } ) if ($self->debug);
-
-  my $aln_type = $self->param('aln_type');
   my $p_set_id = $self->param('parameter_set_id');
   my $p_short = $self->data_label;
-  my $subfolder = "alns/${p_short}/";
 
-  # Output the tree and aln.
-  my $aln_filename = $gene_name . "_" . $self->data_label;
-  my $aln_file_obj =
-    $self->save_aln( $aln,
-    { hash_subfolders => 1, subfolder => $subfolder, filename => $aln_filename } );
-  $self->param( 'aln_file', $aln_file_obj->{rel_file} );
+  my $sitewise_results = $self->_run_slr($tree, $aln);
+  $self->param('slr_dnds',$sitewise_results->{omega});
+  $self->param('slr_kappa',$sitewise_results->{kappa});
 
-  my $tree_filename = $gene_name . "_" . $self->data_label;
-  my $tree_file_obj =
-    $self->save_file(
-    { extension => 'nh', hash_subfolders => 1, subfolder => $subfolder, filename => $tree_filename } );
-  Bio::EnsEMBL::Compara::TreeUtils->to_file($tree,$tree_file_obj->{full_file});
-  $self->param( 'tree_file', $tree_file_obj->{rel_file} );
+  my $pep_aln = Bio::EnsEMBL::Compara::AlignUtils->translate($aln);
 
-  # Get a file to save SLR results in.
-  my $slr_filename = $gene_name . "_" . $self->data_label;
-  my $slr_file_obj =
-    $self->save_file({ extension => 'out', hash_subfolders => 1, subfolder => $subfolder, filename => $tree_filename } );
-  $self->param( 'slr_file', $slr_file_obj->{rel_file} );
 
-  # Run SLR.
-  my $slr_params = Bio::Greg::Hive::PhyloAnalysis->param_defaults;
-  my $all_params = $self->replace($slr_params,$self->params);
-  $all_params->{output_to_file} = $slr_file_obj->{full_file};
-
-  # If the SLR output already exists, don't run again.
-  my $results;
-  my $slr_full_file = $slr_file_obj->{full_file};
-  if (-e $slr_full_file) {
-    warn("Warning: SLR results file already exists -- using that instead of running again!");
-    open(IN,"$slr_full_file");
-    my @output = <IN>;
-    close(IN);
-    #print join("",@output)."\n" if ($self->debug);
-    $results = $self->parse_slr_output(\@output,$all_params);
-  } else {
-    $results = $self->run_sitewise_dNdS($tree,$aln,$all_params);
+  # Extract only the site result objects from the sitewise hash.
+  my $sites_hash;
+  foreach my $i (1 .. $pep_aln->length) {
+    $sites_hash->{$i} = $sitewise_results->{$i};
   }
 
-  $self->param('slr_dnds',$results->{omega});
-  $self->param('slr_kappa',$results->{kappa});
-
-  my $hash = $self->results_to_psc_hash($results,$pep_aln);
-
-  # Calculate hyphy 95% conf. interval on dN/dS
-  #$self->run_hyphy($tree,$aln,$all_params);
 
   # Store windowed p-values.
   my $window_size_string = $self->param('window_sizes');
   my @window_sizes = split(/, ?/, $window_size_string);
   foreach my $size (@window_sizes) {
-    $self->run_with_windows($size,$size/2,$aln,$tree,$ref_member,$hash);
+    $self->run_with_windows($size, $size/2, $aln, $pep_aln, $tree, $ref_member, $sites_hash);
+  }
+}
+
+sub _run_slr {
+  my $self = shift;
+  my $tree = shift;
+  my $aln = shift;
+
+  # Get a file to save SLR results in.
+  my $out_f = $self->_save_file('slr', 'out');
+  my $slr_full_file = $out_f->{full_file};
+
+  $self->param('slr_file', $out_f->{rel_file});
+
+  my $pep_aln = Bio::EnsEMBL::Compara::AlignUtils->translate($aln);
+
+  $self->param('analysis_action', 'slr');
+
+  if (!-e $slr_full_file) {  
+    print "  running SLR\n";
+    my $output_lines = $self->run_sitewise_analysis($tree, $aln, $pep_aln);
+    open(OUT, ">$slr_full_file");
+    print OUT join("", @{$output_lines});
+    close(OUT);
+  } else {
+    print "  parsing SLR\n";
   }
 
+  my $results = $self->parse_sitewise_file($tree, $aln, $pep_aln, $slr_full_file);
+  return $results;
+}
 
+sub _save_file {
+  my $self = shift;
+  my $filename_base = shift;
+  my $ext = shift;
+
+  my $id = $self->param('gene_id');
+  my $pset = $self->param('parameter_set_shortname');
+
+  my $filename = "${id}_${pset}_$filename_base";
+
+  my $file_params = {
+    id => "${id}_${pset}",
+    filename => $filename,
+    extension => $ext,
+    subfolder => 'data',
+  };
+
+  my $file_obj = $self->save_file($file_params);
+  return $file_obj;
+}
+
+
+sub _get_aln {
+  my $self = shift;
+  my $tree = shift;
+  my $ref_member = shift;
+
+  my $out_f = $self->_save_file('aln', 'fasta');
+  my $out_file = $out_f->{full_file};
+  $self->param('aln_file', $out_f->{rel_file});
+
+  my $pep_f = $self->_save_file('pep_aln', 'fasta');
+  my $pep_file = $pep_f->{full_file};
+  $self->param('pep_aln_file', $pep_f->{rel_file});
+
+  my $c_dba = $self->compara_dba;
+
+  if (!-e $out_file) {
+    print "  fetching aln...\n";
+    my $tree_aln_obj =
+      Bio::EnsEMBL::Compara::ComparaUtils->get_compara_or_genomic_aln( $c_dba, $tree, $ref_member,
+                                                                       $self->params );
+    if ($tree_aln_obj == -1) {
+      $self->fail_and_die("Error getting tree or aln!");
+    }
+
+    my $aln = $tree_aln_obj->{aln};
+    $tree = $tree_aln_obj->{tree};
+    my $extra  = $tree_aln_obj->{extra};
+    $self->set_params($extra);
+    
+    Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $aln, { width => 150, full => 1 } ) if ($self->debug);
+    if (!defined $tree) {
+      $self->fail_and_die("Tree undefined: [$tree]");
+    }
+    if (scalar($tree->leaves) < 2) {
+      $self->fail_and_die("Tree too small!".' '.$self->param('aln_type').' '.$tree->newick_format);
+    }
+    if ($aln->length < 50) {
+      $self->fail_and_die("Alignment too short!".' '.$self->param('aln_type').' '.$tree->newick_format.' '.$aln->length);
+    }
+    $aln = Bio::EnsEMBL::Compara::AlignUtils->sort_by_tree($aln,$tree);
+    my $pep_aln = Bio::EnsEMBL::Compara::AlignUtils->translate($aln);
+
+    Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $aln, { width => 150, full => 1 } ) if ($self->debug);
+
+    Bio::EnsEMBL::Compara::AlignUtils->to_file($aln, $out_file);
+    Bio::EnsEMBL::Compara::AlignUtils->to_file($pep_aln, $pep_file);
+  } else {
+    print "  loading aln from file $out_file\n";
+  }
+  
+  my $aln = Bio::EnsEMBL::Compara::AlignUtils->from_file($out_file);
+  $tree = Bio::EnsEMBL::Compara::ComparaUtils->restrict_tree_to_aln( $tree, $aln );
+  return ($tree, $aln);
 }
 
 sub write_output {
@@ -170,6 +219,7 @@ sub run_with_windows {
   my $w_size = shift;
   my $w_step = shift;
   my $aln = shift;
+  my $pep_aln = shift;
   my $tree = shift;
   my $ref_member = shift;
   my $psc_hash = shift;
@@ -187,7 +237,7 @@ sub run_with_windows {
 
   if ($ref_member->isa('Bio::EnsEMBL::Compara::Member')) {
     print "REF MEMBER: ".$ref_member->stable_id."\n" if ($self->debug);
-    my @seqs = $aln->each_seq;
+    my @seqs = $pep_aln->each_seq;
     my $taxon_id = $ref_member->taxon_id;
     ($ref_seq) = grep { $_->id =~ m/$taxon_id/i } @seqs;
 
@@ -212,7 +262,15 @@ sub run_with_windows {
   $seq_str_nogaps =~ s/-//g;
   $len = length($seq_str_nogaps);
 
+  print "$seq_str_nogaps\n";
+
   my @rows;
+
+  my @all_sites;
+  foreach my $i ( 1 .. $pep_aln->length) {
+    push @all_sites, $psc_hash->{$i} if (defined $psc_hash->{$i});
+  }
+  print "Sites with values:". scalar(@all_sites)."\n";
 
   my $no_windows_yet = 1;
   for (my $i=1; $i < $len; $i += $w_step) {
@@ -270,36 +328,38 @@ sub run_with_windows {
       aln_window_end => $aln_coord_hi
                    });
 
-    foreach my $sites ($psc_hash) {
-      my @window_sites = map {$sites->{$_}} keys %$sites;
-      @window_sites = grep {
-        my $pos = $_->{aln_position};
-        ($pos >= $aln_coord_lo && $pos < $aln_coord_hi);
-      } @window_sites;
-      my $pval = $self->combined_pval(\@window_sites,'fisher');
-
-      # Get the mean dn/ds for the window
-      my $omega_total = 0;
-      map {$omega_total += $_->{omega} } @window_sites;
-      my $mean_dnds = -1;
-      if (scalar(@window_sites) > 0) {
-        $mean_dnds = sprintf "%.3f", $omega_total / scalar(@window_sites);
+    my $window_hash;
+    map {
+      my $pos = $_->{aln_position};
+      if ($pos >= $aln_coord_lo && $pos < $aln_coord_hi) {
+        $window_hash->{$pos} = $_;
       }
+    } @all_sites;
+    my @window_sites = values %$window_hash;
 
-      print "window[$lo-$hi] pval[$pval]\n" if ($self->debug);
-      my @pos_sites = grep {$_->{omega} > 1} @window_sites;
-      my $added_params = {
-        'n_leaves' => scalar($tree->leaves),
-        'pval' => $pval,
-        'n_sites' => scalar(@window_sites),
-        'n_pos_sites' => scalar(@pos_sites),
-        'mean_dnds' => $mean_dnds
-      };
-      $cur_params = $self->replace($cur_params,$added_params);
+    my $pval = $self->combined_pval($window_hash,'fisher');
+    
+    # Get the mean dn/ds for the window
+    my $omega_total = 0;
+    map {$omega_total += $_->{omega} } @window_sites;
+    my $mean_dnds = -1;
+    if (scalar(@window_sites) > 0) {
+      $mean_dnds = sprintf "%.3f", $omega_total / scalar(@window_sites);
     }
-
+    
+    print "window[$lo-$hi] pval[$pval]\n" if ($self->debug);
+    my @pos_sites = grep {$_->{omega} > 1} @window_sites;
+    my $added_params = {
+      'n_leaves' => scalar($tree->leaves),
+      'pval' => $pval,
+      'n_sites' => scalar(@window_sites),
+      'n_pos_sites' => scalar(@pos_sites),
+      'mean_dnds' => $mean_dnds
+    };
+    $cur_params = $self->replace($cur_params,$added_params);
+    
     $cur_params->{data_id} = $cur_params->{node_id};
-
+    
     if ($self->within_hive) {
       $self->store_params_in_table($self->dbc,$self->param('output_table'),$cur_params);
     } else {
@@ -307,11 +367,11 @@ sub run_with_windows {
       push @rows, $cur_params;
     }
   }
-
+  
   if (scalar(@rows) > 0) {
     return @rows;
   }
-
+  
   $self->fail_and_die("No windows covered!") if ($no_windows_yet);
 }
 
@@ -361,12 +421,10 @@ sub get_table_structure {
     slr_file => 'string',
     tree_file => 'string',
     aln_file => 'string',
+    pep_aln_file => 'string',
 
     slr_dnds => 'float',
     slr_kappa => 'float',
-    hyphy_dnds => 'float',
-    hyphy_dnds_lo => 'float',
-    hyphy_dnds_hi => 'float',
 
     unique_keys => 'data_id,parameter_set_id,peptide_window_start,peptide_window_width',
   };

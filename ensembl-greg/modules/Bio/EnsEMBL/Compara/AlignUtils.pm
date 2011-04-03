@@ -443,12 +443,13 @@ sub incorrect_subtree_score {
 
 sub _correct_subtree_calc {
   my $class = shift;
-  my $tree = shift;
+  my $treeI = shift;
   my $ref = shift;
   my $aln = shift;
 
-  my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
   my $total_bl = $treeI->total_branch_length;
+
+  print $treeI->ascii;
 
   my $ref_obj = $class->to_arrayrefs($ref);
   my $aln_obj = $class->to_arrayrefs($aln);
@@ -461,30 +462,64 @@ sub _correct_subtree_calc {
   my $scores_hash;
   map { $scores_hash->{$_} = [] } @id_list;
 
-  my $correct_site_bl_sum;
-  my $incorrect_site_bl_sum;
-  my $total_site_bl_sum;
+  my $correct_sum;
+  my $incorrect_sum;
+  my $aligned_sum;
+  my $match_sum;
+  my $mismatch_sum;
 
   my $correct_sum;
   my $nongap_sum;
 
   my @correct_bls;
   my @incorrect_bls;
-  my @nongap_bls;
+  my @aligned_bls;
+  my @match_bls;
+  my @mismatch_bls;
+
+  sub get_subtree_residue_string {
+    my $aln = shift;
+    my $node = shift;
+    my $i = shift;
+
+    my @ids = map {$_->id} $node->leaves;
+    my @residues = map {$class->get_residue($aln,$_,$i)} @ids;
+    my $string = join('',@residues);
+    return $string;
+  }
 
   foreach my $i ( 1 .. $aln->length ) {
-    my @nongap_ids_at_pos = grep { $aln_obj->{$_}->[$i] ne '-' } @id_list;
+    my @nongap_ids_at_pos = grep { $aln_obj->{$_}->[$i] !~ m/[-X]/i } @id_list;
 
-    my $total_nongap_bl = 0;
+    my $aligned_bl = 0;
     my $nongap_node_strings;
     my @node_strings = $class->get_subtree_node_strings($treeI, \@nongap_ids_at_pos, $tree_strings_hash);
     if (scalar(@node_strings) == 1) {
-      $total_nongap_bl = 0;
+      $aligned_bl = 0;
     } else {
       map {$nongap_node_strings->{$_} = 1} @node_strings;
       foreach my $node ($treeI->nodes) {
-        if (defined $nongap_node_strings->{$node->enclosed_leaves_string}) {
-          $total_nongap_bl += $node->branch_length;
+        next if ($node->is_leaf);
+
+        my @children = $node->children; # Require bifurcation.
+        #next if (scalar(@children) == 1);
+
+        if (scalar(@children) != 2) {
+          my $str = "Not two children for node!";
+          $str .= "\n";
+          $str .= $node->ascii;
+          $str .= "\n";
+          $str .= join(',', @children)."\n";
+          die($str);
+        }
+        my $a = $children[0];
+        my $b = $children[1];
+        my $a_str = get_subtree_residue_string($aln, $a, $i);
+        my $b_str = get_subtree_residue_string($aln, $b, $i);
+        if ($a_str =~ m/^[-X]+$/ || $b_str =~ m/^[-X]+$/) {
+          # All gaps or masked residues on one side or the other -- don't add to aligned bl
+        } else {
+          $aligned_bl += $node->children_branch_length;
         }
       }
     }
@@ -531,42 +566,77 @@ sub _correct_subtree_calc {
       }
     }
 
-    # For each correctly-aligned cluster, get the subtree branch length.
-    my $correct_node_strings;
-    my $total_correct_bl = 0;
-    foreach my $k (1 .. $aligned_cluster_count) {
-      my (@ids) = grep {$seen_aligned_ids->{$_} == $k} keys %$seen_aligned_ids;
-      my @node_strings = $class->get_subtree_node_strings($treeI, \@ids, $tree_strings_hash);
-      map {$correct_node_strings->{$_} = 1} @node_strings;
-    }
+    # Use a match / mismatch classification approach.
+    # The two branches below a given internal node are assigned to the
+    # match state if any aligned pair can be found passing through this
+    # node.
+    my $match_bl = 0;
+    my $mismatch_bl = 0;
     foreach my $node ($treeI->nodes) {
-      if (defined $correct_node_strings->{$node->enclosed_leaves_string}) {
-        $total_correct_bl += $node->branch_length;
-      }
-    }
+      next if ($node->is_leaf);
+      my @children = $node->children;
 
-    # Misaligned residues all go into one large cluster, and get the subtree b.l.
-    my $incorrect_node_strings;
-    my $total_incorrect_bl = 0;
-    my @misaligned_ids = keys %$seen_misaligned_ids;
-    my @node_strings = $class->get_subtree_node_strings($treeI, \@misaligned_ids, $tree_strings_hash);
-    map {$incorrect_node_strings->{$_} = 1} @node_strings;
-    foreach my $node ($treeI->nodes) {
-      if (defined $incorrect_node_strings->{$node->enclosed_leaves_string}) {
-        $total_incorrect_bl += $node->branch_length;
+      next if (scalar(@children) == 1);
+
+      die ("Not two children for node ".$node->id) unless (scalar(@children) == 2);
+
+      my $a = $children[0];
+      my $b = $children[1];
+      
+      my $hash;
+      my $found_shared_cluster = 0;
+      my $any_a_nongap = 0;
+      my $any_b_nongap = 0;
+
+      foreach my $leaf ($a->leaves) {
+        # Handle gaps.
+        my $this_res_num = $aln_obj->{$leaf->id}->[$i];
+        if ($this_res_num !~ m/[-X]/i) {
+          $any_a_nongap = 1;
+        }
+        if (defined $seen_aligned_ids->{$leaf->id}) {
+          my $cluster = $seen_aligned_ids->{$leaf->id};
+          $hash->{$cluster} = 1;
+        }
+      }
+      foreach my $leaf ($b->leaves) {
+        # Handle gaps.
+        my $this_res_num = $aln_obj->{$leaf->id}->[$i];
+        if ($this_res_num !~ m/[-X]/i) {
+          $any_b_nongap = 1;
+        }
+        if (defined $seen_aligned_ids->{$leaf->id}) {
+          my $cluster = $seen_aligned_ids->{$leaf->id};
+          if ($hash->{$cluster} == 1) {
+            $found_shared_cluster = 1;
+          }
+        }
+      }
+
+      #print $node->enclosed_leaves_string."\n";
+      #print "  ". join('',keys(%$hash))."\n";
+
+      if ($found_shared_cluster == 1) {
+        $match_bl += $node->children_branch_length;
+      } elsif (!$any_a_nongap || !$any_b_nongap) {
+        # One side had no non-gaps, so don't add any branch length.
+      } else {
+        $mismatch_bl += $node->children_branch_length;
       }
     }
 
     my $score = 0;
-    if ($total_nongap_bl > 0) {
-      $score = $total_correct_bl / $total_nongap_bl;
+    if ($aligned_bl > 0) {
+      $score = $match_bl / $aligned_bl;
     }
-
+    
+    my $column_string = $class->get_column_string($aln, $i);
+    #print $column_string."\n";
     foreach my $k (1 .. $aligned_cluster_count) {
       my $cluster_string = '';
       foreach my $seq ($aln->each_seq) {
         my $res = $class->get_residue($aln, $seq->id, $i);
-        if ($res eq '-') {
+        if ($res =~ m/[-X]/i) {
           $cluster_string .= ' ';
           next;
         }
@@ -575,41 +645,32 @@ sub _correct_subtree_calc {
         $char = $cluster if (defined $cluster && $cluster == $k);
         $cluster_string .= $char;
       }
-      print STDERR "$cluster_string\n";
+      #print STDERR "$cluster_string\n";
     }
-    #printf STDERR "  %.2f $total_correct_bl $total_nongap_bl \n", $score;
+
+    my $total = $treeI->total_branch_length;
+    #print "$aligned_bl $match_bl $mismatch_bl $total\n";
 
     # Sanity check: we should never have more correct BL than we have nongap BL.
     die if ($score > 1);
 
-    push @correct_bls, $total_correct_bl;
-    push @incorrect_bls, $total_incorrect_bl;
-    push @nongap_bls, $total_nongap_bl;
+    push @match_bls, $match_bl;
+    push @mismatch_bls, $mismatch_bl;
+    push @aligned_bls, $aligned_bl;
 
-    $correct_site_bl_sum += $total_correct_bl;
-    $total_site_bl_sum += $total_nongap_bl;
-    $incorrect_site_bl_sum += $total_incorrect_bl;
-  }
-
-  my $correct_score = 1;
-  my $incorrect_score = 1;
-
-  if ($total_site_bl_sum > 0) {
-    $correct_score = $correct_site_bl_sum / $total_site_bl_sum;
-  }
-  if ($total_site_bl_sum > 0) {
-    $incorrect_score = $incorrect_site_bl_sum / $total_site_bl_sum;
+    $match_sum += $match_bl;
+    $mismatch_sum += $mismatch_bl;
+    $aligned_sum += $aligned_bl;
   }
 
   my $obj = {
-    correct_branchlengths => \@correct_bls,
-    incorrect_branchlengths => \@incorrect_bls,
-    nongap_branchlengths => \@nongap_bls,
-    correct_subtree_score => $correct_score,
-    incorrect_subtree_score => $incorrect_score,
-    total_aligned_bl => $total_site_bl_sum,
-    total_correct_bl => $correct_site_bl_sum,
-    total_incorrect_bl => $incorrect_site_bl_sum
+    match_branchlengths => \@match_bls,
+    mismatch_branchlengths => \@mismatch_bls,
+    aligned_branchlengths => \@aligned_bls,
+
+    match_bl => $match_sum,
+    mismatch_bl => $mismatch_sum,
+    aligned_bl => $aligned_sum,
   };
 
   return $obj;
@@ -647,7 +708,7 @@ sub _subtree_bl {
   my $existing_value = $bl_hash->{$key};
   return $existing_value if (defined $existing_value);
     
-  my $subtree = Bio::EnsEMBL::Compara::TreeUtils->extract_subtree_from_leaves($tree,\@id_array);
+  my $subtree = Bio::EnsEMBL::Compara::TreeUtils->extract_subtree_from_leaves($tree,\@id_array, 1);
 
   my $total = Bio::EnsEMBL::Compara::TreeUtils->total_distance($subtree);
   if (scalar($subtree->leaves) == 1) {
@@ -686,6 +747,14 @@ sub get_subtree_node_strings {
 
   # Get the minimum spanning subtree from a list of IDs
   my $subtree = $tree->slice_by_ids(@id_array);
+  #print $subtree->ascii;
+
+  if (scalar($subtree->leaves) == 1) {
+    my @leaves = $subtree->leaves;
+    my @node_strings = ($leaves[0]->id);
+    $bl_hash->{$key} = \@node_strings;
+    return @node_strings;
+  }
 
   my @node_strings;
   foreach my $node ($subtree->nodes) {

@@ -6,6 +6,7 @@ use Time::HiRes qw(sleep);
 use POSIX qw(strftime mktime);
 use Cwd;
 use File::Path;
+use File::Spec;
 
 use Bio::EnsEMBL::Hive::Process;
 
@@ -16,22 +17,82 @@ use base ('Bio::Greg::Hive::Process');
 sub run {
   my $self = shift;
 
-  my $base = '/nfs/users/nfs_g/gj1/scratch/primate_hiv/output';
-  $self->get_output_folder($base);
-
   $self->export_windows;
+  $self->plot_manual_genes;
+
+  # Tar and zip up all the data.
+  my $dbname = $self->dbc->dbname;
+  my $folder = $self->get_output_folder;
+  my @dirs = File::Spec->splitdir( $folder );
+  my $last_dir = $dirs[scalar(@dirs)-1];
+  my $out_file = sprintf("${folder}/%s_%s.tar",$dbname,$last_dir);
+  print "$out_file\n";
+  if (!-e $out_file) {
+    chdir($folder);
+    `tar -cf $out_file *`;
+    `gzip $out_file`;
+  }
+}
+
+sub plot_manual_genes {
+  my $self = shift;
+
+  my $output_folder = $self->get_output_folder;
+  my $sitewise_script = Bio::Greg::EslrUtils->baseDirectory . "/scripts/collect_sitewise.R";
+  my $dbname = $self->hive_dba->dbc->dbname;
+
+  my $pdf_folder = "${output_folder}/pdfs";
+  mkpath($pdf_folder);
+
+  my $cmd = qq^
+setwd("${output_folder}/data")
+
+library(phylosim)
+source("~/src/greg-ensembl/projects/phylosim/Plots.R")
+
+genes <- read.table(file="~/src/greg-ensembl/projects/primate_hiv/50_manual_genes.txt", stringsAsFactors=F)
+genes <- genes[, 'V1']
+
+load("${output_folder}/windows_all.Rdata")
+genes.rows <- subset(data, gene_name %in% genes)
+genes.rows <- genes.rows[!duplicated(genes.rows[, 'gene_name']), ]
+
+for (i in 1:nrow(genes.rows)) {
+  row <- genes.rows[i,]
+  print(row[, 'gene_name'])
+  #print(row)
+ 
+  f.name = paste("${pdf_folder}", '/', row[,'gene_name'], '.pdf', sep='')
+  pdf(file=f.name)
+
+  sim <- PhyloSim()
+  readAlignment(sim, row[, 'aln_file'])
+  obj <- plotAlignment(sim, aln.do.plot=F, aln.plot.chars=T, aln.char.text.size=2, axis.text.size=3)
+  p <- obj[['grob']]
+  p <- p + opts(title=row[,'gene_name'])
+  print(p)
+
+  sim <- PhyloSim()
+  readAlignment(sim, row[, 'pep_aln_file'])
+  obj <- plotAlignment(sim, aln.do.plot=F, aln.plot.chars=T, aln.char.text.size=2, axis.text.size=3)
+  p <- obj[['grob']]
+  p <- p + opts(title=row[,'gene_name'])
+  print(p)
+
+  dev.off()
+
+}
+print(nrow(genes.rows))
+
+^;
+  Bio::Greg::EslrUtils->run_r( $cmd);
 }
 
 sub export_windows {
   my $self = shift;
 
-  my $genes_file = $self->get_output_folder . "/gene_windows.Rdata";
-  my $genes_csv  = $self->get_output_folder . "/gene_windows.csv";
-
   my $output_folder = $self->get_output_folder;
-
   my $sitewise_script = Bio::Greg::EslrUtils->baseDirectory . "/scripts/collect_sitewise.R";
-
   my $dbname = $self->hive_dba->dbc->dbname;
 
   my $cmd = qq^

@@ -53,7 +53,7 @@ sub run {
   my $extra  = $tree_aln_obj->{extra};
   $self->_output_files($tree,$aln,$pep_aln);
   $self->set_params($extra);  
-  $self->pretty_print($aln,{full=>1});
+  #$self->pretty_print($aln,{full=>1});
 
   $self->param('gene_name',$ref_member->display_label);
   $self->param('protein_id',$ref_member->stable_id);
@@ -62,15 +62,17 @@ sub run {
 
   # Find reasons to skip sitewise analysis.
   my $skip_sitewise = 0;
-  $skip_sitewise = 1 if (scalar($tree->leaves) <= 4);
-  $skip_sitewise = 1 if ($aln->length > 10000);
+  $skip_sitewise = 'Tree size' if (scalar($tree->leaves) <= 4);
+  $skip_sitewise = 'Alignment length: '.$pep_aln->length if ($pep_aln->length > 10000);
 
   if (!$skip_sitewise) {
-    $self->_run_hyphy($tree,$aln);
-    $slr_hash = $self->_run_slr($tree,$aln,$pep_aln);
+    #$self->_run_hyphy($tree,$aln);
+    $slr_hash = $self->_run_and_store_slr($tree,$aln,$pep_aln);
   } else {
+    $self->param('skipped_reason', $skip_sitewise);
     $slr_hash = {};
   }
+
   $self->_collect_gene_data($tree,$aln,$slr_hash);
 
 }
@@ -145,7 +147,7 @@ sub _run_hyphy {
   $self->run_hyphy($tree,$aln,$hyphy_params);
 }
 
-sub _run_slr {
+sub _run_and_store_slr {
   my $self = shift;
   my $tree = shift;
   my $aln = shift;
@@ -171,15 +173,20 @@ sub _run_slr {
   } else {
     $slr_results = $self->run_sitewise_dNdS($tree,$aln,$all_params);
   }
+
+  # Turn results array into hashref data.
   my $slr_hash = $self->results_to_psc_hash($slr_results,$pep_aln);
 
   # Collect Pfam, exon, and filter data.
-  my $pfam_sites = $self->collect_pfam($tree,$aln);
-  my $exon_sites = $self->collect_exons($tree,$aln);
-  my $filter_sites = $self->do_filter($tree,$aln);
+  my $pfam_sites = $self->collect_pfam($tree,$pep_aln);
+  my $exon_sites = $self->collect_exons($tree,$pep_aln);
+  my $filter_sites = $self->do_filter($tree,$pep_aln);
 
   my $ref_member = $self->_get_ref_member($tree);
-  my $ref_seq = Bio::EnsEMBL::Compara::AlignUtils->get_seq_with_id($aln,$ref_member->stable_id);  
+  my $ref_seq = Bio::EnsEMBL::Compara::AlignUtils->get_seq_with_id($pep_aln,$ref_member->stable_id);  
+
+  # Add ungapped branch lengths to the slr hash.
+  $self->add_ungapped_branch_lengths($tree, $pep_aln, $slr_hash);
 
   foreach my $key (keys %$slr_hash) {
     my $site_obj = $slr_hash->{$key};
@@ -199,10 +206,10 @@ sub _run_slr {
     if (defined $pfam_sites->{$aln_position}) {
       $cur_params = $self->replace($cur_params, $pfam_sites->{$aln_position});
     }    
-    if (defined $exon_sites->{$aln_position}) {      
+    if (defined $exon_sites->{$aln_position}) {
       $cur_params = $self->replace($cur_params, $exon_sites->{$aln_position});
     }
-    if (defined $filter_sites->{$aln_position}) {      
+    if (defined $filter_sites->{$aln_position}) {
       $cur_params = $self->replace($cur_params, $filter_sites->{$aln_position});
     }
     
@@ -266,7 +273,7 @@ sub _sites_table_structure {
     parameter_set_id => 'tinyint',
 
     # Genomic locations on the reference sequence
-    chr_name => 'string',
+    chr_name => 'char8',
     chr_start => 'int',
     chr_end => 'int',
 
@@ -282,6 +289,7 @@ sub _sites_table_structure {
     # Basic SLR-derived attributes.
     aln_position => 'int',
     ncod => 'int',
+    nongap_bl => 'float',           # This is calculated using StatsCollectionUtils' method add_ungapped_branch_lengths
     omega => 'float',
     omega_lower => 'float',
     omega_upper => 'float',

@@ -536,3 +536,76 @@ dens.lines = function(field,data,
   }
 }
 
+### Simple sitewise utility functions.
+sign.lrt <- function(df) {
+  df[,'signed_lrt'] = df$lrt_stat
+  df[df$omega < 1,]$signed_lrt = -df[df$omega < 1,]$signed_lrt
+  return(df)
+}
+
+add.pval <- function(df) {
+  df[,'pval'] <- 1 - pchisq(df[,'lrt_stat'],1)
+  return(df)
+}
+
+add.nongap.bl <- function(df, tree, aln) {
+  col.scores <- score.aln.columns(tree, aln)
+
+  for (i in 1:nrow(col.scores)) {
+    row <- col.scores[i,]
+    pos <- row$pos
+    score <- row$score
+
+    if (nrow(subset(df, aln_position==pos)) > 0) {
+      df[df$aln_position == pos, 'nongap.bl'] <- score
+    }
+  }
+  return(df)
+}
+
+# Scores each column of the alignment by the fraction of total
+# branch length of the non-gap sub-tree.
+score.aln.columns <- function(tree,aln) {
+  aln.length <- length(aln[1,])
+
+  score.df <- data.frame()
+  for (i in 1:aln.length) {
+    aln.column <- aln[,i]
+
+    nongap.seqs <- names(aln.column[aln.column != '-'])
+    gap.seqs <- names(aln.column[aln.column == '-'])
+
+    # Get the non-gap branch length.
+    if (length(nongap.seqs) == 1) {
+      nongap.node <- node.with.label(tree,nongap.seqs[1])
+      nongap.bl <- branch.length(tree,nongap.node)
+    } else {
+      nongap.tree <- drop.tip(tree,gap.seqs)
+      nongap.bl <- sum(nongap.tree$edge.length)
+    }
+
+    nongap.str <- paste(nongap.seqs,collapse=';')
+    cur.df <- data.frame(
+      pos=i,
+      score=nongap.bl,
+      nongap.str=nongap.str,
+      stringsAsFactors=F
+    )
+    score.df <- rbind(score.df,cur.df)
+  }
+  score.df <- score.df[order(score.df$score,score.df$pos),]
+  return(score.df)
+}
+
+node.with.label <- function(tree,label) {
+  return(which(tree$tip.label %in% label))
+}
+
+branch.length <- function(phylo,node) {
+  edge.index <- which(phylo$edge[,2]==node)
+  bl <- phylo$edge.length[edge.index]
+  if (length(bl)==0) {
+    bl <- 0
+  }
+  return(bl)
+}

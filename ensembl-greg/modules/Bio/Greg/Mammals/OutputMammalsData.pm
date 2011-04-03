@@ -16,13 +16,25 @@ use base ('Bio::Greg::Hive::Process');
 sub run {
   my $self = shift;
 
-  my $base = 'nfs/users/nfs_g/gj1/scratch/mammals/output';
-  $self->get_output_folder($base);
+  my $dir = $self->get_output_folder;
 
-  $self->export_genes;
+  my $c_genes_file = "${dir}/genes_m_c.Rdata";
+  my $g_genes_file = "${dir}/genes_m_g.Rdata";
 
-  #  $self->export_sites;
-  $self->summarize_sites;
+  my $c_sites_file = "${dir}/sites_m_c.Rdata";
+  my $g_sites_file = "${dir}/sites_m_g.Rdata";
+
+  if (!-e $c_genes_file) {
+    $self->export_genes('genes_c', $c_genes_file);
+    $self->export_genes('genes_g', $g_genes_file);
+  }
+
+  if (!-e $c_sites_file) {
+    $self->export_sites('sites_c', $c_sites_file);
+    $self->export_sites('sites_g', $g_sites_file);
+  }
+
+  #$self->summarize_sites;
 
   #  $self->model_sites_distribution;
   #   $self->get_psg_overlaps;
@@ -31,87 +43,50 @@ sub run {
 
 sub export_genes {
   my $self = shift;
-
-  my $genes_file = $self->get_output_folder . "/genes.Rdata";
+  my $table = shift;
+  my $output_file = shift;
 
   my $folder = $self->get_output_folder;
   my $base   = Bio::Greg::EslrUtils->baseDirectory;
   my $csr    = "$base/scripts/collect_sitewise.R";
+  my $dbname = $self->hive_dba->dbc->dbname;
 
   my $cmd = qq^
+dbname <- "${dbname}"
 source("$csr");
-genes <- get.genes.merged(db="gj1_2x_57",exclude.cols=c('tree_newick'))
-save(genes,file="${genes_file}")
+
+genes <- get.vector(con,"SELECT * from ${table};")
+save(genes,file="${output_file}")
 ^;
   print "$cmd\n";
   my $params = {};
   Bio::Greg::EslrUtils->run_r( $cmd, $params );
-
 }
 
 sub export_sites {
   my $self = shift;
+  my $table = shift;
+  my $output_file = shift;
 
-  my $sth = $self->db_handle->prepare("SELECT max(parameter_set_id) from parameter_set;");
-  $sth->execute;
-  my @row = $sth->fetchrow_array;
-  $sth->finish;
-  my $max_pset = 1;
-  if (@row) {
-    $max_pset = $row[0];
-  }
+  my $folder = $self->get_output_folder;
+  my $base   = Bio::Greg::EslrUtils->baseDirectory;
+  my $csr    = "$base/scripts/collect_sitewise.R";
+  my $dbname = $self->hive_dba->dbc->dbname;
 
-  $max_pset = 1;
-  foreach my $i ( 0 .. $max_pset ) {
-    my $sites_file      = $self->get_output_folder . "/sites_$i.tsv";
-    my $sites_psc_rdata = $self->get_output_folder . "/sites_${i}_psc.Rdata";
-    my $sites_zipped    = $self->get_output_folder . "/sites_$i.tsv.gz";
-    my $sites_rdata     = $self->get_output_folder . "/sites_$i.Rdata";
-    my $csr             = $self->base . "/scripts/collect_sitewise.R";
+  my $cmd = qq^
+dbname <- "${dbname}"
+source("$csr");
 
-    my $mysqlArgs = Bio::Greg::EslrUtils->mysqlArgsFromConnection( $self->dbc );
+sites <- get.vector(con,"SELECT * from ${table};")
+sites <- factorize(sites, columns=c('chr_name', 'exon_position', 'type', 'pfam_domain'))
 
-    #    if (!-e $sites_zipped) {
-    my $cmd = qq^
-mysql $mysqlArgs -e "SELECT s.node_id,s.aln_position,s.parameter_set_id,domain,filter_value,omega,omega_lower,omega_upper,lrt_stat,note,type,g.chr_name,g.chr_start from stats_sites s LEFT JOIN sitewise_genome g ON s.node_id=g.node_id AND s.aln_position=g.aln_position WHERE s.parameter_set_id=$i;" > ${sites_file}
+save(sites,file="${output_file}")
 ^;
-    $cmd = qq^
-mysql $mysqlArgs -e "SELECT s.node_id,s.aln_position,s.parameter_set_id,domain,filter_value,omega,omega_lower,omega_upper,lrt_stat,note,type,g.chr_name,g.chr_start from stats_sites s LEFT JOIN sitewise_genome g ON s.node_id=g.node_id AND s.aln_position=g.aln_position WHERE s.parameter_set_id=1 LIMIT 500000;" > ${sites_file}
-^ if ( $i == 0 );
-    print "$cmd\n";
-    my $rc = system($cmd);
-    die "Bad return value!" if ($rc);
-    $cmd = "rm -f ${sites_zipped}; gzip ${sites_file}";
-    print "$cmd\n";
-    system($cmd);
-
-    #    }
-
-    #    if (!-e $sites_rdata) {
-    my $rcmd = qq^
-source("${csr}");
-gcinfo(TRUE)
-sites = read.table(gzfile("${sites_zipped}"),header=T,stringsAsFactors=T,na.strings="NULL")
-
-# Add p-value for nonneutral evolution.
-#print(sites[1:10,])
-p.values = 1 - pchisq(sites[,'lrt_stat'],1)
-sites[,'pval'] = p.values
-
-#print(nrow(sites))
-print(str(sites))
-save(sites,file="${sites_rdata}")
-
-psc.sites = subset(sites,pval < 0.05 & omega > 1)
-save(psc.sites,file="${sites_psc_rdata}")
-^;
-    print "$rcmd\n";
-    my $params = {};
-    Bio::Greg::EslrUtils->run_r( $rcmd, $params );
-
-    #    }
-  }
+  print "$cmd\n";
+  my $params = {};
+  Bio::Greg::EslrUtils->run_r( $cmd, $params );
 }
+
 
 sub summarize_sites {
   my $self = shift;
