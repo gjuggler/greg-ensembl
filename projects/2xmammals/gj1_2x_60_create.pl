@@ -24,11 +24,13 @@ parameter_sets();
 node_sets();
 split_by_parameter_set();
 sitewise_mammals();
+webpages();
 output_data();
 
 # Connect the dots.
 $h->connect_analysis("NodeSets","SplitByParameterSet");
 $h->connect_analysis("SplitByParameterSet","SitewiseMammals");
+$h->connect_analysis("SitewiseMammals","Webpages");
 $h->wait_for("OutputMammalsData",["NodeSets","SplitByParameterSet","SitewiseMammals"]);
 
 # Add some trees.
@@ -72,6 +74,14 @@ sub sitewise_mammals {
   my $base_params = {
   };
   $h->create_analysis($logic_name,$module,$base_params,500,1);
+}
+
+sub Webpages {
+  my $logic_name = "Webpages";
+  my $module = "Bio::Greg::Mammals::Webpages";
+  my $base_params = {
+  };
+  $h->create_analysis($logic_name,$module,$base_params,80,1);
 }
 
 sub output_data {
