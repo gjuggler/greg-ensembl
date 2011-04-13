@@ -5,28 +5,50 @@ use strict;
 use DBI;
 use Getopt::Long;
 use Bio::EnsEMBL::Registry;
-use Bio::EnsEMBL::Compara::DBSQL::DBAdaptor;
-use Bio::EnsEMBL::Hive::DBSQL::DBAdaptor;
-use Bio::EnsEMBL::Hive::DBSQL::AnalysisJobAdaptor;
 use Bio::EnsEMBL::Compara::ComparaUtils;
-use Bio::Greg::EslrUtils;
 use File::Path;
 use File::Basename;
 
 use Bio::Greg::Hive::HiveLoaderUtils;
 use Bio::Greg::Hive::ComparaHiveLoaderUtils;
 
-my ( $clean, $url, $experiment_name ) = undef;
+use Bio::TreeIO;
+
+my $tree_file = "trees/mammals44tree.nh";
+my $treeio = Bio::TreeIO->new(-file => $tree_file);
+my $tree = $treeio->next_tree;
+
+map {$_->id(lc($_->id))} $tree->leaves;
+
+my @eutherian = qw(alpaca armadillo bushbaby cat chimp cow dog dolphin elephant guinea_pig hedgehog horse human kangaroo_rat megabat microbat mouse mouse_lemur pika rabbit rat rhesus rock_hyrax shrew sloth squirrel tarsier tenrec treeshrew);  
+my @full = qw(chicken chimp cow dog fugu guinea_pig horse human lizard monodelphis mouse platypus rat rhesus stickleback tetraodon zebrafish zebra_finch);
+my @full_mammal = qw(chimp cow dog guinea_pig horse human mouse rat rhesus);
+my @hmrd = qw(human mouse rat dog);
+
+my $subtree;
+$subtree = $tree->slice_by_ids(@eutherian);
+print "Eutherian:".$subtree->total_branch_length."\n";
+print $subtree->max_distance_to_leaf."\n";
+$subtree->to_file("trees/mammals_eutherian.nh");
+
+$subtree = $tree->slice_by_ids(@full_mammal);
+print "Full mammal:".$subtree->total_branch_length."\n";
+print $subtree->max_distance_to_leaf."\n";
+$subtree->to_file("trees/mammals_full_genomes.nh");
+
+$subtree = $tree->slice_by_ids(@hmrd);
+print "HMRD:".$subtree->total_branch_length."\n";
+print $subtree->max_distance_to_leaf."\n";
+$subtree->to_file("trees/mammals_hmrd.nh");
+
+my ( $experiment_name ) = undef;
 GetOptions(
-  'clean' => \$clean,
   'experiment=s' => \$experiment_name
 );
-Bio::EnsEMBL::Registry->no_version_check(1);
-
 die("No experiment name given!") unless (defined $experiment_name);
 
 # First create a database for the experiment.
-$url = 'mysql://ensadmin:ensembl@ens-research/gj1_slrsim';
+my $url = 'mysql://ensadmin:ensembl@ens-research/gj1_slrsim';
 my $dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new( -url => $url );
 $dba->dbc->do("create database if not exists gj1_${experiment_name};");
 
@@ -35,40 +57,23 @@ my $h = new Bio::Greg::Hive::ComparaHiveLoaderUtils;
 $h->init($url);
 $h->init_compara_tables;
 
-if ($clean) {
-  $h->clean_hive_tables;
-  $h->clean_compara_analysis_tables;
-  $h->clean_compara_tree_tables;
-  my @truncate_tables = qw^
+$h->clean_hive_tables;
+$h->clean_compara_analysis_tables;
+$h->clean_compara_tree_tables;
+my @truncate_tables = qw^
       aln aln_scores omega
-      meta
+      sites genes
   ^;
-  $h->truncate_tables(\@truncate_tables);
-}
-#output_dir();
+$h->truncate_tables(\@truncate_tables);
 
 load_trees();
 load_tree();
-simulate();
-align();
-scores();
-dump_alignments();
-omegas();
-collect_stats();
+slrsim();
 plots();
 
 $h->connect_analysis( "LoadTrees",   "LoadTree" );
-$h->connect_analysis( "LoadTree",   "PhyloSim" );
-$h->connect_analysis( "PhyloSim",    "Align" );
-$h->connect_analysis( "Align",       "AlignScores" );
-$h->connect_analysis( "AlignScores", "DumpAlignments" );
-$h->connect_analysis( "AlignScores", "Omegas" );
-$h->connect_analysis( "Omegas",      "CollectStats" );
-
-$h->wait_for("Plots",["Omegas","CollectStats"]);
-$h->wait_for("PhyloSim",["LoadTrees","LoadTree"]);
-#$h->wait_for("Align",["PhyloSim"]);
-$h->wait_for("AlignScores",["PhyloSim"]);
+$h->connect_analysis( "LoadTree",   "Slrsim" );
+$h->wait_for("Plots",["LoadTrees","LoadTree", "Slrsim"]);
 
 sub load_trees {
   my $logic_name  = "LoadTrees";
@@ -82,58 +87,15 @@ sub load_trees {
 sub load_tree {
   my $logic_name  = "LoadTree";
   my $module      = "Bio::Greg::Slrsim::LoadTree";
-  my $params      = { experiment_name => $experiment_name };
+  my $params      = {};
   $h->create_analysis( $logic_name, $module, $params, 100, 1 );
 }
 
-sub simulate {
-  my $logic_name = "PhyloSim";
-  my $module     = "Bio::Greg::Hive::PhyloSim";
+sub slrsim {
+  my $logic_name = "Slrsim";
+  my $module     = "Bio::Greg::Slrsim::Slrsim";
   my $params     = {};
-  $h->create_analysis( $logic_name, $module, $params, 200, 1 );
-}
-
-sub align {
-  my $logic_name = "Align";
-  my $module     = "Bio::Greg::Hive::Align";
-  my $params     = {
-    # These params will be filled in by the LoadTree simulation definitions.
-  };
-  $h->create_analysis( $logic_name, $module, $params, 300, 1 );
-}
-
-sub scores {
-  my $logic_name = "AlignScores";
-  my $module     = "Bio::Greg::Hive::AlignmentScores";
-  my $params     = {
-
-    # These params will be filled in by the LoadTree simulation definitions.
-  };
-  $h->create_analysis( $logic_name, $module, $params, 300, 1 );
-}
-
-sub dump_alignments {
-  my $logic_name = "DumpAlignments";
-  my $module     = "Bio::Greg::Slrsim::DumpSlrsimAlignment";
-  my $params     = {};
-  $h->create_analysis( $logic_name, $module, $params, 80, 1 );
-}
-
-sub omegas {
-  my $logic_name = "Omegas";
-  my $module     = "Bio::Greg::Hive::PhyloAnalysis";
-  my $params     = {
-
-    # These params will be filled in by the LoadTree simulation definitions.
-  };
-  $h->create_analysis( $logic_name, $module, $params, 500, 1 );
-}
-
-sub collect_stats {
-  my $logic_name = "CollectStats";
-  my $module     = "Bio::Greg::Slrsim::CollectSlrsimStats";
-  my $params     = {};
-  $h->create_analysis( $logic_name, $module, $params, 100, 1 );
+  $h->create_analysis( $logic_name, $module, $params, 700, 1 );
 }
 
 sub plots {

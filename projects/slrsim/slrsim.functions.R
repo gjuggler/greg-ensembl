@@ -179,6 +179,7 @@ slr.roc = function(df,na.rm=T) {
     }
   }
 
+  df$tpr_at_fdr2 <- 0
   df$tp_at_fdr2 <- -1
   if (nrow(df) > 1) {
     fpr.sub <- subset(df,fdr < 0.05)
@@ -186,6 +187,7 @@ slr.roc = function(df,na.rm=T) {
       # Take the last (rightmost) row with fdr < 0.05
       row <- fpr.sub[nrow(fpr.sub),]
       df$tp_at_fdr2 <- row$tp
+      df$tpr_at_fdr2 <- row$tpr
     }
   }
 
@@ -254,7 +256,10 @@ add.pval <- function(df) {
   } else {
     df$pval <- 1 - pchisq(df[,'lrt_stat'],1)
     df$pval <- df$pval / 2 # Divide p-values by 2 since we're only looking at one side of chi-sq.
-    df[df$aln_dnds < 1, 'pval' ] <- 1 # Sites with dN/dS estimated below 1 get a p-value of 1.
+    print(nrow(subset(df, is.na(aln_dnds))))
+    if (sum(df$aln_dnds < 1) > 0) {
+      df[df$aln_dnds < 1, 'pval' ] <- 1 # Sites with dN/dS estimated below 1 get a p-value of 1.
+    }
   }
   return(df)
 }

@@ -62,8 +62,12 @@ multi.methods <- function() {
     p <- p + theme_bw()
     p  <- p + geom_line(alpha=0.8)
     p <- p + scale_colour_brewer(name="Analysis Method", palette="Set1")
-    p <- p + scale_x_continuous(name="Tree Length", limits=c(0.1, 2), breaks=c(0.1, 1.0, 2.0))
-    p <- p + scale_y_continuous(name=lbl, limits=c(0, 1), breaks = c(0, 0.5, 1))
+
+    p <- p + geom_hline(y=0.5, colour='gray')
+    p <- p + geom_vline(x=1.0, colour='gray')
+
+    p <- p + scale_x_continuous(name="Tree Length", limits=c(0, 2), breaks=c(0, 0.4, 0.8, 1.2, 1.6, 2.0))
+    p <- p + scale_y_continuous(name=lbl, limits=c(0, 1), breaks = c(0, 0.2, 0.4, 0.6, 0.8, 1))
     p <- p + facet_grid(tree ~ .)
     p <- p + opts(
       axis.title.x = theme_blank(),
@@ -166,20 +170,20 @@ multi.plot <- function() {
   colnames(rect.df) <- c('aligner', 'tree')
   rect.df[,'xmin'] <- 0.9
   rect.df[,'xmax'] <- 1.1
-  rect.df[,'ymin'] <- 0.045
-  rect.df[,'ymax'] <- 0.055
+  rect.df[,'ymin'] <- 0.09
+  rect.df[,'ymax'] <- 0.11
   rect.df[,'ins_rate'] <- 0
   rect.df[,'length'] <- 0
   rect.df[,'z_val'] <- 0
-  p <- ggplot(all.tbls, aes(x=length, y=ins_rate, z=z_val))
+  p <- ggplot(all.tbls, aes(x=length, y=ins_rate*2, z=z_val))
   p <- p + theme_bw()
-  x.brks <- c(0.2, 1.0, 2.0)
-  y.brks <- c(0, 0.05, 0.10)
+  x.brks <- c(0.2, 0.6, 1.0, 1.6, 2.0)
+  y.brks <- c(0, 0.04, 0.08, 0.12, 0.16, 0.20)
   p <- p + scale_x_continuous('Mean Path Length', breaks=x.brks)
   p <- p + scale_y_continuous('Indel Rate', breaks=y.brks)
-  p <- p + coord_cartesian(xlim=c(0.1, 2.1), ylim=c(-0.005, 0.105))
+  p <- p + coord_cartesian(xlim=c(0.1, 2.1), ylim=c(-0.005, 0.205))
   p <- p + geom_tile(aes(fill=z_val))
-  p <- p + geom_rect(data=rect.df, fill=rgb(0,0,0,alpha=0), aes(xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax, colour=aligner))
+  p <- p + geom_rect(size=1, data=rect.df, fill=rgb(0,0,0,alpha=0), aes(xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax, colour=aligner))
   p <- p + scale_colour_brewer(name="Alignment Method", palette="Set1")
   n <- 5
   clr.lim <- c(0, 1)
@@ -230,8 +234,6 @@ multi.plot <- function() {
   p <- p + facet_grid(tree ~ .)
   p <- p + opts(
     legend.position='none',
-    panel.grid.major = theme_blank(),
-    panel.grid.minor = theme_blank(),
     strip.text.x = theme_blank(),
     strip.text.y = theme_blank(),
     strip.background = theme_blank(),
@@ -277,7 +279,7 @@ figure.four.new <- function() {
   roc <- rbind(roc, load.roc('gj1_fig_two_c', return.merged=F))
   roc <- rbind(roc, load.roc('gj1_fig_two_clustalw', return.merged=F))
 
-  keep.filters <- c('none', 'branchlength_hi', 'guidance_hi', 'tcoffee_hi', 'optimal_hi', 'true')
+  keep.filters <- c('none', 'gblocks', 'branchlength_hi', 'guidance_hi', 'tcoffee_hi', 'optimal_hi', 'true')
   roc <- subset(roc, filter %in% keep.filters)
 
   roc <- ins.mpl.factors(roc)
@@ -669,6 +671,7 @@ false.positives <- function(fp_index=1, file="test.pdf") {
       'tree_length', 'ins_rate',
       'slrsim_rep', 'seq_position',
       'aligner.aln', 'filter.aln',
+      'thresh_at_fpr.true',
       'db'
     )
     all.sites <- load.all.rocs(dbs, keep.fields=keep.fields)
@@ -685,7 +688,10 @@ false.positives <- function(fp_index=1, file="test.pdf") {
       filter.aln == 'none' & db == fp.db
     )
     print(nrow(cur.sub))
-    losers <- subset(cur.sub, truth.aln == 0 & score.aln > 2.71 & score.true < 2.71)
+
+    #losers <- subset(cur.sub, truth.aln == 0 & score.aln > 2.71 & score.true < 2.71)
+    losers <- subset(cur.sub, truth.aln == 0 & score.aln > thresh_at_fpr.true & score.true < thresh_at_fpr.true)
+
     print(nrow(losers))
 
     loser.others <- data.frame()
@@ -710,6 +716,24 @@ false.positives <- function(fp_index=1, file="test.pdf") {
   print(nrow(losers))
   cur.fp <- losers[fp_index,]
 
+  write.csv(losers, file="losers.csv", row.names=F)
+
+  prank.losers <- 0
+  for (i in 1:nrow(losers)) {
+    cur.loser <- losers[i,]
+    prank.other <- subset(loser.others, 
+      aligner.aln=='prank' &
+      seq_position==cur.loser$seq_position &
+      slrsim_rep==cur.loser$slrsim_rep &
+      filter.aln=='none'
+    )
+    if (prank.other$score.aln > prank.other$thresh_at_fpr.true) {
+      prank.losers <- prank.losers + 1
+    }
+  }
+  print(prank.losers)
+
+
   load.window <- function(x, seq_id, seq_position, flank.width) {
     db <- x$db
     data.dir <- paste('~/scratch/',db,'/current/data', sep='')
@@ -731,13 +755,14 @@ false.positives <- function(fp_index=1, file="test.pdf") {
     col.lo <- max(1, aln.col - flank.width)
     col.hi <- min(aln.length(pep.aln), aln.col + flank.width)
 
-    below <- aln.slice(pep.aln, col.lo, aln.col-1)
-    at <- aln.slice(pep.aln, aln.col, aln.col)
-    above <- aln.slice(pep.aln, aln.col+1, col.hi)
-        
-    spliced <- aln.splice(below, at, empty.space=0)
-    spliced <- aln.splice(spliced, above, empty.space=0)
-    return(list(aln=spliced, tree=tree))
+    #below <- aln.slice(pep.aln, col.lo, aln.col-1)
+    #at <- aln.slice(pep.aln, aln.col, aln.col)
+    #above <- aln.slice(pep.aln, aln.col+1, col.hi)        
+    #spliced <- aln.splice(below, at, empty.space=0)
+    #spliced <- aln.splice(spliced, above, empty.space=0)
+    
+    sub.aln <- aln.slice(pep.aln, col.lo, col.hi)
+    return(list(aln=sub.aln, tree=tree))
   }
 
   window.width <- 19
@@ -803,9 +828,13 @@ false.positives <- function(fp_index=1, file="test.pdf") {
 
     lbl <- sprintf("Aligner=%s / Filter=%s / score=%.3f", cur.aln, cur.filter, cur.score)
 
+    #print(cur_seq_position)
+    #print(window.width)
     alntree <- load.window(cur.gene, 'human', cur_seq_position, window.width)
     aln <- alntree$aln
     tree <- alntree$tree
+
+    aln <- sort.aln.by.tree(aln, tree)
 
     n.seqs <- aln.num.seqs(aln)
     aln.modifier <- function(x) {
@@ -819,7 +848,9 @@ false.positives <- function(fp_index=1, file="test.pdf") {
       aln.mod=aln.modifier,
       tree.labels.in.tree=F,
       aln.to.tree.size = 5,
-      plot.title = lbl
+      plot.title = lbl,
+      aln.plot.chars=T,
+      aln.char.text.size=2
     )
     pushViewport(subplot(1,i))
     grid.draw(p$grob)
@@ -830,7 +861,7 @@ false.positives <- function(fp_index=1, file="test.pdf") {
 }
 
 lots.of.fps <- function() {
-  for (i in 1:20) {
+  for (i in 2:2) {
     false.positives(i, file=paste("fps/",i,".pdf",sep=''))
   }
 }
