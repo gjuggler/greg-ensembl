@@ -1138,6 +1138,15 @@ sub _filter_seq_stops {
 
   for (my $i=1; $i <= $seq->length-2; $i+= 3) {
     my $seq_str = $seq->seq;
+
+    my $codon_str = $seq->subseq($i, $i+2);
+    if ($codon_str eq '---') {
+      next;
+    }
+
+    my $has_gaps = 0;
+    $has_gaps = 1 if ($codon_str =~ m/-/i);
+
     my $aa = new Bio::PrimarySeq(-seq => $seq->subseq($i,$i+2))->translate->seq;
     
     #substr($seq_str,$i-1,3) = '---' if (substr($seq_str,$i-1,3) =~ m/(tag|tga|taa)/gi);
@@ -1149,7 +1158,12 @@ sub _filter_seq_stops {
       $is_stop = 1 if ($aa =~ m/([x\*])/gi); # More stringent -- anything that doesn't translate correctly.
     }
     #print " Masking stop $1 at $i\n" if ($is_stop);
-    substr($seq_str,$i-1,3) = '---' if ($is_stop);
+
+    if ($is_stop && !$has_gaps) {
+      substr($seq_str,$i-1,3) = 'NNN';
+    } elsif ($is_stop && $has_gaps) {
+      substr($seq_str,$i-1,3) = '---';
+    }
     #print "  Masking stop $1 at $i\n"  if (substr($seq_str,$i-1,3) =~ m/(tag|tga|taa)/gi);
     $seq->seq($seq_str);
   }

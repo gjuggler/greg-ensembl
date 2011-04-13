@@ -53,9 +53,15 @@ sub copy_tree {
     foreach my $node ($tree->nodes) {
       my $new_n = $node_hash->{$node};
       
-      # Add node ID, name, and distance.
+      # Need to copy each tag value over.
       $node->_load_tags if ($node->can('_load_tags'));
-      $new_n->{_tags} = $node->{_tags};
+      $new_n->{_tags} = {};
+      my $tags = $node->{_tags};
+      foreach my $key (keys %$tags) {
+        $new_n->{$key} = $tags->{$key};
+      }
+
+      # Add node ID, name, and distance.
       $new_n->node_id($node->node_id);
       $new_n->name($node->name);
       $new_n->distance_to_parent($node->distance_to_parent);
@@ -257,7 +263,7 @@ sub to_treeI {
     $newick .= ';' unless ($newick =~ m/;/);
     #warn("Temporary Newick for NSET to TREEI conversion: [$newick]\n");
   }
-  
+
   my $treein = new Bio::TreeIO
     (-string => $newick,
      -format => 'newick');
@@ -867,12 +873,13 @@ sub extract_subtree_from_names {
   my $class = shift;
   my $tree = shift;
   my $name_arrayref = shift;
+  my $return_copy = shift;
 
   foreach my $node ($tree->nodes) {
     if (!defined $node->node_id || $node->node_id eq '') {
       print "No node_id for ".$node->name."\n";
     } else {
-      print "  ".$node->node_id."\n";
+#      print "  ".$node->node_id."\n";
     }
   }
 
@@ -885,11 +892,12 @@ sub extract_subtree_from_names {
     if ($match) {
       push @node_ids, $match->node_id;
     } else {
+      print $tree->newick_format."\n";
       die("Can't find node with name $name\n");
     }
   }
-  print "keeping @node_ids\n";
-  return $class->extract_subtree_from_leaves($tree, \@node_ids);
+  #print "keeping @node_ids\n";
+  return $class->extract_subtree_from_leaves($tree, \@node_ids, $return_copy);
 }
 
 # Extracts a subtree given a ProteinTree and an arrayref of node_ids.

@@ -50,7 +50,7 @@ sub fetch_input {
 sub run {
   my $self = shift;
 
-#  $self->param('force_recalc', 1);
+  $self->param('force_recalc', 1);
 #  $self->param('filter', 'none');
 #  $self->param('maximum_mask_fraction', 0.6);
 #  $self->param('alignment_score_filtering', 1);
@@ -344,7 +344,9 @@ sub _collect_and_store_results {
   my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
   my $tree_length = $treeI->total_branch_length;
   $self->param('tree_total_length', $tree_length);
-  $self->param('tree_mean_path', $self->param('slrsim_tree_mean_path'));
+
+  my $mean_path = Bio::EnsEMBL::Compara::TreeUtils->mean_path($tree);
+  $self->param('tree_mean_path', $mean_path);
 
   $self->param('job_id', $self->job_id);
   $self->store_params_in_table( $self->dbc, $self->param('genes_table'), $self->params);

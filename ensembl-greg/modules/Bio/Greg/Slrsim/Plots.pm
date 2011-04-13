@@ -442,6 +442,26 @@ sub ari_indels {
   
 }
 
+sub mammals_sim {
+  my $self = shift;
+
+  my $folder = $self->get_output_folder;
+
+  # Call slrsim_all to dump the data.
+  my $sites_file = "${folder}/sites.Rdata";
+  if (!-e $sites_file) {
+    $self->slrsim_all;
+  }
+
+  # Call slrsim_table to dump the table.
+  my $table_file = "${folder}/table.csv";
+  if (!-e $table_file) {
+    $self->slrsim_table;
+  }
+  
+}
+
+
 # Filter table: return a table of results with multiple filtering results on each line.
 sub filter_table {
   my $self = shift;

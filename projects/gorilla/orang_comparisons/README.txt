@@ -11,3 +11,11 @@ following (tick off once done):
 [ ] Look at top Orangutan genes, see if they exist in our list(s)
 
 Easy, no?
+
+
+NOTES
+------
+
+File 'geneset-masked-v2.txt' is not explicitly mentioned in the Orang
+supplementary material, but I expect it's their dataset before
+applying all the filters mentioned in the text.

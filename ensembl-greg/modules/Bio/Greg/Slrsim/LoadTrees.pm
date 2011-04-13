@@ -833,6 +833,47 @@ sub _ari_indel_sweep {
   return \@sets;
 }
 
+sub mammals_sim {
+  my $self = shift;
+
+  my @sets;
+  push @sets, $self->_mammals_sets('mammals_eutherian.nh', 'eutherian');
+  push @sets, $self->_mammals_sets('mammals_full_genomes.nh', 'full_genomes');
+  push @sets, $self->_mammals_sets('mammals_hmrd.nh', 'hmrd');
+  return \@sets;
+}
+
+sub _mammals_sets {
+  my $self = shift;
+  my $tree_file = shift;
+  my $label = shift;
+
+  my $tree_obj = $self->_get_tree_from_file( $tree_file );
+
+  my $mean_path = Bio::EnsEMBL::Compara::TreeUtils->mean_path($tree_obj);
+
+  my @sets;
+  foreach my $indel (0, 0.05) {
+    my $scheme = $self->scheme_b;
+    my $params = $self->replace(
+      $scheme,
+      $self->reps_param(100),
+      $self->length_param(500),
+      $self->aln_param('prank_codon'),
+      $self->indel_rate_param($indel), {
+        slrsim_tree => $tree_obj,
+        slrsim_tree_file => $tree_file,
+        slrsim_label => "${label}_${indel}",
+        tree_mean_path => $mean_path
+      }
+      );
+    push @sets, $params;
+  }
+  
+  print $tree_obj->ascii;
+  return @sets;
+}
+
 sub phd_anim {
   my $self = shift;
 

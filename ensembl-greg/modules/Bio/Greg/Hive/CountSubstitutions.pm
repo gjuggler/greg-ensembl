@@ -149,10 +149,20 @@ sub extract_substitution_info {
     
     my ($member) = grep { $_->name eq $id } $tree->nodes;
     
+    my $taxon;
+    if (defined $member && $member->isa('Bio::EnsEMBL::Compara::NCBITaxon')) {
+      $taxon = $member;
+    } elsif (defined $member) {
+      $taxon = $member->taxon;
+    } else {
+      print $tree->newick_format."\n";
+      die("No member found for substitution ID $id!");
+    }
+
     my $taxon_id = $member->taxon_id;
     my $member_id;
     my $transcript_id;
-    my $name = $member->taxon->short_name;
+    my $name = $taxon->short_name;
     my $cdna_start;
     my $chr;
     my $chr_codon_start;
@@ -160,7 +170,7 @@ sub extract_substitution_info {
     my $genomic_codon = '';
     my $genomic_context = '';
     
-    my $alias = $member->taxon->ensembl_alias;
+    my $alias = $taxon->ensembl_alias;
     my $slice_a = Bio::EnsEMBL::Registry->get_adaptor( $alias, 'core', 'slice' );
     
     if ( $self->param('aln_type') =~ m/compara/i ) {
@@ -175,7 +185,7 @@ sub extract_substitution_info {
       my $db    = $slice->adaptor->db;
       my @css   = @{ $db->get_CoordSystemAdaptor->fetch_all };
             
-      my $name = $member->taxon->short_name;
+      my $name = $taxon->short_name;
       $chr = $tx->slice->seq_region_name;
       
       foreach my $i ( -2, -1, 0, 1, 2, 3, 4) {
@@ -209,23 +219,25 @@ sub extract_substitution_info {
       # Get the genomic coordinates that were stored while we were collecting the genomic alignment.
       my $gc = $cdna_aln->annotation->{_genomic_coords};
       
-      foreach my $i ( 0, 1, 2) {
-        my $index      = $cdna_aln_pos + $i;
-        my $key        = $member->taxon->short_name . '_' . $index;
-        my $coord      = $gc->{$key};
-        my $chr_start  = $coord->start;
-        my $chr_strand = $coord->strand;
-        $chr_codon_start  = $chr_start  if ( $i == 0 );
-        $chr_codon_strand = $chr_strand if ( $i == 0 );
-        
-        $chr = $coord->id;
-        my $chr_cs = $coord->coord_system;
-        my $slice = $slice_a->fetch_by_region( undef, $chr, $chr_start, $chr_start, $chr_strand );
-        $genomic_codon .= $slice->seq;
+      if ($gc) {
+        foreach my $i ( 0, 1, 2) {
+          my $index      = $cdna_aln_pos + $i;
+          my $key        = $taxon->short_name . '_' . $index;
+          my $coord      = $gc->{$key};
+          my $chr_start  = $coord->start;
+          my $chr_strand = $coord->strand;
+          $chr_codon_start  = $chr_start  if ( $i == 0 );
+          $chr_codon_strand = $chr_strand if ( $i == 0 );
+          
+          $chr = $coord->id;
+          my $chr_cs = $coord->coord_system;
+          my $slice = $slice_a->fetch_by_region( undef, $chr, $chr_start, $chr_start, $chr_strand );
+          $genomic_codon .= $slice->seq;
+        }
       }
     }
     
-    if ( $genomic_codon ne $codon_b ) {
+    if ( $genomic_codon ne '' && $genomic_codon ne $codon_b ) {
       #Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $aln,      { full => 1,width=>150 } );
       #Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $cdna_aln, { full => 1,width=>150 } );
       $self->hash_print($sub_obj);

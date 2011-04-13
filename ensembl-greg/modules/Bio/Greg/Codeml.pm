@@ -1414,12 +1414,27 @@ sub branch_model_likelihood {
 
   my $default_params = {
     fix_blength => 1,    # Use initial branch lengths as estimates.
-    model       => 2,
+    model       => 0,
     cleandata   => 0,
-    getSE => 1
+    getSE => 1,
+    fix_omega => 0,
+    omega => 0.3,
+    NSsites => 0,
   };
 
-  my @variable_params = qw(model omega Mgene gene_codon_counts cleandata aaDist);
+  my $has_any_fg_branches = 0;
+  foreach my $node ($tree->nodes) {
+    my $id = $node->id;
+    if ($id =~ m/[\#\$]/) {
+      $has_any_fg_branches = 1;
+    }
+  }
+  if ($has_any_fg_branches) {
+    $default_params->{model} = 2;
+  }
+
+
+  my @variable_params = qw(model omega Mgene gene_codon_counts cleandata aaDist NSsites fix_omega);
 
   # If certain parameters are given, apply them to the parameter object
   # passed to the new Codeml instance.
@@ -1451,11 +1466,14 @@ sub branch_model_likelihood {
   #print "Omegas: @omegas\n";
   my $codeml_tree = $class->parse_codeml_results($lines_ref);
 
+  print "LNL: $lnL\n";
+
   # Return an object with our results of interest.
   return {
     lnL       => $lnL,
     omegas    => \@omegas,
-    tree => $codeml_tree
+    tree => $codeml_tree,
+    lines => $lines_ref
   };
 }
 
