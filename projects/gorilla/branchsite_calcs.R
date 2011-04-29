@@ -20,7 +20,17 @@ gene.sub.counts <- function(x) {
     hc.ns = nrow(subset(x, mut_nsyn==1 & taxon_id %in% c(1234))),
     hc.s = nrow(subset(x, mut_nsyn==0 & taxon_id %in% c(1234))),
     hcg.ns = nrow(subset(x, mut_nsyn==1 & taxon_id %in% c(5678))),
-    hcg.s = nrow(subset(x, mut_nsyn==0 & taxon_id %in% c(5678)))
+    hcg.s = nrow(subset(x, mut_nsyn==0 & taxon_id %in% c(5678))),
+    o.ns = nrow(subset(x, mut_nsyn==1 & taxon_id %in% c(9600))),
+    o.s = nrow(subset(x, mut_nsyn==0 & taxon_id %in% c(9600))),
+    hcgo.ns = nrow(subset(x, mut_nsyn==1 & taxon_id %in% c(2468))),
+    hcgo.s = nrow(subset(x, mut_nsyn==0 & taxon_id %in% c(2468))),
+    m.ns = nrow(subset(x, mut_nsyn==1 & taxon_id %in% c(9544))),
+    m.s = nrow(subset(x, mut_nsyn==0 & taxon_id %in% c(9544))),
+    t.ns = nrow(subset(x, mut_nsyn==1 & taxon_id %in% c(9478))),
+    t.s = nrow(subset(x, mut_nsyn==0 & taxon_id %in% c(9478))),
+    r.ns = nrow(subset(x, mut_nsyn==1 & taxon_id %in% c(9483))),
+    r.s = nrow(subset(x, mut_nsyn==0 & taxon_id %in% c(9483)))
   ))
 }
 
@@ -214,6 +224,8 @@ get.pvals <- function() {
     subs[hc.sub.indices, 'taxon_id'] <- 1234
     hcg.sub.indices <- grep("ENSGGOP0.*ENSP0.*ENSPTRP0.*",subs$leaves_beneath)
     subs[hcg.sub.indices, 'taxon_id'] <- 5678
+    hcgo.sub.indices <- grep("ENSGGOP0.*ENSP0.*ENSPPYP0.*ENSPTRP0.*",subs$leaves_beneath)
+    subs[hcgo.sub.indices, 'taxon_id'] <- 2468
     assign("subs", subs, envir=.GlobalEnv)
   }
   if (!exists("sites")) {
@@ -224,7 +236,7 @@ get.pvals <- function() {
   }
   if (!exists("subs.sites")) {
     print("  merging subs & sites")
-    s <- subset(subs, taxon_id %in% c(9593, 9606, 9598, 1234))
+    s <- subset(subs, taxon_id %in% c(9593, 9606, 9598, 1234, 5678))
     subs.sites <- merge(sites, s, by=c('data_id', 'aln_pos'), all.x=TRUE)
     print(nrow(subs.sites))
     assign("subs.sites", subs.sites, envir=.GlobalEnv)
@@ -485,6 +497,44 @@ top.genes.set <- function(x, n=5, dir='up') {
 
 summary.table <- function(x) {
   x <- subset(x, !is.na(lrt.5) & !is.na(lrt.1) & !is.na(lrt.2))
+  
+  # UP!
+  pval.t <- nrow(x) / 20
+  print(pval.t)
+
+  g <- x$rank.lrt.5 <= pval.t & x$lrt.5 > 0
+  h <- x$rank.lrt.1 <= pval.t & x$lrt.1 > 0
+  c <- x$rank.lrt.2 <= pval.t & x$lrt.2 > 0
+#  print(x[g & h & c, 'gene_name'])
+
+  venn.df <- data.frame(
+    Human = h,
+    Chimpanzee = c,
+    Gorilla = g
+  )
+  a <- apply(venn.df,1,function(x) {paste(as.numeric(x),collapse='')})
+  t <- table(a)
+  print(t)
+  print(t/nrow(venn.df))
+#  print(names(venn.df))
+
+  pval.t <- nrow(x) - pval.t
+  g <- x$rank.lrt.5 >= pval.t & x$lrt.5 < 0
+  h <- x$rank.lrt.1 >= pval.t & x$lrt.1 < 0
+  c <- x$rank.lrt.2 >= pval.t & x$lrt.2 < 0
+  venn.df <- data.frame(
+    Human = h,
+    Chimpanzee = c,
+    Gorilla = g
+  )
+  a <- apply(venn.df,1,function(x) {paste(as.numeric(x),collapse='')})
+  t <- table(a)
+  print(t)
+#  print(t/nrow(venn.df))
+#  print(names(venn.df))
+#  print(x[g & h & c, 'gene_name'])
+
+  return()
 
   tbl.df <- data.frame()
 
@@ -516,26 +566,6 @@ summary.table <- function(x) {
   'bs GA+marmoset'
   )
 
-  library(venneuler)
-  
-  # UP!
-  pval.t <- 0.05
-  g <- x$pval.5 < pval.t & x$lrt.5 > 0
-  h <- x$pval.1 < pval.t & x$lrt.1 > 0
-  c <- x$pval.2 < pval.t & x$lrt.2 > 0
-
-  print(x[g & h & c,])
-
-  venn.df <- data.frame(
-    Human = h,
-    Chimpanzee = c,
-    Gorilla = g
-  )
-  a <- apply(venn.df,1,function(x) {paste(as.numeric(x),collapse='')})
-  t <- table(a)
-  print(t)
-  print(t/nrow(venn.df))
-  print(names(venn.df))
 
   pdf(file=pdf.f('venn.up.pdf'), width=4, height=4)
   p <- venneuler(venn.df)
@@ -544,20 +574,6 @@ summary.table <- function(x) {
   dev.off()
 
   # DOWN!
-  pval.t <- 0.05
-  g <- x$pval.5 < pval.t & x$lrt.5 < 0
-  h <- x$pval.1 < pval.t & x$lrt.1 < 0
-  c <- x$pval.2 < pval.t & x$lrt.2 < 0
-  venn.df <- data.frame(
-    Human = h,
-    Chimpanzee = c,
-    Gorilla = g
-  )
-  a <- apply(venn.df,1,function(x) {paste(as.numeric(x),collapse='')})
-  t <- table(a)
-  print(t)
-  print(t/nrow(venn.df))
-  print(names(venn.df))
 
   pdf(file=pdf.f('venn.down.pdf'), width=4, height=4)
   p <- venneuler(venn.df)
@@ -565,7 +581,7 @@ summary.table <- function(x) {
   dev.off()
 }
 
-get.top.genes <- function(x, stat='pval.sw.gorilla', dir=1, n=20) {
+get.top.genes <- function(x, stat='pval.sw.gorilla', dir=1, n=nrow(x)) {
   # FILTER: Only take genes with at least 1 substitution in each species.
 #  x <- subset(x, g.ns+g.s > 0 & h.ns+h.s > 0 & c.ns+c.s > 0)
 
@@ -591,7 +607,7 @@ get.top.genes <- function(x, stat='pval.sw.gorilla', dir=1, n=20) {
     'lrt.3', 'pval.gr.chimp', 'pval.sw.chimp', 'pval.bn.chimp', 'c.f.nsyn',
     'lrt.6', 'lrt.7', 'lrt.1', 'lrt.2')) {
     rank.field <- paste('rank',field,sep='.')
-    if (field %in% c('g.f.nsyn','c.f.nsyn', 'h.f.nsyn', 'lrt.5', 'lrt.4', 'lrt.3', 'lrt.6', 'lrt.7')) {
+    if (field %in% c('g.f.nsyn','c.f.nsyn', 'h.f.nsyn', 'lrt.5', 'lrt.4', 'lrt.3', 'lrt.2', 'lrt.1', 'lrt.6', 'lrt.7')) {
       x[, rank.field] <- rank(-x[,field])
     } else {
       x[, rank.field] <- rank(x[,field])
@@ -799,44 +815,56 @@ shared.accel.table <- function(x, dir='up') {
   x <- subset(x, !is.na(lrt.5) & !is.na(lrt.4) & !is.na(lrt.3))
 
   if (dir=='down') {
-    x$lrt.g <- -x$lrt.5
-    x$lrt.c <- -x$lrt.2
-    x$lrt.h <- -x$lrt.1
+    x$lrt.g <- -x$rank.lrt.5
+    x$lrt.c <- -x$rank.lrt.4
+    x$lrt.h <- -x$rank.lrt.3
   } else {
-    x$lrt.g <- -x$pval.sw.gorilla
-    x$lrt.c <- -x$pval.sw.chimp
-    x$lrt.h <- -x$pval.sw.human
+    x$lrt.g <- -x$rank.lrt.5
+    x$lrt.c <- -x$rank.lrt.4
+    x$lrt.h <- -x$rank.lrt.3
   }
 
-  g <- x$lrt.g
-  c <- x$lrt.c
-  h <- x$lrt.h
+  dt <- x[, c('lrt.g', 'lrt.c', 'lrt.h', 'gene_name')]
+  g <- as.data.table(dt)
+  print(head(g))
 
-  #x.up <- x[order(x$lrt.g),]
-  #x.up <- subset(x, lrt.g > 0)
-
-  all <- nrow(x.up)
+  all <- nrow(g)
   print("  calculating...")
-  print(nrow(x.up))
-  for (i in 1:nrow(x.up)) {
-    cur.threshold <- x.up[i, 'lrt.g']
-    #cur.sub <- subset(x.up, lrt.g >= cur.threshold)
-    cur.sub <- x.up$lrt.g >= cur.threshold
-    gor.total <- sum(cur.sub)
-    x.up[i, 'i'] <- all - i
-    n.chimp <- sum(cur.sub & x.up$lrt.c >= cur.threshold)
-    n.human <- sum(cur.sub & x.up$lrt.h >= cur.threshold)
-    x.up[i, 'n.chimp'] <- n.chimp / all
-    x.up[i, 'n.human'] <- n.human / all
-    x.up[i, 'f.chimp'] <- n.chimp / gor.total
-    x.up[i, 'f.human'] <- n.human / gor.total
+  print(nrow(g))
+  x.up <- data.frame()
+  if (dir == 'up') {
+    indices <- order(-g$lrt.g)
+  } else {
+    indices <- order(g$lrt.g)
+  }
+  for (i in 1:length(indices)) {
+    cur.index <- indices[i]
+    cur.threshold <- g[cur.index, lrt.g]
+    print(cur.threshold)
+
+    if (dir == 'up') {
+      n.g <- nrow(g[lrt.g >= cur.threshold,])
+      n.gh <- nrow(g[lrt.g >= cur.threshold & lrt.h >= cur.threshold,])
+      n.gc <- nrow(g[lrt.g >= cur.threshold & lrt.c >= cur.threshold,])
+    } else {
+      n.g <- nrow(g[lrt.g <= cur.threshold,])
+      n.gh <- nrow(g[lrt.g <= cur.threshold & lrt.h <= cur.threshold,])
+      n.gc <- nrow(g[lrt.g <= cur.threshold & lrt.c <= cur.threshold,])
+    }
+
+    x.up[i, 'i'] <- i
+    x.up[i, 'value'] <- cur.threshold
+    x.up[i, 'n.chimp'] <- n.gc / all
+    x.up[i, 'n.human'] <- n.gh / all
+    x.up[i, 'f.chimp'] <- n.gc / n.g
+    x.up[i, 'f.human'] <- n.gh / n.g
   }
   print("  done!")
   
-  df <- data.frame(grp='GH / G_tot', yy=x.up$n.human, xx=x.up$lrt.g, xi=x.up$i)
-  df <- rbind(df, data.frame(grp='GC / G_tot', yy=x.up$n.chimp, xx=x.up$lrt.g, xi=x.up$i))
-  df <- rbind(df, data.frame(grp='GH / G_cur', yy=x.up$f.human, xx=x.up$lrt.g, xi=x.up$i))
-  df <- rbind(df, data.frame(grp='GC / G_cur', yy=x.up$f.chimp, xx=x.up$lrt.g, xi=x.up$i))
+  df <- data.frame(grp='GH / G_tot', yy=x.up$n.human, xx=x.up$value, xi=x.up$i)
+  df <- rbind(df, data.frame(grp='GC / G_tot', yy=x.up$n.chimp, xx=x.up$value, xi=x.up$i))
+  df <- rbind(df, data.frame(grp='GH / G_cur', yy=x.up$f.human, xx=x.up$value, xi=x.up$i))
+  df <- rbind(df, data.frame(grp='GC / G_cur', yy=x.up$f.chimp, xx=x.up$value, xi=x.up$i))
 
   p <- ggplot(df, aes(x=xi, y=yy, group=grp, colour=grp))
   p <- p + geom_line(size=0.5)
@@ -859,15 +887,22 @@ pdf.f <- function(f) {
 }
 
 ns.cum.plot <- function(x) {
-  pdf(file="~/src/greg-ensembl/projects/gorilla/ns.cum.pdf", height=3, width=4)
-  x$h.f.nsyn <- x$h.f.nsyn + x$hc.f.nsyn
-  x$c.f.nsyn <- x$c.f.nsyn + x$hc.f.nsyn
+  pdf(file="~/src/greg-ensembl/projects/gorilla/hgc.pval.cum.pdf", height=3, width=4)
+  p <- cum.dist.plots(x, fields=c('pval.5', 'pval.1', 'pval.2'))
+  p <- p + theme_bw()
+  print(p)
+  dev.off()
+
+
+  pdf(file="~/src/greg-ensembl/projects/gorilla/hgc.ns.cum.pdf", height=3, width=4)
+  #x$h.f.nsyn <- x$h.f.nsyn + x$hc.f.nsyn
+  #x$c.f.nsyn <- x$c.f.nsyn + x$hc.f.nsyn
   p <- cum.dist.plots(x, fields=c('g.f.nsyn', 'h.f.nsyn', 'c.f.nsyn'), x.lim=c(0, 0.04))
   p <- p + theme_bw()
   print(p)
   dev.off()
 
-  pdf(file="~/src/greg-ensembl/projects/gorilla/lrt.cum.pdf", height=4, width=6)
+  pdf(file="~/src/greg-ensembl/projects/gorilla/hgc.lrt.cum.pdf", height=4, width=6)
   x$Gorilla <- x$lrt.5
   x$Human <- x$lrt.3
   x$Chimpanzee <- x$lrt.4
@@ -876,7 +911,7 @@ ns.cum.plot <- function(x) {
   print(p)
   dev.off()
 
-  pdf(file="~/src/greg-ensembl/projects/gorilla/lrt2.cum.pdf", height=4, width=6)
+  pdf(file="~/src/greg-ensembl/projects/gorilla/aga.lrt.cum.pdf", height=4, width=6)
   x$AGA.Branch <- x$lrt.6
   x$AGA.Clade <- x$lrt.7
   p <- cum.dist.plots(x, fields=c('AGA.Branch', 'AGA.Clade'), x.lim=c(-10, 10))
@@ -884,7 +919,7 @@ ns.cum.plot <- function(x) {
   print(p)
   dev.off()
 
-  pdf(file="~/src/greg-ensembl/projects/gorilla/lrt3.cum.pdf", height=4, width=6)
+  pdf(file="~/src/greg-ensembl/projects/gorilla/hc.lrt.cum.pdf", height=4, width=6)
   x$Human <- x$lrt.1
   x$Chimpanzee <- x$lrt.2
   p <- cum.dist.plots(x, fields=c('Human', 'Chimpanzee'), x.lim=c(-10, 10))
@@ -892,7 +927,7 @@ ns.cum.plot <- function(x) {
   print(p)
   dev.off()
 
-  pdf(file="~/src/greg-ensembl/projects/gorilla/lrt4.cum.pdf", height=4, width=6)
+  pdf(file="~/src/greg-ensembl/projects/gorilla/parallel.lrt.cum.pdf", height=4, width=6)
   x$HC_Parallel <- x$lrt.8
   x$GH_Parallel <- x$lrt.9
   x$GC_Parallel <- x$lrt.10
@@ -1059,6 +1094,93 @@ id.to.name <- function(x, ids) {
   return(x[indices, 'gene_name'])
 }
 
+
+dnds.figure <- function(x, dnds.field='slr_dnds', gc.field='gc_genomic') {
+
+  x[, 'gc_tmp'] <- x[, gc.field]
+#  gc.q <- quantile(x$gc_tmp, c(0.33, 0.67, 0.9, 1.0))
+  gc.q <- quantile(x$gc_tmp, c(0.2, 0.4, 0.6, 0.8, 1.0))
+  gc.q <- c(0, gc.q)
+  gc.lo <- gc.q[-length(gc.q)]
+  gc.hi <- gc.q[-1]
+
+  gc.lo <- min(gc.lo)
+  gc.hi <- max(gc.hi)
+
+  x[, 'dnds_tmp'] <- x[, dnds.field]
+  dnds.q <- quantile(x$dnds_tmp, c(0.33, 0.67, 0.9, 1.0))
+#  dnds.q <- quantile(x$dnds_tmp, c(0.2, 0.4, 0.6, 0.8, 1.0))
+  dnds.q <- c(0, dnds.q)
+  dnds.lo <- dnds.q[-length(dnds.q)]
+  dnds.hi <- dnds.q[-1]
+
+#  dnds.lo <- min(dnds.lo)
+#  dnds.hi <- max(dnds.hi)
+
+  fld.pairs <- list(
+    'G' = c('g.ns', 'g.s'),
+    'H' = c('h.ns', 'h.s'),
+    'C' = c('c.ns', 'c.s'),
+    'CH' = c('hc.ns', 'hc.s'),
+    'CHG' = c('hcg.ns', 'hcg.s')
+  )
+  fld.names <- names(fld.pairs)
+
+  comb.df <- data.frame()
+  for (i in 1:length(dnds.lo)) {
+    dlo <- dnds.lo[i]
+    dhi <- dnds.hi[i]
+    x1 <- subset(x, dnds_tmp > dlo & dnds_tmp <= dhi)
+    print(nrow(x1))
+
+    dnds.lbl <- paste(dnds.field, ': ', base::format(dlo, digits=2), ' - ', base::format(dhi, digits=2), sep='')
+
+    for (j in 1:length(gc.lo)) {
+      gclo <- gc.lo[j]
+      gchi <- gc.hi[j]
+     
+      x2 <- subset(x1, gc_tmp > gclo & gc_tmp <= gchi)
+      gc.lbl <- paste(gc.field, ': ', base::format(gclo, digits=2), ' - ', base::format(gchi, digits=2), sep='')
+
+      for (k in 1:length(fld.pairs)) {
+        cur.pair <- fld.pairs[[k]]
+        cur.nm <- fld.names[k]
+        ns.fld <- cur.pair[1]
+        s.fld <- cur.pair[2]
+
+        bt <- smean.cl.boot(x2[, ns.fld] / (x2[, s.fld]+1))
+        #bt <- smean.cl.boot(x2[, s.fld])
+        comb.df <- rbind(comb.df, data.frame(
+          dnds = dnds.lbl,
+          gc = gc.lbl,
+          species = cur.nm,
+          mean = bt[1],
+          lo = bt[2],
+          hi = bt[3]
+        ))
+      }
+    }
+  }
+
+  print(comb.df)
+
+  p <- ggplot(comb.df, aes(
+    x=species,
+    ymin=lo, ymax=hi, y=mean,
+    fill=species
+  ))
+  p <- p + geom_crossbar(width=0.5)
+  p <- p + scale_y_continuous("dN/dS (bootstrap mean)")
+  p <- p + scale_x_discrete("Species / branch")
+  p <- p + scale_fill_discrete("Species / branch")
+
+  p <- p + facet_grid(. ~ dnds)
+  
+  pdf(file=pdf.f("dnds.figure.pdf"), width=18, height=10)
+  print(p)
+  dev.off()
+
+}
 
 ils.densities <- function() {
   pdf("ils_exon_mammal.pdf")
