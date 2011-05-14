@@ -222,8 +222,8 @@ sub gc3_content {
   # Get 3rd position nucleotides.
   $seq =~ s/..(.)/$1/gi;
 
-  # Remove nonexistent seqs.
-  $seq =~ s/[nx]//gi;
+  # Remove nonexistent seqs & gaps.
+  $seq =~ s/[nx-]//gi;
 
   my $total_len = length($seq);
   $seq =~ s/[at]//gi;
@@ -238,7 +238,7 @@ sub gc_content {
 
   my $seq = $member->sequence_cds;
 
-  $seq =~ s/[nx]//gi;
+  $seq =~ s/[nx-]//gi;
 
   my $total_len = length($seq);
   $seq =~ s/[at]//gi;
@@ -770,6 +770,8 @@ sub get_coords_from_pep_position {
       chr_name => $chr,
       chr_start => $start,
       chr_end => $end,
+      chr_strand => $strand,
+      chr => $chr,
       strand => $strand
     };
 

@@ -1,5 +1,8 @@
 if (exists('drv')) {
   lapply(dbListConnections(drv),dbDisconnect)
+  rm(drv)
+  library(RMySQL)
+  drv <- dbDriver('MySQL')
 } else {
   library(RMySQL)
   drv <- dbDriver('MySQL')

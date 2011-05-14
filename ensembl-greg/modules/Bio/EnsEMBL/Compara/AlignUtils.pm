@@ -1488,7 +1488,7 @@ sub mask_string {
   my $hi = shift;
 
   my $n = 0;
-  for (my $i=$lo; $i < $hi; $i++) {
+  for (my $i=$lo; $i <= $hi; $i++) {
     if (substr($string,$i,1) ne '-') {
       substr($string,$i,1,'N');
       $n++;
@@ -1868,13 +1868,14 @@ sub remove_seq_from_aln {
   my $aln = shift;
   my $seq_id = shift;
 
-  my $seq = $class->get_seq_with_id($aln,$seq_id);
-
   my $new_aln = $aln->new;
 
-  foreach my $old_seq ($aln->each_seq) {
-    $new_aln->add_seq($old_seq) if ($old_seq != $seq);
+  foreach my $seq ($aln->each_seq) {
+    next if ($seq->id eq $seq_id);
+    my $new_seq = new Bio::LocatableSeq(-seq => $seq->seq, -id => $seq->id);
+    $new_aln->add_seq($new_seq) if ($seq->id ne $seq_id);
   }
+
   return $new_aln;
 }
 
@@ -2040,6 +2041,19 @@ sub peptide_to_cdna_alignment {
     $cdna_aln->add_seq($new_seq);
   }
   return $cdna_aln;
+}
+
+sub copy_aln {
+  my $class = shift;
+  my $aln = shift;
+  
+  my $new_aln = $aln->new;
+
+  foreach my $seq ($aln->each_seq) {
+    my $new_seq = new Bio::LocatableSeq(-seq => $seq->seq, -id => $seq->id);
+    $new_aln->add_seq($new_seq);
+  }
+  return $new_aln;
 }
 
 # Stolen from AlignedMember.pm, wrapped into a standalone method.

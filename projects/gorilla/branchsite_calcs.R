@@ -11,26 +11,26 @@ pst <- function(...) { return(paste(..., sep=''))}
 gene.sub.counts <- function(x) {
   x <- subset(x, !is.na(mut_nsyn))
   return(data.frame(
-    g.ns = nrow(subset(x, mut_nsyn==1 & taxon_id %in% c(9593))),
-    g.s = nrow(subset(x, mut_nsyn==0 & taxon_id %in% c(9593))),
-    h.ns = nrow(subset(x, mut_nsyn==1 & taxon_id %in% c(9606))),
-    h.s = nrow(subset(x, mut_nsyn==0 & taxon_id %in% c(9606))),
-    c.ns = nrow(subset(x, mut_nsyn==1 & taxon_id %in% c(9598))),
-    c.s = nrow(subset(x, mut_nsyn==0 & taxon_id %in% c(9598))),
-    hc.ns = nrow(subset(x, mut_nsyn==1 & taxon_id %in% c(1234))),
-    hc.s = nrow(subset(x, mut_nsyn==0 & taxon_id %in% c(1234))),
-    hcg.ns = nrow(subset(x, mut_nsyn==1 & taxon_id %in% c(5678))),
-    hcg.s = nrow(subset(x, mut_nsyn==0 & taxon_id %in% c(5678))),
-    o.ns = nrow(subset(x, mut_nsyn==1 & taxon_id %in% c(9600))),
-    o.s = nrow(subset(x, mut_nsyn==0 & taxon_id %in% c(9600))),
-    hcgo.ns = nrow(subset(x, mut_nsyn==1 & taxon_id %in% c(2468))),
-    hcgo.s = nrow(subset(x, mut_nsyn==0 & taxon_id %in% c(2468))),
-    m.ns = nrow(subset(x, mut_nsyn==1 & taxon_id %in% c(9544))),
-    m.s = nrow(subset(x, mut_nsyn==0 & taxon_id %in% c(9544))),
-    t.ns = nrow(subset(x, mut_nsyn==1 & taxon_id %in% c(9478))),
-    t.s = nrow(subset(x, mut_nsyn==0 & taxon_id %in% c(9478))),
-    r.ns = nrow(subset(x, mut_nsyn==1 & taxon_id %in% c(9483))),
-    r.s = nrow(subset(x, mut_nsyn==0 & taxon_id %in% c(9483)))
+    g.ns = nrow(subset(x, mut_nsyn==1 & taxon_id == 9593)),
+    g.s = nrow(subset(x, mut_nsyn==0 & taxon_id == 9593)),
+    h.ns = nrow(subset(x, mut_nsyn==1 & taxon_id == 9606)),
+    h.s = nrow(subset(x, mut_nsyn==0 & taxon_id == 9606)),
+    c.ns = nrow(subset(x, mut_nsyn==1 & taxon_id == 9598)),
+    c.s = nrow(subset(x, mut_nsyn==0 & taxon_id == 9598)),
+    hc.ns = nrow(subset(x, mut_nsyn==1 & taxon_id == 1234)),
+    hc.s = nrow(subset(x, mut_nsyn==0 & taxon_id == 1234)),
+    hcg.ns = nrow(subset(x, mut_nsyn==1 & taxon_id == 5678)),
+    hcg.s = nrow(subset(x, mut_nsyn==0 & taxon_id == 5678)),
+    o.ns = nrow(subset(x, mut_nsyn==1 & taxon_id == 9600)),
+    o.s = nrow(subset(x, mut_nsyn==0 & taxon_id == 9600)),
+    hcgo.ns = nrow(subset(x, mut_nsyn==1 & taxon_id == 2468)),
+    hcgo.s = nrow(subset(x, mut_nsyn==0 & taxon_id == 2468)),
+    m.ns = nrow(subset(x, mut_nsyn==1 & taxon_id == 9544)),
+    m.s = nrow(subset(x, mut_nsyn==0 & taxon_id == 9544)),
+    t.ns = nrow(subset(x, mut_nsyn==1 & taxon_id == 9478)),
+    t.s = nrow(subset(x, mut_nsyn==0 & taxon_id == 9478)),
+    r.ns = nrow(subset(x, mut_nsyn==1 & taxon_id == 9483)),
+    r.s = nrow(subset(x, mut_nsyn==0 & taxon_id == 9483))
   ))
 }
 
@@ -207,18 +207,19 @@ add.grantham <- function(x) {
 
 get.pvals <- function() {
   # Collect genes and PAML inferred substitutions from the SQL tables.
-  if (!exists("genes")) {
+  if (!exists("ggenes")) {
     source("~/src/greg-ensembl/scripts/collect_sitewise.R")
     print("  loading genes")
     ggenes <- get.vector(con, 'select * from genes')
     ggenes$slr_dnds <- as.numeric(ggenes$slr_dnds)
     ggenes$m0_dnds <- as.numeric(ggenes$m0_dnds)
     assign("ggenes", ggenes, envir=.GlobalEnv)
+    save(ggenes, file=pdf.f('ggenes.Rdata'))
   }
   if (!exists("subs")) {
     source("~/src/greg-ensembl/scripts/collect_sitewise.R")
     print("  loading subs")
-    subs <- get.vector(con, 'select * from subs')
+    subs <- get.vector(con, 'select data_id, aln_pos, mut_nsyn, taxon_id, leaves_beneath from subs')
 
     hc.sub.indices <- grep("ENSP0.*ENSPTRP0.*",subs$leaves_beneath)
     subs[hc.sub.indices, 'taxon_id'] <- 1234
@@ -226,32 +227,36 @@ get.pvals <- function() {
     subs[hcg.sub.indices, 'taxon_id'] <- 5678
     hcgo.sub.indices <- grep("ENSGGOP0.*ENSP0.*ENSPPYP0.*ENSPTRP0.*",subs$leaves_beneath)
     subs[hcgo.sub.indices, 'taxon_id'] <- 2468
+    subs$leaves_beneath <- NULL
+    subs <- subset(subs, taxon_id %in% c(9593, 9606, 9598, 9600, 9544, 9478, 9483, 1234, 5678, 2468))
     assign("subs", subs, envir=.GlobalEnv)
+    save(subs, file=pdf.f('subs.Rdata'))
   }
   if (!exists("sites")) {
     source("~/src/greg-ensembl/scripts/collect_sitewise.R")
     print("  loading sites")
-    sites <- get.vector(con, 'select data_id, aln_position as aln_pos, omega_upper, omega from sites')
+    sites <- get.vector(con, 'select data_id, aln_position as aln_pos, omega from sites')
     assign("sites", sites, envir=.GlobalEnv)
+    save(sites, file=pdf.f('sites.Rdata'))
   }
   if (!exists("subs.sites")) {
     print("  merging subs & sites")
-    s <- subset(subs, taxon_id %in% c(9593, 9606, 9598, 1234, 5678))
-    subs.sites <- merge(sites, s, by=c('data_id', 'aln_pos'), all.x=TRUE)
+    subs.sites <- merge(sites, subs, by=c('data_id', 'aln_pos'), all.x=TRUE)
     print(nrow(subs.sites))
     assign("subs.sites", subs.sites, envir=.GlobalEnv)
+    save(subs.sites, file=pdf.f('subs.sites.Rdata'))
   }
   if (!exists("merged")) {
     print("  merging genes & subs")
     merged <- merge(ggenes[, c('data_id', 'aln_length', 'm0_dnds', 'slr_dnds')], 
       subs.sites, by=c('data_id'))
     assign("merged", merged, envir=.GlobalEnv)
-    save(merged, file=pdf.f('subs.sites.Rdata'))
+    save(merged, file=pdf.f('merged.Rdata'))
   }
   g <- ggenes
   s <- subs.sites
 
-  muts.per.codon <- nrow(subset(s, taxon_id==9593 & (mut_nsyn==1 | mut_syn==1))) / nrow(s)
+  muts.per.codon <- nrow(subset(s, taxon_id==9593 & !is.na(mut_nsyn))) / nrow(s)
 
   test.subset <- FALSE
   if (test.subset) {
@@ -264,44 +269,46 @@ get.pvals <- function() {
 
   # Get an estimated likelihood value for observed gorilla substitutions based on 
   # the mutation rate, divergence time, and mammalian sitewise dN/dS.
-  print("  sitewise p-value testing...")  
-  res <- ddply(merged, .(data_id), gene.sitewise.pval, muts.per.codon=muts.per.codon, taxon_ids=c(9593))
-  res$pval.sw.gorilla <- res$pval
-  res$pval <- NULL
-  cur.res <- ddply(merged, .(data_id), gene.sitewise.pval, muts.per.codon=muts.per.codon, taxon_ids=c(9593), all.neutral=TRUE)
-  res$pval.sw.gorilla.neutral <- cur.res$pval
-  cur.res <- ddply(merged, .(data_id), gene.sitewise.pval, muts.per.codon=muts.per.codon, taxon_ids=c(9606,1234))
-  res$pval.sw.human <- cur.res$pval
-  cur.res <- ddply(merged, .(data_id), gene.sitewise.pval, muts.per.codon=muts.per.codon, taxon_ids=c(9598,1234))
-  res$pval.sw.chimp <- cur.res$pval
-
-  cur.res <- ddply(merged, .(data_id), gene.grantham.pval, taxon_ids=c(9593))
-  res$pval.gr.gorilla <- cur.res$pval
-  cur.res <- ddply(merged, .(data_id), gene.grantham.pval, taxon_ids=c(9606, 1234))
-  res$pval.gr.human <- cur.res$pval
-  cur.res <- ddply(merged, .(data_id), gene.grantham.pval, taxon_ids=c(9598, 1234))
-  res$pval.gr.chimp <- cur.res$pval
-
-  # Use the mutation rate, divergence time estimate, gene length, and gene-wide dN/dS to construct
-  # a binomial test for greater than the expected number of nonsynonymous substitutions in
-  # the Gorilla lineage.
-  print("  whole-gene binomial testing...")
-  cur.res <- ddply(merged, .(data_id), gene.binomial.pval, taxon_ids=c(9593))
-  res$pval.bn.gorilla <- cur.res$pval
-  cur.res <- ddply(merged, .(data_id), gene.binomial.pval, taxon_ids=c(9606,1234))
-  res$pval.bn.human <- cur.res$pval
-  cur.res <- ddply(merged, .(data_id), gene.binomial.pval, taxon_ids=c(9598,1234))
-  res$pval.bn.chimp <- cur.res$pval  
-
-  counts <- ddply(merged, .(data_id), gene.sub.counts)
-  res <- merge(res, counts)
-
-  res.merged <- merge(ggenes, res)
-  assign("res.merged", res.merged, envir=.GlobalEnv)
-
-  x <- merge(res.merged, stats.all)
-  y <- get.top.genes(x, stat='lrt.5', n=nrow(x))
-  assign('y', y, envir=.GlobalEnv)
+  add.pvals <- FALSE
+  if (add.pvals) {
+    print("  sitewise p-value testing...")  
+    res <- ddply(merged, .(data_id), gene.sitewise.pval, muts.per.codon=muts.per.codon, taxon_ids=c(9593))
+    res$pval.sw.gorilla <- res$pval
+    res$pval <- NULL
+    cur.res <- ddply(merged, .(data_id), gene.sitewise.pval, muts.per.codon=muts.per.codon, taxon_ids=c(9593), all.neutral=TRUE)
+    res$pval.sw.gorilla.neutral <- cur.res$pval
+    cur.res <- ddply(merged, .(data_id), gene.sitewise.pval, muts.per.codon=muts.per.codon, taxon_ids=c(9606,1234))
+    res$pval.sw.human <- cur.res$pval
+    cur.res <- ddply(merged, .(data_id), gene.sitewise.pval, muts.per.codon=muts.per.codon, taxon_ids=c(9598,1234))
+    res$pval.sw.chimp <- cur.res$pval
+    # Use dN/dS and grantham scores to score each gene's substitutions
+    #
+    cur.res <- ddply(merged, .(data_id), gene.grantham.pval, taxon_ids=c(9593))
+    res$pval.gr.gorilla <- cur.res$pval
+    cur.res <- ddply(merged, .(data_id), gene.grantham.pval, taxon_ids=c(9606, 1234))
+    res$pval.gr.human <- cur.res$pval
+    cur.res <- ddply(merged, .(data_id), gene.grantham.pval, taxon_ids=c(9598, 1234))
+    res$pval.gr.chimp <- cur.res$pval
+    # Use the mutation rate, divergence time estimate, gene length, and gene-wide dN/dS to construct
+    # a binomial test for greater than the expected number of nonsynonymous substitutions in
+    # the Gorilla lineage.
+    print("  whole-gene binomial testing...")
+    cur.res <- ddply(merged, .(data_id), gene.binomial.pval, taxon_ids=c(9593))
+    res$pval.bn.gorilla <- cur.res$pval
+    cur.res <- ddply(merged, .(data_id), gene.binomial.pval, taxon_ids=c(9606,1234))
+    res$pval.bn.human <- cur.res$pval
+    cur.res <- ddply(merged, .(data_id), gene.binomial.pval, taxon_ids=c(9598,1234))
+    res$pval.bn.chimp <- cur.res$pval  
+  } else {
+    print("  counting ns & s subs...")
+    res <- ddply(merged, .(data_id), gene.sub.counts)
+    res.merged <- merge(ggenes, res)
+    print("  merging res & stats")
+    x <- merge(res.merged, stats.all)
+    print("  getting gene ranks")
+    y <- get.top.genes(x, stat='lrt.5', n=nrow(x))
+    return(y)
+  }
 }
 
 get.lrts <- function() {
@@ -317,8 +324,7 @@ get.lrts <- function() {
   g <- ggenes
 
   for (cur.type in c('all', 'noC', 'noH')) {
-    cur.stats <- subset(g, select=c('data_id', 'gene_name', 'protein_id', 'm0_dnds', 'slr_dnds', 'data_prefix', 'aln_length'))
-    print(str(cur.stats))
+    cur.stats <- g
     # Branch models.
     for (i in 1:10) {
       lrt.key <- paste('lrt', '.', i, sep='')
@@ -352,30 +358,33 @@ get.lrts <- function() {
     }
 
     # Branch-sites models.
-    for (i in 11:17) {    
-      lrt.key <- paste('lrt','.',i,sep='')
-      pval.key <- paste('pval','.',i,sep='')
-      pval.adj.key <- paste('pval.adj','.',i,sep='')
-      print(paste(cur.type, lrt.key))
-
-      alt.lnl <- g[, pst(cur.type, '_', i, '_', 'alt_lnL')]
-      null.lnl <- g[, pst(cur.type, '_', i, '_', 'null_lnL')]
-
-      alt.lnl <- as.numeric(alt.lnl)
-      null.lnl <- as.numeric(null.lnl)
- 
-      lrt <- 2 * pmax(0, alt.lnl - null.lnl)
-      pval <- 1 - pchisq( 2 * (alt.lnl - null.lnl), df=1)
-
-      has.pv <- !is.na(pval)
-      pval.adj <- pval
-      if (any(has.pv)) {
-        pval.adj[has.pv] <- p.adjust(pval.adj[has.pv], 'BH')
+    get.branchsites <- TRUE
+    if (get.branchsites) {
+      for (i in 11:17) {    
+        lrt.key <- paste('lrt','.',i,sep='')
+        pval.key <- paste('pval','.',i,sep='')
+        pval.adj.key <- paste('pval.adj','.',i,sep='')
+        print(paste(cur.type, lrt.key))
+  
+        alt.lnl <- g[, pst(cur.type, '_', i, '_', 'alt_lnL')]
+        null.lnl <- g[, pst(cur.type, '_', i, '_', 'null_lnL')]
+  
+        alt.lnl <- as.numeric(alt.lnl)
+        null.lnl <- as.numeric(null.lnl)
+   
+        lrt <- 2 * pmax(0, alt.lnl - null.lnl)
+        pval <- 1 - pchisq( 2 * (alt.lnl - null.lnl), df=1)
+  
+        has.pv <- !is.na(pval)
+        pval.adj <- pval
+        if (any(has.pv)) {
+          pval.adj[has.pv] <- p.adjust(pval.adj[has.pv], 'BH')
+        }
+  
+        cur.stats[, lrt.key] <- lrt
+        cur.stats[, pval.key] <- pval
+        cur.stats[, pval.adj.key] <- pval.adj
       }
-
-      cur.stats[, lrt.key] <- lrt
-      cur.stats[, pval.key] <- pval
-      cur.stats[, pval.adj.key] <- pval.adj
     }
 
     cur.stats <- cur.stats[order(-cur.stats$lrt.5),]
@@ -393,34 +402,217 @@ get.lrts <- function() {
       stats.all[, prefix.lbl] <- cur.stats[, field]
     }
   }
+
+  
+  stats.all$ils.hg <- chunk.b.gene(stats.all)
+  stats.all$ils.cg <- chunk.c.gene(stats.all)
+
   assign('stats.all', stats.all, envir=.GlobalEnv)
   save(stats.all, file=pdf.f("stats.all.Rdata"))
+  stats.all
+}
+
+reload.lrts.into.results <- function() {
+  stats.all <- get.lrts()
+  
+  y <- get('y', envir=.GlobalEnv)
+  stats.cols <- colnames(stats.all)
+  for (field in stats.cols) {
+    if (field %in% c('data_id')) {
+      next
+    }
+    y[, field] <- NULL
+  }
+
+  y <- merge(y, stats.all, by='data_id')
+  y
 }
 
 all.results.table <- function() {
   get.lrts()
-#  get.pvals()
-  x <- merge(res.merged, stats.all)
-  y <- get.top.genes(x, stat='lrt.5', n=nrow(x))
+  y <- get.pvals()
 
   write.csv(y, file="~/src/greg-ensembl/projects/gorilla/table.csv",row.names=F)
-  assign('y', y, envir=.GlobalEnv)
   save(y, file=pdf.f("y.Rdata"))
+  assign("y", y, envir=.GlobalEnv)
+}
+
+orthologs.table <- function() {
+  if (!exists('orthologs')) {
+    source("~/src/greg-ensembl/scripts/collect_sitewise.R")
+    print("  loading orthologs")
+    orthologs <- get.vector(con, 'select gene_name, gene_id, o_9606, o_9598, o_9593, o_9600, o_9544, o_9483 from gj1_orthologs.orthologs')
+    assign("orthologs", orthologs, envir=.GlobalEnv)
+  }
+
+  if (!exists('orth.df')) {
+    print('  categorizing orthologs')
+    orth.df <- ddply(orthologs, 'o_9606', function(x) {
+      orth.fields <- c('o_9606', 'o_9598', 'o_9593', 'o_9600', 'o_9544', 'o_9483')
+  
+      n.deletions <- sum(is.na(x[, orth.fields]))
+      n.duplications <- sum(!is.na(as.numeric(x[, orth.fields])))
+      n.paralogs <- sum(!is.na(x[, orth.fields]) & x[, orth.fields] == 'human_dup')
+      if (n.deletions == 0 && n.duplications == 0 && n.paralogs == 0) {
+        x$category <- 'one2one'
+      } else {
+        ctg <- c()
+        if (n.deletions > 0) ctg <- c('deletion')
+        if (n.duplications > 0) ctg <- c(ctg, 'duplication')
+        if (n.paralogs > 0) ctg <- c(ctg, 'paralog')
+        x$category <- paste(ctg, collapse=' & ')
+      }
+      
+      x$deletions <- n.deletions
+      x$duplications <- n.duplications
+      x$paralogs <- n.paralogs
+      return(x)
+    })
+    print(head(orth.df, n=3))
+    print(table(orth.df$category))
+    save(orth.df, file=pdf.f("orth.df.Rdata"))
+    assign('orth.df', orth.df, envir=.GlobalEnv)
+  }
+
+  orth.fields <- c('o_9598', 'o_9593', 'o_9600', 'o_9544')
+  full.orth.fields <- c('o_9598', 'o_9593', 'o_9600', 'o_9544', 'o_9483')
+
+  deletion.df <- orth.df[, orth.fields]
+  deletion.df <- !is.na(deletion.df)
+  deletion.df <- !deletion.df
+  write.csv(deletion.df, file=pdf.f('deletions.csv'), row.names=F)
+  print(table(apply(deletion.df, 1, function(x) {paste(as.numeric(x), collapse='')})))
+
+  deletion.df <- orth.df[, full.orth.fields]
+  deletion.df <- !is.na(deletion.df)
+  deletion.df <- !deletion.df
+  write.csv(deletion.df, file=pdf.f('deletions_all.csv'), row.names=F)
+  print(table(apply(deletion.df, 1, function(x) {paste(as.numeric(x), collapse='')})))
+
+  dup.df <- orth.df[, orth.fields]
+  for (fld in orth.fields) {
+    dup.df[, fld] <- !is.na(as.numeric(dup.df[, fld]))
+  }   
+  write.csv(dup.df, file=pdf.f('duplications.csv'), row.names=F)
+  print(table(apply(dup.df, 1, function(x) {paste(as.numeric(x), collapse='')})))
+
+  dup.df <- orth.df[, full.orth.fields]
+  for (fld in full.orth.fields) {
+    dup.df[, fld] <- !is.na(as.numeric(dup.df[, fld]))
+  }   
+  write.csv(dup.df, file=pdf.f('duplications_all.csv'), row.names=F)
+  print(table(apply(dup.df, 1, function(x) {paste(as.numeric(x), collapse='')})))
+
+
+  for (fld in orth.fields) {
+    if (any(is.na(orth.df[, fld]))) {
+      orth.df[is.na(orth.df[, fld]), fld] <- 0
+    }
+  }       
+  write.csv(orth.df, file=pdf.f('orthologs.csv'), row.names=F)
 }
 
 diff.datasets <- function() {
-  compare.top <- function(x, y, fld) {
-    mg <- merge(x, y, by=c('data_id','gene_name'))
+  compare.top <- function(x, x2, fld) {
+    mg <- merge(get(x), get(x2), by=c('data_id','gene_name'))
+    mg <- merge(mg, y[, c('data_id', 'ptrn_110', 'ptrn_101', 'ptrn_011', 'c.ns', 'h.ns', 'g.ns')])
+
+    mg$ils1 <- (mg$ptrn_011) / (mg$ptrn_110+1)
+    mg$ils2 <- (mg$ptrn_101) / (mg$ptrn_110+1)
+
     mg <- subset(mg, !is.na(lrt.5.x) & !is.na(lrt.5.y))
     f.x <- paste(fld,'.x',sep='')
     f.y <- paste(fld,'.y',sep='')
     mg.x <- mg[order(-mg[,f.x]),]
     mg.y <- mg[order(-mg[,f.y]),]
-    
-    print(head(subset(mg, lrt.5.x > 10 & lrt.5.y < 10)))
+
+    n.top <- floor(nrow(mg) / 20)
+    top.x <- head(mg.x$gene_name, n=n.top)
+    top.y <- head(mg.y$gene_name, n=n.top)
+
+    mg$x.sig <- FALSE
+    mg$y.sig <- FALSE
+    mg[mg$gene_name %in% top.x, 'x.sig'] <- TRUE
+    mg[mg$gene_name %in% top.y, 'y.sig'] <- TRUE
+    mg$ptrn <- paste(as.numeric(mg$x.sig), as.numeric(mg$y.sig), sep='')
+    print(table(mg$ptrn))
+
+    only.in.x <- mg[mg$ptrn == '10',]
+    only.in.y <- mg[mg$ptrn == '01',]
+
+    print(mean(only.in.x$g.ns))
+    print(mean(only.in.x$h.ns))
+    print(mean(only.in.x$c.ns))
+    print(mean(only.in.y$g.ns))
+    print(mean(only.in.y$h.ns))
+    print(mean(only.in.y$c.ns))
+
+#    print(mg[mg$ptrn == '01', c('gene_name', 'data_prefix.y', 'ptrn',
+#      'lrt.5.x', 'lrt.5.y', 'lrt.9.x', 'lrt.10.x')])
+
+    #print(head(mg[, c('gene_name', 'x.sig', 'y.sig')]))
+
+    spr.cor <- cor(mg[, f.x], mg[, f.y], method='spearman')
+    print(paste("Comparison of", fld, "from", x, "and", x2))
+    print(paste("  spearman rank correlation:", spr.cor))
+    #print(t.test(mg[, f.x], mg[, f.y]))
   }
 
-  compare.top(stats.noH, stats.noC, 'lrt.5')
+  compare.top('stats.all', 'stats.noC', 'lrt.5')
+  compare.top('stats.all', 'stats.noH', 'lrt.5')
+
+  #compare.top('stats.all', 'stats.noC', 'lrt.1')
+  #compare.top('stats.all', 'stats.noH', 'lrt.2')
+}
+
+branchsite.checks <- function() {
+  data <- get('y', envir=.GlobalEnv)
+
+  cor.f <- function(data1) {
+    min.pv <- min(data1, na.rm=T)
+    print(min.pv)
+  }
+
+ y <- subset(data, rank.lrt.5 <= 50)
+ print(sum(y$pval.15 < 0.05))
+ y <- subset(data, rank.lrt.1 < 50)
+ print(sum(!is.na(y$pval.11) & y$pval.11 < 0.05))
+ y <- subset(data, rank.lrt.2 < 50)
+ print(sum(y$pval.12 < 0.05))
+ y <- subset(data, rank.lrt.6 < 50)
+ print(sum(y$pval.16 < 0.05))
+ y <- subset(data, rank.lrt.7 < 50)
+ print(sum(y$pval.17 < 0.05))
+}
+
+tiny.fields <- function() {
+  return(c('gene_name', 'job_id', 'data_prefix'))
+}
+
+med.fields <- function() {
+  return(c('gene_name', 'job_id', 'data_prefix', 'aln_length', 'g.ns', 'g.s'))
+}
+
+table.fields <- function() {
+    fields <- c('gene_name', 'job_id', 'data_prefix', 'slr_dnds', 'm0_dnds',
+      'aln_length', 'g.ns', 'g.s', 'h.ns', 'h.s', 'c.ns', 'c.s', 'hc.ns', 'hc.s',
+#      'g.f.nsyn','c.f.nsyn', 'h.f.nsyn', 'hc.f.nsyn',
+       'ils.hg', 'ils.cg',
+      'rank.lrt.1', 'rank.lrt.2', 'rank.lrt.5', 'rank.lrt.6', 'rank.lrt.7', 'rank.g.f.nsyn',
+      'lrt.1', 'lrt.2', 'lrt.5', 'lrt.6', 'lrt.6', 'g.f.nsyn',
+      'pval.1', 'pval.adj.1',
+      'pval.2', 'pval.adj.2',
+      'pval.5', 'pval.adj.5',
+      'pval.6', 'pval.adj.6',
+      'pval.7', 'pval.adj.7',
+      'pval.11', 'pval.adj.11',
+      'pval.12', 'pval.adj.12',
+      'pval.15', 'pval.adj.15',
+      'pval.16', 'pval.adj.16',
+      'pval.17', 'pval.adj.17',
+      'pval.18', 'pval.adj.18',
+      'masked_nucs', 'masked_ids')
+  return(fields)
 }
 
 compare.pval.methods <- function(x) {
@@ -454,30 +646,95 @@ compare.pval.methods <- function(x) {
   print(cor(x$rank.pval.gr.gorilla, x$rank.lrt.5, method='spearman'))
 }
 
-submit.jobs <- function(rows) {
-  l_ply(rows$job_id, 
+submit.jobs <- function(rws) {
+  print(rws[, c('gene_name', 'job_id')])
+  l_ply(rws$job_id,
     function(x){
-      system(paste('bsub -q normal runWorker.pl -url mysql://ensadmin:ensembl@ens-research:3306/gj1_gorilla -debug 1 -job_id ',x,sep=''))
+      cmd <- paste('bsub -q normal runWorker.pl -url mysql://ensadmin:ensembl@ens-research:3306/gj1_gorilla -debug 1 -job_id ',x,sep='')
+      print(cmd)
+      system(cmd)
     }
   )
 }
 
-top.genes.set <- function(x, n=5, dir='up') {
+renew.jobs <- function(rws) {
+  print(rws[, c('gene_name', 'job_id')])
+  l_ply(rws$job_id,
+    function(x){
+      cmd <- paste("mysql -hens-research -uensadmin -pensembl -A gj1_gorilla -e 'update analysis_job set status=\"READY\", job_claim=NULL where analysis_job_id=", x, ";'", sep='')
+      print(cmd)
+      system(cmd)
+    }
+  )
+}
+
+copy.pdfs <- function(rws) {
+  print(rws[, c('gene_name', 'job_id')])            
+  for (i in 1:nrow(rws)) {
+    row <- rws[i,]
+    dir <- paste("/nfs/users/nfs_g/gj1/scratch/gj1_gorilla/2011-04-18_01/data/genomic_primates/",
+    row$data_prefix, sep='')
+    aln.f <- paste(dir, "/", row$gene_name, "_plot_aln.pdf", sep='')
+    tree.f <- paste(dir, "/", row$gene_name, "_plot_tree.pdf", sep='')
+    fasta.f <- paste(dir, "/", row$gene_name,"_aln_masked_subs.fasta", sep='')
+    unmasked.f <- paste(dir, "/", row$gene_name,"_aln_unmasked.fasta", sep='')
+    print(aln.f)
+    file.copy(aln.f, pdf.f(paste('pdfs/', row$gene_name, "_plot_aln.pdf", sep='')))
+    print(tree.f)
+    file.copy(tree.f, pdf.f(paste('pdfs/', row$gene_name, "_plot_tree.pdf", sep='')))
+    print(fasta.f)
+    file.copy(fasta.f, pdf.f(paste('pdfs/', row$gene_name, "_aln_masked_subs.fasta", sep='')))
+    print(unmasked.f)
+    file.copy(unmasked.f, pdf.f(paste('pdfs/', row$gene_name, "_aln_unmasked.fasta", sep='')))
+  }
+}
+
+run.top.branchsites <- function() {
+
+  y <- get("y2", envir=.GlobalEnv)
+
+  n = 100
+  top1 <- top.genes.table(y, source="rank.lrt.1", n=n, dir='up')
+  top2 <- top.genes.table(y, source="rank.lrt.2", n=n, dir='up')
+  top5 <- top.genes.table(y, source="rank.lrt.5", n=n, dir='up')
+  top6 <- top.genes.table(y, source="rank.lrt.6", n=n, dir='up')
+  top7 <- top.genes.table(y, source="rank.lrt.7", n=n, dir='up')
+  topns <- top.genes.table(y, source="rank.g.f.nsyn", n=n, dir='up')
+
+#  renew.jobs(top1)
+#  renew.jobs(top2)
+#  renew.jobs(top5)
+#  renew.jobs(top6)
+#  renew.jobs(top7)
+#  renew.jobs(topns)
+
+  copy.pdfs(top1)
+  copy.pdfs(top2)
+  copy.pdfs(top5)
+  copy.pdfs(top6)
+  copy.pdfs(top7)
+  copy.pdfs(topns)
+}
+
+top.genes.table <- function(x, source="rank.lrt.5", n=50, dir='up', remove.masked=F) {
   comb.df <- data.frame()
 
+  if (remove.masked) {
+    x <- subset(x, is.na(masked_ids))
+  }
+
   if (dir == 'up') {
-    x <- subset(x, g.ns > 0)
-    vars <- c('rank.lrt.5', 'rank.g.f.nsyn', 'rank.pval.bn.gorilla', 'rank.pval.sw.gorilla', 'rank.pval.gr.gorilla')
+    #vars <- c('rank.lrt.9', 'rank.lrt.10', 'rank.lrt.5', 'rank.g.f.nsyn')
+    vars <- c(source)
+    #vars <- c('rank.lrt.5', 'rank.g.f.nsyn', 'rank.pval.bn.gorilla', 'rank.pval.sw.gorilla', 'rank.pval.gr.gorilla')
   } else {
-    x <- subset(x, g.s > 0 & c.s > 0 & h.s > 0)
     vars <- c('rank.lrt.5', 'rank.lrt.7', 'rank.lrt.6')
   }
 
+  available.fields <- colnames(x)
   for (var in vars) {
-    fields <- c('gene_name', 'job_id', 'data_prefix', 'slr_dnds', 'm0_dnds', 'aln_length', 'g.f.nsyn','c.f.nsyn', 'h.f.nsyn',
-      'rank.lrt.5', 'rank.g.f.nsyn', 'rank.pval.bn.gorilla', 'rank.pval.sw.gorilla', 'rank.pval.gr.gorilla',
-      'lrt.5', 'lrt.7', 'lrt.6',
-      'lrt.14', 'pval.adj.14')
+    fields <- table.fields()
+    fields <- fields[fields %in% available.fields]
     cur.df <- head(x[order(x[, var]), fields], n=n)
     if (dir == 'down') {
       cur.df <- tail(x[order(x[, var]), fields], n=n)
@@ -487,12 +744,29 @@ top.genes.set <- function(x, n=5, dir='up') {
   }
   comb.df <- comb.df[!duplicated(comb.df$gene_name),]
   comb.df <- format.numeric.df(comb.df, digits=3)
+
   if (dir == 'up') {
-    write.csv(comb.df, file=pdf.f("top.genes.csv"), row.names=F)
+    write.csv(comb.df, file=pdf.f(paste("top.genes.", source, ".csv", sep='')), row.names=F)
   } else {
-    write.csv(comb.df, file=pdf.f("bot.genes.csv"), row.names=F)
+    write.csv(comb.df, file=pdf.f("bot.genes.", source, "csv"), row.names=F)
   }
   return(comb.df)
+}
+
+all.genes.table <- function(remove.masked=F) {
+  y <- get("y", envir=.GlobalEnv)
+
+  fields <- table.fields()
+  fields <- fields[fields %in% colnames(y)]
+    
+  out.df <- y[, fields]
+
+  if (remove.masked) {
+    out.df <- subset(out.df, is.na(masked_ids))
+    write.csv(out.df, file=pdf.f("all.genes_no_masked.csv"), row.names=F)
+  } else {
+    write.csv(out.df, file=pdf.f("all.genes.csv"), row.names=F)
+  }
 }
 
 summary.table <- function(x) {
@@ -589,7 +863,7 @@ get.top.genes <- function(x, stat='pval.sw.gorilla', dir=1, n=nrow(x)) {
 #  x <- subset(x, g.ns > 0)
 
   # FILTER: Only take genes with dnds > 0
-  x <- subset(x, slr_dnds > 0)
+#  x <- subset(x, slr_dnds > 0)
 
   if (stat %in% c('lrt.5','lrt.4','lrt.3')) {
     dir <- -1
@@ -601,12 +875,16 @@ get.top.genes <- function(x, stat='pval.sw.gorilla', dir=1, n=nrow(x)) {
   x$hc.f.nsyn <- x$hc.ns / x$aln_length
 
   rank.fields <- c()
+  available.cols <- colnames(x)
   for (field in c(
     'lrt.5', 'pval.gr.gorilla', 'pval.sw.gorilla', 'pval.bn.gorilla', 'g.f.nsyn', 
     'lrt.4', 'pval.gr.human', 'pval.sw.human', 'pval.bn.human', 'h.f.nsyn',
     'lrt.3', 'pval.gr.chimp', 'pval.sw.chimp', 'pval.bn.chimp', 'c.f.nsyn',
-    'lrt.6', 'lrt.7', 'lrt.1', 'lrt.2')) {
+    'lrt.8', 'lrt.9', 'lrt.10', 'lrt.6', 'lrt.7', 'lrt.1', 'lrt.2')) {
     rank.field <- paste('rank',field,sep='.')
+    if (!(field %in% available.cols)) {
+      next
+    }
     if (field %in% c('g.f.nsyn','c.f.nsyn', 'h.f.nsyn', 'lrt.5', 'lrt.4', 'lrt.3', 'lrt.2', 'lrt.1', 'lrt.6', 'lrt.7')) {
       x[, rank.field] <- rank(-x[,field])
     } else {
@@ -647,20 +925,33 @@ go.enrichments <- function(x) {
   source("~/src/greg-ensembl/scripts/go_enrichments.R")
 
   y <- x
-  y$rank.g.sw <- y[, 'rank.pval.sw.gorilla']
-  y$rank.g.gr <- y[, 'rank.pval.gr.gorilla']
-  y$rank.g.bn <- y[, 'rank.pval.bn.gorilla']
-  y$rank.g.lrt <- y[, 'rank.lrt.5']
-  y$rank.h <- y[, 'rank.pval.sw.human']
-  y$rank.c <- y[, 'rank.pval.sw.chimp']
-  y$rank.aga.branch <- y[, 'rank.lrt.6']
-  y$rank.aga.clade <- y[, 'rank.lrt.7']
 
   all.gor <- subset(y)
 
-  hi.gor <- subset(y, rank.g.sw <= 250)
-  tbl <- enrich.list(hi.gor$protein_id, all.gor$protein_id, include.iea=TRUE)
-  assign('hi.gor.sw', process.tbl(x, last.godata, tbl), envir=.GlobalEnv)
+  top.n <- floor(nrow(y)/10)
+  print(top.n)
+
+  cur <- subset(y, rank.lrt.5 <= top.n)
+  tbl <- enrich.list(cur$protein_id, y$protein_id, include.iea=TRUE)
+  assign('hi.gorilla', process.tbl(x, last.godata, tbl), envir=.GlobalEnv)
+
+  cur <- subset(y, rank.lrt.1 <= top.n)
+  tbl <- enrich.list(cur$protein_id, y$protein_id, include.iea=TRUE)
+  assign('hi.human', process.tbl(x, last.godata, tbl), envir=.GlobalEnv)
+
+  cur <- subset(y, rank.lrt.2 <= top.n)
+  tbl <- enrich.list(cur$protein_id, y$protein_id, include.iea=TRUE)
+  assign('hi.chimpanzee', process.tbl(x, last.godata, tbl), envir=.GlobalEnv)
+
+  cur <- subset(y, rank.lrt.6 <= top.n)
+  tbl <- enrich.list(cur$protein_id, y$protein_id, include.iea=TRUE)
+  assign('hi.aga.branch', process.tbl(x, last.godata, tbl), envir=.GlobalEnv)
+
+  cur <- subset(y, rank.lrt.7 <= top.n)
+  tbl <- enrich.list(cur$protein_id, y$protein_id, include.iea=TRUE)
+  assign('hi.aga.clade', process.tbl(x, last.godata, tbl), envir=.GlobalEnv)
+
+  return()
 
   hi.gor <- subset(y, rank.g.gr <= 250)
   tbl <- enrich.list(hi.gor$protein_id, all.gor$protein_id, include.iea=TRUE)
@@ -1098,8 +1389,8 @@ id.to.name <- function(x, ids) {
 dnds.figure <- function(x, dnds.field='slr_dnds', gc.field='gc_genomic') {
 
   x[, 'gc_tmp'] <- x[, gc.field]
-#  gc.q <- quantile(x$gc_tmp, c(0.33, 0.67, 0.9, 1.0))
-  gc.q <- quantile(x$gc_tmp, c(0.2, 0.4, 0.6, 0.8, 1.0))
+  gc.q <- quantile(x$gc_tmp, c(0, 0.1, 0.33, 0.67, 0.9, 1.0))
+#  gc.q <- quantile(x$gc_tmp, c(0.2, 0.4, 0.6, 0.8, 1.0))
   gc.q <- c(0, gc.q)
   gc.lo <- gc.q[-length(gc.q)]
   gc.hi <- gc.q[-1]
@@ -1108,8 +1399,7 @@ dnds.figure <- function(x, dnds.field='slr_dnds', gc.field='gc_genomic') {
   gc.hi <- max(gc.hi)
 
   x[, 'dnds_tmp'] <- x[, dnds.field]
-  dnds.q <- quantile(x$dnds_tmp, c(0.33, 0.67, 0.9, 1.0))
-#  dnds.q <- quantile(x$dnds_tmp, c(0.2, 0.4, 0.6, 0.8, 1.0))
+   dnds.q <- quantile(x$dnds_tmp, c(0.33, 0.67, 1))
   dnds.q <- c(0, dnds.q)
   dnds.lo <- dnds.q[-length(dnds.q)]
   dnds.hi <- dnds.q[-1]
@@ -1118,11 +1408,15 @@ dnds.figure <- function(x, dnds.field='slr_dnds', gc.field='gc_genomic') {
 #  dnds.hi <- max(dnds.hi)
 
   fld.pairs <- list(
-    'G' = c('g.ns', 'g.s'),
-    'H' = c('h.ns', 'h.s'),
-    'C' = c('c.ns', 'c.s'),
-    'CH' = c('hc.ns', 'hc.s'),
-    'CHG' = c('hcg.ns', 'hcg.s')
+    'Chimpanzee' = c('c.ns', 'c.s'),
+    'Human' = c('h.ns', 'h.s'),
+    'H/C ancestor' = c('hc.ns', 'hc.s'),
+    'Gorilla' = c('g.ns', 'g.s'),
+    'H/C/G ancestor' = c('hcg.ns', 'hcg.s'),
+    'Orangutan' = c('o.ns', 'o.s'),
+    'H/C/G/O ancestor' = c('hcgo.ns', 'hcgo.s'),
+    'Macaque' = c('m.ns', 'm.s'),
+    'Marmoset' = c('r.ns', 'r.s')
   )
   fld.names <- names(fld.pairs)
 
@@ -1148,41 +1442,190 @@ dnds.figure <- function(x, dnds.field='slr_dnds', gc.field='gc_genomic') {
         ns.fld <- cur.pair[1]
         s.fld <- cur.pair[2]
 
-        bt <- smean.cl.boot(x2[, ns.fld] / (x2[, s.fld]+1))
-        #bt <- smean.cl.boot(x2[, s.fld])
+        all.ns <- sum(x2[, ns.fld])
+        all.s <- sum(x2[, s.fld])
+
+        #x2 <- x2[x2[, s.fld] > 0 & x2[, ns.fld] > 0,]
+
+
+        sum.ns <- function(D, d) {
+          E <- D[d,]
+          return(sum(E[, ns.fld]))
+        }
+        sum.s <- function(D, d) {
+          E <- D[d,]
+          return(sum(E[, s.fld]))
+        }
+        sum.ratio <- function(D, d) {
+          E <- D[d,]
+          return(sum(E[, ns.fld]) / sum(E[, s.fld]))
+        }
+
+        boot.ratio <- boot(x2, sum.ratio, R=50)
+        ci.ratio <- boot.ci(boot.ratio, type='basic')
+        d.mean <- all.ns / all.s
+        bt <- c(ci.ratio$basic[1, 4], d.mean, ci.ratio$basic[1, 5])
+        print(paste(cur.nm, format(bt, digits=3), collapse=' '))
+
         comb.df <- rbind(comb.df, data.frame(
-          dnds = dnds.lbl,
+          dnds = i,
           gc = gc.lbl,
           species = cur.nm,
-          mean = bt[1],
-          lo = bt[2],
+          mean = bt[2],
+          lo = bt[1],
           hi = bt[3]
         ))
       }
     }
   }
 
+  comb.df$dnds <- as.factor(comb.df$dnds)
+
   print(comb.df)
 
   p <- ggplot(comb.df, aes(
     x=species,
     ymin=lo, ymax=hi, y=mean,
-    fill=species
+    fill=dnds
   ))
-  p <- p + geom_crossbar(width=0.5)
-  p <- p + scale_y_continuous("dN/dS (bootstrap mean)")
-  p <- p + scale_x_discrete("Species / branch")
-  p <- p + scale_fill_discrete("Species / branch")
+  #p <- p + geom_bar(width=0.75, position='dodge')
+  p <- p + geom_crossbar(width=0.75, alpha=0.3, position='dodge')
+  #p <- p + geom_errorbar(width=0.75, position='dodge')
 
-  p <- p + facet_grid(. ~ dnds)
+  p <- p + scale_y_continuous("Nsyn/Syn substitutions", limits=c(0, 1.2))
+  p <- p + scale_x_discrete("Species / ancestral lineage")
+  p <- p + scale_fill_manual("dN/dS bin", breaks=c(1,2,3),
+    labels=c("Low", "Medium", "High"),
+    values=c('blue', 'black', 'red')
+  )
+  p <- p + scale_colour_manual("dN/dS bin", breaks=c(1,2,3),
+    labels=c("Low", "Medium", "High"),
+    values=c('blue', 'black', 'red')
+  )
   
-  pdf(file=pdf.f("dnds.figure.pdf"), width=18, height=10)
+  p <- p + theme_bw()
+  p <- p + opts(
+    axis.text.x = theme_text(angle=90, hjust=1)
+  )
+  pdf(file=pdf.f("dnds.figure.pdf"), width=5, height=5)
   print(p)
   dev.off()
 
 }
 
+ils.genes <- function() {
+  x <- get('y', envir=.GlobalEnv)
+
+  dnds.q <- quantile(x$slr_dnds, c(0, 0.2, 0.4, 0.6, 0.8, 1.0))
+
+  x$dnds <- x[, 'slr_dnds']
+  for (i in 2:length(dnds.q)) {
+    dnds.lo <- dnds.q[i-1]
+    dnds.hi <- dnds.q[i]
+    dnds.sub <- subset(x, slr_dnds > dnds.lo & slr_dnds <= dnds.hi)
+    x[x$dnds >= dnds.lo & x$dnds <= dnds.hi, 'dnds.label'] <- 
+      paste(base::format(dnds.lo, digits=2),
+            base::format(dnds.hi, digits=2),
+            sep=' -\n')
+  }
+
+  print(unique(x$dnds.label))
+  dnds <- ddply(x, .(dnds.label), function(data) {
+    hg.bt <- smean.cl.boot(chunk.b.gene(data))
+    cg.bt <- smean.cl.boot(chunk.c.gene(data))
+
+    x.v <- chunk.x.gene(data)
+    x.v <- as.numeric(x.v > 1)
+    print(summary(x.v))
+    x.bt <- smean.cl.boot(x.v)
+
+    return(data.frame(
+      mean.dnds = mean(data$slr_dnds),
+      hg = hg.bt[1],
+      hg.lo = hg.bt[2],
+      hg.hi = hg.bt[3],
+      cg = cg.bt[1],
+      cg.lo = cg.bt[2],
+      cg.hi = cg.bt[3],
+      x = x.bt[1],
+      x.lo = x.bt[2],
+      x.hi = x.bt[3]
+    ))
+  })
+
+  dnds$dnds.label <- factor(dnds$dnds.label)
+
+  dnds$value.label <- 'Human-Gorilla'
+  dnds$lo <- dnds$hg.lo
+  dnds$hi <- dnds$hg.hi
+  dnds$mid <- dnds$hg
+  dnds2 <- dnds
+  dnds2$value.label <- 'Chimpanzee-Gorilla'
+  dnds2$lo <- dnds$cg.lo
+  dnds2$hi <- dnds$cg.hi
+  dnds2$mid <- dnds$cg
+  dnds3 <- dnds
+  dnds3$value.label <- 'ILS Density'
+  dnds3$lo <- dnds$x.lo
+  dnds3$hi <- dnds$x.hi
+  dnds3$mid <- dnds$x
+
+  print(dnds3$mean.dnds)
+
+  pdf(pdf.f("ils.genes.pdf"), width=5, height=4)
+  p <- ggplot(dnds3, aes(x=as.numeric(dnds.label), fill=mean.dnds))
+
+#  p <- p + geom_rect(data=dnds, aes(
+#    ymin=lo, ymax=hi,
+#    xmin=as.numeric(dnds.label) - .33,
+#    xmax=as.numeric(dnds.label) + .33)
+#  )
+#  p <- p + geom_line(data=dnds, colour='blue', aes(x=as.numeric(dnds.label),y=mid))
+
+#  p <- p + geom_rect(data=dnds2, aes(
+#    ymin=lo, ymax=hi,
+#    xmin=as.numeric(dnds.label) + .33,
+#    xmax=as.numeric(dnds.label) + .05)
+#  )
+#  p <- p + geom_line(data=dnds2, colour='gray', aes(x=as.numeric(dnds.label),y=mid))
+
+  p <- p + geom_rect(data=dnds3, alpha=0.3, aes(
+    ymin=lo, ymax=hi,
+    xmin=as.numeric(dnds.label) + .33,
+    xmax=as.numeric(dnds.label) - .33)
+  )
+  p <- p + geom_line(data=dnds3, colour='black', aes(x=as.numeric(dnds.label), y=mid))
+
+  p <- p + scale_fill_gradient("dN/dS", low="blue", high="red")
+#  p <- p + scale_fill_manual("ILS type", values=c('#AAAAAA', '#AAAAAA'))
+  p <- p + scale_x_continuous("dN/dS Bin",
+    breaks=c(1:length(labels(dnds$dnds.label))),
+    labels=levels(dnds$dnds.label)
+  )
+  p <- p + scale_y_continuous("ILS density", limits=c(0, 0.3))
+#  p <- p + opts(title="ILS densities vs dN/dS")
+   p <- p + theme_bw()
+  print(p)
+  dev.off()
+
+  print(dnds)
+}
+
 ils.densities <- function() {
+  pdf(pdf.f("ils.regions.quantile.pdf"), width=5, height=4)
+  p <- ils.density.plot('exon_dist', 'slr_dnds', bin_method='quantile', relative=F)
+#  p <- p + opts(title="ILS density vs Exon Distance, Mammal dN/dS")
+  print(p)
+  dev.off()  
+
+  return()
+
+  pdf(pdf.f("ils.regions.window.pdf"))
+  p <- ils.density.plot('exon_dist', 'slr_dnds', bin_method='window', relative=F)
+  p <- p + opts(title="ILS density vs Exon Distance, Mammal dN/dS")
+  print(p)
+  dev.off()  
+
   pdf("ils_exon_mammal.pdf")
   p <- ils.density.plot('exon_dist', 'gene_slr', bin_method='window', relative=F)
   p <- p + opts(title="ILS density vs Exon Distance, Mammal dN/dS")
@@ -1207,12 +1650,17 @@ ils.densities <- function() {
 
 ils.density.plot <- function(distance_field, dnds_field, bin_method='window', relative=T) {
   if (!exists("orig.chunks")) {
+    print("  fetching chunks from DB")
     assign("dbname", 'gj1_ils', envir=.GlobalEnv)
     source("~/src/greg-ensembl/scripts/collect_sitewise.R")
     orig.chunks <- get.vector(con, 'select * from chunks_10')
     assign("orig.chunks", orig.chunks, envir=.GlobalEnv)
+    print("  done!")
   }
   chunks <- orig.chunks
+
+  y <- get("y", envir=.GlobalEnv)
+  chunks <- merge(chunks, y[, c('gene_name', 'slr_dnds')])
 
   chunks$dist <- abs(chunks[, distance_field])
   chunks$dnds <- chunks[, dnds_field]
@@ -1224,7 +1672,7 @@ ils.density.plot <- function(distance_field, dnds_field, bin_method='window', re
   x.labels <- c()
   if (bin_method == 'quantile') {
     q.mids <- c()
-    qs <- quantile(chunks$dist,c(0.2, 0.4, 0.6, 0.8, 1.0),na.rm=T)
+    qs <- quantile(chunks$dist,c(0, 0.2, 0.4, 0.6, 0.8, 1.0),na.rm=T)
     print(qs)
     for (i in 1:length(qs)) {
       bin.hi <- qs[i]
@@ -1234,7 +1682,7 @@ ils.density.plot <- function(distance_field, dnds_field, bin_method='window', re
         bin.lo <- qs[i-1]
       }
       print(paste(i,bin.lo,bin.hi))
-      chunks[chunks$dist >= bin.lo & chunks$dist <= bin.hi , 'x_bin'] <- i
+      chunks[chunks$dist > bin.lo & chunks$dist <= bin.hi , 'x_bin'] <- i
       q.mids[i] <- paste(as.integer(bin.lo), as.integer(bin.hi), sep="\n")
     }
     chunks$x_bin <- as.factor(chunks$x_bin)
@@ -1277,9 +1725,8 @@ ils.density.plot <- function(distance_field, dnds_field, bin_method='window', re
   print(table(chunks$x_bin))
   print(table(chunks$dnds_bin))
 
-  #chunks$value <- chunk.a(chunks)
-  chunks$value <- chunk.b(chunks)
-  #chunks$value <- chunk.c(chunks)
+  chunks$value <- chunk.x(chunks)
+  chunks$value <- as.numeric(chunks$value > 1)
 
   f.df <- function(x) {
     x <- subset(x, !is.na(value) & !is.infinite(value))
@@ -1325,6 +1772,8 @@ ils.density.plot <- function(distance_field, dnds_field, bin_method='window', re
     res.df <- subset(res.df, dnds_bin != 'All')
   }
 
+  print(res.df)
+
   print("  plotting")
   p <- ggplot(res.df, aes(colour=dnds_bin, fill=dnds_bin))
     p <- p + geom_rect(data=all.df, fill='darkgray', colour='darkgray', alpha=1, aes(
@@ -1344,8 +1793,9 @@ ils.density.plot <- function(distance_field, dnds_field, bin_method='window', re
   p <- p + geom_line(data=res.df, aes(x=as.numeric(x_bin),y=v))
   p <- p + scale_colour_manual("dN/dS Bin", values=c('black', 'blue', 'red'))
   p <- p + scale_fill_manual("dN/dS Bin", values=c('black', 'blue', 'red'))
-  p <- p + scale_y_continuous("Scaled ILS density")
+  p <- p + scale_y_continuous("ILS density", limits=c(0, 0.3))
   p <- p + scale_x_continuous(name="Distance Bin", breaks=c(1:length(x.labels)), labels=x.labels)
+  p <- p + theme_bw()
   return(p)
 }
 
@@ -1355,6 +1805,30 @@ chunk.a <- function(x) {
 
 chunk.b <- function(x) {
   (x$n_101+x$n_011) / ((x$n_100 + x$n_010)/2 + x$n_110 + x$n_001)
+}
+
+chunk.x <- function(x) {
+  x$n_110 <- pmax(x$n_110, 1)
+  (x$n_101 + x$n_011) / (x$n_110)
+}
+
+chunk.x.gene <- function(x) {
+  x$ptrn_110 <- pmax(x$ptrn_110, 1)
+  (x$ptrn_101 + x$ptrn_011) / (x$ptrn_110)
+}
+
+chunk.a.gene <- function(x) {
+  ((x$ptrn_100)) / (x$ptrn_001+1)
+}
+
+chunk.b.gene <- function(x) {
+  x$ptrn_110 <- pmax(x$ptrn_110, 1)
+  (x$ptrn_101) / (x$ptrn_110)
+}
+
+chunk.c.gene <- function(x) {
+  x$ptrn_110 <- pmax(x$ptrn_110, 1)
+  (x$ptrn_011) / (x$ptrn_110)
 }
 
 chunk.c <- function(x) {

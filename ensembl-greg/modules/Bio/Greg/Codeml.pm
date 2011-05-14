@@ -451,7 +451,7 @@ sub prepare {
       '-dir' => $tempdir,
       UNLINK => ( $self->save_tempfiles ? 0 : 1 )
     );
-    print "TEMP DIR: $tempdir\n";
+    #print "TEMP DIR: $tempdir\n";
     my $gene_codon_counts = $self->{_codemlparams}->{gene_codon_counts};
     delete $self->{_codemlparams}->{gene_codon_counts};
     my $alnout = Bio::AlignIO->new(
@@ -556,12 +556,13 @@ sub run {
     $self->error_string( join( '', @output ) );
     if ( ( grep { /error/io } @output ) || !$exit_status ) {
 
-      #       if (!$exit_status) {
-      $self->throw( "ERROR RUNNING CODEML:\n" . $self->error_string );
-      $rc = 0;
+      if (!$exit_status) {
+        $self->throw("Bad codeml exist status!\n". $self->error_string);
+      } else {
+        $self->throw( "ERROR RUNNING CODEML:\n" . $self->error_string );
+        $rc = 0;
+      }
     }
-
-    $self->warn( "Maybe an error: " . $self->error_string ) if ( !$exit_status );
 
     # GJ 2009-01-08: Put the main results into a string and store it.
     open( IN, "$tmpdir/$outfile" );
@@ -875,6 +876,7 @@ sub extract_lnL {
       return $lnL;
     }
   }
+  return undef;
 }
 
 sub parse_params {
@@ -988,6 +990,7 @@ sub extract_omegas {
       return @values;
     }
   }
+  return undef;
 }
 
 sub each_line {
@@ -1416,7 +1419,7 @@ sub branch_model_likelihood {
     fix_blength => 1,    # Use initial branch lengths as estimates.
     model       => 0,
     cleandata   => 0,
-    getSE => 1,
+    getSE => 0,
     fix_omega => 0,
     omega => 0.3,
     NSsites => 0,
@@ -1465,8 +1468,6 @@ sub branch_model_likelihood {
   my @omegas = $class->extract_omegas($lines_ref);
   #print "Omegas: @omegas\n";
   my $codeml_tree = $class->parse_codeml_results($lines_ref);
-
-  print "LNL: $lnL\n";
 
   # Return an object with our results of interest.
   return {
@@ -1649,6 +1650,7 @@ sub get_grantham_score_hash {
     foreach my $num (@numbers) {
       my $j_residue = $residues[$j];
       #print "i[$i_residue] j[$j_residue] score[$num] \n";
+      $scores->{$j_residue.$j_residue} = 0;
       $scores->{$i_residue.$j_residue} = strip($num) + 0.0;
       $scores->{$j_residue.$i_residue} = strip($num) + 0.0;
       $j++;

@@ -603,6 +603,8 @@ sub to_file {
   my $newick = $class->to_newick($tree);
   if ($params->{'node_ids'}) {
     $newick = $tree->newick_format('int_node_id');
+  } elsif (defined $params->{nhx_format} && $params->{nhx_format} == 1) {
+    $newick = $tree->nhx_format;
   }
 
   open(OUT,">".$out_file);
@@ -712,6 +714,8 @@ sub keep_members_by_method_call {
   return $tree;
 
 }
+
+
 
 sub remove_members_by_method_call {
   my $class = shift;
@@ -1165,6 +1169,22 @@ sub pretty_print {
   my $treeI = $class->to_treeI($tree);
   if ($treeI->can('ascii')) {
     print $treeI->ascii(0,0,0);
+  }
+}
+
+sub transfer_branchlengths {
+  my $class = shift;
+  my $source = shift;
+  my $target = shift;
+
+  my @s_nodes = $source->nodes;
+  my @t_nodes = $target->nodes;
+  foreach my $t_node (@t_nodes) {
+    # Find the equivalent source node.
+    my ($s_node) = grep {$_->enclosed_leaves_string eq $t_node->enclosed_leaves_string} @s_nodes;
+    die("No source node!") unless (defined $s_node);
+    
+    $t_node->branch_length($s_node->branch_length);
   }
 }
 

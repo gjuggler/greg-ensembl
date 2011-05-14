@@ -38,6 +38,7 @@ sub param_defaults {
 
     sitewise_store_opt_tree     => 1,
     sitewise_store_gaps         => 0,
+    sitewise_store_single_chars         => 0,
     sitewise_minimum_leaf_count => 2,
     sitewise_strip_gaps         => 0,
     sitewise_parameter_sets     => 'all',
@@ -853,13 +854,18 @@ sub parse_slr_output {
         ) = @arr;
       my $nongaps = Bio::EnsEMBL::Compara::AlignUtils->get_nongaps_at_column( $pep_aln, $site );
       
+      my $signed_lrt = $lrt_stat;
+      $signed_lrt = -$signed_lrt if ($omega < 1);
+
       my $obj = {
         aln_position => $site,
         ncod => $nongaps,
+        nongap_count => $nongaps,
         omega => $omega,
         omega_lower => $lower,
         omega_upper => $upper,
         lrt_stat => $lrt_stat,
+        signed_lrt => $signed_lrt,
         type => $type,
         note => $note,
         random => $random
@@ -1029,6 +1035,7 @@ sub parse_paml_output {
     my $obj = {
       aln_position => $site,
       ncod => $nongaps,
+      nongap_count => $nongaps,
       omega => $omega,
       omega_lower => $lower,
       omega_upper => $upper,
@@ -1097,77 +1104,54 @@ sub run_paml {
 
 sub store_sitewise {
   my $self    = shift;
-  my $results = shift;
   my $tree    = shift;
+  my $pep_aln = shift;
+  my $results = shift;
   my $params  = shift;
 
   my $node_id = $self->node_id;
   my $data_id = $self->data_id;
 
-  my $table = 'sitewise_aln';
+  my $table = 'sites';
   $table = $params->{'omega_table'} if ( $params->{'omega_table'} );
+  $self->create_table_from_params( $self->dbc, $table, $self->sitewise_table_structure);
 
-  my $parameter_set_id = $self->parameter_set_id;
+  foreach my $i (1 .. $pep_aln->length) {
+    my $site = $results->{$i};
 
-  #  my $aln_map_aa = $self->param('aln_map_aa');
-  my $input_aa = $self->param('input_aa');
-
-  foreach my $site ( @{ $results->{'sites'} } ) {
-
-# Site  Neutral  Optimal   Omega    lower    upper LRT_Stat    Pval     Adj.Pval    Q-value Result Note
-# 1     4.77     3.44   0.0000   0.0000   1.4655   2.6626 1.0273e-01 8.6803e-01 1.7835e-02  --     Constant;
-# 0     1        2      3        4        5        6      7          8          9           10     11
-    my (
-      $site,     $neutral, $optimal,  $omega,   $lower, $upper,
-      $lrt_stat, $pval,    $adj_pval, $q_value, $type,  $note
-    ) = @{$site};
-
-    my $aln_position = $site;
-    my $orig_aln_position = $self->get_orig_aln_position( $input_aa, $aln_position );
-
+    my $note = $site->{note};
     # These two cases are pretty useless, so we'll skip 'em.
     if ( !$self->param('sitewise_store_gaps') ) {
       next if ( $note eq 'all_gaps' );
+    }
+    if ( !$self->param('sitewise_store_single_chars') ) {
       next if ( $note eq 'single_char' );
     }
-
-    my $nongaps = Bio::EnsEMBL::Compara::AlignUtils->get_nongaps_at_column( $input_aa, $site );
-
-    #next if ($nongaps == 0);
-
-    if ( $self->param('sitewise_filter_order') eq 'after' ) {
-
-# Look at the filtered alignment. If ANY residues are filtered out, we consider this column to be bad.
-# Don't store the resulting sitewise value.
-      my $filtered_aa = $self->param('aa_filtered');
-      my $filtered_site_count =
-        Bio::EnsEMBL::Compara::AlignUtils->count_residues_at_column( $filtered_aa, $site, 'X' );
-
-      #      if (($filtered_site_count+1) / ($nongaps+1) >= 0.5) {
-      if ( $filtered_site_count > 0 ) {
-        print "FILTERED COLUMN! $site\n";
-        next;
-      }
-    }
-
-    my $sth = $tree->adaptor->prepare(
-      "REPLACE INTO $table
-                           (parameter_set_id,
-                            aln_position,
-                            node_id,
-                            data_id,
-                            omega,
-                            omega_lower,
-                            omega_upper,
-                            lrt_stat,
-                            ncod,
-                            type,
-                            note) VALUES (?,?,?,?,?,?,?,?,?,?,?)"
-    );
-    $sth->execute( $parameter_set_id, $orig_aln_position, $node_id, $data_id, $omega, $lower,
-      $upper, $lrt_stat, $nongaps, $type, $note );
-    $sth->finish();
+    
+    my $p = $self->replace($site, {
+      data_id => $data_id,
+      aln_position => $i
+                           });
+    $self->store_params_in_table($self->dbc, $table, $p);
   }
+}
+
+
+sub sitewise_table_structure {
+  my $self = shift;
+
+  return {
+    data_id => 'int',
+    aln_position => 'int',
+    omega => 'float',
+    omega_lower => 'float',
+    omega_upper => 'float',
+    lrt_stat => 'float',
+    nongap_count => 'int',
+    type => 'char16',
+    note => 'char16',
+    unique_keys => 'data_id,aln_position'
+  };
 }
 
 1;

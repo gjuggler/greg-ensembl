@@ -9,7 +9,7 @@ for (e in commandArgs(trailingOnly=T)) {
     direction <- f[2]
   }
 }
-print(filename)
+#print(filename)
 
 library(topGO)
 library(doBy)
@@ -32,8 +32,10 @@ getRowsForTerms <- function(GOdata,data,whichTerms) {
 }
 
 getGenesForTerms <- function(GOdata,whichTerms) {
+  whichTerms <- unlist(whichTerms)
   genes.within.terms <- c()
   for (term in whichTerms) {
+    #print(term)
     cur.genes <- genesInTerm(GOdata,term)
     if (length(cur.genes) > 0) {
       cur.genes <- cur.genes[[1]]
@@ -98,7 +100,7 @@ get.go.table = function(scores,symbols.to.go,ontology,nodeSize=8,description='',
   if (scoresAreBinary) {
     geneSelectionFun = function(score){return(score >= 1)}
   } else {
-    geneSelectionFun = function(score){return(score < 0.1)}
+    geneSelectionFun = function(score){return(score < 0.05)}
   }
 
   GOdata <- new("topGOdata",
@@ -121,7 +123,11 @@ get.go.table = function(scores,symbols.to.go,ontology,nodeSize=8,description='',
 
     print("Generating table...")
 
-    res.list <- list(pval.fis=fis,pval.topgo=topgo,pval.elim=elim)
+    res.list <- list(
+      pval.fis=fis,
+      pval.topgo=topgo,
+      pval.elim=elim
+    )
     res.list <- lapply(res.list, score)
     res.df <- sigAllMethods(res.list)
     whichTerms <- rownames(res.df)[1:n.terms]
@@ -131,7 +137,7 @@ get.go.table = function(scores,symbols.to.go,ontology,nodeSize=8,description='',
     infoMat <- data.frame('GO ID' = whichTerms, 'Term' = shortNames, stringsAsFactors = FALSE)
     scores.df <- data.frame(annoStat,infoMat,res.df,check.names=F,stringsAsFactors=F)
     test.df <- scores.df
-    test.df <- orderBy(~pval.elim,data=test.df)
+    test.df <- orderBy(~pval.topgo,data=test.df)
 
   } else {
     # scoreOrder = 'increasing' if we're using p-values, 'decreasing' if we're using a higher-is-better score.
@@ -155,6 +161,7 @@ get.go.table = function(scores,symbols.to.go,ontology,nodeSize=8,description='',
     test.df <- orderBy(~pval.ks,data=test.df)
   }
 
+  assign("last.godata", GOdata, envir=.GlobalEnv)
   return(test.df)
 }
 
@@ -205,8 +212,8 @@ enrich.list <- function(subset.ids,all.ids=NULL,include.iea=TRUE) {
     print("No background given -- using all Ensembl Protein IDs!")
     all.ids <- ens.genes$Ensembl.Protein.ID
   } 
-  print(paste("Number of foreground IDs:",length(unique(subset.ids))))
-  print(paste("Number of background IDs:",length(unique(all.ids))))
+  #print(paste("Number of foreground IDs:",length(unique(subset.ids))))
+  #print(paste("Number of background IDs:",length(unique(all.ids))))
 
   go.df <- NULL
   go.vec <- NULL
@@ -215,7 +222,7 @@ enrich.list <- function(subset.ids,all.ids=NULL,include.iea=TRUE) {
   } else {
     go.vec <- go.ens.excl.iea
   }
-  print(head(go.vec,n=5))
+  #print(head(go.vec,n=5))
 
   tbl <- get.enrich.by.subset(
     subset=unique(subset.ids),

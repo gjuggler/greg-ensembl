@@ -27,6 +27,8 @@ my $TREE    = "Bio::EnsEMBL::Compara::TreeUtils";
 my $ALN     = "Bio::EnsEMBL::Compara::AlignUtils";
 my $COMPARA = "Bio::EnsEMBL::Compara::ComparaUtils";
 
+my $taxid_counter = 999999;
+
 *Bio::EnsEMBL::Compara::NestedSet::leaves = sub {
   my $self = shift;
   return @{$self->get_all_leaves};
@@ -63,6 +65,70 @@ my $COMPARA = "Bio::EnsEMBL::Compara::ComparaUtils";
   my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($self);
   return $treeI->ascii;
 };
+*Bio::EnsEMBL::Compara::NestedSet::enclosed_leaves_string = sub {
+  my $self = shift;
+
+  if ($self->is_leaf) {
+    return $self->id;
+  }
+
+  my @leaves_beneath = map {$_->name} $self->leaves;
+  my $leaf_string = join("|", sort {$a cmp $b} @leaves_beneath);
+  return $leaf_string;
+};
+
+*Bio::EnsEMBL::Compara::NestedSet::taxon_id = sub {
+  my $self = shift;
+  my $taxon_id = shift;
+
+  if (defined $taxon_id) {
+    $self->set_tagvalue('taxon_id', $taxon_id);
+  }
+  return $self->get_tagvalue('taxon_id') || undef;
+};
+
+*Bio::EnsEMBL::Compara::NestedSet::branch_length = sub {
+  my $self = shift;
+  my $length = shift;
+
+  if (defined $length) {
+    $self->distance_to_parent($length);
+  }
+  return $self->distance_to_parent;
+};
+*Bio::EnsEMBL::Compara::NestedSet::id = sub {
+  my $self = shift;
+  return $self->name;
+};
+
+*Bio::EnsEMBL::Compara::NestedSet::_internal_nhx_format = sub {
+  my $self = shift;
+  my $format_mode = shift;
+  my $nhx = "";
+
+  if($self->get_child_count() > 0) {
+    $nhx .= "(";
+    my $first_child=1;
+    foreach my $child (@{$self->sorted_children}) {  
+      $nhx .= "," unless($first_child);
+      $nhx .= $child->_internal_nhx_format($format_mode);
+      $first_child = 0;
+    }
+    $nhx .= ")";
+  }
+  
+  $nhx .= $self->name;
+  $nhx .= sprintf(":%1.4f", $self->distance_to_parent);
+
+  $nhx .= "[&&NHX";
+  my $tags = $self->get_tagvalue_hash;
+  foreach my $key (keys %$tags) {
+    next if ($key eq 'name');
+    $nhx .= ":$key=".$tags->{$key};
+  }
+  $nhx .= "]";
+  return $nhx;
+};
 
 sub load_registry {
   my $class = shift;
@@ -70,14 +136,15 @@ sub load_registry {
     Bio::EnsEMBL::Registry->load_registry_from_multiple_dbs(
       {
         -host => 'ens-livemirror',
-        -user => 'ensro',
+        -user => 'ensadmin',
+        -pass => 'ensembl',
         #-verbose => 1
       },
       {
         -host => 'ensdb-archive',
         -port => 5304,
-        -user => 'ensadmin',
-        -pass => 'ensembl',
+        -user => 'ensro',
+#        -pass => 'ensembl',
         #-verbose => 1
       }
       );
@@ -612,7 +679,7 @@ sub filter_alignment_seq_by_qual_array {
     }
   }
   print STDERR "Filtered [$filter_count] from " . $seq->id . "\n";
-  print STDERR $seq_str."\n";
+  #print STDERR $seq_str."\n";
   return $seq_str;
 }
 
@@ -1120,6 +1187,9 @@ sub get_one_to_one_ortholog_tree {
   my $class = shift;
   my $dba = shift;
   my $member = shift;
+  my $keep_types = shift;
+
+  $keep_types = 'ortholog_one2one' unless (defined $keep_types);
 
   my $gene_adaptor = Bio::EnsEMBL::Registry->get_adaptor('human', 'core', 'gene');
   my $pta = $dba->get_ProteinTreeAdaptor;
@@ -1132,28 +1202,41 @@ sub get_one_to_one_ortholog_tree {
 
   my $tree = $pta->fetch_by_gene_Member_root_id($member);  
 
-  my $one2one_stable_ids;
-  my $homs = $homology_adaptor->fetch_all_by_Member($member);
+  my $orth_types; 
+ my $homs = $homology_adaptor->fetch_all_by_Member($member);
+  #print " Fetching homs\n";
   foreach my $hom (@$homs) {
-    #print "$hom\n";
-    next unless ($hom->description eq 'ortholog_one2one');
+    my $desc = $hom->description;
+    next unless ($desc =~ m/$keep_types/i );
     my @members = @{$hom->gene_list};
     foreach my $m (@members) {
-      #print $m->stable_id."\n";
-      $one2one_stable_ids->{$m->stable_id} = 1;
+      #print $m->stable_id." ".$m->member_id."\n";
+      $orth_types->{$m->member_id} = $desc;
     }
   }
 
-  my $keep_members;
-  foreach my $leaf ($tree->leaves) {
-    if ($one2one_stable_ids->{$leaf->gene_member->stable_id}) {
-      $keep_members->{$leaf} = $leaf;
+  if (defined $tree) {
+    #print "  Collecting keepers\n";
+    my $keep_members;
+    foreach my $leaf ($tree->leaves) {
+      #print $leaf->stable_id." ". $leaf->gene_member_id."\n";
+      if ($orth_types->{$leaf->gene_member_id}) {
+        $keep_members->{$leaf} = $leaf;
+      }
+    }
+    
+    #print "  Extracting subtree\n";
+    my @keeps = values %$keep_members;
+    $tree = $TREE->extract_subtree_from_leaf_objects($tree, \@keeps);
+    
+    if (defined $tree) {
+      foreach my $member ($tree->leaves) {
+        my $type = $orth_types->{$member->gene_member_id};
+        $member->add_tag('orth_type',$type);
+      }
     }
   }
 
-  my @keeps = values %$keep_members;
-  $tree = $TREE->extract_subtree_from_leaf_objects($tree, \@keeps);
-  
   warn("Nothing left after extracting one2one!") unless ( defined $tree );
   return $tree;
 }
@@ -1163,8 +1246,12 @@ sub restrict_tree_to_clade {
   my $dba = shift;
   my $tree = shift;
   my $clade_name = shift;
+  my $genome_tree_cache = shift;
 
-  my $genome_tree = $class->get_genome_tree($dba);
+  my $genome_tree = $genome_tree_cache;
+  if (!defined $genome_tree_cache) {
+    $genome_tree = $class->get_genome_tree($dba);
+  }
   
   my $clade_node;
   foreach my $node ($genome_tree->nodes) {
@@ -1539,6 +1626,9 @@ sub _fix_multifurcation {
   my @new_group_names = @$new_group_name_arrayref;
 
   my $new_group = new $polytomy;
+  $new_group->taxon_id($taxid_counter);
+  $taxid_counter++;
+
   $new_group->distance_to_parent(1);
   $polytomy->add_child($new_group);
 
@@ -1560,8 +1650,12 @@ sub get_genome_tree_subset {
   my $class = shift;
   my $dba = shift;
   my $params = shift;
+  my $gdb_tree_hash = shift;
 
-  my $full_tree = $class->get_genome_tree($dba);
+  my $full_tree = $gdb_tree_hash;
+  if (!defined $full_tree) {
+    $full_tree = $class->get_genome_tree($dba);
+  }
   #print $full_tree->newick_format."\n";
   my @keepers = $class->get_taxon_ids_from_keepers_list( $dba, $params->{keep_species} );
 
@@ -2196,7 +2290,7 @@ sub get_compara_or_genomic_aln {
       } else {
         $ens_string = 'ens_' . $node->node_id . '_' . $seen_count;
       }
-      print "$ens_string\n";
+#      print "$ens_string\n";
       
       if ($node->is_leaf) {
         my $aln_map;
@@ -2570,7 +2664,7 @@ sub genomic_aln_for_transcript {
   foreach my $exon (@exons) {
     $exon_i++;
     my $slice = $exon->slice;
-    print $slice->seq_region_name . " " . $exon->stable_id." ".$exon->start . " " . $exon->end . "\n" if ($debug);
+    print $exon_i."  ". $slice->seq_region_name . " " . $exon->stable_id." ".$exon->start . " " . $exon->end . "\n" if ($debug);
 
     my $start     = $exon->coding_region_start($tx);
     my $end       = $exon->coding_region_end($tx);
@@ -2615,7 +2709,7 @@ sub genomic_aln_for_transcript {
         my $gdb       = $a_s_slice->genome_db;
         my $name      = $gdb->name;
         $gdb_hash->{$name} = $gdb;
-        printf "%-20s %-6s %-6s\n",$name,$aln_start,$aln_end if ($debug);
+        #printf "%-20s %-6s %-6s\n",$name,$aln_start,$aln_end if ($debug);
 
         # Skip if it's outside our taxon ID list.
         next if (defined $taxon_id_hashref && !defined $taxon_id_hashref->{$gdb->taxon_id});
@@ -2715,8 +2809,8 @@ sub genomic_aln_for_transcript {
                   warn("Padded END of seq for $name with Ns!");
                 }
               }
-              die("Still not the same seqs for $name (even after padding Ns)!\n")
-                unless ( $slice_seq eq $dna );
+              #die("Still not the same seqs for $name (even after padding Ns)!\n")
+              #  unless ( $slice_seq eq $dna );
 
               # We're all OK now. Add the sequence to the hash.
               $seq_hash->{$name} .= $dna;
@@ -2730,7 +2824,7 @@ sub genomic_aln_for_transcript {
               push @{ $qual_hash->{$name} }, @q;
               $composed_a_s_seq .= $p_slice->seq;
               
-              warn( "No DNA for $name " . $p_slice->name );
+              #warn( "No DNA for $name " . $p_slice->name );
             }
           }
 
@@ -2752,7 +2846,7 @@ sub genomic_aln_for_transcript {
           if ( $composed_a_s_seq ne '' && $a_s_seq ne $composed_a_s_seq ) {
             print "a_s : " . $a_s_slice->seq . "\n";
             print "cmp : " . $composed_a_s_seq . "\n";
-            die("Not the same for $name!");
+            #die("Not the same for $name!");
           }
         }
 
@@ -2849,7 +2943,7 @@ sub genomic_aln_for_transcript {
         }
       }
     } else {
-      warn("Skipping storing coordinates -- you won't get nuc-level coordinates now!");
+      #warn("Skipping storing coordinates -- you won't get nuc-level coordinates now!");
     }
 
     #Bio::EnsEMBL::Compara::AlignUtils->pretty_print($sa,{full=>1,length=>150});
@@ -2944,6 +3038,25 @@ sub count_filtered_sites {
   $tmp =~ s/[^n]//gi;
   my $n_filtered = length($tmp);
   return ( $n_filtered - $n_orig );
+}
+
+sub remove_from_tree_and_aln {
+  my $class = shift;
+  my $tree = shift;
+  my $aln = shift;
+  my $id_to_remove = shift;
+
+  $tree = Bio::EnsEMBL::Compara::TreeUtils->copy_tree($tree);
+
+  my ($leaf) = grep {$_->name eq $id_to_remove} $tree->leaves;
+  die("Leaf not found") unless (defined $leaf);
+  $tree = $tree->remove_nodes([$leaf]);
+  $tree = $tree->minimize_tree;
+
+  my ($seq) = grep {$_->id eq $id_to_remove} $aln->each_seq;
+  $aln = Bio::EnsEMBL::Compara::AlignUtils->remove_seq_from_aln($aln, $id_to_remove);
+  
+  return ($tree, $aln);
 }
 
 1;
