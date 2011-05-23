@@ -151,7 +151,14 @@ bed.output <- function(rows,color.field,color.lo,color.hi) {
   
   rows$color.tmp <- colors.string
   rows$score.tmp <- 0
-  bed <- rows[,c('Chr','Start','End','Gene','score.tmp','Strand','Start','End','color.tmp','Ensembl ID',color.field)]
+
+  bed <- rows
+
+  # Correct by the off-by-one error
+  bed$Start <- bed$Start - 1
+  bed$End <- bed$End - 1
+
+  bed <- bed[,c('Chr','Start','End','Gene','score.tmp','Strand','Start','End','color.tmp','Ensembl ID',color.field)]
 
   bed[is.na(bed[,color.field]),color.field] <- 0
 
@@ -238,6 +245,10 @@ bigwig.output <- function() {
         print(paste("  ",as.character(x[1,'chr_name']),start.n,nrow(x)))
         return(x)
       })
+
+      # Correct for the off-by-one error
+      sites$chr_start <- sites$chr_start - 1
+      sites$chr_end <- sites$chr_end - 1      
 
       print("  writing bedgraph")
       bedGraph <- sites[,c('chr_name','chr_start','chr_end','signed_lrt')]
