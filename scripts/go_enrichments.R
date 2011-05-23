@@ -389,11 +389,11 @@ get.term.groups <- function() {
   tooth.development = c(
     'GO:0042476', # odontogenesis
     'GO:0070166', # enamel mineralization
-    'GO:0046848', # hydroxyapatite binding
+#    'GO:0046848', # hydroxyapatite binding
     'GO:0070172', # positive regulation of tooth mineralization
     'GO:0034505', # tooth mineralization
     'GO:0030345', # structural constituent of tooth enamel
-    'GO:0032967', # pos. regl. of collagen biosynthetic process
+#    'GO:0032967', # pos. regl. of collagen biosynthetic process
     'GO:0031214'  # biomineral tissue development
   )
 
@@ -417,7 +417,6 @@ get.term.groups <- function() {
     'GO:0007420', # brain development
     'GO:0007417', # central nervous system development
     'GO:0048854', # brain morphogen.
-    'GO:0048702', # embryonic brain morphogen.
     'GO:0021987', # cerebral cortex devel.
     'GO:0021904', # dorsal / ventral neural tube patterning
     'GO:0021536', # diencephalon devel.
@@ -426,8 +425,8 @@ get.term.groups <- function() {
     'GO:0021872' # generation of neurons in forebrain
   )
 
-  angiogenesis = c(
-    'GO:0001525'
+  body.fluid = c(
+    'GO:0050878' # regulation of body fluid levels
   )
 
   innate.immunity = c(
@@ -445,21 +444,47 @@ get.term.groups <- function() {
     'GO:0042742' # def. resp. to bact.
   )
 
+  sound.perception = c(
+    'GO:0007605', # sensory perception of sound
+    'GO:0042472', # inner ear morphogenesis
+    'GO:0048839' # innear ear development
+  )
+
+
+  hair.skin = c(
+    'GO:0001942', # hair follicle devel.
+    'GO:0030855', # epithelial cell differentiation
+    'GO:0060429', # epithelium development
+    'GO:0050678'  # regulation of epithelial cell differentiation
+  )
+
+  keratin = c(
+    'GO:0030216' # keratinocyte development
+  )
+
+  fat = c(
+    'GO:0045444' # fat cell devel.
+  )
 
   ### Go through and get the subsets of genes
   list.of.term.lists <- list(
-    male.aggression = male.aggression,
-    sexual.dimorphism = sexual.dimorphism,
-    growth.hormone = growth.hormone,
+#    male.aggression = male.aggression,
+#    sexual.dimorphism = sexual.dimorphism,
+#    growth.hormone = growth.hormone,
+#    placental.development = placental.development,
+#    diet.change = diet.change,
     sperm.competition = sperm.competition,
-    diet.change = diet.change,
-    tooth.development = tooth.development,
-    heart.development = heart.development,
-    placental.development = placental.development,
+#    tooth.development = tooth.development,
+#    heart.development = heart.development,
+#    body.fluid = body.fluid,
+    hair.skin = hair.skin,
     brain.size = brain.size,
     innate.immunity = innate.immunity,
     adaptive.immunity = adaptive.immunity,
-    defense.response = defense.response
+    defense.response = defense.response,
+    sound.perception = sound.perception,
+    keratin = keratin,
+    fat = fat
   )
   return(list.of.term.lists)
 }
@@ -868,6 +893,6 @@ compare.all.tests <- function() {
 }
 
 
-if (exists('filename') && !is.na(filename)) {
-  enrich.file(filename,direction)
-}
+#if (exists('filename') && !is.na(filename)) {
+#  enrich.file(filename,direction)
+#}

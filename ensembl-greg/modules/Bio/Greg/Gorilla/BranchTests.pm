@@ -36,8 +36,6 @@ sub fetch_input {
 sub run {
   my $self = shift;
 
-  #$self->param('force_recalc', 1);
-
   my $gene_id = $self->param('gene_id');
   my $mba = $self->compara_dba->get_MemberAdaptor;
   my $member = $mba->fetch_by_source_stable_id(undef, $gene_id);
@@ -104,13 +102,13 @@ sub run {
   $self->_run_slr($ortholog_tree, $aln);
   $self->param('aln_use_type', 'genomic_primates');
   $aln = $self->_mask_sub_runs($genome_tree, $aln);
-
+  $self->_get_sub_patterns_from_aln($tree, $aln);
+  $aln = $self->_mask_ils($genome_tree, $aln);
   $self->_test_for_aln_coverage($genome_tree, $aln);
 
   $self->_run_tests($genome_tree, $aln);
   $self->_plot_subs($genome_tree, $aln);
   $self->_collect_stats($genome_tree, $aln);
-  $self->_get_sub_patterns_from_aln($tree, $aln);
 }
 
 sub write_output {
@@ -269,6 +267,49 @@ sub _run_slr {
   $self->param('slr_results', $results);
 }
 
+sub _mask_ils {
+  my $self = shift;
+  my $tree = shift;
+  my $aln = shift;
+
+  my $to_mask;
+  my @subs = @{$self->param('subs')};
+  
+  my $muts;
+  foreach my $s (@subs) {
+    if ($s->{mut_ils} == 1) {
+      my $aln_pos = $s->{aln_pos};
+      $to_mask->{$aln_pos + 0} = 1;
+    }
+  }
+
+  my $n_masked = 0;
+  foreach my $key (sort keys %$to_mask) {
+    my $aln_pos = $key;
+    foreach my $seq ($aln->each_seq) {
+      next unless ($seq->id =~ m/(ENSP0|ENSGGOP0|ENSPTRP0)/gi);
+      my $cdna_lo = ($aln_pos-1)*3 + 0;
+      my $cdna_hi = ($aln_pos-1)*3 + 2;
+    
+      my $orig_str = $seq->seq;
+      my ($str, $n) = Bio::EnsEMBL::Compara::AlignUtils->mask_string($orig_str,$cdna_lo,$cdna_hi);
+      $seq->seq($str);
+    }
+    $n_masked += 1;
+  }
+  
+  $self->store_param('masked_ils', $n_masked);
+
+  # Write the modified alignment to file.
+  my $f = $self->_save_file('aln_masked_ils', 'fasta');
+  Bio::EnsEMBL::Compara::AlignUtils->to_file($aln, $f->{full_file});
+  
+  print "  wrote mutation-masked alignment\n";
+  print "  (N masked columns: $n_masked)\n";
+
+  return $aln;  
+}
+
 sub _mask_sub_runs {
   my $self = shift;
   my $tree = shift;
@@ -284,7 +325,6 @@ sub _mask_sub_runs {
   my $aln_copy = Bio::EnsEMBL::Compara::AlignUtils->copy_aln($aln);
 
   my $m0_f = $self->_save_file('mask_subs_results', 'perlobj');
-  $self->param('force_recalc', 0);
   if (!-e $m0_f->{full_file} || $self->param('force_recalc')) {
     print "  calculating mask subs results...\n";
     my $lines = $self->run_m0($tree_copy, $aln_copy);
@@ -294,7 +334,6 @@ sub _mask_sub_runs {
   print "  loading mask subs results from file\n";
   my $lines = $self->thw($m0_f->{full_file});
   my $m0_tree = Bio::Greg::Codeml->parse_codeml_results($lines);
-  $self->param('force_recalc', 0);
 
   # Store substitutions.
   $self->store_subs($tree_copy, $aln_copy, $lines);
@@ -435,8 +474,8 @@ sub _test_for_aln_coverage {
   }
 
   if (scalar(keys %$no_coverage) > 0) {
-    my @coverages = map { $_ .": ". $no_coverage->{$_}} keys %$no_coverage;
-    my $cov_string = join(';', @coverages);
+    my @coverages = map { $_ .": ". sprintf("%.3f",$no_coverage->{$_})} keys %$no_coverage;
+    my $cov_string = join('; ', @coverages);
     $self->store_param('poor_coverage', $cov_string);
   }
 }
@@ -460,6 +499,7 @@ sub _run_tests {
   my $lines = $self->thw($m0_f->{full_file});
   # Store substitutions.
   $self->store_subs($tree_copy, $aln_copy, $lines);
+
   # Store m0 omega.
   my @omegas = Bio::Greg::Codeml->extract_omegas($lines);
   $self->store_param('m0_dnds', $omegas[0]);
@@ -541,7 +581,6 @@ sub _run_tests {
   $self->param('run_branchsite', 1);
 
   if ($self->param('run_branchsite')) {
-    #$self->param('force_recalc', 1);
 
     my $sites_f = $self->_save_file('paml_branchsites_results', 'perlobj');
     my $sites_file = $sites_f->{full_file};
@@ -598,7 +637,6 @@ sub _run_tests {
       
       $self->frz($sites_file, $obj);
 
-      $self->param('force_recalc', 0);
     }
     print "  loading branch-sites results file\n";
     my $branchsites_results = $self->thw($sites_file);
@@ -904,6 +942,10 @@ sub _plot_subs {
     map {
       $id_to_species->{$_->name} = $_->ensembl_alias_name;
     } $tree->leaves;
+
+    my $tree_out = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
+    $tree_out->translate_ids($id_to_species);
+    my $nh_str = $tree_out->root->as_text('newick');
     
     map {
       $_->branch_length(1);
@@ -1020,11 +1062,13 @@ sub _plot_subs {
           $tax_name = $id_to_species->{$tree_node->id};
         }
         
+        $self->hash_print($row);
+
         my $f = Bio::SeqFeature::Generic->new(
           -start => $row->{aln_pos},
           -end => $row->{aln_pos}+1,
           -score => $row->{mut_nsyn},
-          -source => $org_string." substitutions"
+          -source => $org_string." subs"
           );
         push @features, $f;
 
@@ -1041,7 +1085,7 @@ sub _plot_subs {
       $_->id($id_to_species->{$_->id});
     } $aln->each_seq;
     
-    my $str = $treeI->root->as_text('nhx');
+    my $nhx_str = $treeI->root->as_text('nhx');
     my $gene_name = $self->param('gene_name');
     
     my $tmp = $self->worker_temp_directory;
@@ -1052,7 +1096,7 @@ sub _plot_subs {
     my $gff_file = "$tmp/${gene_name}.gff";
     
     open(OUT, ">$tree_subs_file");
-    print OUT $str."\n";
+    print OUT $nhx_str."\n";
     close(OUT);
     
     Bio::EnsEMBL::Compara::TreeUtils->to_file($treeI, $tree_file);      
@@ -1156,15 +1200,17 @@ source("~/src/greg-ensembl/projects/phylosim/PhyloSimPlots.R")
 
 sim <- PhyloSim()
 readAlignment(sim, "${aln_file}")
+phylo <- read.nhx("$nh_str")
+sim\$.phylo <- phylo
 if (${plot_alignment} == 1) {
-  pdf(file="${plot_aln_file}", width=30, height=6)
-    plotAlignment(sim, aln.gff.file="${gff_file}", axis.text.size=5, aln.plot.chars=T)
+  pdf(file="${plot_aln_file}", width=24, height=8)
+  plotAlignment(sim, aln.gff.file="${gff_file}", axis.text.size=5, aln.plot.chars=T)
   dev.off()
 }
 
 if (${plot_tree} == 1) {
   sim <- PhyloSim()
-  phylo <- read.nhx("$str")
+  phylo <- read.nhx("$nhx_str")
   sim\$.phylo <- phylo
   pdf(file="${plot_tree_file}")
   xlab <- "Number of inferred substitutions since LCA"
@@ -1282,71 +1328,6 @@ sub _get_sub_patterns_from_aln {
   foreach my $key (keys %$pattern_hash) {
     $self->store_param('ptrn_'.$key, $pattern_hash->{$key});
   }
-}
-
-sub _count_surrounding_subs {
-  my $self = shift;
-  my $tree = shift;
-  my $aln = shift;
-
-  # Get the EPO primate alignment surrounding each exon +/- 50kb.
-  my $f = $self->_save_file('genomic_aln', 'fasta');
-  if (!-e $f->{full_file} || $self->param('force_recalc')) {
-  
-    my $mirror_dba = $self->compara_dba;
-    my $as_a       = $mirror_dba->get_AlignSliceAdaptor;
-    my $mlss_a     = $mirror_dba->get_MethodLinkSpeciesSetAdaptor;    
-    my $species_set = 'primates';
-    my $mlss;
-    if ($mlss_a->can('fetch_by_method_link_type_species_set_name')) {
-      $mlss = $mlss_a->fetch_by_method_link_type_species_set_name( 'EPO', $species_set );
-    } else {      
-      my $mlss_list = $mlss_a->fetch_all_by_method_link_type('EPO');
-      foreach my $cur_mlss (@$mlss_list) {
-        my $name = $cur_mlss->name;
-        $mlss = $cur_mlss if ($name =~ m/$species_set/gi);
-      }
-    }
-    my $member = $self->_ref_member($tree);
-    my $tx = $member->get_Transcript;    
-    my @exons = @{$tx->get_all_translateable_Exons};
-    my @alns;
-
-    my $expand_nucs = 20000;
-    foreach my $exon ( @{ $tx->get_all_translateable_Exons } ) {
-      my $sub_slice = $exon->slice->sub_Slice( $exon->start, $exon->end, $exon->strand );
-      my $expanded_slice = $sub_slice->expand($expand_nucs, $expand_nucs);
-      my $align_slice = $as_a->fetch_by_Slice_MethodLinkSpeciesSet( $expanded_slice, $mlss, 0 );
-      
-      my $sa = $align_slice->get_SimpleAlign;
-      my $sa_copy = new $sa;
-      foreach my $seq ($sa->each_seq) {
-        if ($seq->id !~ m/ancestral/i) {
-          $sa_copy->add_seq($seq);
-        }
-      }
-      $self->pretty_print($sa_copy);
-      push @alns, $sa_copy;
-    }
-
-    my $concat_aln = Bio::EnsEMBL::Compara::AlignUtils->combine_alns(@alns);
-    $self->pretty_print($concat_aln);
-    Bio::EnsEMBL::Compara::AlignUtils->to_file($concat_aln, $f->{full_file});  
-  }
-
-  my $concat_aln = Bio::EnsEMBL::Compara::AlignUtils->from_file($f->{full_file});
-  my $map = {
-    'homo_sapiens' => 9606,
-    'gorilla_gorilla' => 9593,
-    'pan_troglodytes' => 9598,
-    'pongo_pygmaeus' => 9600,
-    'macaca_mulatta' => 9544,
-    'callithrix_jacchus' => 9483
-  };
-  $concat_aln = Bio::EnsEMBL::Compara::AlignUtils->translate_ids($concat_aln, $map);
-
-  $self->pretty_print($concat_aln);
-  $self->_get_sub_patterns_from_aln($tree, $concat_aln);
 }
 
 

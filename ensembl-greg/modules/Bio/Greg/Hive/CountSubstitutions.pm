@@ -234,8 +234,8 @@ sub extract_substitution_info {
     $taxon_id = 1234 if ($tx_ids->{9606} && $tx_ids->{9598});
     $taxon_id = 207598 if ($tx_ids->{9606} && $tx_ids->{9598} && $tx_ids->{9593});
     $taxon_id = 9604 if ($tx_ids->{9606} && $tx_ids->{9598} && $tx_ids->{9593} && $tx_ids->{9600});
-    $taxon_id = 9526 if ($tx_ids->{9606} && $tx_ids->{9598} && $tx_ids->{9593} && $tx_ids->{9600} && $tx_ids->{9544});
     $taxon_id = 376913 if ($tx_ids->{9606} && $tx_ids->{9598} && $tx_ids->{9593} && $tx_ids->{9600} && $tx_ids->{9544});
+    $taxon_id = 9526 if ($tx_ids->{9606} && $tx_ids->{9598} && $tx_ids->{9593} && $tx_ids->{9600} && $tx_ids->{9544} && $tx_ids->{9483});
     $final_params->{taxon_id} = $taxon_id if (defined $taxon_id);
   }
 
