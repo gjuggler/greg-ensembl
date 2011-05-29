@@ -119,14 +119,12 @@ get.go.table = function(scores,symbols.to.go,ontology,nodeSize=8,description='',
     
     fis <- runTest(GOdata,algorithm="classic",statistic="Fisher")
     topgo <- runTest(GOdata,algorithm="weight01",statistic="Fisher")
-    elim <- runTest(GOdata,algorithm="elim",statistic="Fisher")
 
     print("Generating table...")
 
     res.list <- list(
       pval.fis=fis,
-      pval.topgo=topgo,
-      pval.elim=elim
+      pval.topgo=topgo
     )
     res.list <- lapply(res.list, score)
     res.df <- sigAllMethods(res.list)
@@ -214,6 +212,8 @@ enrich.list <- function(subset.ids,all.ids=NULL,include.iea=TRUE) {
   } 
   #print(paste("Number of foreground IDs:",length(unique(subset.ids))))
   #print(paste("Number of background IDs:",length(unique(all.ids))))
+
+  print(paste("  enriching", length(unique(subset.ids)), "out of", length(unique(all.ids))))
 
   go.df <- NULL
   go.vec <- NULL
@@ -303,7 +303,6 @@ enrich.file <- function(cur.file,dir) {
     enrich.tbl$category <- ''
     enrich.tbl[enrich.tbl$pval.fis < 0.05,]$category <- '05'
     enrich.tbl[enrich.tbl$pval.fis < 0.01,]$category <- '01'
-    enrich.tbl <- orderBy(~pval.elim,data=enrich.tbl)
     
     write.csv(enrich.tbl,file=paste(cur.file,"_enrich_",dir.lbl,'_',top.n,".csv",sep=""))
   }

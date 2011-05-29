@@ -19,6 +19,8 @@ use File::Path qw(make_path);
 use File::Basename;
 use POSIX qw(strftime mktime);
 
+use FreezeThaw qw(freeze thaw cmpStr safeFreeze cmpStrHard);
+
 use Bio::Greg::EslrUtils;
 
 use base ('Bio::EnsEMBL::Hive::Process');
@@ -1207,6 +1209,27 @@ sub DESTROY {
 
   delete $self->{_param_hash};
   $self->SUPER::DESTROY if $self->can("SUPER::DESTROY");
+}
+
+sub thw {
+  my $self = shift;
+  my $file = shift;
+
+  open(IN, $file);
+  my @lines = <IN>;
+  close(IN);
+  my ($obj) = thaw(join('',@lines));
+  return $obj;
+}
+
+sub frz {
+  my $self = shift;
+  my $file = shift;
+  my $obj = shift;
+
+  open(OUT,">$file");
+  print OUT freeze($obj);
+  close(OUT);
 }
 
 1;

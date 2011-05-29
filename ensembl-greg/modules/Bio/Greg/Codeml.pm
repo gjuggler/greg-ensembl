@@ -1417,12 +1417,22 @@ sub branch_model_likelihood {
 
   my $default_params = {
     fix_blength => 1,    # Use initial branch lengths as estimates.
-    model       => 0,
     cleandata   => 0,
-    getSE => 0,
+
+    model       => 0,
+    NSsites => 0,
+
     fix_omega => 0,
     omega => 0.3,
-    NSsites => 0,
+    fix_kappa => 0,
+    kappa => 4,
+
+    method => 0,
+    getSE => 0,
+    Mgene => 0,
+    aaDist => 0,
+    CodonFreq => 2,
+    Small_Diff => .5e-6
   };
 
   my $has_any_fg_branches = 0;
@@ -1436,13 +1446,10 @@ sub branch_model_likelihood {
     $default_params->{model} = 2;
   }
 
-
-  my @variable_params = qw(model omega Mgene gene_codon_counts cleandata aaDist NSsites fix_omega);
-
   # If certain parameters are given, apply them to the parameter object
   # passed to the new Codeml instance.
   my $final_params = {%$default_params};
-  foreach my $param (@variable_params) {
+  foreach my $param (keys %$default_params) {
     $final_params->{$param} = $params->{$param} if ( defined $params->{$param} );
   }
   $final_params->{verbose} = 1;

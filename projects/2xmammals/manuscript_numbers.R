@@ -11,7 +11,8 @@ get.numbers <- function(sites) {
   neutral.genes <- subset(gene.types,neg.f < neg.thresh & pos.f >= pos.thresh)
   positive.genes <- subset(gene.types,neg.f >= neg.thresh & pos.f >= pos.thresh)
   purifying.genes <- subset(gene.types,(neg.f >= neg.thresh & pos.f < pos.thresh) | 
-                                       (neg.f < neg.thresh & pos.f < pos.thresh) )
+                                       (neg.f < neg.thresh & pos.f < pos.thresh) 
+  )
 
   df <- data.frame(
     neutral.n = nrow(neutral.genes),
@@ -108,7 +109,7 @@ classify.genes <- function(sites) {
   
   library(plyr)
   library(doBy)
-  gene.types <- ddply(sites,.(node_id),classify.gene)
+#  gene.types <- ddply(sites,.(node_id),classify.gene)
 
   domain.sites <- subset(sites,!is.na(domain))
   domain.types <- ddply(domain.sites,.(domain),classify.gene)
@@ -118,7 +119,7 @@ classify.genes <- function(sites) {
   domain.types <- orderBy(~-pos.f,data=domain.types)
 
   assign('domain.types',domain.types,envir=.GlobalEnv)
-  assign('gene.types',gene.types,envir=.GlobalEnv)
+#  assign('gene.types',gene.types,envir=.GlobalEnv)
 }
 
 summarize.sites.sets <- function() {

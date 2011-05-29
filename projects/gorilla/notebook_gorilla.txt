@@ -1,3 +1,17 @@
+mysql> select substring(masked_ids,1,7), sum(masked_nucs), count(*) from genes group by substring(masked_ids,1,7);
++---------------------------+------------------+----------+
+| substring(masked_ids,1,7) | sum(masked_nucs) | count(*) |
++---------------------------+------------------+----------+
+| NULL                      |                0 |    11038 | 
+| ENSCJAP                   |              741 |       13 | 
+| ENSGGOP                   |             5616 |       80 | 
+| ENSMMUP                   |              699 |       11 | 
+| ENSP000                   |              150 |        2 | 
+| ENSPPYP                   |             3678 |       53 | 
+| ENSPTRP                   |             2835 |       42 | 
++---------------------------+------------------+----------+
+
+
 ### 2010-03-27 ###
 
 mysql> select pattern,count(*) from counts_sites where has_cpg=0 and gap=0 group by pattern;

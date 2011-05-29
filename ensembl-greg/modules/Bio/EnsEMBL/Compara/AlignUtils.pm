@@ -1384,6 +1384,69 @@ sub remove_gappy_columns_in_threes {
   return $aln;
 }
 
+sub remove_regex_columns_in_threes {
+  my $class = shift;
+  my $aln = shift;
+  my $regex = shift;
+
+  my $cols_hash;
+  my $n = 0;
+  foreach my $seq ($aln->each_seq) {
+    my $seq_str = $seq->seq;
+
+    print $seq->id."\n";
+    my @codons = unpack('(A3)*', $seq_str);
+    print scalar(@codons)."\n";
+    my $i=0;
+    foreach my $codon (@codons) {
+      if ($codon =~ m/$regex/) {
+        $cols_hash->{$i*3} = 1;
+        $cols_hash->{$i*3+1} = 1;
+        $cols_hash->{$i*3+2} = 1;
+      }
+      $i += 1;
+    }
+  }
+
+  my @cols_to_remove = keys %$cols_hash;
+  my $n = scalar(@cols_to_remove);
+  print "Removing $n regex columns...\n";
+
+  $aln = $class->quick_remove_columns($aln, \@cols_to_remove);
+  return $aln;
+}
+
+sub quick_remove_columns {
+  my $class = shift;
+  my $aln = shift;
+  my $cols_arrayref = shift;
+
+  my @cols = @$cols_arrayref;
+  @cols = sort {$b <=> $a} @cols;
+
+  my $keep_hash;
+  map {$keep_hash->{$_-1} = 1} 1 .. $aln->length;
+
+  foreach my $col (@cols) {
+    delete $keep_hash->{$col};
+  }
+  
+  my @keepers = sort {$a <=> $b} keys %$keep_hash;
+
+  my $new_aln = new $aln;
+  foreach my $seq ($aln->each_seq) {
+    my $str = $seq->seq;
+    my @arr = unpack("(A1)*", $str);
+    @arr = @arr[@keepers];
+
+    my $new_seq = new $seq;
+    $new_seq->id($seq->id);
+    $new_seq->seq(join('', @arr));
+    $new_aln->add_seq($new_seq);
+  }
+  return $new_aln;
+}
+
 sub remove_funky_stretches {
   my $class = shift;
   my $aln = shift;

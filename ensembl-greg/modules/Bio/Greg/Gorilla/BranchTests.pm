@@ -107,6 +107,7 @@ sub run {
   $self->_test_for_aln_coverage($genome_tree, $aln);
 
   $self->_run_tests($genome_tree, $aln);
+  $self->_collect_seqs($genome_tree, $aln);
   $self->_plot_subs($genome_tree, $aln);
   $self->_collect_stats($genome_tree, $aln);
 }
@@ -1259,6 +1260,10 @@ sub _collect_stats {
   $self->store_param('gene_id', $member->get_Gene->stable_id);
   $self->store_param('protein_id', $member->stable_id);
   $self->store_param('gene_name', $member->get_Gene->external_name);
+  $self->store_param('chr_name', $member->get_Transcript->slice->seq_region_name);
+  $self->store_param('chr_start', $member->get_Transcript->coding_region_start);
+  $self->store_param('chr_end', $member->get_Transcript->coding_region_end);
+  $self->store_param('chr_strand', $member->get_Transcript->slice->strand);
 
   # Alignment stats.
   my $pep_aln = $self->_tx_aln($aln);
@@ -1269,6 +1274,57 @@ sub _collect_stats {
   $self->store_param('gc_3', $self->gc3_content($member));
   $self->store_param('gc_genomic', $self->genomic_gc_content($member));
   
+}
+
+sub _collect_seqs {
+  my $self = shift;
+  my $tree = shift;
+  my $aln = shift;
+
+  my $pep_aln = $self->_tx_aln($aln);
+
+  $self->create_table_from_params( $self->dbc, 'seqs', $self->_seqs_table_structure);
+  foreach my $pos (1 .. $pep_aln->length) {
+    my $lo = ($pos-1)*3 + 1;
+    my $hi = ($pos-1)*3 + 3;
+
+    my $p = $self->params;
+    $p->{aln_position} = $pos;
+
+    my $slice = $aln->slice($lo, $hi);
+    foreach my $seq ($slice->each_seq) {
+      my $id = $seq->id;
+      my $char;
+      $char = 'h' if ($id =~ m/ensp0/gi);
+      $char = 'c' if ($id =~ m/ensptrp0/gi);
+      $char = 'g' if ($id =~ m/ensggop0/gi);
+      $char = 'o' if ($id =~ m/ensppyp0/gi);
+      $char = 'm' if ($id =~ m/ensmmup0/gi);
+      $char = 'r' if ($id =~ m/enscjap0/gi);
+      $p->{$char} = $seq->seq;
+    }
+
+    foreach my $char (qw(h c g o m r)) {
+      if (!defined $p->{$char}) {
+        $p->{$char} = '---';
+      }
+    }
+    $self->store_params_in_table($self->dbc, 'seqs', $p);
+  }
+}
+
+sub _seqs_table_structure {
+  return {
+    data_id => 'int',
+    aln_position => 'int',
+    h => 'char4',
+    c => 'char4',
+    g => 'char4',
+    o => 'char4',
+    'm' => 'char4',
+    r => 'char4',
+    unique_keys => 'data_id,aln_position'
+  };
 }
 
 sub _get_sub_patterns_from_aln {

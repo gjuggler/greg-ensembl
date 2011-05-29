@@ -210,8 +210,7 @@ sub _get_aln {
 }
 
 sub write_output {
-  my $self = shift;
-  
+  my $self = shift;  
 }
 
 sub run_with_windows {
