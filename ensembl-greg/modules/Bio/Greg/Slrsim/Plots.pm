@@ -132,12 +132,6 @@ sub fig_zero {
 
   my $folder = $self->get_output_folder;
 
-  # Call slrsim_all to dump the data.
-  my $sites_file = "${folder}/sites.Rdata";
-  if (!-e $sites_file) {
-    $self->slrsim_all;
-  }
-
   # Call slrsim_table to dump the table.
   my $table_file = "${folder}/table.csv";
   if (!-e $table_file) {
@@ -167,14 +161,7 @@ sub fig_one_c  {
 
 sub fig_one {
   my $self = shift;
-
   my $folder = $self->get_output_folder;
-
-  # Call slrsim_all to dump the data.
-  my $sites_file = "${folder}/sites.Rdata";
-  if (!-e $sites_file) {
-    $self->slrsim_all;
-  }
 
   # Call slrsim_table to dump the table.
   my $table_file = "${folder}/table.csv";
@@ -182,182 +169,6 @@ sub fig_one {
     $self->slrsim_table;
   }
 
-  my $f_auc = "${folder}/auc.pdf";
-  my $f_auc_full = "${folder}/auc_full.pdf";
-  my $f_tpr_at_fdr = "${folder}/tpr_at_fdr.pdf";
-  my $f_tpr_at_fpr = "${folder}/tpr_at_fpr.pdf";
-  my $f_cor = "${folder}/cor.pdf";
-
-  my $sites_at_default = "${folder}/sites_at_default.Rdata";
-  my $rocs_at_default = "${folder}/rocs_at_default.pdf";
-
-  my $indel_sweep_cor = "${folder}/indel_sweep_cor.pdf";
-  my $indel_sweep_tpr_fpr = "${folder}/indel_sweep_tpr_fpr.pdf";
-  my $indel_sweep_auc = "${folder}/indel_sweep_auc.pdf";
-
-  my $functions = $self->base . "/projects/slrsim/slrsim.functions.R";
-  my $plots = $self->base . "/projects/slrsim/slrsim.plots.R";
-
-  my $phylosim_dir = $self->base . "/projects/phylosim";
-
-  my $rcmd = qq^
-library(ggplot2)
-library(fields)
-library(RColorBrewer)
-
-plot.f = function(data,palette="Spectral",field='fdr',rev.colors=F,limits=c(0,1),x.lim=c(0,4),y.lim=c(0,0.1),do.plot=T) {
-  data[,'z_vals'] = data[,field]
-  p <- ggplot(data,aes(x=length,y=ins_rate,z=z_vals))
-  p <- p + scale_x_continuous('Mean Path Length')
-  p <- p + scale_y_continuous('Indel Rate')
-  if (!is.null(x.lim)) {
-    p <- p + coord_cartesian(xlim = x.lim,ylim=y.lim)
-  }
-  p <- p + geom_tile(aes_string(fill=field))
-  if (is.null(limits)) {
-    limits <- c(min(data[,'z_vals']),max(data[,'z_vals']))
-  }
-  n <- 10
-  breaks <- seq(from=limits[1],to=limits[2],length.out=n+1)
-  if (rev.colors) {
-    p <- p + scale_fill_gradientn(colours=rev(brewer.pal(n=n,palette)),limits=limits)
-  } else {
-    p <- p + scale_fill_gradientn(colours=brewer.pal(n=n,palette),limits=limits)
-  }
-
-  length.range = diff(range(data[, 'length']))
-  indel.range = diff(range(data[, 'ins_rate']))
-  if (indel.range > 0) {
-    p <- p + coord_equal(ratio = length.range / indel.range)
-  }
-  if(do.plot) {
-    print(p)
-  } else {
-    return(p)
-  }
-}
-
-source("${functions}")
-source("${plots}")
-
-summary.df <- read.csv("${table_file}")
-tbl <- summary.df
-
-na.rm <- TRUE
-plot.x <- 'fpr'
-plot.y <- 'tpr'
-zoom.fpr <- 0.1
-
-art = 'artificial.nh'
-bg = 'bglobin.nh'
-enc = 'encode.nh'
-tree.files <- unique(tbl[,'tree'])
-tree.labels <- c('6 artificial','17 bglobin', '44 vertebrate')
-tbl[tbl[,'tree'] == art,'slrsim_tree_file'] = 0
-tbl[tbl[,'tree'] == bg,'slrsim_tree_file'] = 1
-tbl[tbl[,'tree'] == enc,'slrsim_tree_file'] = 2
-#tbl[,'tree'] <- factor(tbl[,'tree'],labels=tree.labels)
-
-w <- 10
-h <- 5
-
-# Default range ROC plot
-do.default.roc <- FALSE
-if (do.default.roc) {
-  if (!file.exists("${sites_at_default}")) {
-    print("Loading sites subset at default values...")
-    load("${sites_file}")
-    sub.sites <- subset(sites, tree_length == 1 & ins_rate == 0.05)
-    save(sub.sites, file="${sites_at_default}")
-  }
-  load("${sites_at_default}")
-  sub.sites[, 'slrsim_label'] <- paste(
-    sub.sites[, 'analysis'], 
-    sub.sites[, 'aligner'],
-    sep='|'
-  )
-  f = function(df,thresh) {return(slr.roc(df, na.rm=T))}
-  roc <- summarize.by.labels(sub.sites, f)
-  p <- plot.roc(roc, plot=F, plot.x='fpr', plot.y='tpr', color.by='aligner')
-  p <- p + facet_grid(. ~ analysis)
-  full.roc <- p
-  max.x <- max(roc[, 'fpr']) * 0.05
-  sub.roc <- p + scale_x_continuous(limits=c(0, max.x))
-  pdf(file="${rocs_at_default}", width=15, height=10)
-  subplot <- function(x, y) viewport(layout.pos.col=x, layout.pos.row=y)
-  vplayout <- function(x, y) {
-    grid.newpage()
-    pushViewport(viewport(layout=grid.layout(y,x)))
-  }
-  vplayout(1, 2)
-  print(sub.roc, vp=subplot(1, 1))
-  print(full.roc, vp=subplot(1, 2))
-  dev.off()
-}
-
-# Single-variable param sweep.
-p.sweep <- function(file, field, label) {
-  pdf(file=file, width=10, height=8)
-  default.rate <- subset(tbl, ins_rate %in% c(0, 0.02, 0.05, 0.08, 0.1))
-  default.rate[, 'ins_rate'] <- paste("Ins. Rate = ",default.rate[, 'ins_rate'])
-  default.rate[, 'z_value'] <- default.rate[, field]
-  p <- ggplot(default.rate, aes(x=length, y=z_value))
-  p  <- p + geom_line(aes(colour=analysis), alpha=0.8)
-  p <- p + scale_colour_brewer(name="Analysis Method", palette="Set1")
-  p <- p + scale_x_continuous(name="Tree Length", limits=c(0.2, 2), breaks=c(0.2, 1.0, 2.0))
-  y.lim <- c(0, 1)
-  if (field == 'auc') {
-    y.lim <- c(0.5, 1)
-  }
-  p <- p + scale_y_continuous(name=label, limits=y.lim, breaks=c(0, 0.5, 1.0))
-  p <- p + facet_grid(ins_rate ~ aligner)
-  p <- p + opts(
-    panel.margin=unit(rep(0.5, times=4), "lines"),
-    title=paste(label," vs Tree Length", sep='')
-  )
-  p <- p + theme_bw()
-  print(p)
-  dev.off()
-}
-
-p.sweep(file="${indel_sweep_cor}", "cor", "Correlation")
-p.sweep(file="${indel_sweep_tpr_fpr}", "tpr_at_fpr", "TPR at FPR")
-p.sweep(file="${indel_sweep_auc}", "auc", "AUC_0.2")
-
-# Parameter sweep plots for summary statistics.
-pdf(file="${f_auc}",width=w,height=h)
-p <- plot.f(tbl,field='auc',do.plot=F,rev.colors=F,limits=c(0.4,1))
-p <- p + facet_grid(analysis ~ aligner)
-print(p)
-dev.off()
-
-pdf(file="${f_auc_full}",width=w,height=h)
-p <- plot.f(tbl,field='auc_full',do.plot=F,rev.colors=F,limits=c(0.4,1))
-p <- p + facet_grid(analysis ~ aligner)
-print(p)
-dev.off()
-
-pdf(file="${f_tpr_at_fpr}",width=w,height=h)
-p <- plot.f(tbl,field='tpr_at_fpr',do.plot=F,rev.colors=F)
-p <- p + facet_grid(analysis ~ aligner)
-print(p)
-dev.off()
-
-pdf(file="${f_tpr_at_fdr}",width=w,height=h)
-p <- plot.f(tbl,field='tpr_at_fdr',do.plot=F,rev.colors=F)
-p <- p + facet_grid(analysis ~ aligner)
-print(p)
-dev.off()
-
-pdf(file="${f_cor}",width=w,height=h)
-p <- plot.f(tbl,field='cor',do.plot=F,rev.colors=F)
-p <- p + facet_grid(analysis ~ aligner)
-print(p)
-dev.off()
-
-^;
-  Bio::Greg::EslrUtils->run_r($rcmd,{});
-  
 }
 
 sub fig_two_a {
@@ -401,6 +212,11 @@ sub fig_two_clustalw {
 }
 
 sub fig_two_fsa {
+  my $self = shift;
+  $self->fig_two;
+}
+
+sub fig_three_a {
   my $self = shift;
   $self->fig_two;
 }

@@ -1110,6 +1110,25 @@ sub subtree {
   return $subtree;
 }
 
+sub translate_ensembl {
+  my $class = shift;
+  my $tree = shift;
+
+  my $map = {
+    "ENSP0.*" => 'Human',
+    "ENSPTRP0.*" => 'Chimpanzee',
+    "ENSGGOP.*" => 'Gorilla',
+    "ENSPPYP0.*" => 'Orangutan',
+    "ENSMMUP0.*" => 'Macaque',
+    "ENSCJAP0.*" => 'Marmoset',
+    "ENSTSYP0.*" => 'Tarsier',
+    "ENSMICP0.*" => 'MouseLemur',
+    "ENSOGAP0.*" => 'Bushbaby',
+  };
+
+  return $class->translate_ids($tree, $map);
+}
+
 sub translate_ids {
   my $class = shift;
   my $tree = shift;

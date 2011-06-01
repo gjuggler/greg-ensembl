@@ -107,17 +107,12 @@ multi.methods <- function() {
   dev.off()  
 }
 
-#
-# Figure 2 - Tree shapes, TPR_FPR<0.05, and ROC plots at 1.0/0.1
-#
-multi.plot <- function() {
+multi.trees <- function() {
   tree.a <- read.tree('trees/artificial.nh')
   tree.b <- read.tree('trees/bglobin.nh')
   tree.c <- read.tree('trees/encode.nh')
-
-  tbl.a <- read.csv('~/scratch/gj1_fig_one_a/current/table.csv')
-  tbl.b <- read.csv('~/scratch/gj1_fig_one_b/current/table.csv')
-  tbl.c <- read.csv('~/scratch/gj1_fig_one_c/current/table.csv')
+  pdf(file='fig_multi_trees.pdf', width=15, height=5)
+  vplayout(3, 1)
 
   f <- function(sim) {
     p <- plotTree(sim, 
@@ -136,36 +131,70 @@ multi.plot <- function() {
   }
 
   plots <- list(
-    a = list(tree.a, tbl.a),
-    b = list(tree.b, tbl.b),
-    c = list(tree.c, tbl.c)
+    a = list(tree.a),
+    b = list(tree.b),
+    c = list(tree.c)
   )
-
-  pdf(file='fig_multi.pdf', width=24, height=10)
-  vplayout(6, 3)
-
-  all.tbls <- data.frame()
   for (i in 1:length(plots)) {
     cur.stuff <- plots[[i]]
     cur.tree <- cur.stuff[[1]]
-    cur.tbl <- cur.stuff[[2]]
-
-    cur.tbl <- subset(cur.tbl, analysis == 'SLR Sitewise')
-    all.tbls <- rbind(all.tbls, cur.tbl)
 
     # Plot tree to the left.
     sim <- PhyloSim()
     setPhylo(sim, cur.tree)
     p <- f(sim)
-    print(p, vp=subplot(1, i))
+    print(p, vp=subplot(i, 1))
   }
+  dev.off()
+}
+
+multi.plots <- function() {
+
+  multi.plot(color.by='tpr_at_fpr')
+
+  multi.plot(color.by='tpr_at_thresh', aligners=c('clustalw', 'prank_codon', 'True_Alignment'))
+  multi.plot(color.by='fpr_at_thresh', aligners=c('clustalw', 'prank_codon', 'True_Alignment'))
+}
+
+#
+# Figure 2 - Tree shapes, TPR_FPR<0.05, and ROC plots at 1.0/0.1
+#
+multi.plot <- function(color.by='tpr_at_fdr', 
+  aligners = c('clustalw', 'mafft', 'prank', 'prank_codon', 'True_Alignment')
+) {
+
+  tbl.a <- read.csv('~/scratch/gj1_fig_one_a/current/table.csv')
+  tbl.b <- read.csv('~/scratch/gj1_fig_one_b/current/table.csv')
+  tbl.c <- read.csv('~/scratch/gj1_fig_one_c/current/table.csv')
+
+  print(unique(tbl.b$aligner))
+
+  plots <- list(
+    a = list(tbl.a),
+    b = list(tbl.b),
+    c = list(tbl.c)
+  )
+
+  all.tbls <- data.frame()
+  for (i in 1:length(plots)) {
+    cur.stuff <- plots[[i]]
+    cur.tbl <- cur.stuff[[1]]
+
+    cur.tbl <- subset(cur.tbl, analysis == 'SLR Sitewise')
+    cur.tbl <- subset(cur.tbl, aligner %in% aligners)
+    all.tbls <- rbind(all.tbls, cur.tbl)
+  }
+
+  width <- length(plots) * 2
+  height <- length(aligners) * 2
+  pdf(file=paste('fig_multi_', color.by, '.pdf', sep=''), width=width, height=height)
 
   # Write all-table to a file.
   write.csv(all.tbls, file="tabl_multi.csv", row.names=FALSE)
 
-  # Length / indel sweep of TPR at FPR.
-  z_val <- 'tpr_at_fpr'
-  all.tbls[,'z_val'] <- all.tbls[, z_val]
+  z.val <- color.by
+  all.tbls[,'z_val'] <- all.tbls[, z.val]
+
   rect.df <- expand.grid(unique(all.tbls[,'aligner']), unique(all.tbls[,'tree']))
   colnames(rect.df) <- c('aligner', 'tree')
   rect.df[,'xmin'] <- 0.9
@@ -175,22 +204,44 @@ multi.plot <- function() {
   rect.df[,'ins_rate'] <- 0
   rect.df[,'length'] <- 0
   rect.df[,'z_val'] <- 0
-  p <- ggplot(all.tbls, aes(x=length, y=ins_rate*2, z=z_val))
+
+  n <- 5
+  if (z.val == 'fpr_at_thresh') {
+    clr.lim <- c(0, 0.025)
+    clrs <- rev(brewer.pal(n=n, 'Spectral'))
+    all.tbls[, 'z_val'] <- pmin(0.025, all.tbls$z_val)
+  } else if (z.val == 'tpr_at_thresh') {
+    clr.lim <- c(0, 1.0)
+    clrs <- brewer.pal(n=n, 'Spectral')
+  } else if (z.val == 'tpr_at_fpr' || z.val == 'tpr_at_fdr') {
+    clr.lim <- c(0, 1.0)
+    clrs <- brewer.pal(n=n, 'Spectral')
+  } else {
+    clr.lim <- c(0, 1.0)
+    clrs <- brewer.pal(n=n, 'Spectral')
+  }
+
+  p <- ggplot(all.tbls, aes(x=length, y=ins_rate*2))
   p <- p + theme_bw()
   x.brks <- c(0.2, 0.6, 1.0, 1.6, 2.0)
   y.brks <- c(0, 0.04, 0.08, 0.12, 0.16, 0.20)
   p <- p + scale_x_continuous('Mean Path Length', breaks=x.brks)
   p <- p + scale_y_continuous('Indel Rate', breaks=y.brks)
   p <- p + coord_cartesian(xlim=c(0.1, 2.1), ylim=c(-0.005, 0.205))
+
   p <- p + geom_tile(aes(fill=z_val))
-  p <- p + geom_rect(size=1, data=rect.df, fill=rgb(0,0,0,alpha=0), aes(xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax, colour=aligner))
-  p <- p + scale_colour_brewer(name="Alignment Method", palette="Set1")
-  n <- 5
-  clr.lim <- c(0, 1)
+#  p <- p + geom_rect(size=1, data=rect.df, fill=rgb(0,0,0,alpha=0), aes(xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax), colour='black')
+#  p <- p + scale_colour_brewer(name="Alignment Method", palette="Set1")
+
+#  p <- p + geom_point(aes(colour = z_val), shape=I(2))
+#  p <- p + scale_size(limits = clr.lim, to=c(1, 8))
+
   breaks <- seq(from=clr.lim[1], to=clr.lim[2], length.out=n+1)
-  p <- p + scale_fill_gradientn(z_val, colours=brewer.pal(n=n,'Spectral'), limits=clr.lim, breaks=breaks)
-  p <- p + facet_grid(tree ~ aligner)
+  #p <- p + scale_fill_gradient(z_val, low='black', high='white', limits=clr.lim)
+  p <- p + scale_fill_gradientn(z.val, colours=clrs, limits=clr.lim, breaks=breaks)
+  p <- p + facet_grid(aligner ~ tree)
   p <- p + opts(
+    legend.position='none',
     panel.grid.major = theme_blank(),
     panel.grid.minor = theme_blank(),
     strip.text.x = theme_blank(),
@@ -199,52 +250,9 @@ multi.plot <- function() {
     axis.title.x = theme_blank(),
     axis.title.y = theme_blank()
   )
-  print(p, vp=subplot(2:5, 1:3))
-
-  # ROC plot at default length / indel.
-  a <- '~/scratch/gj1_fig_one_a/current'
-  b <- '~/scratch/gj1_fig_one_b/current'
-  c <- '~/scratch/gj1_fig_one_c/current'
-  sets <- c(a,b,c)
-  all.sites <- data.frame()
-  for (i in 1:length(sets)) {
-    cur.dir <- sets[i]
-    print(cur.dir)
-    all.sites.f <- paste(cur.dir, '/', 'sites.Rdata', sep='')
-    default.sites.f <- paste(cur.dir, '/', 'sites_at_default.Rdata', sep='')
-    if (!file.exists(default.sites.f)) {
-      all.sites <- load(all.sites.f)
-      sub.sites <- subset(sites, tree_length == 1 & ins_rate == 0.05)
-      save(sub.sites, file=default.sites.f)
-    }
-    load(default.sites.f)
-    all.sites <- rbind(all.sites, sub.sites)
-  }
-  all.sites[,'tree'] <- factor(as.character(all.sites[,'tree']))
-  f <- function(df, thresh) {return(slr.roc(df, na.rm=T))}
-  roc <- summarize.by.labels(all.sites, f)
-  p <- plot.roc(roc, plot=F, plot.x='fpr', plot.y='tpr', color.by='aligner')
-  p <- p + theme_bw()
-  p <- p + scale_colour_brewer(name="Alignment Method", palette="Set1")
-  p <- p + geom_vline(xintercept=0.05,colour='black')
-  p <- p + geom_vline(xintercept=0.01,colour='gray')
-  max.x <- max(roc[, 'fpr']) * 0.1
-  p <- p + scale_x_continuous(name="False Positive Rate", limits=c(0,max.x))
-  p <- p + scale_y_continuous(name="True Positive Rate", limits=c(0,1))
-  p <- p + facet_grid(tree ~ .)
-  p <- p + opts(
-    legend.position='none',
-    strip.text.x = theme_blank(),
-    strip.text.y = theme_blank(),
-    strip.background = theme_blank(),
-    axis.title.x = theme_blank(),
-    axis.title.y = theme_blank()
-  )
-
-  print(p, vp=subplot(6, 1:3))
+  print(p)
 
   dev.off()
-
 }
 
 
@@ -866,6 +874,199 @@ lots.of.fps <- function() {
   }
 }
 
+example.roc <- function() {
+  if (!exists('example.roc.df')) {
+    roc <- load.roc('gj1_fig_two_a', return.merged=F, na.rm=F)
+    example.roc.df <<- roc
+  }
+  roc <- example.roc.df
+
+  keep.filters <- c('tcoffee_hi')
+  roc <- subset(roc, filter %in% keep.filters)
+  roc <- subset(roc, tree_length == 1 & ins_rate == 0.05)
+
+  print(nrow(roc))
+
+  roc <- ins.mpl.factors(roc)
+  roc <- aln.factors(roc)
+  roc <- filter.factors(roc)
+  roc <- roc[ order(roc$filter, roc$aligner), ]
+
+  roc$filter <- as.character(roc$filter)
+  roc$aligner <- as.character(roc$aligner)
+#  roc[roc$filter == 'None', 'aligner'] <- 'MAFFT'
+#  roc[roc$filter == 'True Alignment', 'aligner'] <- 'True Alignment'
+  roc[roc$filter == 'Branch Length(high)', 'aligner'] <- 'MAFFT + Branch Length filter'
+
+  roc$analysis <- roc$aligner
+#  roc$analysis <- factor(roc$aligner, levels=unique(roc$aligner))
+
+  n.fp <- max(roc$fp)
+  n.tp <- max(roc$tp)
+
+  add.fdrs <- function(df, p) {
+    fdr <- 0.1
+    p <- p + geom_abline(intercept=0, slope=(1 - fdr)/fdr * n.fp/n.tp, colour='black', size=0.5, linetype=1)
+#    fdr <- 0.5
+#    p <- p + geom_abline(intercept=0, slope=(1 - fdr)/fdr * n.fp/n.tp, colour='black', linetype=2)
+  }
+  add.fps <- function(df, p) {
+    p <- p + geom_vline(x=0.05, colour='black', linetype=3)
+  }
+
+  p <- ggplot(roc, aes(x=fpr, y=tpr, colour=analysis))
+  p <- p + theme_bw()
+
+  p <- p + geom_abline(intercept=0, slope=1, colour='gray', linetype=1)
+
+  add.areas <- function(roc, p) {
+    # AUC polygons.
+    below.fpr <- subset(roc, score > -9999)
+    first.row <- below.fpr[1, ]
+    last.row <- below.fpr[nrow(below.fpr),]
+    last.row$tpr <- 0
+    first.row$tpr <- 0
+    below.fpr <- rbind(first.row, below.fpr, last.row)
+
+    auc.tpr <- max(below.fpr$tpr)
+    whole.rectangle <- below.fpr
+    whole.rectangle[whole.rectangle$tpr > 0, 'tpr'] <- auc.tpr
+    p <- p + geom_polygon(data=whole.rectangle, alpha=0.3, fill=rgb(.8, .8, 1), aes(colour=NULL))
+    p <- p + geom_polygon(data=below.fpr, alpha=0.5, fill=rgb(.5, .5, 1), aes(colour=NULL))
+  }
+
+  add.points <- function(roc, p) {
+    # Threshold point marker.
+    t <- qchisq(0.975, df=1)
+    for (lbl in unique(roc$analysis)) {
+      df.sub <- subset(roc, analysis==lbl)
+      row.index <- min(which(df.sub$score <= t))
+      row <- df.sub[row.index, ]
+      p <- p + geom_segment(data=row, xend=-0.1, yend=row$tpr, colour=I('black'), size=0.25, linetype=2)
+  
+      row.index <- max(which(df.sub$fdr <= 0.1))
+      row <- df.sub[row.index, ]
+      p <- p + geom_segment(data=row, xend=-0.1, yend=row$tpr, colour=I('black'), size=0.25, linetype=2)
+
+      row.index <- max(which(df.sub$fpr <= 0.05))
+      row <- df.sub[row.index, ]
+      p <- p + geom_segment(data=row, xend=-0.1, yend=row$tpr, colour=I('black'), size=0.25, linetype=2)
+    }
+    p
+  }
+
+#  p <- p + scale_colour_brewer(name="Alignment", palette="Set1")
+  p <- p + scale_y_continuous(name="True Positive Rate", limits=c(0,1.0), breaks=c(0, 0.2, 0.4, 0.6, 0.8, 1))
+  p <- p + opts(legend.position = 'none')
+
+  p.full <- p + scale_x_continuous(name="False Positive Rate", 
+    limits=c(-0.1,1.0), 
+    breaks=c(-0.1, 0, 0.2, 0.4, 0.6, 0.8, 1),
+    labels=c('', 0, 0.2, 0.4, 0.6, 0.8, 1),
+    expand = c(0, 0)
+  )
+  p.zoom <- p + scale_x_continuous(name="False Positive Rate", 
+    limits=c(-0.1,1.1) * 0.1, 
+    breaks=c(-0.1, 0, 0.2, 0.4, 0.6, 0.8, 1) * 0.1,
+    labels=c('', c(0, 0.2, 0.4, 0.6, 0.8, 1) * 0.1),
+    expand = c(0, 0)
+  )
+
+  p.full <- add.areas(roc, p.full)
+#  p.zoom <- add.areas(roc, p.zoom)
+
+#  p.full <- add.fps(roc, p.full)
+  p.zoom <- add.fps(roc, p.zoom)
+
+  p.full <- p.full + geom_line(size=2, colour='blue')
+  p.zoom <- p.zoom + geom_line(size=2, colour='blue')
+
+  p.zoom <- add.fdrs(roc, p.zoom)
+  p.zoom <- add.points(roc, p.zoom)
+
+  pdf(file="roc.example.pdf",width=8,height=4)
+    vplayout(2, 1)
+    print(p.full, vp=subplot(1, 1))
+    print(p.zoom, vp=subplot(2, 1))
+  dev.off()
+}
+
+meta.analysis <- function() {
+
+    load.s <- function(db) {
+      df <- load.sites(db)
+    }
+
+    true <- subset(load.s('gj1_fig_two_c'), filter=='true')
+    true$aligner <- 'True Alignment'
+
+    fsa <- subset(load.s('gj1_fig_two_fsa'), filtering_name=='none')
+    mafft <- subset(load.s('gj1_fig_two_a'), filter=='none')
+    prank <- subset(load.s('gj1_fig_two_b'), filter=='none')
+    prank_c <- subset(load.s('gj1_fig_two_c'), filter=='none')
+
+    bl.lo <- subset(load.s('gj1_fig_two_c'), filter=='branchlength_lo')
+    bl.hi <- subset(load.s('gj1_fig_two_c'), filter=='branchlength_hi')
+    tc.lo <- subset(load.s('gj1_fig_two_c'), filter=='tcoffee_lo')
+    tc.hi <- subset(load.s('gj1_fig_two_c'), filter=='tcoffee_hi')
+
+    merge.by <- c('tree_length', 'ins_rate', 'slrsim_rep', 'seq_position')
+
+    prep.df <- function(df, lbl) {
+      df <- sign.lrt(df)
+      df <- df[!duplicated(df[, merge.by]),]
+      df <- df[, c('signed_lrt', merge.by)]
+      df[, paste('lrt.', lbl, sep='')] <- df$signed_lrt
+      df$signed_lrt <- NULL
+      return(df)
+    }
+
+    collect.scores <- function(df.list) {
+      df.names <- names(df.list)
+      all.sites <- prep.df(df.list[[1]], df.names[1])
+
+      for (i in 2:length(df.list)) {
+        cur.df <- prep.df(df.list[[i]], df.names[i])
+        all.sites <- merge(all.sites, cur.df, by=merge.by, all.x=T, all.y=T)
+      }
+      return(all.sites)
+    }
+
+    combine.median <- function(df) {
+      combine.fields <- grep("lrt\\.", colnames(df), value=T)
+      print(combine.fields)
+
+      meta.matrix <- as.matrix(df[, combine.fields])
+      lrts <- apply(meta.matrix, 1, median, na.rm=T)
+      df[, 'lrt_stat'] <- lrts
+      
+      for (i in 1:length(combine.fields)) {
+        df[, combine.fields[i]] <- NULL
+      }
+      return(df)
+    }
+
+    meta.aligners <- list(
+      fsa=fsa,
+      prank=prank,
+      prank_c = prank_c,
+      bl.lo = bl.lo,
+      bl.hi = bl.hi,
+      tc.lo = tc.lo,
+      tc.hi = tc.hi
+    )
+    meta.aligners <- collect.scores(meta.aligners)
+    meta.aligners <- combine.median(meta.aligners)
+
+    true$lrt_stat <- NULL
+    test.df <- merge(true, meta.aligners, by=merge.by, all.x=T)
+    pt <- summarize.by.labels(test.df, paper.table)
+    print(pt[, c('tpr_at_thresh', 'fdr_at_thresh')])
+
+    pt <- summarize.by.labels(sign.lrt(prank_c), paper.table)
+    print(pt[, c('tpr_at_thresh', 'fdr_at_thresh')])
+}
+
 merged.datasets <- function(tbl) {
 
   merged.data.f <- 'merged_data.csv'
@@ -1195,9 +1396,15 @@ load.tbl <- function(db) {
 }
 
 load.sites <- function(db) {
+  if (exists(db)) {
+    print(paste("Loading cached sites from",db))
+    sites <- get(db)
+    return(sites)
+  }
   dir = paste('~/scratch/',db,'/current', sep='')
   sites.file <- paste(dir, '/', 'sites.Rdata', sep='')
   load(sites.file)
+  assign(db, sites, envir=.GlobalEnv)
   return(sites)
 }
 
@@ -1235,7 +1442,7 @@ load.all.rocs <- function(dbs, return.merged=T, return.fps=F, keep.fields=NULL) 
   return(df)
 }
 
-load.roc <- function(db, return.merged=T, return.fps=F) {
+load.roc <- function(db, return.merged=T, return.fps=F, na.rm=F) {
   dir <- paste('~/scratch/', db, '/current', sep='')
   sites.file <- paste(dir, '/sites.Rdata', sep='')
   rocs.file <- paste(dir, '/rocs.Rdata', sep='')
@@ -1245,7 +1452,8 @@ load.roc <- function(db, return.merged=T, return.fps=F) {
   if (!file.exists(rocs.file)) {
     print(paste("Making roc for",db,"..."))
     load(sites.file)
-    roc <- summarize.by.labels(sites, slr.roc)
+    roc.f <- function(df) {slr.roc(df, na.rm=na.rm)}
+    roc <- summarize.by.labels(sites, roc.f)
     save(roc, file=rocs.file)
   }
   print(paste("Loading roc for",db,"..."))
@@ -1276,6 +1484,7 @@ load.roc <- function(db, return.merged=T, return.fps=F) {
     filters <- unique(roc.aln$alnfilter)
     for (i in 1:length(filters)) {
       cur.f <- filters[i]
+      print(paste("  ", cur.f))
       sub.roc.aln <- subset(roc.aln, alnfilter == cur.f)
       sub.roc.aln <- remove.dups(sub.roc.aln)
       roc.merged <- merge(

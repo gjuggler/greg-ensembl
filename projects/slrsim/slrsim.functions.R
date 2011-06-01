@@ -86,7 +86,7 @@ adj.threshold <- function(df, type='bh', cutoff=0.1) {
   return(threshold)
 }
 
-slr.roc = function(df,na.rm=T) {
+slr.roc = function(df, na.rm=T, na.value=-9999) {
   library(doBy)
   library(plyr)
 
@@ -101,11 +101,7 @@ slr.roc = function(df,na.rm=T) {
   }
 
   if (!is.paml(df)) {
-    # Create a signed LRT if it's SLR-based data.
-    # We'll replace NAs with an extremely low score.
-    df <- sign.lrt(df)
-    df$score <- df[,'signed_lrt']
-    df[is.na(df$aln_dnds),'aln_dnds'] <- 0
+    df$score <- df[, 'lrt_stat']
   } else {
     # We've got PAMl data, and the lrt_stat is actually a p-value
     # for positive selection. So we can sort by this and it should
@@ -114,7 +110,8 @@ slr.roc = function(df,na.rm=T) {
   }
 
   # Fix NA rows to a very low score.
-  df[is.na(df$lrt_stat),'score'] <- -1000
+  #print(head(df[is.na(df$lrt_stat),]))
+  df[is.na(df$lrt_stat),'score'] <- na.value
 
   df$truth = as.integer( df$true_dnds > 1 )
   df <- orderBy(~-score,data=df)
@@ -137,10 +134,11 @@ slr.roc = function(df,na.rm=T) {
   df$auc_full <- -1
   df$auc <- -1
   if (nrow(df) > 1) {
-    auc <- area.under.curve(df,x.lim=0.1)
-    df$auc <- auc
-    auc_full <- area.under.curve(df,x.lim=1)
-    df$auc_full <- auc_full
+    auc.df <- subset(df, score > na.value)
+    auc <- area.under.curve(auc.df,x.lim=0.1)
+    df[df$score > na.value, ]$auc <- auc
+    auc_full <- area.under.curve(auc.df,x.lim=1)
+    df[df$score > na.value, ]$auc_full <- auc_full
   }
 
   df$tpr_at_fpr <- 0
@@ -235,13 +233,14 @@ is.paml = function(df) {
 }
 
 sign.lrt <- function(df) {
+  print("signing lrt...")
   df[,'signed_lrt'] = df$lrt_stat
   if (length(df$omega) > 0) {
     # dn/ds values are stored as omega.
     df[df$omega < 1,]$signed_lrt = -df[df$omega < 1,]$signed_lrt
   } else if (length(df$aln_dnds) > 0) {
     # dn/ds values are stored as aln_dnds
-    df[df$aln_dnds < 1,]$signed_lrt = -df[df$aln_dnds < 1,]$signed_lrt    
+    df[df$aln_dnds < 1,]$signed_lrt = -df[df$aln_dnds < 1,]$signed_lrt
   } else {
     print("Check how you're storing dn/ds values!!!")
     q()
@@ -254,7 +253,7 @@ add.pval <- function(df) {
   if (is.paml(df)) {
     df$pval <- 1 - df$lrt_stat
   } else {
-    df$pval <- 1 - pchisq(df[,'lrt_stat'],1)
+    df$pval <- 1 - pchisq(abs(df[,'lrt_stat']),1)
     df$pval <- df$pval / 2 # Divide p-values by 2 since we're only looking at one side of chi-sq.
     print(nrow(subset(df, is.na(aln_dnds))))
     if (sum(df$aln_dnds < 1) > 0) {
@@ -303,15 +302,15 @@ df.stats = function(df,
   }
 
   # Collect stats for SLR-type runs.
-  pos_pos = nrow(subset(df,true_type=="positive1" & lrt_stat>thresh & aln_dnds>aln_thresh))
-  neg_pos = nrow(subset(df,true_type!="positive1" & lrt_stat>thresh & aln_dnds>aln_thresh))
-  neg_neg = nrow(subset(df,true_type!="positive1" & !(lrt_stat>thresh & aln_dnds>aln_thresh)))
-  pos_neg = nrow(subset(df,true_type=="positive1" & !(lrt_stat>thresh & aln_dnds>aln_thresh)))
+  pos_pos = nrow(subset(df,true_type=="positive1" & lrt_stat>thresh))
+  neg_pos = nrow(subset(df,true_type!="positive1" & lrt_stat>thresh))
+  neg_neg = nrow(subset(df,true_type!="positive1" & !(lrt_stat>thresh)))
+  pos_neg = nrow(subset(df,true_type=="positive1" & !(lrt_stat>thresh)))
 
   pos_all = nrow(subset(df,true_type=="positive1"))
   neg_all = nrow(subset(df,true_type!="positive1"))
-  all_pos = nrow(subset(df,lrt_stat>thresh & aln_dnds>aln_thresh))
-  all_neg = nrow(subset(df,!(lrt_stat>thresh & aln_dnds>aln_thresh)))
+  all_pos = nrow(subset(df,lrt_stat>thresh))
+  all_neg = nrow(subset(df,!(lrt_stat>thresh)))
 
   all = nrow(df)
 

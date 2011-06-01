@@ -617,6 +617,8 @@ sub get_params_from_tree_tags {
   my $node_id = shift;
 
   my $pta  = $dba->get_ProteinTreeAdaptor;
+
+  print "node: $node_id\n";
   my $tree = $pta->fetch_node_by_node_id($node_id);
 
   my $tags = $tree->get_tagvalue_hash;

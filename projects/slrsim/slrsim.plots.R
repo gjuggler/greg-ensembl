@@ -37,6 +37,7 @@ plot.roc = function(
   color.by = 'slrsim_label',
   plot.at.threshold = NA,
   alpha = 1,
+  size = 1,
   plot = T
 ) {
   data$roc.x = data[, plot.x]
@@ -48,7 +49,7 @@ plot.roc = function(
   #print(paste("Plot.roc row count: ",nrow(data)))
 
   p <- ggplot(data,aes(x=roc.x,y=roc.y,colour=roc.color))
-  p <- p + geom_line(alpha=alpha)
+  p <- p + geom_line(alpha=alpha, size=size)
   p <- p + xlab(plot.x)
   p <- p + ylab(plot.y)
 

@@ -86,6 +86,10 @@ sub load_tree_into_database {
   $params->{'slrsim_rep'}         = $sim_rep;
   $params->{'slrsim_tree_length'} = $final_length;
   delete $params->{'slrsim_tree_lengths'};
+  delete $params->{'tree_string'};
+  delete $params->{'output_folder'};
+
+  $self->hash_print($params);
 
   # Store all parameters as tags.
   # This is important -- it's how the parameters are getting to the main

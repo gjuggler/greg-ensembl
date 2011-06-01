@@ -682,7 +682,6 @@ sub fig_two_fsa {
   return \@sets;
 }
 
-
 sub fig_two {
   my $self = shift;
   my $aln = shift;
@@ -754,6 +753,95 @@ sub fig_two {
   }
   return \@sets;
 }
+
+sub fig_three_a {
+  my $self = shift;  
+  my @sets;
+  push @sets, @{$self->fig_three('prank_codon', $self->scheme_b)};
+  return \@sets;
+}
+
+sub fig_three {
+  my $self = shift;
+  my $aln = shift;
+  my $scheme = shift;
+
+  my @sets;
+  my @subsets_array;
+
+  my @sets;
+  my $params;
+  my @lengths = map { $_ * 1 / 5 } 1 .. 10;
+  my @indels  = map { $_ / 100 } 0 .. 10;
+
+  my @pairs;
+  foreach my $length (@lengths) {
+    foreach my $indel (@indels) {
+      push @pairs, [$length, $indel];
+    }
+  }
+
+  foreach my $pair (@pairs) {
+    my ($length, $indel) = @$pair;
+    push @subsets_array, {
+      aln => $aln,
+      scheme => $scheme,
+      length => $length,
+      indel => $indel
+    };
+  }
+
+  foreach my $subset ( @subsets_array ) {
+    $self->hash_print($subset);
+
+    my $scheme = $subset->{scheme};
+    my $aln    = $self->aln_param( $subset->{aln} );
+    my $aln_s = $subset->{aln};
+    my $length = $self->mean_path_param( $subset->{length} );
+    my $indel  = $self->indel_rate_param( $subset->{indel} );
+
+    foreach my $filter ( 'true', 'none', 'gblocks', 'branchlength_lo', 'branchlength_hi', 'optimal_lo', 'optimal_hi', 'tcoffee_lo', 'tcoffee_hi', 'guidance_lo', 'guidance_hi' ) {
+      my $tree = $scheme->{tree_name};
+      my $len_indel_s = '_'.$subset->{length} . '_'. $subset->{indel};
+      
+      my $max_mask = 0.6;
+      if ($filter =~ m/lo/i) {
+        $max_mask = 0.2;
+      }
+      
+      my $params;
+      if ( $filter eq 'true' ) {
+        $params = $self->replace(
+          $scheme,
+          $self->aln_param('true'),
+          $self->filter_param('true', $max_mask),
+          { slrsim_label => "${tree}_True_none_${len_indel_s}" }
+          );
+        $params->{filtering_name} = 'true';
+        $params->{alignment_name} = $aln->{alignment_name};
+      } else {
+        $params = $self->replace(
+          $scheme, $aln,
+          $self->filter_param($filter, $max_mask),
+          { slrsim_label => "${tree}_${aln_s}_${filter}_${len_indel_s}" }
+          );
+      }
+      
+      $params =
+        $self->replace( 
+          $params, 
+          $self->reps_param(50),
+          $indel, 
+          $length,
+          { experiment_name => 'fig_three' } );
+      push @sets, $params;
+      
+      $self->store_meta($params) if ( scalar(@sets) == 1 );
+    }
+  }
+  return \@sets;
+}
+
 
 sub ari_indels {
   my $self = shift;

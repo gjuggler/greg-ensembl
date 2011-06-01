@@ -2115,15 +2115,25 @@ sub restrict_tree_to_aln {
   my @keepers;
   foreach my $leaf ( $tree->leaves ) {
     # Try binomial, taxon_id, and alias.
-    my $seq = Bio::EnsEMBL::Compara::AlignUtils->get_seq_with_id( $aln, $leaf->stable_id );
-    $seq = Bio::EnsEMBL::Compara::AlignUtils->get_seq_with_id( $aln, $leaf->genome_db->name )
-      if ( !defined $seq );
-    $seq = Bio::EnsEMBL::Compara::AlignUtils->get_seq_with_id( $aln, $leaf->taxon->binomial )
-      if ( !defined $seq );
-    $seq = Bio::EnsEMBL::Compara::AlignUtils->get_seq_with_id( $aln, $leaf->taxon->ensembl_alias )
-      if ( !defined $seq );
-    $seq = Bio::EnsEMBL::Compara::AlignUtils->get_seq_with_id( $aln, $leaf->taxon->taxon_id )
-      if ( !defined $seq );
+    my $seq;
+
+    $seq = Bio::EnsEMBL::Compara::AlignUtils->get_seq_with_id( $aln, $leaf->name );
+
+    if ($leaf->stable_id) {
+      $seq = Bio::EnsEMBL::Compara::AlignUtils->get_seq_with_id( $aln, $leaf->stable_id );
+    }
+    if ($leaf->adaptor) {
+      $seq = Bio::EnsEMBL::Compara::AlignUtils->get_seq_with_id( $aln, $leaf->genome_db->name )
+        if ( !defined $seq );
+    }
+    if ($leaf->taxon_id) {
+      $seq = Bio::EnsEMBL::Compara::AlignUtils->get_seq_with_id( $aln, $leaf->taxon->binomial )
+        if ( !defined $seq );
+      $seq = Bio::EnsEMBL::Compara::AlignUtils->get_seq_with_id( $aln, $leaf->taxon->ensembl_alias )
+        if ( !defined $seq );
+      $seq = Bio::EnsEMBL::Compara::AlignUtils->get_seq_with_id( $aln, $leaf->taxon->taxon_id )
+        if ( !defined $seq );
+    }
     next if ($used_seqs->{$seq});
     if (defined $seq) {
       $used_seqs->{$seq} = $seq;

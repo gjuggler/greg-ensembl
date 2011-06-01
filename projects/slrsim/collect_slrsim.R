@@ -69,7 +69,7 @@ get.all.data = function(sites.cols=NULL,genes.cols=NULL,where=NULL) {
     'g.phylosim_insertrate',
     'g.phylosim_deleterate',
     'g.alignment_name',
-    'g.aligner',
+#    'g.aligner',
     'g.alignment_score_threshold',
     'g.filtering_name',
     'g.filter',
@@ -118,11 +118,20 @@ get.all.data = function(sites.cols=NULL,genes.cols=NULL,where=NULL) {
   new.col.names <- list(
     c('slrsim_tree_file', 'tree'),
     c('slrsim_analysis_name', 'analysis'),
+    c('alignment_name', 'aligner'),
     c('tree_mean_path', 'tree_length'),
     c('phylosim_insertrate', 'ins_rate'),
     c('phylosim_deleterate', 'del_rate')
   )
   all <- rename.cols(all, new.col.names)
+
+  analysis.nm <- all[1, 'analysis']
+  if (grepl('SLR', analysis.nm)) {
+    all[, 'lrt_stat'] <- all[, 'lrt_stat'] * sign(all[, 'aln_dnds'] - .9999)
+  }
+
+  print(head(all$lrt_stat, n=200))
+
   return(all)
 }
 

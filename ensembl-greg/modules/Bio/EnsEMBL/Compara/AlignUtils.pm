@@ -16,6 +16,25 @@ my $ALN = "Bio::EnsEMBL::Compara::AlignUtils";
 my $COMPARA = "Bio::EnsEMBL::Compara::ComparaUtils";
 
 
+sub translate_ensembl {
+  my $class = shift;
+  my $aln = shift;
+
+  my $map = {
+    "ENSP0.*" => 'Human',
+    "ENSPTRP0.*" => 'Chimpanzee',
+    "ENSGGOP.*" => 'Gorilla',
+    "ENSPPYP0.*" => 'Orangutan',
+    "ENSMMUP0.*" => 'Macaque',
+    "ENSCJAP0.*" => 'Marmoset',
+    "ENSTSYP0.*" => 'Tarsier',
+    "ENSMICP0.*" => 'MouseLemur',
+    "ENSOGAP0.*" => 'Bushbaby',
+  };
+
+  return $class->translate_ids($aln, $map);
+}
+
 sub translate_ids {
   my $class = shift;
   my $aln = shift;
@@ -25,7 +44,7 @@ sub translate_ids {
   my $ensure_unique = 1;
   $ensure_unique = $params->{ensure_unique} if (defined $params->{ensure_unique});
 
-  $aln->set_displayname_flat;  
+  $aln->set_displayname_flat;
   my $new_aln = $aln->new;
 
   my $used_ids;
@@ -34,8 +53,19 @@ sub translate_ids {
     my $id = $seq->id;
     my $nse = $seq->get_nse;
 
+    my $new_id;
     if (defined $id && defined $map->{$id}) {
       my $new_id = $map->{$id};
+    } else {
+      # Treat all map entries as regular expressions.
+      foreach my $map_key (keys %$map) {
+        if ($id =~ m/$map_key/) {
+          $new_id = $map->{$map_key};
+        }
+      }
+    }
+
+    if ($new_id) {
       if ($ensure_unique) {
         while ($used_ids->{$new_id}) {
           $new_id =~ m/_(\d+)$/;
@@ -51,6 +81,7 @@ sub translate_ids {
       $used_ids->{$new_id} = 1;
       $id = $new_id;
     }
+
     $new_aln->add_seq(Bio::LocatableSeq->new(-seq => $seq->seq,
 					     -id => $id));
   }

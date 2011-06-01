@@ -618,7 +618,7 @@ sub all_lines {
   my @main_lines = @{$self->main_results};
   my @supp_lines = @{$self->supplementary_results};
   
-  my @all_lines = (@main_lines,@supp_lines);
+  my @all_lines = (@main_lines, @supp_lines);
   return \@all_lines;
 }
 
@@ -1078,6 +1078,26 @@ sub _set_branch_length {
   $node->branch_length($dnds);
 }
 
+sub parse_m0_dnds {
+  my $class = shift;
+  my $line_arrayref = shift;
+
+  my $param_objs = $class->parse_params($line_arrayref);
+  my $branches = $param_objs->{branches};
+
+  my @params = @{$param_objs->{params}};
+
+  my @params_se = @{$param_objs->{params_se}};
+
+  my $kappa = shift @params;
+  my $kappa_se = shift @params_se;
+
+  my $dnds = shift @params;
+  my $dnds_se = shift @params_se;
+
+  return ($dnds, $dnds_se);
+}
+
 sub parse_branch_params {
   my $class = shift;
   my $line_arrayref = shift;
@@ -1086,6 +1106,7 @@ sub parse_branch_params {
   my $branches = $param_objs->{branches};
 
   my @params = @{$param_objs->{params}};
+
   my @params_se = @{$param_objs->{params_se}};
 
   my $kappa = shift @params;
@@ -1106,7 +1127,11 @@ sub parse_branch_params {
       $looking = 0;
     }
 
-    if ($line =~ m/Model: free dN\/dS Ratios for branches for branches/i) {
+    if ($line =~ m/supplemental results/i) {
+      $looking = 0;
+    }
+
+    if ($line =~ m/Model: free dN\/dS Ratios for branches/i) {
       $free_model = 1;
     }
 
@@ -1118,18 +1143,23 @@ sub parse_branch_params {
         # branch           t        N        S    dN/dS       dN       dS   N*dN   S*dS
         #   5..6       0.101   2374.1    973.9   0.2223   0.0166   0.0747   39.4   72.8
         my @tokens   = split( /\s+/,  $line );
-        my @branches = split( /\.\./, $tokens[0] );
-        my $child    = $branches[1];
-        my $parent = $branches[0];
+        my @brs = split( /\.\./, $tokens[0] );
+        my $child    = $brs[1];
+        my $parent = $brs[0];
         my $id = $child;
         my $parent_id = $parent;
 
         my $branch_label = $tokens[0];
         my $branch_bl_arrayref = $branches->{$branch_label};
+
         my ($bl,$se) = @{$branch_bl_arrayref};
 
         my $dnds_se = -1;
-        $dnds_se = shift @params_se if ($free_model);
+        if ($free_model) {
+          $dnds_se = shift @params_se if ($free_model);
+        } else {
+          $dnds_se = @params_se[0];
+        }
 
         #	print "$child!!\n";
         my $obj = {
@@ -1473,15 +1503,18 @@ sub branch_model_likelihood {
   my $lnL    = $class->extract_lnL($lines_ref);
   my $kappa = $class->extract_kappa($lines_ref);
   my @omegas = $class->extract_omegas($lines_ref);
+  my ($dnds, $dnds_se) = $class->parse_m0_dnds($lines_ref);
   #print "Omegas: @omegas\n";
-  my $codeml_tree = $class->parse_codeml_results($lines_ref);
+  #my $codeml_tree = $class->parse_codeml_results($lines_ref);
 
   # Return an object with our results of interest.
   return {
     lnL       => $lnL,
     omegas    => \@omegas,
-    tree => $codeml_tree,
-    lines => $lines_ref
+#    tree => $codeml_tree,
+    lines => $lines_ref,
+    dnds => $dnds,
+    dnds_se => $dnds_se
   };
 }
 

@@ -4,6 +4,7 @@ use strict;
 use Bio::EnsEMBL::Hive::Process;
 use Bio::Greg::Hive::Process;
 use File::Path;
+use File::Copy;
 use FreezeThaw qw(freeze thaw cmpStr safeFreeze cmpStrHard);
 
 use base (
@@ -42,21 +43,20 @@ sub fetch_input {
   $self->create_table_from_params( $self->compara_dba, $self->param('genes_table'),
                                    $self->_genes_table_structure );
 
-  print $self->get_output_folder."\n";
-  my $data_file = $self->get_output_folder . "/data.tar.gz";
-  $self->param('data_tarball', $data_file) if (-e $data_file);  
+#  print $self->get_output_folder."\n";
+#  my $data_file = $self->get_output_folder . "/data.tar.gz";
+#  $self->param('data_tarball', $data_file) if (-e $data_file);  
 }
 
 sub run {
   my $self = shift;
 
-  $self->param('force_recalc', 1);
+  $self->param('force_recalc', 0);
 #  $self->param('filter', 'none');
 #  $self->param('maximum_mask_fraction', 0.6);
 #  $self->param('alignment_score_filtering', 1);
 
   my $tree = $self->get_tree;
-
   my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
 
   # Output the tree to file.
@@ -101,6 +101,15 @@ sub _simulate_alignment {
   my $out_f = $self->_save_file('sim', 'perlobj');
   my $out_file = $out_f->{full_file};
   $self->param('sim_file', $out_f->{rel_file});
+
+  # Copy the cached aln over if it makes sense.
+  my $cached_sim = $self->_cached_file('sim.perlobj');
+  $self->param('cached_sim', $cached_sim);
+  if (!-e $out_file && -e $cached_sim) {
+    print "  copying cached simulation...\n";
+    mkpath($out_file);
+    copy($cached_sim, $out_file) or die("Error copying cached alignment!");
+  }
   
   if (!-e $out_file || $self->param('force_recalc')) {
     print "  running simulation\n";
@@ -111,6 +120,11 @@ sub _simulate_alignment {
     close(OUT);
   } else {
     print "  loading simulated aln from file [$out_file]\n";
+  }
+
+  if (!-e $cached_sim) {
+    print "  copying simulation to cache..\n";
+    copy($out_file, $cached_sim) or die("Error copying cached simulation!");
   }
 
   open(IN, $out_file);
@@ -130,6 +144,15 @@ sub _align {
   my $out_f = $self->_save_file('inferred_aln', 'fasta');
   my $out_file = $out_f->{full_file};
   $self->param('aln_file', $out_f->{rel_file});
+
+  # Copy the cached aln over if it makes sense.
+  my $cached_aln = $self->_cached_file('aln.fasta');
+  $self->param('cached_aln', $cached_aln);
+  if (!-e $out_file && -e $cached_aln) {
+    print "  copying cached alignment...\n";
+    mkpath($out_file);
+    copy($cached_aln, $out_file) or die("Error copying cached alignment!");
+  }
   
   if (!-e $out_file || $self->param('force_recalc')) {
     print "  running alignment\n";
@@ -140,8 +163,28 @@ sub _align {
     print "  loading inferred aln from file [$out_file]\n";
   }
 
+  if (!-e $cached_aln) {
+    print "  copying alignment to cache..\n";
+    copy($out_file, $cached_aln) or die("Error copying cached alignment!");
+  }
+
   my $inferred_aln = Bio::EnsEMBL::Compara::AlignUtils->from_file($out_file);
   return $inferred_aln;
+}
+
+sub _cached_file {
+  my $self = shift;
+  my $filename = shift;
+
+  # Caching: common aligned files for each indel/mpl/rep
+  my $aln_id = join('_', ($self->param('slrsim_rep') , $self->param('slrsim_tree_mean_path') , $self->param('phylosim_insertrate')));
+  my $f = $self->get_output_folder . '/common';
+  my $rep = $self->param('slrsim_rep');
+  my $cache_aln_dir = $f . "/$rep";
+  mkpath($cache_aln_dir);
+  my $cache_aln_f = $cache_aln_dir."/".$filename;
+
+  return $cache_aln_f;
 }
 
 sub _mask_alignment {
@@ -327,8 +370,8 @@ sub _collect_and_store_results {
   $self->param('match_bl_score', $match_bl_score);
   my $mismatch_bl_score = $aln_scores_calc->{mismatch_bl} / $aln_scores_calc->{aligned_bl};
   $self->param('mismatch_bl_score', $mismatch_bl_score);
-  my $lambda = Bio::EnsEMBL::Compara::AlignUtils->dawg_lambda($pep_aln, $tree, $self->params, $self->worker_temp_directory);
-  $self->param('lambda', $lambda);
+#  my $lambda = Bio::EnsEMBL::Compara::AlignUtils->dawg_lambda($pep_aln, $tree, $self->params, $self->worker_temp_directory);
+#  $self->param('lambda', $lambda);
 
   # Column entropies.
   my $ce_aln = Bio::EnsEMBL::Compara::AlignUtils->average_column_entropy($aln);
@@ -404,6 +447,7 @@ sub _genes_table_structure {
     slrsim_rep         => 'int',
     slrsim_tree_file   => 'string',
     slrsim_ref         => 'string',
+    slrsim_tree_mean_path => 'float',
 
     phylosim_seq_length         => 'int',
     phylosim_omega_distribution => 'string',
