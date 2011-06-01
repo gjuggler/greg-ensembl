@@ -90,12 +90,7 @@ sub run {
   $self->param( 'alignment_table', '' );
   print "Simulation tree: " . $self->get_tree->newick_format . "\n";
 
-  my $aln;
-  if ( $self->get('simulation_program') eq 'indelible' ) {
-    $aln = $self->simulate_alignment_indelible( $self->get_tree, $self->params );
-  } elsif ( $self->get('simulation_program') eq 'phylosim' ) {
-    $aln = $self->simulate_alignment_phylosim( $self->get_tree, $self->params );
-  }
+  my $aln = $self->simulate_alignment($self->get_tree);
 
   my $length;
   foreach my $seq ($aln->each_seq) {
@@ -104,6 +99,24 @@ sub run {
   }
 
   $self->param( 'aln', $aln );
+}
+
+sub simulate_alignment {
+  my $self = shift;
+  my $tree = shift;
+
+  my $params = Bio::Greg::Hive::PhyloSim::param_defaults;
+  $params = $self->replace($params, $self->params);
+  $self->set_params($params);
+
+  my $obj;
+  if ( $self->param('phylosim_simulation_program') eq 'indelible' ) {
+    $obj = $self->simulate_alignment_indelible( $tree, $self->params );
+  } elsif ( $self->param('phylosim_simulation_program') eq 'phylosim' ) {
+    $obj = $self->simulate_alignment_phylosim( $tree, $self->params );
+  }
+  
+  return $obj;
 }
 
 sub write_output {
@@ -115,14 +128,14 @@ sub write_output {
   my $final_aa = Bio::EnsEMBL::Compara::AlignUtils->translate($final_cdna);
 
   my $out_table = "protein_tree_member";
-  print "STORING ALIGNMENT\n";
+  #print "STORING ALIGNMENT\n";
   Bio::EnsEMBL::Compara::ComparaUtils->store_SimpleAlign_into_table( $out_table, $self->get_tree,
     $final_aa, $final_cdna );
-  print "STORING OMEGAS\n";
+  #print "STORING OMEGAS\n";
   $self->_store_sitewise_omegas( "sitewise_omega", $self->param('sitewise_omegas'),
     $final_aa, $self->params );
 
-  Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $final_aa, { length => 150, full => 1 } );
+  #Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $final_aa, { length => 150, full => 1 } );
 
   my $new_tree = $self->get_tree();
   my $sa = $new_tree->get_SimpleAlign();
@@ -149,11 +162,22 @@ sub get_indelible_multiplier {
   my $tree = shift;
   my $params = shift;
 
-  my $average_omega = 0.3;
-  my $proportion_synonymous = 0.3;
+  my @bins  = $self->get_equally_spaced_bins($params);
+  my @probs = $self->get_equally_spaced_probs($params);
+
+  my $mean = 0;
+  for (my $i=0; $i < scalar(@bins); $i++) {
+    my $cur_bin = $bins[$i];
+    my $cur_prob = $probs[$i];
+
+    $mean += $cur_bin * $cur_prob;
+  }
+
+  my $average_omega = $mean;
+  my $proportion_synonymous = 0.3; # proportion syn. sites = 0.3 when kappa=4
 
   my $mult = 3*($average_omega*(1-$proportion_synonymous) + $proportion_synonymous);
-  print "INDELIBLE TREE MULTIPLIER: $mult\n";
+  print "MEAN W: $mean  INDELIBLE TREE MULTIPLIER: $mult\n";
   return $mult;
 }
 
@@ -163,9 +187,9 @@ sub simulate_alignment_indelible {
   my $params = shift;
 
   my $mult = $self->get_indelible_multiplier($tree,$params);
-  print "Before scaling: [".$tree->newick_format."]\n";
+  #print "Before scaling: [".$tree->newick_format."]\n";
   $tree = Bio::EnsEMBL::Compara::TreeUtils->scale($tree,$mult);
-  print "After scaling: [".$tree->newick_format."]\n";
+  #print "After scaling: [".$tree->newick_format."]\n";
 
   my $models_trees_partitions = '';
 
@@ -201,10 +225,9 @@ sub simulate_alignment_indelible {
   if (!defined $randomseed_string) {
     $randomseed_string = $models_trees_partitions;
     $randomseed_string .= $params->{slrsim_rep};
+    $self->param('random_seed', $randomseed_string);
   }
   my $randomseed = crc32($randomseed_string);
-
-  $self->store_tag( 'random_seed', $randomseed );
 
   my $ctrl_str = qq^
 [TYPE] CODON 1
@@ -238,27 +261,42 @@ $models_trees_partitions
   #    close(LOG);
   #  }
 
-  print "HEY HEY\n";
-  print "output:\n<<<<@output>>>>\n";
+  #print "output:\n<<<<@output>>>>\n";
 
   my $aln = Bio::EnsEMBL::Compara::AlignUtils->from_file($aln_f);
 
-  my @sitewise_omegas;
+  my $orig_pep_aln = Bio::EnsEMBL::Compara::AlignUtils->translate($aln);
+  my ($pep_aln, $new_to_old, $old_to_new) = Bio::EnsEMBL::Compara::AlignUtils->remove_blank_columns($orig_pep_aln);
+  $aln = Bio::EnsEMBL::Compara::AlignUtils->remove_blank_columns_in_threes($aln);
+
+  my $sitewise_hash;
   my $class_to_omega = $self->param('class_to_omega');
-  Bio::EnsEMBL::Compara::ComparaUtils->hash_print($class_to_omega);
 
   # Collect the omega values.
   my $rate_f = $output_f . "_RATES.txt";
   open( IN, "$rate_f" );
   while (<IN>) {
     if (/(\d+)\t(\d+)\t(\d+)/) {
+      my $site = int($1);
+
+      # Important -- we removed gaps from the resulting alignment, so we need to map the original
+      # Indelible output position (which is what we just read from the file) to that column's new
+      # position in the gap-removed alignment!!
+      $site = $old_to_new->{$site};
+
+      my $nongaps = Bio::EnsEMBL::Compara::AlignUtils->get_nongaps_at_column( $pep_aln, $site );
       my $omg = $class_to_omega->{$2};
-      push @sitewise_omegas, {
-        aln_position => int($1),
+      my $type = 'negative1';
+      $type = 'positive1' if ($omg > 1);
+
+      $sitewise_hash->{$site} = {
+        aln_position => $site,
         omega_lower  => $omg,
         omega_upper  => $omg,
-        omega        => $omg
-        };
+        omega        => $omg,
+        ncod => $nongaps,
+        type => $type
+      };
     }
   }
   close(IN);
@@ -269,10 +307,10 @@ $models_trees_partitions
   unlink $output_f;
   chdir($cwd);
 
-  print "Omegas: " . @sitewise_omegas . "\n";
-  $self->param( 'sitewise_omegas', \@sitewise_omegas );
-
-  return $aln;
+  return {
+    aln => $aln,
+    omegas => $sitewise_hash
+  };
 }
 
 sub get_submodel_string {
@@ -291,8 +329,10 @@ sub get_submodel_string {
   }
   @probs = @final_probs;
   @bins  = @final_bins;
+
   print "probs: @probs\n";
   print "bins: @bins\n";
+
   pop @probs;  # Remove the last probability; Indelible only wants (n-1) probabilities in its input!
 
   my $class_to_omega;
@@ -412,8 +452,6 @@ sub _store_sitewise_omegas {
   my @insert_strings = ();
   foreach my $hr ( @{$sitewise_ref} ) {
 
-#    Bio::EnsEMBL::Compara::ComparaUtils->hash_print($hr);
-
     #print "hr: $hr\n";
     #printf "%d %d\n",$hr->{aln_position},$hr->{omega};
 
@@ -461,8 +499,8 @@ sub get_m3_bins {
 
   my $i = 0;
   my @bins;
-  while ( $self->get( 'w' . $i ) ) {
-    push @bins, $self->get( 'w' . $i );
+  while ( $self->param( 'phylosim_w' . $i ) ) {
+    push @bins, $self->param( 'phylosim_w' . $i );
     $i++;
   }
   return @bins;
@@ -474,8 +512,8 @@ sub get_m3_probs {
 
   my $i = 0;
   my @probs;
-  while ( $self->get( 'p' . $i ) ) {
-    push @probs, $self->get( 'p' . $i );
+  while ( $self->param( 'phylosim_p' . $i ) ) {
+    push @probs, $self->param( 'phylosim_p' . $i );
     $i++;
   }
   return @probs;
@@ -485,11 +523,11 @@ sub get_equally_spaced_bins {
   my $self   = shift;
   my $params = shift;
 
-  if ( $self->get('omega_distribution') =~ m/M3/i ) {
+  if ( $self->param('phylosim_omega_distribution') =~ m/M3/i ) {
     return $self->get_m3_bins($params);
   }
 
-  my $k  = $self->get('num_bins');
+  my $k  = $self->param('phylosim_num_bins');
   my $lo = 0;
   my $hi = 3;
 
@@ -501,24 +539,12 @@ sub get_equally_spaced_bins {
   return @nums;
 }
 
-sub get {
-  my $self = shift;
-  my $key  = shift;
-
-  my $value = $self->param( 'phylosim_' . $key );
-  if ( !defined $value ) {
-    warn("No value for key phylosim_$key found! Looking for $key...");
-    $value = $self->param($key);
-  }
-  return $value;
-}
-
 sub get_equally_spaced_probs {
   my $self   = shift;
   my $params = shift;
 
-  my $function = $self->get('omega_distribution');
-  my $k        = $self->get('num_bins');
+  my $function = $self->param('phylosim_omega_distribution');
+  my $k        = $self->param('phylosim_num_bins');
   my $lo       = 0;
   my $hi       = 3;
 
@@ -540,29 +566,29 @@ pconst = function(x,w) {
   if ( $function =~ m/M3/i ) {
     return $self->get_m3_probs($params);
   } elsif ( $function =~ m/M8/i ) {
-    my $p0 = $self->get('p0');
-    my $p  = $self->get('p');
-    my $q  = $self->get('q');
-    my $w  = $self->get('w');
+    my $p0 = $self->param('phylosim_p0');
+    my $p  = $self->param('phylosim_p');
+    my $q  = $self->param('phylosim_q');
+    my $w  = $self->param('phylosim_w');
     $f = qq^paml_m8(x,p0=${p0},p=$p,q=$q,w=$w)^;
   } elsif ( $function eq "constant" ) {
-    my $w = $self->get('w');
+    my $w = $self->param('phylosim_w');
     $f = qq^const(x,w=$w)^;
   } elsif ( $function eq "uniform" ) {
-    my $min = $self->get('min');
-    my $max = $self->get('max');
+    my $min = $self->param('phylosim_min');
+    my $max = $self->param('phylosim_max');
     $f = qq^unif(x,min=$min,max=$max)^;
   } elsif ( $function eq "gamma" ) {
-    my $shape = $self->get('shape');
-    my $rate  = $self->get('rate');
+    my $shape = $self->param('phylosim_shape');
+    my $rate  = $self->param('phylosim_rate');
     $f = qq^gamma(x,shape=$shape,rate=$rate)^;
   } elsif ( $function eq "beta" ) {
-    my $shape1 = $self->get('shape1');
-    my $shape2 = $self->get('shape2');
+    my $shape1 = $self->param('phylosim_shape1');
+    my $shape2 = $self->param('phylosim_shape2');
     $f = qq^beta(x,shape1=$shape1,shape2=$shape2)^;
   } elsif ( $function eq "lognormal" ) {
-    my $meanlog = $self->get('meanlog');
-    my $sdlog   = $self->get('sdlog');
+    my $meanlog = $self->param('phylosim_meanlog');
+    my $sdlog   = $self->param('phylosim_sdlog');
     $f = qq^lnorm(x,meanlog=$meanlog,sdlog=$sdlog)^;
   }
 
@@ -600,8 +626,8 @@ sub get_equiprobable_bins {
   my $self   = shift;
   my $params = shift;
 
-  my $function = $self->get('omega_distribution');
-  my $k        = $self->get('num_bins');
+  my $function = $self->param('phylosim_omega_distribution');
+  my $k        = $self->param('phylosim_num_bins');
 
   my $r_cmd = qq^
     dd = discretize_distribution(n=$k)
@@ -611,8 +637,8 @@ sub get_equiprobable_bins {
 
   my $r_pre = "";
   if ( $function eq "uniform" ) {
-    my $a = $self->get('min');
-    my $b = $self->get('max');
+    my $a = $self->param('phylosim_min');
+    my $b = $self->param('phylosim_max');
 
     $r_pre = qq^
       lo = $a;
@@ -628,8 +654,8 @@ sub get_equiprobable_bins {
     }
     ^;
   } elsif ( $function eq "gamma" ) {
-    my $a = $self->get('shape');
-    my $b = $self->get('rate');
+    my $a = $self->param('phylosim_shape');
+    my $b = $self->param('phylosim_rate');
 
     $r_pre = qq^
       shape = $a;
@@ -645,8 +671,8 @@ sub get_equiprobable_bins {
       }
     ^;
   } elsif ( $function eq "beta" ) {
-    my $p = $self->get('shape1');
-    my $q = $self->get('shape2');
+    my $p = $self->param('phylosim_shape1');
+    my $q = $self->param('phylosim_shape2');
 
     $r_pre = qq^
       shape1 = $p;
@@ -662,8 +688,8 @@ sub get_equiprobable_bins {
       }
     ^;
   } elsif ( $function eq "lognormal" ) {
-    my $meanlog = $self->get('meanlog');
-    my $sdlog   = $self->get('sdlog');
+    my $meanlog = $self->param('phylosim_meanlog');
+    my $sdlog   = $self->param('phylosim_sdlog');
     $r_pre = qq^
       meanlog = $meanlog;
       sdlog = $sdlog;

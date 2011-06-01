@@ -2,11 +2,16 @@ library(hwriter)
 library(plyr)
 
 ###
+# Some important constants used throughout the script.
+#
+parameter_set_shortname <- 'm_c'
+folder <- paste('~/scratch/gj1_2x_60/2011-01-19_01/web_data_',parameter_set_shortname,sep='')
+
+
+###
 # The main HTML writing function for output.
 #
-folder <- '~/scratch/gj1_2x_57/2011-01-21_01/web'
 tbl.count <- 0
-
 write.rows <- function(page, rows) {
   # Create linked image thumbnails for any image columns
   img.fields <- grep('(plot)',colnames(rows),value=T)
@@ -25,16 +30,51 @@ write.rows <- function(page, rows) {
   }
   col.links[['Alignment plot']] <- c(NA,rows[,'aln_pdf'])
 
+  # Links to GeneCards, Ensembl, UCSC
+  rows[,'Gene'] <- hmakeTag('a',rows[,'Gene'],name=rows[,'Ensembl ID'],href=paste('http://www.genecards.org/cgi-bin/carddisp.pl?gene=',rows[,'Gene'],sep=''),target='_blank')
+  peptide_ids <- hmakeTag('a', rows[,'Ensembl ID'], href=paste('http://www.ensembl.org/Homo_sapiens/protview?peptide=', rows[, 'Ensembl ID'], sep=''), target='_blank')
+  transcript_ids <- hmakeTag('a', rows[,'Ensembl transcript ID'], href=paste('http://www.ensembl.org/Homo_sapiens/Transcript/Summary?db=core;t=', rows[, 'Ensembl transcript ID'], sep=''), target='_blank')
+  gene_ids <- hmakeTag('a', rows[,'Ensembl gene ID'], href=paste('http://www.ensembl.org/Homo_sapiens/Gene/Summary?db=core;g=', rows[, 'Ensembl gene ID'], sep=''), target='_blank')
+  rows[,'Ensembl ID'] <- paste(peptide_ids, transcript_ids, gene_ids, sep="<br/>")
+  rows[,'UCSC'] <- hmakeTag('a','browse',href=rows[,'UCSC'],target='_blank')
+
   # Remove unnecessary fields from display.
-  remove.fields <- c('aln_pdf','sites_pdf','sites_png','node_id','parameter_set_id','data_id','Data file','Debug file')
+  remove.fields <- c(
+    'aln_pdf',
+    'sites_pdf',
+    'sites_png',
+    'node_id',
+    'parameter_set_id',
+    'data_id',
+    'Data file',
+    'Debug file',
+    'gene_taxon_id',
+    'job_id',
+    'parameter_set_shortname',
+    'Ensembl gene ID',
+    'Ensembl transcript ID',
+    'Chr',
+    'Start',
+    'End',
+    'Strand',
+    'Sequence count',
+    'Number negative',
+    'Number neutral',
+    'GC CDS',
+    'GC genomic',
+    'pfam_domains'
+  )
   for (field in remove.fields) {
     rows[,field] <- NULL
   }
 
-  # Links to GeneCards and Ensembl
-  rows[,'Gene'] <- hmakeTag('a',rows[,'Gene'],name=rows[,'Ensembl ID'],href=paste('http://www.genecards.org/cgi-bin/carddisp.pl?gene=',rows[,'Gene'],sep=''),target='_blank')
-  rows[,'Ensembl ID'] <- hmakeTag('a',rows[,'Ensembl ID'],href=paste('http://www.ensembl.org/Homo_sapiens/protview?peptide=',rows[,'Ensembl ID'],sep=''),target='_blank')
-  rows[,'UCSC'] <- hmakeTag('a','browse',href=rows[,'UCSC'],target='_blank')
+  # Format output for some numeric rows.
+  for (field in c('GC3', 'Overall dN/dS', 'Kappa')) {
+    rows[,field] <- sprintf("%.2f",as.numeric(rows[,field]))
+  }
+  for (field in c('Fraction negative', 'Fraction neutral', 'Fraction positive')) {
+    rows[,field] <- sprintf("%.3f",as.numeric(rows[,field]))
+  }
 
   # Add help links for the column names.
   header <- paste(colnames(rows)," <a class='help' target='_blank' href='./index.html#",colnames(rows),"'>?</a>",sep='')
@@ -124,6 +164,14 @@ bed.output <- function(rows,color.field,color.lo,color.hi) {
   if (!file.exists("chrom.sizes")) {
     system("fetchChromSizes hg19 > chrom.sizes")
   }
+  bed.format.file <- paste(folder, '/', 'webpage_bed_format.as', sep='')
+  if (!file.exists(bed.format.file)) {
+    file.copy(from="~/src/greg-ensembl/projects/2xmammals/webpage_bed_format.as", to=bed.format.file)
+  }
+  
+
+  #print(unique(rows[,'Chr']))
+
   print(paste("Outputting BED",file.name))
   write.table(bed,file="genes_tmp.bed",sep="\t",quote=F,row.names=F,col.names=F)  
   system("sort -k1,1 -k2,2n genes_tmp.bed > genes_tmp_sorted.bed")
@@ -141,16 +189,25 @@ bed.output <- function(rows,color.field,color.lo,color.hi) {
 bigwig.output <- function() {
   if (!exists("sites")) { 
     print("  loading sites file")
-    load("sites_1.Rdata")
+    sites.file <- paste("sites_", parameter_set_shortname, ".Rdata", sep='')
+    if (!file.exists(sites.file)) {
+      file.copy(paste("../", sites.file, sep=""), sites.file)
+    }
+    load(sites.file)
+    print("  fixing up sites data")
     sites[,'signed_lrt'] = sites$lrt_stat
     sites[sites$omega < 1,]$signed_lrt = -sites[sites$omega < 1,]$signed_lrt
+
     sites <- subset(sites,!is.na(chr_name))
-    levels(sites$chr_name) <- c(levels(sites$chr_name),'chrM') # Don't forget to add the new factor level.
-    sites[sites$chr_name == 'chrMT',]$chr_name <- 'chrM'
+
+    if (nrow(subset(sites, chr_name=='chrM')) > 0) {
+      # Change 'MT' to 'M', and don't forget to add a new factor level.
+      levels(sites$chr_name) <- c(levels(sites$chr_name),'chrM')
+      sites[sites$chr_name == 'chrMT',]$chr_name <- 'chrM'
+    }
+
     assign("sites",sites,envir=.GlobalEnv)
   }
-
-  #print(unique(sites$chr_name))
 
   output.filename <- 'sites.bw'
   full.path <- paste(folder,'/',output.filename,sep='')
@@ -197,28 +254,62 @@ bigwig.output <- function() {
 }
 
 # Load data from the table.
-dbname <- 'gj1_2x_57'
+dbname <- 'gj1_2x_60'
 source('~/src/greg-ensembl/scripts/collect_sitewise.R')
-query <- 'SELECT * FROM web_data WHERE sites_csv IS NOT NULL;'
+query <- paste(
+  'SELECT * FROM web_data_', parameter_set_shortname, 
+  ' WHERE sitewise_value_count > 0 ', 
+  ' AND gene_taxon_id=9606;',
+  sep=''
+)
 rows <- get.vector(con,query)
 
+### Load Pfam annotations.
+###
+if (!file.exists("pfamA.txt")) {
+  pf.txt <- 'ftp://ftp.sanger.ac.uk/pub/databases/Pfam/current_release/database_files/pfamA.txt.gz'
+  system(paste('wget -nc',pf.txt))
+  system('gunzip pfamA.txt.gz')
+}
+if (!exists("pf.domains")) {
+  pfam <- read.table('pfamA.txt', sep="", quote="'", stringsAsFactors=F)
+  pfam <- pfam[,c(2,3,5)]
+  colnames(pfam) <- c('id', 'name', 'description')
+  pf.domains <- rows[,'pfam_domains']
+  pf.domains <- aaply(pf.domains,1, function(x) {
+    if (!is.na(x) && x == '') {return('')}
+    domains <- strsplit(x, ',')
+    links.list <- c()
+    for (domain in domains) {
+      # Find the row for this domain in the pfam data frame
+      pf.row <- subset(pfam, id==domain)
+      if (nrow(pf.row) > 0) {
+        d.link <- hmakeTag('a', pf.row$name, href=paste('http://pfam.sanger.ac.uk/family/',pf.row$id,sep=''), title=pf.row$description, target='_blank')
+        links.list <- c(links.list,d.link)
+      }
+    }
+    return(paste(links.list, collapse=', '))
+  })
+}
+rows[,'pfam_domain_links'] <- pf.domains
 
 ### Data clean-up
 ###
 # Take neg-log of fisher p-values (easier sorting in web interface)
 rows$pos_sel_score <- as.numeric(sprintf("%.3f",-log(rows$pval_fisher)))
+if (nrow(subset(rows, pos_sel_score > 999)) > 0) {
+  big.rows <- rows$pos_sel_score > 999 & !is.na(rows$pos_sel_score)
+  rows[big.rows,]$pos_sel_score <- 999
+}
 rows$pval_fisher <- NULL
 
 # Clean up gene names (remove dash at end)
 rows$gene_name <- sub("-.*$","",rows$gene_name)
 
-# Shorten some numbers.
-for (field in c('gc_content_mean','slr_dnds','slr_kappa','seq_length_mean')) {
-  rows[,field] <- as.numeric(sprintf("%.2f",rows[,field]))
-}
-for (field in c('f_neg','f_neut','f_pos')) {
-  rows[,field] <- as.numeric(sprintf("%.4f",rows[,field]))
-}
+
+# Remove bracketed text from description.
+rows[,'gene_description'] <- sub('\\[.+\\]','', rows[,'gene_description'])
+
 
 # Add UCSC browser links.
 rows$ucsc_link <- NA
@@ -229,14 +320,23 @@ rows[!is.na(rows$chr_name),'ucsc_link'] <- sprintf("http://genome.ucsc.edu/cgi-b
 rows <- subset(rows, sitewise_value_count > 30)
 
 # Rename some columns.
-rename.col <- function(rows,old,new) {
-  rows[,new] <- rows[,old]
-  rows[,old] <- NULL
+rename.cols <- function(data, old.new.list) {
+  for (old.new in old.new.list) {
+    old <- old.new[1]
+    new <- old.new[2]
+    rows[,new] <- rows[,old]
+    rows[,old] <- NULL
+  }
   return(rows)
 }
 new.names <- list(
-  c('stable_id','Ensembl ID'),
+  c('protein_id','Ensembl ID'),
+  c('gene_id', 'Ensembl gene ID'),
+  c('transcript_id', 'Ensembl transcript ID'),
+
   c('gene_name','Gene'),
+  c('gene_description','Gene description'),
+  c('pfam_domain_links', 'Pfam domains'),
   c('ucsc_link','UCSC'),
 
   c('aln_png','Alignment plot'),
@@ -247,13 +347,20 @@ new.names <- list(
   c('f_neg','Fraction negative'),
   c('f_pos','Fraction positive'),
   c('f_neut','Fraction neutral'),
+  c('n_neg','Number negative'),
+  c('n_pos','Number positive'),
+  c('n_neut','Number neutral'),
 
   c('sitewise_value_count','Sitewise value count'),
   c('leaf_count','Sequence count'),
   c('tree_mean_path','Tree length'),
+  c('duplication_count', 'Duplication count'),
   c('slr_kappa','Kappa'),
-  c('gc_content_mean','GC'),
-  c('seq_length_mean','Seq length'),
+  c('gc_3','GC3'),
+  c('gc_cds','GC CDS'),
+  c('gc_genomic','GC genomic'),
+  c('aln_length', 'Alignment length'),
+  c('seq_length','Seq length'),
 
   c('chr_name','Chr'),
   c('chr_start','Start'),
@@ -262,13 +369,12 @@ new.names <- list(
 
   c('tree_file','Tree file'),
   c('aln_file','Alignment file'),
+  c('pep_aln_file','Protein alignment file'),
+  c('sites_file','SLR file'),
   c('data_file','Data file'),
-  c('params_file','Debug file'),
-  c('sites_csv','SLR file')
+  c('params_file','Debug file')
 )
-for (names in new.names) {
-  rows <- rename.col(rows,names[1],names[2])
-}
+rows <- rename.cols(rows, new.names)
 
 notes.list <- list(
 
@@ -280,6 +386,8 @@ notes.list <- list(
   c('Gene',"The Ensembl gene name for the reference peptide (see
   above), if available. Hyperlinks to the GeneCards page for the
   reference gene are provided."),
+
+  c('Gene description',"A description of the protein, from Ensembl."),
 
   c('Chr',"The chromosome or contig on which the given reference
   peptide resides. Note: this is relative to the <em>reference</em>
@@ -371,7 +479,7 @@ table.notes <- paste(notes.list.items,collapse=' ')
 ### BigBed / BigWig output
 ###
 genes.file.links <- c()
-color.fields <- c('Overall dN/dS','GC','Pos-sel score','Tree length')
+color.fields <- c('Overall dN/dS','GC3','Pos-sel score','Tree length')
 color.lo <- c('black','black','black','black')
 color.hi <- c('red','red','red','red')
 
@@ -405,7 +513,8 @@ get.genes.url <- function(positions,fields) {
   return(output.txt)
 }
 
-bigwig.file <- bigwig.output()
+#bigwig.file <- bigwig.output()
+bigwig.file <- 'asdf.bw'
 hgct.custom.text <- paste('track',
                           'type=bigWig',
                           'name=Sitewise_SLR',
@@ -462,7 +571,6 @@ chrs <- paste('chr',chrs,sep='')
 for (chr in chrs) {
   if (is.na(chr)){next}
   sub.rows <- subset(rows, Chr==chr)
-  # TODO when the data's here: Order chromosome output by start / end position.
   sub.rows <- sub.rows[order(sub.rows[,'Start']),]
   write.rows.page(chr,sub.rows,css.txt)
 }
@@ -477,7 +585,17 @@ bot.files <- c()
 for (field in all.fields) {
   if (!is.numeric(rows[,field])){next}
 
-  if (field %in% c('parameter_set_id','data_id','node_id')) { next }
+  remove.numerics <- c(
+    'parameter_set_id',
+    'data_id',
+    'node_id',
+    'job_id',
+    'gene_taxon_id',
+    'Number negative',
+    'Number neutral',
+    'Sequence count'
+  )
+  if (field %in% remove.numerics) { next }
 
   numeric.fields <- c(numeric.fields,field)
 

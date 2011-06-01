@@ -154,108 +154,6 @@ sub find_member_by_external_id {
   return undef;
 }
 
-sub mapSitewiseToGenome {
-  my $class    = shift;
-  my $tree     = shift;
-  my $taxon_id = shift;
-
-  my $sa      = $tree->get_SimpleAlign;
-  my $aln_len = $sa->length;
-  Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $sa, { length => 200 } );
-
-  my @leaves         = $tree->leaves;
-  my @genomic_coords = ();
-  foreach my $leaf (@leaves) {
-    next unless ( $leaf->taxon_id == $taxon_id );
-    eval {
-      my ($seq) = $sa->each_seq_with_id( $leaf->stable_id );
-      my $seq_str = $seq->seq;
-
-      my $tscr = $leaf->get_Transcript;
-      print STDERR $tscr->stable_id . "\n";
-      $tscr = $tscr->transform("chromosome");
-      next unless ( defined $tscr );
-      my $chr = "chr" . $tscr->slice->seq_region_name;
-
-      foreach my $i ( 1 .. $aln_len ) {
-        my $char = substr( $seq_str, $i - 1, 1 );
-
-        my $loc = $seq->location_from_column($i);
-
-        #print "$i $char $loc\n";
-        next if ( !defined $loc || $loc->location_type() eq 'IN-BETWEEN' );
-
-        #next if ($char eq '-');
-        my @gc_arr = $tscr->pep2genomic( $loc->start, $loc->end );
-        my $gc = $gc_arr[0];
-        next unless ( $gc && $gc->isa("Bio::EnsEMBL::Mapper::Coordinate") );
-
-        my $strand = "+";
-        $strand = "-" if ( $gc->strand == -1 );
-
-        my $start = $gc->start;
-        my $end   = $gc->end;
-
-        push(
-          @genomic_coords, {
-            chr          => $chr,
-            start        => $start,
-            end          => $end,
-            aln_position => $i,
-            char         => $char,
-            stable_id    => $leaf->stable_id,
-            node_id      => $tree->node_id,
-            member_id    => $leaf->dbID,
-            strand       => $strand
-          }
-        );
-      }
-    };
-    warn() if $@;
-  }
-  return \@genomic_coords;
-}
-
-sub collectDuplicationTags {
-  my $class  = shift;
-  my $tree   = shift;
-  my $params = shift;
-
-  my $taxon_name = $tree->get_tagvalue('taxon_name');
-  my $taxon_id   = $tree->get_tagvalue('taxon_id');
-
-  my $sth = $tree->adaptor->prepare(
-    "SELECT name FROM ncbi_taxa_name WHERE taxon_id=$taxon_id AND name_class='ensembl timetree mya';"
-  );
-  $sth->execute;
-  my $taxon_mya = $sth->fetchrow_array();
-
-  my $total_bl = sprintf "%.3f", total_distance($tree);
-  my $max_bl   = sprintf "%.3f", $tree->max_distance;
-
-  # Collect chromosome on human gene.
-  my $hum_chr = '';
-  my @hum_genes = grep { $_->taxon_id == 9606 } $tree->leaves;
-  if ( scalar(@hum_genes) > 0 ) {
-    my $hum_gene = $hum_genes[0];
-    my $gene     = $hum_gene->get_Gene;
-    $hum_chr = $gene->slice->seq_region_name;
-  }
-
-  my $tags = {
-    taxon_name => $taxon_name,
-    taxon_id   => $taxon_id,
-    taxon_mya  => $taxon_mya,
-    bl_total   => $total_bl,
-    bl_max     => $max_bl,
-    human_chr  => $hum_chr
-  };
-  my $prefix = 'dupldiv';
-  my $mapped_tags;
-  map { $mapped_tags->{ $prefix . '_' . $_ } = $tags->{$_} } keys %{$tags};
-  return $mapped_tags;
-}
-
 sub avg_distance {
   my $tree = shift;
   my $dist = 0;
@@ -348,7 +246,7 @@ sub run_r {
 
   $params = {} if (!defined $params);
 
-  my $temp_dir = "/tmp/eslr_rcmd";
+  my $temp_dir = "/tmp/eslr_rcmd_" . $$;
   use File::Path;
   mkpath($temp_dir);
 
@@ -367,7 +265,11 @@ sub run_r {
   print "Using executable: '$r_cmd'\n";
 
   my $rc = system("$r_cmd $vanilla < $temp_in");
-  die "R returned an error!" if ($rc);
+  if ($rc) {
+    unlink($temp_in);
+    unlink($temp_dir);
+    die "R returned an error!";
+  }
 
   unlink($temp_in);
   unlink($temp_dir);
@@ -379,11 +281,11 @@ sub get_r_command {
 
   my $r_cmd = "R-2.11.0";
   if ( $params->{'farm'} ) {
-    $r_cmd = "/software/bin/R-2.11.1";
+    $r_cmd = "/software/bin/R-2.11.1-dev";
   } elsif ( $params->{'bigmem'} ) {
     $r_cmd = "bsub -Is -R'select[mem>10000] rusage[mem=10000]' -M10000000 /software/R-2.9.0/bin/R ";
   } elsif ( $ENV{'USER'} =~ /gj1/ ) {
-    $r_cmd = "/software/R-2.11.1/bin/R";
+    $r_cmd = "/software/bin/R-2.11.1-dev";
   } else {
 
   }
@@ -396,7 +298,7 @@ sub get_r_values {
   my $temp_dir = shift;
 
   if ( !$temp_dir ) {
-    $temp_dir = "/tmp/eslr_rcmd";
+    $temp_dir = "/tmp/eslr_rcmd" . $$;
     use File::Path;
     mkpath($temp_dir);
   }

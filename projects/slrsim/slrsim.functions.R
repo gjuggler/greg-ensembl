@@ -1,67 +1,98 @@
 library(plyr)
 library(doBy)
+library(qvalue)
 
 paper.table <- function(df) {
 
-  # Sum up the total and unfiltered site counts.
-  one.index.per.rep <- which(!duplicated(df$slrsim_rep))
-  one.row.per.rep <- df[one.index.per.rep,]
-  all.residues <- sum(one.row.per.rep$site_count)
-  left.residues <- sum(one.row.per.rep$unfiltered_site_count)   
-
-  row <- df[1,]
+  cor = cor(df$true_dnds,df$aln_dnds,method='spearman',use='complete.obs')
+  roc <- slr.roc(df,na.rm=TRUE)
 
   # Use the technique where the p-value can be doubled because we're just looking
   # at positive selection. This gives thresholds of 2.71 and 5.41 for 5% and 1% FPR.
-  stats.05 <- df.stats(df,thresh=2.71)
-  stats.01 <- df.stats(df,thresh=5.41)
-  
-  stats.05 <- data.frame(stats.05)
-  stats.01 <- data.frame(stats.01)
+  stats.05 <- df.stats(df, thresh=2.71, paml_thresh=0.95)
 
-  cor = cor(df$true_dnds,df$aln_dnds,method='spearman',use='complete.obs')
+  # Use the q-value method to find a threshold. 
+  adj.thresh <- adj.threshold(df, type='bh')
+  stats.bh <- df.stats(df, thresh=adj.thresh, paml_thresh=adj.thresh)
 
-  roc <- slr.roc(df,na.rm=TRUE)
-  n.sites <- nrow(roc)
   rrow <- roc[1,]
-
-  indel = row$phylosim_insertrate * 2
+  row <- df[1,]
 
   ret.df <- data.frame(
-    tree     = row$slrsim_tree_file,
-    aligner  = row$alignment_name,
-    length   = row$tree_mean_path,
-    indel    = indel,
-    filter   = row$filtering_name,
+    tree     = row$tree,
+    analysis = row$analysis,
+    aligner  = row$aligner,
+    length   = row$tree_length,
+    ins_rate    = row$ins_rate,
+    del_rate    = row$del_rate,
+    filter   = row$filter,
 
     auc      = rrow$auc,
-    `fpr_tpr`    = rrow$tpr_at_fpr,
-#    `fpr_fdr`    = rrow$tpr_at_fpr,
-#    `fpr_tp`    = rrow$tp_at_fpr,
-#    `fpr_fp`    = rrow$fp_at_fpr,
-    `fdr_tpr`    = rrow$tpr_at_fdr,
-#    `fdr_fpr`    = rrow$fpr_at_fdr,
-#    `fdr_tp`    = rrow$tp_at_fdr,
-#    `fdr_fp`    = rrow$fp_at_fdr,
-    `cor`   = cor
+    auc_full = rrow$auc_full,
+    `tpr_at_fpr`    = rrow$tpr_at_fpr,
+    `tp_at_fpr`     = rrow$tp_at_fpr,
+    `fp_at_fpr`     = rrow$fp_at_fpr,
+    `tpr_at_fdr`    = rrow$tpr_at_fdr,
+    `tp_at_fdr`    = rrow$tp_at_fdr,
+    `tp_at_fdr2`    = rrow$tp_at_fdr2,
+    `tpr_at_thresh` = stats.05$tpr,
+    `fpr_at_thresh` = stats.05$fpr,
+    `tp_at_thresh` = stats.05$tp,
+    `fp_at_thresh` = stats.05$fp,
+    `fdr_at_thresh`    = stats.05$fdr,
+    `tpr_at_bh` = stats.bh$tpr,
+    `fpr_at_bh` = stats.bh$fpr,
+    `tp_at_bh` = stats.bh$tp,
+    `fp_at_bh` = stats.bh$fp,
+    `fdr_at_bh` = stats.bh$fdr,
+    `thresh_at_bh` = adj.thresh,
+    `thresh_at_fpr`    = rrow$thresh_at_fpr,
+    `thresh_at_fdr`    = rrow$thresh_at_fdr,
+    `cor`   = cor,
+    `n_sites` = nrow(roc)
   )
 
-  ret.df <- data.frame(ret.df,
-    sites = all.residues,
-    filtered.fraction = 1 - (left.residues/all.residues)
-  )
+  #print(ret.df[, c('tree', 'analysis', 'thresh_at_q', 'thresh_at_fpr', 'thresh_at_fdr')])
 
-  ret.df <- ret.df[with(ret.df, order(tree,aligner,length,indel,filter)),]
+  aln.acc.df <- df.alignment.accuracy(df)
+  ret.df <- cbind(ret.df, aln.acc.df)
+
+  ret.df <- ret.df[with(ret.df, order(tree,aligner,length,ins_rate,filter)),]
   return(ret.df)
 }
 
-slr.roc = function(df,na.rm=F) {
+adj.threshold <- function(df, type='bh', cutoff=0.1) {
+  df <- add.pval(df)
+
+  threshold <- NA
+
+  df <- subset(df, !is.na(pval))
+  if (nrow(df) > 0) {
+    try({
+      if (type == 'qval') {
+        q.res <- qvalue(p=df$pval, pi0.method='bootstrap')
+        df$p.adj <- q.res$qvalues
+      } else {
+        df$p.adj <- p.adjust(df$pval, method='BH')
+      }
+      df <- orderBy(~pval,data=df)
+      max.sig.row <- 1
+      if (min(df$p.adj) <= cutoff) {
+        max.sig.row <- max(which(df$p.adj <= cutoff))
+      }
+      threshold = df[max.sig.row,]$lrt_stat
+    })
+  }
+  return(threshold)
+}
+
+slr.roc = function(df, na.rm=T, na.value=-9999) {
   library(doBy)
   library(plyr)
 
   if (na.rm) {
-    n.na = nrow(subset(df,is.na(aln_lrt)))
-    df = subset(df,!is.na(aln_lrt))
+    n.na = nrow(subset(df,is.na(lrt_stat)))
+    df = subset(df,!is.na(lrt_stat))
     n.left <- nrow(df)
     #print(sprintf("Removed %d NA rows (%d remaining)",n.na,n.left))
     if(n.left == 0) {
@@ -70,21 +101,26 @@ slr.roc = function(df,na.rm=F) {
   }
 
   if (!is.paml(df)) {
-    # Create a signed LRT if it's SLR-based data.
-    # We'll replace NAs with an extremely low score.
-    df[is.na(df$aln_lrt),'aln_lrt'] = 1000
-    df[is.na(df$aln_dnds),'aln_dnds'] = 0
-    df$score = sign(df$aln_dnds-1)*df$aln_lrt
+    df$score <- df[, 'lrt_stat']
   } else {
-    df$score = df$aln_lrt
+    # We've got PAMl data, and the lrt_stat is actually a p-value
+    # for positive selection. So we can sort by this and it should
+    # work out OK.
+    df$score = df$lrt_stat
   }
+
+  # Fix NA rows to a very low score.
+  #print(head(df[is.na(df$lrt_stat),]))
+  df[is.na(df$lrt_stat),'score'] <- na.value
+
   df$truth = as.integer( df$true_dnds > 1 )
   df <- orderBy(~-score,data=df)
 
   df$tp = cumsum(df$truth)
   df$tn = cumsum(1-df$truth)
   df$count = cumsum(rep(1,nrow(df)))
-  df$fp = df$tn
+  df$p <- 1:nrow(df) # Count of positive calls.
+  df$fp = df$tn # Count of false positive calls.
 
   df$fpr = df$tn / max(df$tn)
   df$tpr = df$tp / max(df$tp)
@@ -92,22 +128,24 @@ slr.roc = function(df,na.rm=F) {
   df$fdr = df$fp/(df$count)
 
   if (!na.rm) {
-    df <- subset(df,aln_lrt != 1000)
+    df <- subset(df,score != 1000)
   }
 
   df$auc_full <- -1
   df$auc <- -1
   if (nrow(df) > 1) {
-    auc <- area.under.curve(df,x.lim=0.2)
-    df$auc <- auc
-    auc_full <- area.under.curve(df,x.lim=1)
-    df$auc_full <- auc_full
+    auc.df <- subset(df, score > na.value)
+    auc <- area.under.curve(auc.df,x.lim=0.1)
+    df[df$score > na.value, ]$auc <- auc
+    auc_full <- area.under.curve(auc.df,x.lim=1)
+    df[df$score > na.value, ]$auc_full <- auc_full
   }
 
-  df$tpr_at_fpr <- -1
-  df$fdr_at_fpr <- -1
+  df$tpr_at_fpr <- 0
+  df$fdr_at_fpr <- 1
   df$tp_at_fpr <- -1
   df$fp_at_fpr <- -1
+  df$thresh_at_fpr <- max(df$lrt_stat)
   if (nrow(df) > 1) {
     fpr.sub <- subset(df,fpr < 0.05)
     if (nrow(fpr.sub) > 0) {
@@ -117,13 +155,15 @@ slr.roc = function(df,na.rm=F) {
       df$fdr_at_fpr <- row$fdr
       df$tp_at_fpr <- row$tp
       df$fp_at_fpr <- row$fp
+      df$thresh_at_fpr <- row$lrt_stat
     }
   }
 
-  df$tpr_at_fdr <- -1
-  df$fpr_at_fdr <- -1
+  df$tpr_at_fdr <- 0
+  df$fpr_at_fdr <- 1
   df$tp_at_fdr <- -1
   df$fp_at_fdr <- -1
+  df$thresh_at_fdr <- max(df$lrt_stat)
   if (nrow(df) > 1) {
     fpr.sub <- subset(df,fdr < 0.1)
     if (nrow(fpr.sub) > 0) {
@@ -133,9 +173,23 @@ slr.roc = function(df,na.rm=F) {
       df$fpr_at_fdr <- row$fpr
       df$tp_at_fdr <- row$tp
       df$fp_at_fdr <- row$fp
+      df$thresh_at_fdr <- row$lrt_stat
     }
   }
 
+  df$tpr_at_fdr2 <- 0
+  df$tp_at_fdr2 <- -1
+  if (nrow(df) > 1) {
+    fpr.sub <- subset(df,fdr < 0.05)
+    if (nrow(fpr.sub) > 0) {
+      # Take the last (rightmost) row with fdr < 0.05
+      row <- fpr.sub[nrow(fpr.sub),]
+      df$tp_at_fdr2 <- row$tp
+      df$tpr_at_fdr2 <- row$tpr
+    }
+  }
+
+  print(paste("  slr.roc ",df[1,'slrsim_label']))
   return(df)
 }
 
@@ -158,7 +212,7 @@ area.under.curve <- function(roc,x.field='tn',y.field='tp',x.lim=1) {
 
 summarize.by.labels = function(data,fn,thresh=3.8) {
   library(plyr)
-  a = ddply(data,.(slrsim_label),fn,thresh=thresh)
+  a = ddply(data,.(slrsim_label),fn)
   return(a)
 }
 
@@ -168,19 +222,78 @@ do.by.labels = function(data,fn) {
 }
 
 is.paml = function(df) {
-  if (!any(colnames(df) %in% c('sitewise_action'))) {
-    return(FALSE)
-  }
-  if (grepl("paml",df[1,'sitewise_action'],ignore.case=T)) {
+  lrt.range <- range(df$lrt_stat, na.rm=T)
+  if (lrt.range[2] <= 1) {
     return(TRUE)
+  }
+  if (length(grep("paml", df[1, 'analysis'], ignore.case=T)) > 0) {
+    return(TRUE)
+  }
+  return(FALSE)
+}
+
+sign.lrt <- function(df) {
+  print("signing lrt...")
+  df[,'signed_lrt'] = df$lrt_stat
+  if (length(df$omega) > 0) {
+    # dn/ds values are stored as omega.
+    df[df$omega < 1,]$signed_lrt = -df[df$omega < 1,]$signed_lrt
+  } else if (length(df$aln_dnds) > 0) {
+    # dn/ds values are stored as aln_dnds
+    df[df$aln_dnds < 1,]$signed_lrt = -df[df$aln_dnds < 1,]$signed_lrt
   } else {
-    return(FALSE)
-  } 
+    print("Check how you're storing dn/ds values!!!")
+    q()
+  }
+  return(df)
+}
+
+add.pval <- function(df) {
+  # Turn the lrt_stat score into p-values for positive selection.
+  if (is.paml(df)) {
+    df$pval <- 1 - df$lrt_stat
+  } else {
+    df$pval <- 1 - pchisq(abs(df[,'lrt_stat']),1)
+    df$pval <- df$pval / 2 # Divide p-values by 2 since we're only looking at one side of chi-sq.
+    print(nrow(subset(df, is.na(aln_dnds))))
+    if (sum(df$aln_dnds < 1) > 0) {
+      df[df$aln_dnds < 1, 'pval' ] <- 1 # Sites with dN/dS estimated below 1 get a p-value of 1.
+    }
+  }
+  return(df)
+}
+
+combine.pvals <- function(df.a, df.b, label) {  
+  merge.by <- c('tree_length', 'ins_rate', 'slrsim_rep', 'seq_position')
+
+  remove.dups <- function(df) {
+    return(df[!duplicated(df[, merge.by]),])
+  }
+  df.a <- remove.dups(df.a)
+  df.b <- remove.dups(df.b)
+
+  merged <- merge(df.a, df.b[, c('lrt_stat', merge.by)],
+    by=merge.by,
+    suffixes=c('.a', '.b')
+  )
+
+  print(paste("before removing NAs",nrow(merged)))
+  merged <- merged[!is.na(merged$lrt_stat.a),]
+  merged <- merged[!is.na(merged$lrt_stat.b),]
+  print(paste("after removing NAs",nrow(merged)))
+  merged$aligner <- label  
+  merged$slrsim_label <- paste(merged$slrsim_label, merged$aligner, sep=' / ')
+
+  merged$lrt_stat = pmin(merged$lrt_stat.a, merged$lrt_stat.b)
+  merged$lrt_stat.a <- NULL
+  merged$lrt_stat.b <- NULL
+
+  return(merged)
 }
 
 df.stats = function(df,
   thresh=3.8,
-  paml_thresh=0.95,type='all') {
+  paml_thresh=0.95) {
 
   aln_thresh = 1
   if (is.paml(df)) {
@@ -189,15 +302,15 @@ df.stats = function(df,
   }
 
   # Collect stats for SLR-type runs.
-  pos_pos = nrow(subset(df,true_type=="positive1" & aln_lrt>thresh & aln_dnds>aln_thresh))
-  neg_pos = nrow(subset(df,true_type!="positive1" & aln_lrt>thresh & aln_dnds>aln_thresh))
-  neg_neg = nrow(subset(df,true_type!="positive1" & !(aln_lrt>thresh & aln_dnds>aln_thresh)))
-  pos_neg = nrow(subset(df,true_type=="positive1" & !(aln_lrt>thresh & aln_dnds>aln_thresh)))
+  pos_pos = nrow(subset(df,true_type=="positive1" & lrt_stat>thresh))
+  neg_pos = nrow(subset(df,true_type!="positive1" & lrt_stat>thresh))
+  neg_neg = nrow(subset(df,true_type!="positive1" & !(lrt_stat>thresh)))
+  pos_neg = nrow(subset(df,true_type=="positive1" & !(lrt_stat>thresh)))
 
   pos_all = nrow(subset(df,true_type=="positive1"))
   neg_all = nrow(subset(df,true_type!="positive1"))
-  all_pos = nrow(subset(df,aln_lrt>thresh & aln_dnds>aln_thresh))
-  all_neg = nrow(subset(df,!(aln_lrt>thresh & aln_dnds>aln_thresh)))
+  all_pos = nrow(subset(df,lrt_stat>thresh))
+  all_neg = nrow(subset(df,!(lrt_stat>thresh)))
 
   all = nrow(df)
 
@@ -221,6 +334,7 @@ df.stats = function(df,
 
   return(list(
     sens=sens,
+    tpr=sens,
     spec=spec,
 #    ppv=ppv,
 #    npv=npv,
@@ -242,7 +356,7 @@ df.stats = function(df,
 
 format.numeric.df <- function(x,digits=3) {  
   nums <- unlist(lapply(x,is.double))
-  print(nums)
+  #print(nums)
   for (col in names(x)) {
     if (nums[col] == TRUE) {
       x[,col] <- formatC(x[,col],digits=digits,format='fg')
@@ -250,4 +364,50 @@ format.numeric.df <- function(x,digits=3) {
   }
 
   return(x)
+}
+
+df.gene.detection.rate = function(df) {
+  # Note: the detection rate is based on PAML's LRT test or SLR's multiple testing-corrected estimates.
+  # (This means that a different SLR threshold will *not* change these calculated detection rates.)
+  df.detected.positive = function(df) {
+    if (is.paml(df)) {
+      return(nrow(subset(df, paml_lrt > 5.99)) >= 1)
+    } else {
+      return(nrow(subset(df, aln_type == 'positive3' | aln_type == 'positive4')) >= 1)
+    }
+  }
+
+  num.detected = by(df,df$node_id,df.detected.positive)
+  return(list(detected=sum(num.detected)/length(num.detected)))
+}
+
+df.cor = function(df) {
+  return(list(cor=cor(df$true_dnds,df$aln_dnds,method='spearman',use='complete.obs')))
+}
+
+df.alignment.accuracy = function(df) {
+  first.r <- function(x,field) {
+    return(x[1, field])
+  }                      
+  mean.f <- function(field) {
+    return(mean(by(df, df$node_id, first.r, field)))
+  }
+  sum.f <- function(field) {
+    return(sum(by(df, df$node_id, first.r, field)))
+  }
+
+  out.df <- data.frame(
+    sum_of_pairs_score=mean.f('sum_of_pairs_score'),
+    total_column_score=mean.f('total_column_score'),
+    mean_bl_aligned=mean.f('mean_bl_aligned'),
+    mean_bl_match=mean.f('mean_bl_match'),
+    mean_bl_mismatch=mean.f('mean_bl_mismatch'),
+    match_bl_score=mean.f('match_bl_score'),
+    mismatch_bl_score=mean.f('mismatch_bl_score'),
+    entropy=mean.f('entropy'),
+    lambda=mean.f('lambda'),
+    aln_length=mean.f('aln_length'),
+    filtered_fraction=1 - (sum.f('residue_count') / sum.f('unmasked_residue_count'))
+  )
+  return(out.df)
 }

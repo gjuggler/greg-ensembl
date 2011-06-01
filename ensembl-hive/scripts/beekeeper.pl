@@ -368,6 +368,7 @@ sub run_autonomously {
 
         $queen->check_for_dead_workers($self->{'meadow'}, 0);
 
+        print "Dead workers done!\n";
         $queen->print_analysis_status unless($self->{'no_analysis_stats'});
         $queen->print_running_worker_status;
         #show_failed_workers($self, $queen);

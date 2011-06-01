@@ -58,22 +58,21 @@ sub table_def {
   };
 }
 
-sub fetch_input {
-  my ($self) = @_;
+sub param_defaults {
 
-  my $default_params = {
+  return {
     job_role => '',    # set to 'fan_jobs' to fan out alignment gathering jobs.
 
-    branch_model => 2,
+    branch_model => 1,
     Mgene        => -1,
     method       => 'paml',
     cleandata    => 0,
 
-    foreground_species => '9606,9593',
+    foreground_species => '9606,9593', # Sets foreground branches if branch_model = 2
     keep_species       => '9606,9593,9600,9544',
 
     table                       => 'stats_dnds',
-    alignment_cache_dir         => '/nfs/users/nfs_g/gj1/scratch/gorilla/dnds',
+    alignment_cache_dir         => 'genomewide_dnds',
     always_fetch_new_alignments => 1,
 
     aln_export_job_size => 100,
@@ -83,6 +82,13 @@ sub fetch_input {
     remove_gappy_columns    => 1,
     unroot_species_tree     => 0,
     prank_realign           => 0
+  };  
+}
+
+sub fetch_input {
+  my ($self) = @_;
+
+  my $default_params = {
   };
 
   # Fetch parameters from all possible locations.
@@ -197,8 +203,7 @@ sub run {
 
   # Get an alignment file of all concatenated genes.
   my $base = $self->param('alignment_cache_dir');
-  $self->get_output_folder($base);
-  my $folder        = $self->get_output_folder;
+  my $folder        = $self->get_output_folder . "/$base";
   my $file_aln      = "$folder/aln_" . $self->data_id . ".fasta";
   my $file_genelist = "$folder/aln_" . $self->data_id . "_genes.txt";
   my $aln;
@@ -426,9 +431,6 @@ sub combine_all_alignments {
     $sth->finish;
   }
 
-  # Look at the stats_trees table for some idea if this tree's any good or not.
-  my $sth = $self->dbc->prepare("select * from stats_trees where node_id=? limit 1");
-
   my $seq_hash = {};
   map { $seq_hash->{$_} = []; } @taxon_ids;
 
@@ -453,9 +455,6 @@ sub combine_all_alignments {
 
     if ( $self->param('job_role') eq 'fetch_alns' ) {
 
-      $sth->execute($node_id);
-      my $stats = $sth->fetchrow_hashref;
-
       # RULES FOR INCLUDING A TREE IN THE ANALYSIS:
       my $why_not = undef;
 
@@ -463,14 +462,6 @@ sub combine_all_alignments {
       $why_not = "Too few leaves" if ( scalar( $tree->leaves ) < 2 );
       $why_not = "Not one-to-one"
         if ( !Bio::EnsEMBL::Compara::TreeUtils->has_one_to_one_orthology( $tree, \@taxon_ids ) );
-
-      #  2) Has a reasonably-sized gene tree (when including all mammals in the nodeset)
-      $why_not = "Tree too big or small!"
-        if ( $stats->{tree_length} < 0.5 || $stats->{tree_length} > 10 );
-      if ($why_not) {
-        print "  -> Skipping $node_id [$why_not]\n";
-        next;
-      }
     }
 
     my $aln_file = $self->get_node_file($node_id);
@@ -525,13 +516,6 @@ sub combine_all_alignments {
   # Make a final alignment.
   my $aln = cat(@alns);
 
-  #  my $aln = new Bio::SimpleAlign;
-  #  foreach my $id (keys %$seq_hash) {
-  #    my $seq = join('',@{$seq_hash->{$id}});
-  #    $aln->add_seq(Bio::LocatableSeq->new(-seq => $seq,
-  #					 -id => $id));
-  #  }
-
   print "Aln length: " . $aln->length . "\n";
   $self->pretty_print( $aln, { length => 200 } );
 
@@ -548,10 +532,25 @@ sub load_and_save_aln {
 
   my @taxon_ids = @{$keepers_arrayref};
 
-  my $fetch_params = $self->params;
-  $fetch_params->{tree} = $tree;
-  my @leaves = $fetch_params->{tree}->leaves;
-  my $aln    = $self->get_cdna_aln($fetch_params);
+  my @members     = $tree->leaves;
+  my ($ref_member) = grep { $_->taxon_id == 9606 } @members;
+  $ref_member = $members[0] if ( !defined $ref_member );
+
+  my $c_dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new(
+    -url => 'mysql://ensadmin:ensembl@ensdb-archive:5304/ensembl_compara_58' );
+  my $params = $self->params;
+  my $tree_aln_obj =
+    Bio::EnsEMBL::Compara::ComparaUtils->get_compara_or_genomic_aln( $c_dba, $tree, $ref_member,
+    $self->params );
+
+  if ( !defined $tree_aln_obj ) {
+    $self->fail_and_die( sprintf( "Tree or alignment not good! [%s]", $self->param('aln_type') ) );
+  }
+  my $aln = $tree_aln_obj->{aln};
+  $tree = $tree_aln_obj->{tree};
+  my $extra  = $tree_aln_obj->{extra};
+  my $aln_id = $gene_name;
+
 
   my $id_to_taxon;
   map { $id_to_taxon->{ $_->stable_id } = $_->taxon_id } @leaves;

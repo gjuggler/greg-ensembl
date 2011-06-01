@@ -63,6 +63,25 @@ sub write_output {
 
   my $flowed_human_gene_count = 0;
 
+  if (defined $self->param('flow_node_set') && $self->param('flow_node_set') eq 'one2one') {
+    # The node set method is one2one orthologs. Ensure that a gene ID is set, and return
+    # to let the autoflow bring us to the next Process.
+    # When one2one is set, the get_tree_for_comparative_analysis method in ComparaUtils
+    # will restrict the tree to one-to-one orthologs of the member defined by gene_id.
+    my $gene_id = $self->param('gene_id');
+    my $node_id = $self->param('node_id');
+    my $params = {
+      flow_node_set => 'one2one',
+      gene_id => $gene_id,
+      node_id => $node_id
+    };
+    my ($output_job_id) = @{ $self->dataflow_output_id( $params, 1 ) };
+    my $param_string = Bio::EnsEMBL::Compara::ComparaUtils->hash_to_string($params);
+    print " -> Flowed node $node_id [$param_string] [job id: $output_job_id]\n";
+
+    return;
+  }
+
   if ( defined $self->param('flow_node_set') ) {
     $self->input_job->autoflow(0);
     my $flow_set = $self->param('flow_node_set');

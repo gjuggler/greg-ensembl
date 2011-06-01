@@ -12,13 +12,17 @@ use Bio::EnsEMBL::Compara::NestedSet;
 use Bio::EnsEMBL::Hive;
 use Bio::EnsEMBL::Hive::Process;
 
+use File::Path qw(mkpath);
+
 use base ('Bio::Greg::Hive::Process');
+
+my $ALN = 'Bio::EnsEMBL::Compara::AlignUtils';
 
 sub param_defaults {
   my $params = {
     alignment_table       => 'protein_tree_member',
     alignment_score_table => 'protein_tree_member_score',
-    alignment_scores_action => 'prank'    # Options: 'gblocks', 'prank', 'trimal', 'indelign'
+    filter => 'prank'    # Options: 'gblocks', 'prank', 'trimal', 'indelign'
   };
   return $params;
 }
@@ -47,44 +51,224 @@ sub run {
 
   my $tree = $self->param('tree');
   my $aln  = $self->param('aln');
-
+  my $pep_aln = Bio::EnsEMBL::Compara::AlignUtils->translate($aln);
+  
   my $params = $self->params;
 
   my $input_table = $params->{'alignment_table'};
-  my $action      = $params->{'alignment_scores_action'};
+  my $action      = $params->{'filter'};
   my $table       = $params->{'alignment_score_table'};
+  
+  # Score hash is a hash of strings, keyed by sequence ID.
+  my $score_hash = $self->_get_alignment_scores($tree, $aln, $pep_aln);
+
+  $self->store_scores( $tree, $score_hash, $table );
+}
+
+# Masks the CDNA alignment.
+sub mask_alignment {
+  my $self = shift;
+  my $tree = shift;
+  my $aln = shift;
+  my $pep_aln = shift;
+  my $score_hash = shift;
+
+  #my $score_hash = $self->_get_alignment_scores($tree, $aln, $pep_aln);
+
+  my $threshold = 9;
+  my $maximum_mask_fraction = $self->param('maximum_mask_fraction');
+  print "max mask fraction: $maximum_mask_fraction\n";
+
+  my $mask_character = 'N';
+
+  # Triplicate the alignment scores to match the CDNA alignment.
+  foreach my $seq ($aln->each_seq) {
+    my $str = $score_hash->{$seq->id};
+    
+    my @arr = split( //, $str );
+    @arr = map { ( $_ . '' ) x 3 } @arr;
+    $str = join("",@arr);      
+    $score_hash->{$seq->id} = $str;
+  }
+
+  # Respect the maximum masked fraction if needed.
+  if ($maximum_mask_fraction) {
+    my $orig_threshold = $threshold;
+    my $max_fraction = $self->param('maximum_mask_fraction');
+
+    my $unmasked_n = $ALN->count_residues($aln);
+    my $masked_fraction = 1.1;
+    my $tmp_threshold = $threshold + 1;
+    
+    while ($masked_fraction > $max_fraction) {
+      $tmp_threshold--;
+      my $tmp_masked_aln = $ALN->mask_below_score($aln,$tmp_threshold,$score_hash,$mask_character);
+      my $masked_n = $ALN->count_residues($tmp_masked_aln, 1); # 1 indicates we're counting a CDNA sequence.
+      
+      $masked_fraction = 1 - ($masked_n / $unmasked_n);
+    }
+    $threshold = $tmp_threshold;
+    my $masked_str = sprintf("%.3f",$masked_fraction);
+    print "Respecting maximum fraction of $max_fraction... reduced threshold from ${orig_threshold} to ${threshold} (masked fraction: ${masked_str}!\n";
+  }
+  
+  printf " -> Masking sequences at alignment score threshold: >= %d\n",$threshold;
+
+  $self->param('aln_mask_threshold', $threshold);
+
+  $aln = $ALN->mask_below_score($aln, $threshold, $score_hash, $mask_character);
+
+  return $aln;
+}
+
+sub _get_alignment_scores {
+  my $self = shift;
+  my $tree = shift;
+  my $aln = shift;
+  my $pep_aln = shift;
+
+  my $action = $self->param('filter');
+  my $params = $self->params;
 
   my $score_hash;
   if ( $action =~ m/gblocks/i ) {
     print " -> RUN GBLOCKS [$action]\n";
-    $score_hash = $self->run_gblocks( $tree, $aln, $params );
+    $self->run_gblocks( $tree, $aln, $pep_aln, $params );
   } elsif ( $action =~ 'prank' ) {
     print " -> RUN PRANK [$action]\n";
     $params->{prank_filtering_scheme} = $action;
-    $score_hash = $self->run_prank( $tree, $aln, $params );
+    $score_hash = $self->run_prank( $tree, $aln, $pep_aln, $params );
   } elsif ( $action =~ m/trimal/i ) {
     print " -> RUN TRIMAL [$action]\n";
-    $score_hash = $self->run_trimal( $tree, $aln, $params );
+    $score_hash = $self->run_trimal( $tree, $aln, $pep_aln, $params );
   } elsif ( $action =~ m/indelign/i ) {
     print " -> RUN INDELIGN [$action]\n";
-    eval { $score_hash = $self->run_indelign( $tree, $aln, $params ); };
+    eval { $score_hash = $self->run_indelign( $tree, $aln, $pep_aln, $params ); };
     if ($@) {
       print "Indelign error for action [$action]: $@\n";
     }
   } elsif ( $action =~ m/(coffee|score)/i ) {
     print " -> RUN TCOFFEE [$action]\n";
-    $score_hash = $self->run_tcoffee( $tree, $aln, $params );
+    $self->run_tcoffee( $tree, $aln, $pep_aln, $params );
   } elsif ( $action =~ m/(oracle|optimal)/i) {
-    $score_hash = $self->run_oracle($tree,$aln,$params);
+    $self->run_oracle($tree,$aln,$pep_aln, $params);
   } elsif ($action =~ m/columns/i) {
-    $score_hash = $self->run_columns($tree,$aln,$params);
+    $score_hash = $self->run_columns($tree,$aln,$pep_aln, $params);
   } elsif ($action =~ m/none/i) {
-    return;
+    $self->run_none($tree, $aln, $pep_aln, $params);
+  } elsif ($action =~ m/branchlength/i) {    
+    $self->run_branchlength($tree, $aln, $pep_aln, $params);
+  } elsif ($action =~ m/guidance/i) {
+    $self->run_guidance($tree, $aln, $pep_aln, $params);
   } else {
     $self->throw("Alignment score action not recognized: [$action]!");
   }
 
-  $self->store_scores( $tree, $score_hash, $table );
+  # TODO: Get score deciles, and convert to 0-9 score strings.
+  my $score_hash = $self->decile_and_stringify($pep_aln);
+
+  return $score_hash;
+}
+
+sub decile_and_stringify {
+  my $self = shift;
+  my $pep_aln = shift;
+
+  my @score_bin = ();
+
+  foreach my $seq ($pep_aln->each_seq) {
+    foreach my $i (1 .. $pep_aln->length) {
+      my $score = $self->get_score($pep_aln, $seq->id, $i);
+      push @score_bin, $score if ($score ne '-');
+    }
+  }
+
+  @score_bin = sort {$a <=> $b} @score_bin;
+  my $max_score = $score_bin[scalar(@score_bin)-1];
+  my $min_score = $score_bin[0];
+  @score_bin = grep {$_ < $max_score} @score_bin;
+
+  my @indices = map {int($_ * (scalar(@score_bin)-1) / 10)} 0..9;
+  my @scores = map {$score_bin[$_]} @indices;
+
+  print "$min_score .. $max_score\n";
+  print "@indices\n";
+  print "@scores\n";
+
+
+  my $score_hash;
+  my $decile_histogram;
+  map {$decile_histogram->{$_} = 0} 0 .. 9;
+
+  foreach my $seq ($pep_aln->each_seq) {
+    my $score_string = '';
+    foreach my $i (1 .. $pep_aln->length) {
+      my $score = $self->get_score($pep_aln, $seq->id, $i);
+
+      if ($score eq '-') {
+        $score_string .= '-';
+      } else {
+        my $cur_decile = 0;
+        foreach my $decile (0 .. 9) {
+          if ($score >= $scores[$decile]) {
+              $cur_decile = $decile 
+          }
+        }
+        
+        if ($self->param('filter') eq 'tcoffee') {
+          $cur_decile = $score;
+        }
+        $score_string .= $cur_decile;
+        $decile_histogram->{$cur_decile}++;
+      }
+    }
+#    print "$score_string\n";
+    $score_hash->{$seq->id} = $score_string;
+  }
+
+  foreach my $key (sort keys %$decile_histogram) {
+    print $key."  ".$decile_histogram->{$key}."\n";
+  }
+
+  return $score_hash;
+}
+
+sub get_score {
+  my $self = shift;
+  my $aln = shift;
+  my $id = shift;
+  my $pos = shift;
+
+  my $scores = $self->{_scores};
+  my $score = $scores->{$id}->{$pos};
+  if (!defined $score) {
+    die("No score defined for $id $pos");
+  } else {
+    return $score;
+  }
+}
+
+sub set_score {
+  my $self = shift;
+  my $aln = shift;
+  my $id = shift;
+  my $pos = shift;
+  my $score = shift;
+
+  if (!defined $self->{_scores}) {
+    $self->{_scores} = {};
+  }
+  my $scores = $self->{_scores};
+  if (!defined $scores->{$id}) {
+    $scores->{$id} = {};
+  }
+
+  my $residue = Bio::EnsEMBL::Compara::AlignUtils->get_residue($aln, $id, $pos);
+  if ($residue eq '-') {
+    $scores->{$id}->{$pos} = '-';
+  } else {
+    $scores->{$id}->{$pos} = $score;
+  }
 }
 
 sub store_scores {
@@ -108,21 +292,67 @@ sub store_scores {
   $sth->finish;
 }
 
+sub run_none {
+  my $self = shift;
+  my $tree = shift;
+  my $aln = shift;
+  my $pep_aln = shift;
+
+  foreach my $seq ($pep_aln->each_seq) {
+    foreach my $i (1 .. $pep_aln->length) {
+      $self->set_score($pep_aln, $seq->id, $i, 1);
+    }
+  }
+}
+
+sub run_branchlength {
+  my $self = shift;
+  my $tree = shift;
+  my $aln = shift;
+  my $pep_aln = shift;
+  my $params = shift;
+
+  my $action = $self->param('alignment_scores_action');
+  my $window_flank = 0;
+
+  if ($action eq 'window_branchlength') {
+    $window_flank = 2;
+  }
+
+  my $total_bl = Bio::EnsEMBL::Compara::TreeUtils->total_distance($tree);
+  my @id_list = map { $_->id } $pep_aln->each_seq;
+  my $seq_arrayref = Bio::EnsEMBL::Compara::AlignUtils->to_arrayrefs($pep_aln);
+
+  my $tree_bl_hash = {};
+  my $scores;
+  foreach my $i ( 1 .. $pep_aln->length ) {
+    my @nongap_ids_at_pos = grep { $seq_arrayref->{$_}->[$i] ne '-' } @id_list;
+    my $nongap_bl = $self->get_subtree_bl( $tree, \@nongap_ids_at_pos, $tree_bl_hash );
+
+    foreach my $seq ($aln->each_seq) {
+      my $score = $nongap_bl / $total_bl;
+      die unless (defined $score);
+      $self->set_score($pep_aln, $seq->id, $i, $score);
+    }
+  }
+}
+
 sub run_columns {
   my $self = shift;
   my $tree = shift;
   my $aln = shift;
+  my $pep_aln = shift;
   my $params = shift;
 
   my $num_sequences = scalar($tree->leaves);
 
   my @column_scores;
-  foreach my $i (1 .. $aln->length) {
-    my $col_string = Bio::EnsEMBL::Compara::AlignUtils->get_column_string($aln,$i);
+  foreach my $i (1 .. $pep_aln->length) {
+    my $col_string = Bio::EnsEMBL::Compara::AlignUtils->get_column_string($pep_aln,$i);
     $col_string =~ s/[^-]//g;
-    my $num_gaps = length($col_string);
-    my $gap_fraction = $num_gaps / $num_sequences;
-    my $score = $gap_fraction * 10;
+    my $num_nongaps = length($col_string);
+    my $gap_fraction = $num_nongaps / $num_sequences;
+    my $score = $gap_fraction * 9;
     $score = 9 if ($score > 9);
     $score = 0 if ($score < 0);
     $score = sprintf("%1d",$score);
@@ -133,7 +363,8 @@ sub run_columns {
   my %scores_hash;
   
   foreach my $leaf ( $tree->leaves ) {
-    my $aln_string = _apply_columns_to_leaf( \@column_scores, $leaf );
+    my $seq = Bio::EnsEMBL::Compara::AlignUtils->get_seq_with_id($pep_aln, $leaf->name);
+    my $aln_string = _apply_columns_to_leaf( \@column_scores, $seq->seq );
     $scores_hash{ $leaf->stable_id } = $aln_string;
   }
 
@@ -144,35 +375,13 @@ sub run_oracle {
   my $self   = shift;
   my $tree   = shift;
   my $aln    = shift;
+  my $pep_aln    = shift;
   my $params = shift;
 
-  # Get the true and inferred alignment.
-  my ( $sa_true, $cdna_true, $sa_aln, $cdna_aln );
-  my $cur_params = $self->params;
+  my $true_aln = $self->param('true_aln');
+  my $true_pep_aln = $self->param('true_pep_aln');
 
-  # Important!! Remove the tree from params object so it's re-fetched by ComparaUtils.
-  # Annoying, I know...
-  delete $cur_params->{tree};
-  my $true_aln_params =
-    $self->replace_params( $cur_params,
-    { alignment_table => 'protein_tree_member', alignment_score_filtering => 0 } );
-  $self->hash_print($true_aln_params);
-  print "Getting TRUE alignment...\n";
-  ( $tree, $sa_true, $cdna_true ) =
-    Bio::EnsEMBL::Compara::ComparaUtils->tree_aln_cdna( $self->compara_dba, $true_aln_params );
-
-  $self->hash_print($cur_params);
-
-  print "Getting INFERRED alignment...\n";
-  ( $tree, $sa_aln, $cdna_aln ) =
-    Bio::EnsEMBL::Compara::ComparaUtils->tree_aln_cdna( $self->compara_dba, $cur_params );
-
-  #  $sa_true = $sa_true->slice(50,100);
-  #  $sa_aln = $sa_aln->slice(50,100);
-  Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $sa_true, { length => 100 } );
-  Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $sa_aln,  { length => 100 } );
-
-  $aln = $sa_aln;
+  print $tree->newick_format."\n";
 
   # Goal: score each site by the fraction of the tree against which
   #   it is correctly aligned.
@@ -184,27 +393,24 @@ sub run_oracle {
 
   # Set-up:
   # Index the alignments by sequence residue #.
-  print "Indexing pairs...\n";
   my $ALNU     = 'Bio::EnsEMBL::Compara::AlignUtils';
-  my $true_obj = $ALNU->to_arrayrefs($sa_true);
-  print "test_obj\n";
-  my $test_obj = $ALNU->to_arrayrefs($sa_aln);
+  my $true_obj = $ALNU->to_arrayrefs($true_pep_aln);
+  my $test_obj = $ALNU->to_arrayrefs($pep_aln);
 
   # Add all aligned pairs to the index hashtable.
-  my $true_pairs = $ALNU->store_pairs( $sa_true, $true_obj );
-  my $test_pairs = $ALNU->store_pairs( $sa_aln,  $test_obj );
-  print "Done!\n";
+  my $true_pairs = $ALNU->store_pairs( $true_pep_aln, $true_obj );
+  my $test_pairs = $ALNU->store_pairs( $pep_aln,  $test_obj );
 
-  my @id_list = map { $_->id } $aln->each_seq;
+  my @id_list = map { $_->id } $pep_aln->each_seq;
 
   my $tree_bl_hash = {};
   my $scores_hash;
   map { $scores_hash->{$_} = '' } @id_list;
-  foreach my $i ( 1 .. $aln->length ) {
+  foreach my $i ( 1 .. $pep_aln->length ) {
     my @nongap_ids_at_pos = grep { $test_obj->{$_}->[$i] ne '-' } @id_list;
     my $total_nongap_bl = $self->get_subtree_bl( $tree, \@nongap_ids_at_pos, $tree_bl_hash );
 
-    print $ALNU->get_column_string( $aln, $i ) . "\n";
+    print $ALNU->get_column_string( $pep_aln, $i ) . "\n";
     my $column_score_string = '';
     foreach my $this_seq_id (@id_list) {
 
@@ -212,6 +418,7 @@ sub run_oracle {
       my $this_res_num = $test_obj->{$this_seq_id}->[$i];
 
       if ( $this_res_num eq '-' ) {
+        $self->set_score($pep_aln, $this_seq_id, $i, '-');
         $scores_hash->{$this_seq_id} .= '-';
         $column_score_string .= '-';
         next;
@@ -233,9 +440,18 @@ sub run_oracle {
       }
       my $correct_bl = $self->get_subtree_bl( $tree, \@correctly_aligned_ids, $tree_bl_hash );
 
-      # Spread out a little bit towards lower scores...
-      my $score = -5 + ($correct_bl/$total_nongap_bl * 15.0);
+      #printf "%s - %s  %.3f %.3f\n", $this_seq_id, join(',',@correctly_aligned_ids), $total_nongap_bl, $correct_bl;
 
+      # Spread out a little bit towards lower scores...
+      my $score = 0;
+      if ($total_nongap_bl > 0) {
+        $score = 0 + ($correct_bl/$total_nongap_bl);
+      }
+      $self->set_score($pep_aln, $this_seq_id, $i, $score);
+
+      if ($total_nongap_bl > 0) {
+        $score = 0 + ($correct_bl/$total_nongap_bl * 9.0);
+      }
       $score = 9 if ($score > 9);
       $score = 0 if ($score < 0);
       $score = sprintf("%1d",$score);
@@ -246,7 +462,8 @@ sub run_oracle {
     }
     print $column_score_string. "\n";
   }
-  return $scores_hash;
+  
+#  return $scores_hash;
 }
 
 sub get_subtree_bl {
@@ -261,9 +478,13 @@ sub get_subtree_bl {
   my $existing_value = $bl_hash->{$key};
   return $existing_value if (defined $existing_value);
     
-  print "No existing value! $key\n";
-  my $subtree = Bio::EnsEMBL::Compara::TreeUtils->extract_subtree_from_leaves($tree,\@id_array);
+  #print "No existing value! $key\n";
+  my $subtree = Bio::EnsEMBL::Compara::TreeUtils->extract_subtree_from_leaves($tree,\@id_array, 1);
+
   my $total = Bio::EnsEMBL::Compara::TreeUtils->total_distance($subtree);
+  if (scalar($subtree->leaves) == 1) {
+    $total = 0;
+  }
   $bl_hash->{$key} = $total;
   return $total;
 }
@@ -272,10 +493,11 @@ sub run_indelign {
   my $self   = shift;
   my $tree   = shift;
   my $aln    = shift;
+  my $pep_aln    = shift;
   my $params = shift;
 
   my ( $i_obj, $d_obj, $ins_rate, $del_rate ) =
-    Bio::EnsEMBL::Compara::AlignUtils->indelign( $aln, $tree, $params,
+    Bio::EnsEMBL::Compara::AlignUtils->indelign( $pep_aln, $tree, $params,
     $self->worker_temp_directory );
   my @ins = @$i_obj;
   my @del = @$d_obj;
@@ -287,8 +509,8 @@ sub run_indelign {
   $max_allowed_indels = floor($max_allowed_indels);
   $max_allowed_indels = 1 if ( $max_allowed_indels < 1 );
 
-  my $blocks_string = "1" x $aln->length;
-  for ( my $i = 0 ; $i < $aln->length ; $i++ ) {
+  my $blocks_string = "1" x $pep_aln->length;
+  for ( my $i = 0 ; $i < $pep_aln->length ; $i++ ) {
     my $indel_sum = $ins[$i] + $del[$i];
 
     if ( $indel_sum > $max_allowed_indels ) {
@@ -306,7 +528,8 @@ sub run_indelign {
   #  print "@column_scores\n";
   my %scores_hash;
   foreach my $leaf ( $tree->leaves ) {
-    my $aln_string = _apply_columns_to_leaf( \@column_scores, $leaf );
+    my $seq = Bio::EnsEMBL::Compara::AlignUtils->get_seq_with_id($pep_aln, $leaf->name);
+    my $aln_string = _apply_columns_to_leaf( \@column_scores, $seq->seq );
     print "$aln_string\n";
     $scores_hash{ $leaf->stable_id } = $aln_string;
   }
@@ -317,50 +540,50 @@ sub run_tcoffee {
   my $self   = shift;
   my $tree   = shift;
   my $aln    = shift;
+  my $pep_aln    = shift;
   my $params = shift;
 
-  Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $aln, { length => 200 } );
+  Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $pep_aln, { length => 200 } );
 
   my $tmpdir = $self->worker_temp_directory;
-
-  #  system("rm -rf ${tmpdir}*.*");
+  print "$tmpdir\n";
+  system("rm -rf ${tmpdir}*.*");
 
   my $filename = "$tmpdir" . "tcoffee_aln.fasta";
   my $tmpfile  = Bio::AlignIO->new(
     -file   => ">$filename",
     -format => 'fasta'
   );
-  $tmpfile->write_aln($aln);
+  $tmpfile->write_aln($pep_aln);
   $tmpfile->close;
 
   my $tmp = $tmpdir;
   $tmp = substr($tmp,0,-1);
-#  my $prefix = "export HOME_4_TCOFFEE=\"${tmp}\";";
-  my $prefix = "export DIR_4_TCOFFEE=\"${tmp}\";";
+  my $prefix = "export HOME_4_TCOFFEE=\"${tmp}\";";
+  $prefix = "export DIR_4_TCOFFEE=\"${tmp}\";";
   $prefix .= "export METHODS_4_TCOFFEE=\"${tmp}\";";
   $prefix .= "export MCOFFEE_4_TCOFFEE=\"${tmp}\";";
   $prefix .= "export TMP_4_TCOFFEE=\"${tmp}\";";
   $prefix .= "export CACHE_4_TCOFFEE=\"${tmp}\";";
   $prefix .= "export NO_ERROR_REPORT_4_TCOFFEE=1;";
   $prefix .= "export NUMBER_OF_PROCESSORS_4_TCOFFEE=1;";
-  $prefix .= "export MAFFT_BINARIES=/ebi/research/software/Linux_x86_64/bin/mafft;";
-  $prefix .= "export MAFFT_BINARIES=/nfs/users/nfs_g/gj1/bin/mafft-bins/binaries;"
     ;    # GJ 2008-11-04. What a hack!
 
   my $outfile = $filename . ".score_ascii";
 
-  my $bin = $self->param('t_coffee_executable');
-  $bin = $self->base . "/bin/linux64/t_coffee" if (!-e $bin);
+  my $bin = 't_coffee';
   my $cmd =
     qq^$bin -mode=evaluate -evaluate_mode t_coffee_slow -infile=$filename -outfile=$outfile -output=score_ascii -n_core=1 -multi_core=no^;
   print $cmd. "\n";
-  system( $prefix. $cmd );
+  my $rc = system( $prefix. $cmd );
+
+  $rc == 0 or die("TCoffee failed: $?");
 
   my $scores_file = $outfile;
   my %score_hash;
   if ( -e $scores_file ) {
     my $FH = IO::File->new();
-    $FH->open($scores_file) || throw("Could not open tcoffee scores file!");
+    $FH->open($scores_file) || die("Could not open tcoffee scores file!");
     <$FH>;    #skip header
     my $i = 0;
     while (<$FH>) {
@@ -387,31 +610,29 @@ sub run_tcoffee {
     }
     $FH->close;
   } else {
-    throw("No tcoffee scores file at $scores_file!!\n");
+    die("No tcoffee scores file at $scores_file!!\n");
   }
 
-  foreach my $leaf ( $tree->leaves ) {
-    my $id     = $leaf->stable_id;
+  foreach my $seq ( $pep_aln->each_seq ) {
+    my $id     = $seq->id;
     my $string = $score_hash{$id};
-
-    throw("No score string found!") unless ( defined $string );
+    die("No score string found for seq $id!") unless ( defined $string );
 
     $string =~ s/[^\d-]/9/g;
+    # Convert non-digits and non-dashes into 9s. This is necessary because t_coffee leaves some leftover letters.
+    my @chars = split('', $string);
 
-# Convert non-digits and non-dashes into 9s. This is necessary because t_coffee leaves some leftover letters.
-#print $string."\n";
-#print $leaf->alignment_string."\n";
-#exit(0);
-    $score_hash{$id} = $string;
+    foreach my $i (1 .. $pep_aln->length) {
+      $self->set_score($pep_aln, $seq->id, $i, $chars[$i-1]);
+    }
   }
-
-  return \%score_hash;
 }
 
 sub run_gblocks {
   my $self   = shift;
   my $tree   = shift;
   my $aln    = shift;
+  my $pep_aln    = shift;
   my $params = shift;
 
   my $defaults = {
@@ -424,14 +645,14 @@ sub run_gblocks {
 
   printf("Sitewise_dNdS::run_gblocks\n") if ( $self->debug );
 
-  my $aln_length = $aln->length;
+  my $aln_length = $pep_aln->length;
   my $tmpdir     = $self->worker_temp_directory;
   my $filename   = "$tmpdir" . "gblocks_aln.fasta";
   my $tmpfile    = Bio::AlignIO->new(
     -file   => ">$filename",
     -format => 'fasta'
   );
-  $tmpfile->write_aln($aln);
+  $tmpfile->write_aln($pep_aln);
   $tmpfile->close;
 
   my @leaves             = $tree->leaves;
@@ -462,7 +683,7 @@ sub run_gblocks {
   $_ = $segments_string;
   my @bs = /\[(.+?)\]/g;
 
-  my $blocks_string = "0" x $aln->length;
+  my $blocks_string = "0" x $pep_aln->length;
   foreach my $b (@bs) {
     my ( $start, $end ) = split( " ", $b );
     for ( my $i = $start ; $i <= $end ; $i++ ) {
@@ -473,21 +694,19 @@ sub run_gblocks {
   my @column_scores = split( "", $blocks_string );
   my %scores_hash;
 
-  foreach my $leaf ( $tree->leaves ) {
-    my $aln_string = _apply_columns_to_leaf( \@column_scores, $leaf );
-    $scores_hash{ $leaf->stable_id } = $aln_string;
+  foreach my $seq ($pep_aln->each_seq) {
+    foreach my $i (1 .. $pep_aln->length) {
+      $self->set_score($pep_aln, $seq->id, $i, $column_scores[$i-1]);
+    }
   }
-
-  return \%scores_hash;
 }
 
 sub _apply_columns_to_leaf {
   my $columns_ref = shift;
-  my $leaf        = shift;
+  my $aln_str = shift;
 
   my @column_scores = @{$columns_ref};
 
-  my $aln_str = $leaf->alignment_string;
   my @aln_chars = split( "", $aln_str );
 
   for ( my $i = 0 ; $i < scalar(@aln_chars) ; $i++ ) {
@@ -503,12 +722,13 @@ sub run_trimal {
   my $self   = shift;
   my $tree   = shift;
   my $aln    = shift;
+  my $pep_aln    = shift;
   my $params = shift;
 
   # Write temporary alignment.
   my $dir   = $self->worker_temp_directory;
   my $aln_f = $dir . "/aln_" . $self->data_id . ".fa";
-  Bio::EnsEMBL::Compara::AlignUtils->to_file( $aln, $aln_f );
+  Bio::EnsEMBL::Compara::AlignUtils->to_file( $pep_aln, $aln_f );
 
   # Build a command for TrimAl.
   my $trim_params = '';
@@ -524,7 +744,7 @@ sub run_trimal {
   my @cons_cols = split( /[,]/, $output );
   print join( ",", @cons_cols ) . "\n";
 
-  my @column_scores = 0 x $aln->length;
+  my @column_scores = 0 x $pep_aln->length;
   foreach my $column (@cons_cols) {
     $column_scores[$column] = 9;
   }
@@ -538,19 +758,414 @@ sub run_trimal {
   return \%scores_hash;
 }
 
+sub run_guidance {
+  my $self = shift;
+  my $tree = shift;
+  my $aln = shift;
+  my $pep_aln = shift;
+  my $params = shift;
+  
+  $params->{temp_dir} = $self->worker_temp_directory;
+
+  my $dir = $self->worker_temp_directory;
+
+  system("rm -rf ${dir}*");
+  mkpath($dir);
+
+  my $node_id = $tree->node_id;
+  my $seqs_f = $dir."seqs_${node_id}.fasta";
+  my $aln_f = $dir."aln_${node_id}.fasta";
+  my $tree_f = $dir."tree_${node_id}.nh";
+  Bio::EnsEMBL::Compara::AlignUtils->dump_ungapped_seqs($pep_aln,$seqs_f);
+  Bio::EnsEMBL::Compara::AlignUtils->to_file($pep_aln,$aln_f);
+  Bio::EnsEMBL::Compara::TreeUtils->to_file($tree,$tree_f);  
+
+  my $guidance_dir = $self->base . "/projects/slrsim/guidance.v1.01/";
+  my $cwd = cwd();
+  chdir $guidance_dir;
+
+  my $reps = 100;
+  my $msa_program = "MAFFT";
+  if ($self->param('aligner') =~ m/prank/i) {
+    $msa_program = "PRANK";
+    $reps = 30;
+  }
+
+  my $cmd = qq^perl www/Guidance/run_calc.pl --seqFile ${seqs_f} --msaFile ${aln_f} --msaProgram ${msa_program} --seqType aa --bootstraps ${reps} --seqCutoff 0 --colCutoff 0 --outDir ${dir}^;
+  my $rc = system($cmd);
+  $rc == 0 or die("GUIDANCE failed: $? ($!)");
+
+  # Parse the GUIDANCE output into residue scores.
+  my $seq_codes_f = $dir."Seqs.Codes";
+  my $residue_scores_f = $dir."MSA.${msa_program}.Guidance_res_pair_res.scr";
+
+  my $num_to_seq_id;
+  open(IN, "$seq_codes_f");
+  my @lines = <IN>;
+  close(IN);
+  foreach my $line (@lines) {
+    chomp $line;
+    my @toks = split("\\s+", $line);
+    print "[".$toks[1]."]\n";
+    $num_to_seq_id->{$toks[1]} = $toks[0];
+  }
+
+  my $row_col_scores;
+  open(IN, "$residue_scores_f");
+  my @lines = <IN>;
+  close(IN);
+  print shift @lines; # Remove header line.
+  foreach my $line (@lines) {
+    chomp $line;
+    $line =~ s/^\s+//;
+    my @toks = split("\\s+", $line);
+    my $key = $num_to_seq_id->{$toks[1]} . $toks[0];
+    $row_col_scores->{$key} = $toks[2];
+  }
+
+  my @id_list = map { $_->id } $pep_aln->each_seq;
+  my $scores_hash;
+  foreach my $seq_id (@id_list) {
+    my $score_string = '';
+    foreach my $i ( 1 .. $pep_aln->length) {
+      my $score = $row_col_scores->{$seq_id.$i};
+
+      if ($score) {
+        $self->set_score($pep_aln, $seq_id, $i, $score);
+        $score = 0 + ($score * 9.0);
+        $score = 9 if ($score > 9);
+        $score = 0 if ($score < 0);
+        $score = sprintf("%1d",$score);
+        $score_string .= $score;
+      } else {
+        $self->set_score($pep_aln, $seq_id, $i, '-');
+        $score_string .= '-';
+      }
+
+    }
+    $scores_hash->{$seq_id} = $score_string;
+  }
+
+  chdir $cwd;
+
+#  return $scores_hash;
+}
+
 sub run_prank {
   my $self   = shift;
   my $tree   = shift;
   my $aln    = shift;
+  my $pep_aln    = shift;
   my $params = shift;
 
   $params->{temp_dir} = $self->worker_temp_directory;
 
   my $threshold = $params->{'prank_filtering_threshold'} || 7;
-  my ( $scores, $blocks ) =
-    Bio::EnsEMBL::Compara::AlignUtils->get_prank_filter_matrices( $aln, $tree, $params );
+  my $scores= $self->_get_prank_filter_matrices( $tree, $aln, $pep_aln, $params );
 
   return $scores;
 }
+
+sub _get_prank_filter_matrices {
+  my $self = shift;
+  my $tree = shift;
+  my $aln = shift;
+  my $pep_aln = shift;
+  my $params = shift;
+
+  my $defaults = {
+    'prank_filtering_scheme' => 'prank_mean'
+  };
+  $params = Bio::EnsEMBL::Compara::ComparaUtils->replace_params($defaults,$params);  
+
+  $params->{prank_filtering_scheme} = 'prank_minimum' if ($params->{prank_filtering_scheme} eq 'prank');
+
+  my $node_id = $tree->node_id;
+
+  my $dir = $self->worker_temp_directory . 'prank_tmp';
+  mkpath([$dir]);
+  my $aln_f = $dir."/aln_${node_id}.fasta";
+  my $tree_f = $dir."/tree_${node_id}.nh";
+  my $out_f = $dir."/aln_filtered_${node_id}";
+  my $xml_f = $out_f.".0.xml";
+
+  # Output tree and alignment.
+  $ALN->to_file($pep_aln,$aln_f);
+  Bio::EnsEMBL::Compara::TreeUtils->to_file($tree,$tree_f);
+
+  my $prank_bin = "prank_fix";
+  $prank_bin = "prank" if (!-e $prank_bin);
+
+  my $cmd = qq^${prank_bin} -d=$aln_f -t=$tree_f -e -o=$out_f^;
+  system($cmd);
+
+  my $module = 'XML::LibXML';
+  eval "use $module";
+  use Bio::Greg::Node;
+
+  # Grab information from Prank's XML output.
+  my $parser;
+  eval {
+    $parser = XML::LibXML->new();
+  };
+  if ($@) {
+    print "$@\n";
+    return;
+  }
+  my $xml_tree = $parser->parse_file($xml_f);
+  my $root = $xml_tree->getDocumentElement;
+
+  my $newick = ${$root->getElementsByTagName('newick')}[0]->getFirstChild->getData;
+  #print $newick."\n";
+  my $rootNode = Bio::Greg::Node->new();
+  $rootNode = $rootNode->parseTree($newick);
+
+  my %nameToId;
+  my %idToName;
+  my %seqsByName;
+  foreach my $lid (@{$root->getElementsByTagName('leaf')}) {
+    my $tree_name = $lid->getAttribute('id');
+    $nameToId{$lid->getAttribute('name')} = 
+    $idToName{$lid->getAttribute('id')} = $lid->getAttribute('name');
+    my $seq = $lid->findvalue('sequence');
+    $seq =~ s/\s//g;
+    $seqsByName{$lid->getAttribute('name')} = $seq;
+  }
+  my %postprob;
+  foreach my $nid (@{$root->getElementsByTagName('node')}) {
+    my $node = $nid->getAttribute('id');
+    foreach my $pid (@{$nid->getElementsByTagName('probability')}) {
+      my $prob = $pid->getAttribute('id');
+      my $data = $pid->getFirstChild->getData;
+      $data =~ s/\s//g;
+      $postprob{$node}{$prob} = $data;
+    }
+  }
+  my %nameToState;
+  foreach my $sid (${$root->getElementsByTagName('model')}[0]->getElementsByTagName('probability')) {
+    $nameToState{$sid->getAttribute('name')} = $sid->getAttribute('id');
+  }
+
+  # Create a stored 'leaf name string' for each XML node.
+  my $leaf_names_to_xml;
+  my @nodes = $rootNode->nodes();
+  foreach my $node (@nodes) {
+    next if ($node->isLeaf);
+    my @nms = $node->leafNames;
+    @nms = map {$idToName{$_}} @nms;
+    @nms = sort @nms;
+    my $leaf_names = join(" ",@nms);
+    $leaf_names_to_xml->{$leaf_names} = $node->name;
+  }
+
+  my $leaf_names_to_node;
+  my $node_to_xml;
+  foreach my $node ($tree->nodes) {
+    next if ($node->is_leaf);
+
+    my @nms = map {$_->name} $node->leaves;
+    @nms = sort @nms;
+    my $leaf_names = join(" ",@nms);
+    $leaf_names_to_node->{$leaf_names} = $node->name;
+    if ($leaf_names_to_xml->{$leaf_names}) {
+      $node_to_xml->{$node} = $leaf_names_to_xml->{$leaf_names};
+    }
+  }
+  
+  my $pp_hash;
+  my $leaf_scores;
+  my @nodes = $rootNode->nodes();
+  foreach my $node (@nodes) {
+    next if ($node->isLeaf);
+    my @score = split(/,/,$postprob{$node->name}{$nameToState{'postprob'}});
+    $pp_hash->{$node->name} = ();
+    for (my $i=0; $i < scalar(@score); $i++) {
+      $pp_hash->{$node->name}[$i] = $score[$i];
+    }
+  }
+
+  my $aln_len = $pep_aln->length;
+
+  if ($params->{'prank_filtering_scheme'} =~ m/prank_column/i) {
+    my @score_array;
+
+    for (my $i=0; $i < $aln_len; $i++) {
+      my $score_sum = 0;
+      my $bl_sum = 0;
+      foreach my $node ($tree->nodes) {
+        my $bl = $node->distance_to_parent;
+
+        my $xml_node = $node_to_xml->{$node};
+        my $post_prob = $pp_hash->{$xml_node}[$i];
+        if (defined $xml_node && defined $post_prob && $post_prob != -1) {
+          $score_sum += $post_prob * $bl;
+          $bl_sum += 1 * $bl;
+        } else {
+
+        }
+      }
+      $score_array[$i] = 0;
+      if ($bl_sum > 0) {
+        my $weighted_score = $score_sum / $bl_sum;
+        $score_array[$i] = $weighted_score;
+      }
+    }
+
+    foreach my $leaf ($tree->leaves) {
+      my $seq = Bio::EnsEMBL::Compara::AlignUtils->get_seq_with_id($pep_aln, $leaf->name);
+      my $score_string = "";
+      my $aln_string = $seq->seq;
+      my @aln_arr = split("",$aln_string);
+      for (my $i=0; $i < $aln_len; $i++) {
+        if ($aln_arr[$i] eq '-') {
+          $score_string .= '-';
+        } else {
+          my $sitewise_score = $score_array[$i] / 10;
+          $sitewise_score = 0 if ($sitewise_score < 0);
+          $sitewise_score = 9 if ($sitewise_score > 9);
+          $score_string .= sprintf("%1d",$sitewise_score);
+        }
+      }
+      $leaf_scores->{$leaf->name} = $score_string;
+    }
+  } elsif ($params->{'prank_filtering_scheme'} eq 'prank' || $params->{'prank_filtering_scheme'} =~ m/prank_mean/i) {
+    foreach my $leaf ($tree->leaves) {
+      my $seq = Bio::EnsEMBL::Compara::AlignUtils->get_seq_with_id($pep_aln, $leaf->name);
+      my $score_string = "";
+      my $aln_string = $seq->seq;
+      my @aln_arr = split("",$aln_string);
+
+      for (my $i=0; $i < $aln_len; $i++) {
+        if ($aln_arr[$i] eq '-') {
+          $score_string .= '-';
+        } else {
+          my $sitewise_score = 9;
+
+          my $bl_sum = 0;
+          my $pp_sum = 0;
+          my $node = $leaf;
+          while (my $parent = $node->parent) {
+            my $bl = $node->distance_to_parent;
+
+            my $xml_node = $node_to_xml->{$parent};
+            my $post_prob = $pp_hash->{$xml_node}[$i];
+            if (defined $xml_node && defined $post_prob && $post_prob != -1) {
+              $bl_sum += 1 * $bl;
+              $pp_sum += $post_prob * $bl;
+            } else {
+            }
+            $node = $parent;
+          }
+          $bl_sum = 0.01 if ($bl_sum == 0);
+          my $sitewise_score = $pp_sum / 10 / $bl_sum;
+          $sitewise_score = 0 if ($sitewise_score < 0);
+          $sitewise_score = 9 if ($sitewise_score > 9);
+          $score_string .= sprintf("%1d",$sitewise_score);
+        }
+      }
+      $leaf_scores->{$leaf->name} = $score_string;
+    }
+
+  } elsif ($params->{'prank_filtering_scheme'} =~ m/prank_minimum/i) {
+    foreach my $leaf ($tree->leaves) {
+      my $score_string = "";
+      my $seq = Bio::EnsEMBL::Compara::AlignUtils->get_seq_with_id($pep_aln, $leaf->name);
+      my $aln_string = $seq->seq;
+      my @aln_arr = split("",$aln_string);
+
+      for (my $i=0; $i < $aln_len; $i++) {
+        if ($aln_arr[$i] eq '-') {
+          $score_string .= '-';
+        } else {
+          
+          my $min_pp = 100;
+          my $node = $leaf;
+          while (my $parent = $node->parent) {
+
+            my $xml_node = $node_to_xml->{$parent};
+            my $post_prob = $pp_hash->{$xml_node}[$i];
+            if (defined $xml_node && defined $post_prob && $post_prob != -1) {
+              
+              $min_pp = $post_prob if ($post_prob < $min_pp);
+            }
+            $node = $parent;
+          }
+          my $sitewise_score = $min_pp / 10;
+          $sitewise_score = 0 if ($sitewise_score < 0);
+          $sitewise_score = 9 if ($sitewise_score > 9);
+          $score_string .= sprintf("%1d",$sitewise_score);
+        }
+      }
+      $leaf_scores->{$leaf->name} = $score_string;
+    }
+
+  } elsif ($params->{'prank_filtering_scheme'} =~ m/prank_treewise/i) {
+    
+    foreach my $leaf ($tree->leaves) {
+      my $total_dist = $leaf->distance_to_root;
+      my $aln_len = $pep_aln->length;
+      my $seq = Bio::EnsEMBL::Compara::AlignUtils->get_seq_with_id($pep_aln, $leaf->name);
+      my $aln_string = $seq->seq;
+      my @aln_arr = split("",$aln_string);
+
+      sub get_other_child {
+        my $parent = shift;
+        my $node = shift;
+        
+        foreach my $child (@{$parent->children}) {
+          return $child if ($node != $child);
+        }
+        return undef;
+      }
+      
+      my @scores;
+      my $score_string = "";
+      for (my $i=0; $i < $aln_len; $i++) {
+        if ($aln_arr[$i] eq '-') {
+          $score_string .= '-';
+          next;
+        }
+        
+        my $total_prob = 0;
+        my $node = $leaf;
+        while (my $parent = $node->parent) {
+          my $bl = $node->distance_to_parent;
+          my $xml_node = $node_to_xml->{$parent};
+          my $post_prob = $pp_hash->{$xml_node}[$i];
+          if ($post_prob != -1) {
+            # We've got nucleotides aligned here. Sum up according to our rules.
+            
+            # Find the fraction of branch length encompassed by our node and the
+            # other node being aligned. If we have more branch length, adjust the weights.
+            my $total_bl = Bio::EnsEMBL::Compara::TreeUtils->total_distance($node);
+            my $other_node = get_other_child($parent,$node);
+            my $other_total_bl = Bio::EnsEMBL::Compara::TreeUtils->total_distance($other_node);
+            
+            my $bl_fraction = $other_total_bl / $total_bl;
+            $bl_fraction = 1 if ($bl_fraction > 1);
+            
+            # Add a value proportional to post_prob, bl, and 'balance' fraction.
+            $total_prob += $post_prob/100 * ($bl / $total_dist) * $bl_fraction;
+            # Add a value to make up for a 'balance' fraction less than 1.
+            $total_prob += 1 * ($bl / $total_dist) * (1 - $bl_fraction);
+            
+            #$total_prob += $post_prob/100 * ($bl / $total_dist);
+          } else {
+            # If the alignment has a gap in the other node, don't penalize it.
+            $total_prob += 100/100 * ($bl / $total_dist);
+          }
+          $node = $parent;
+        }
+        my $score = $total_prob*10 - 1;
+        $score = 0 if ($score < 0);
+        $score_string .= sprintf("%1d",$score);
+      }
+      $leaf_scores->{$leaf->name} = $score_string;
+    }
+    
+  }
+  return $leaf_scores;
+}
+
 
 1;

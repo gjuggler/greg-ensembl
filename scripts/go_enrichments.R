@@ -9,7 +9,7 @@ for (e in commandArgs(trailingOnly=T)) {
     direction <- f[2]
   }
 }
-print(filename)
+#print(filename)
 
 library(topGO)
 library(doBy)
@@ -32,8 +32,10 @@ getRowsForTerms <- function(GOdata,data,whichTerms) {
 }
 
 getGenesForTerms <- function(GOdata,whichTerms) {
+  whichTerms <- unlist(whichTerms)
   genes.within.terms <- c()
   for (term in whichTerms) {
+    #print(term)
     cur.genes <- genesInTerm(GOdata,term)
     if (length(cur.genes) > 0) {
       cur.genes <- cur.genes[[1]]
@@ -98,7 +100,7 @@ get.go.table = function(scores,symbols.to.go,ontology,nodeSize=8,description='',
   if (scoresAreBinary) {
     geneSelectionFun = function(score){return(score >= 1)}
   } else {
-    geneSelectionFun = function(score){return(score < 0.1)}
+    geneSelectionFun = function(score){return(score < 0.05)}
   }
 
   GOdata <- new("topGOdata",
@@ -117,11 +119,13 @@ get.go.table = function(scores,symbols.to.go,ontology,nodeSize=8,description='',
     
     fis <- runTest(GOdata,algorithm="classic",statistic="Fisher")
     topgo <- runTest(GOdata,algorithm="weight01",statistic="Fisher")
-    elim <- runTest(GOdata,algorithm="elim",statistic="Fisher")
 
     print("Generating table...")
 
-    res.list <- list(pval.fis=fis,pval.topgo=topgo,pval.elim=elim)
+    res.list <- list(
+      pval.fis=fis,
+      pval.topgo=topgo
+    )
     res.list <- lapply(res.list, score)
     res.df <- sigAllMethods(res.list)
     whichTerms <- rownames(res.df)[1:n.terms]
@@ -131,7 +135,7 @@ get.go.table = function(scores,symbols.to.go,ontology,nodeSize=8,description='',
     infoMat <- data.frame('GO ID' = whichTerms, 'Term' = shortNames, stringsAsFactors = FALSE)
     scores.df <- data.frame(annoStat,infoMat,res.df,check.names=F,stringsAsFactors=F)
     test.df <- scores.df
-    test.df <- orderBy(~pval.elim,data=test.df)
+    test.df <- orderBy(~pval.topgo,data=test.df)
 
   } else {
     # scoreOrder = 'increasing' if we're using p-values, 'decreasing' if we're using a higher-is-better score.
@@ -155,6 +159,7 @@ get.go.table = function(scores,symbols.to.go,ontology,nodeSize=8,description='',
     test.df <- orderBy(~pval.ks,data=test.df)
   }
 
+  assign("last.godata", GOdata, envir=.GlobalEnv)
   return(test.df)
 }
 
@@ -205,8 +210,10 @@ enrich.list <- function(subset.ids,all.ids=NULL,include.iea=TRUE) {
     print("No background given -- using all Ensembl Protein IDs!")
     all.ids <- ens.genes$Ensembl.Protein.ID
   } 
-  print(paste("Number of foreground IDs:",length(unique(subset.ids))))
-  print(paste("Number of background IDs:",length(unique(all.ids))))
+  #print(paste("Number of foreground IDs:",length(unique(subset.ids))))
+  #print(paste("Number of background IDs:",length(unique(all.ids))))
+
+  print(paste("  enriching", length(unique(subset.ids)), "out of", length(unique(all.ids))))
 
   go.df <- NULL
   go.vec <- NULL
@@ -215,7 +222,7 @@ enrich.list <- function(subset.ids,all.ids=NULL,include.iea=TRUE) {
   } else {
     go.vec <- go.ens.excl.iea
   }
-  print(head(go.vec,n=5))
+  #print(head(go.vec,n=5))
 
   tbl <- get.enrich.by.subset(
     subset=unique(subset.ids),
@@ -296,7 +303,6 @@ enrich.file <- function(cur.file,dir) {
     enrich.tbl$category <- ''
     enrich.tbl[enrich.tbl$pval.fis < 0.05,]$category <- '05'
     enrich.tbl[enrich.tbl$pval.fis < 0.01,]$category <- '01'
-    enrich.tbl <- orderBy(~pval.elim,data=enrich.tbl)
     
     write.csv(enrich.tbl,file=paste(cur.file,"_enrich_",dir.lbl,'_',top.n,".csv",sep=""))
   }
@@ -382,11 +388,11 @@ get.term.groups <- function() {
   tooth.development = c(
     'GO:0042476', # odontogenesis
     'GO:0070166', # enamel mineralization
-    'GO:0046848', # hydroxyapatite binding
+#    'GO:0046848', # hydroxyapatite binding
     'GO:0070172', # positive regulation of tooth mineralization
     'GO:0034505', # tooth mineralization
     'GO:0030345', # structural constituent of tooth enamel
-    'GO:0032967', # pos. regl. of collagen biosynthetic process
+#    'GO:0032967', # pos. regl. of collagen biosynthetic process
     'GO:0031214'  # biomineral tissue development
   )
 
@@ -410,7 +416,6 @@ get.term.groups <- function() {
     'GO:0007420', # brain development
     'GO:0007417', # central nervous system development
     'GO:0048854', # brain morphogen.
-    'GO:0048702', # embryonic brain morphogen.
     'GO:0021987', # cerebral cortex devel.
     'GO:0021904', # dorsal / ventral neural tube patterning
     'GO:0021536', # diencephalon devel.
@@ -419,8 +424,8 @@ get.term.groups <- function() {
     'GO:0021872' # generation of neurons in forebrain
   )
 
-  angiogenesis = c(
-    'GO:0001525'
+  body.fluid = c(
+    'GO:0050878' # regulation of body fluid levels
   )
 
   innate.immunity = c(
@@ -438,21 +443,47 @@ get.term.groups <- function() {
     'GO:0042742' # def. resp. to bact.
   )
 
+  sound.perception = c(
+    'GO:0007605', # sensory perception of sound
+    'GO:0042472', # inner ear morphogenesis
+    'GO:0048839' # innear ear development
+  )
+
+
+  hair.skin = c(
+    'GO:0001942', # hair follicle devel.
+    'GO:0030855', # epithelial cell differentiation
+    'GO:0060429', # epithelium development
+    'GO:0050678'  # regulation of epithelial cell differentiation
+  )
+
+  keratin = c(
+    'GO:0030216' # keratinocyte development
+  )
+
+  fat = c(
+    'GO:0045444' # fat cell devel.
+  )
 
   ### Go through and get the subsets of genes
   list.of.term.lists <- list(
-    male.aggression = male.aggression,
-    sexual.dimorphism = sexual.dimorphism,
-    growth.hormone = growth.hormone,
+#    male.aggression = male.aggression,
+#    sexual.dimorphism = sexual.dimorphism,
+#    growth.hormone = growth.hormone,
+#    placental.development = placental.development,
+#    diet.change = diet.change,
     sperm.competition = sperm.competition,
-    diet.change = diet.change,
-    tooth.development = tooth.development,
-    heart.development = heart.development,
-    placental.development = placental.development,
+#    tooth.development = tooth.development,
+#    heart.development = heart.development,
+#    body.fluid = body.fluid,
+    hair.skin = hair.skin,
     brain.size = brain.size,
     innate.immunity = innate.immunity,
     adaptive.immunity = adaptive.immunity,
-    defense.response = defense.response
+    defense.response = defense.response,
+    sound.perception = sound.perception,
+    keratin = keratin,
+    fat = fat
   )
   return(list.of.term.lists)
 }
@@ -761,6 +792,6 @@ compare.all.tests <- function() {
 }
 
 
-if (exists('filename') && !is.na(filename)) {
-  enrich.file(filename,direction)
-}
+#if (exists('filename') && !is.na(filename)) {
+#  enrich.file(filename,direction)
+#}

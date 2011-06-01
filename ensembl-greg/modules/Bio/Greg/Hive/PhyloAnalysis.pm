@@ -11,6 +11,8 @@ use Bio::AlignIO;
 use Bio::EnsEMBL::Compara::ComparaUtils;
 use Bio::EnsEMBL::Compara::NestedSet;
 
+use File::Path;
+
 use Bio::Greg::Codeml;
 
 use base ('Bio::Greg::Hive::Process');
@@ -36,6 +38,7 @@ sub param_defaults {
 
     sitewise_store_opt_tree     => 1,
     sitewise_store_gaps         => 0,
+    sitewise_store_single_chars         => 0,
     sitewise_minimum_leaf_count => 2,
     sitewise_strip_gaps         => 0,
     sitewise_parameter_sets     => 'all',
@@ -55,10 +58,20 @@ sub param_defaults {
     slr_freqtype     => 0,             # Options: 0, 1, 2 (default 0)
     slr_skipsitewise => 0,             # Options: 0, 1 (default 0)
     slr_malloc_check => 0,
+    
+    # PAML Parameters
+    paml_model                  => 'M8',                 # Used for Bayes Empirical Bayes sitewise analysis.
 
-# PAML Parameters
-#paml_model                  => 'M3',                 # Used for Bayes Empirical Bayes sitewise analysis.
-#paml_model_b                => 'M7',                 # Used for the likelihood ratio tests.
+
+    paml_model_b                => 'M7',                 # Used for the likelihood ratio tests.
+    paml_model_a                => 'M8',
+    paml_branch_model => 0,
+    paml_fix_kappa => 0,
+    paml_kappa => 2,
+    paml_fix_omega => 0,
+    paml_omega => 0.8,
+    paml_fix_alpha => 1,
+    paml_alpha => 0,
 
     # HYPHY Parameters
     hyphy_codon_model => 'mg94',
@@ -559,11 +572,33 @@ sub run_wobble {
   return $results;
 }
 
+sub run_sitewise_analysis {
+  my $self = shift;
+  my $tree = shift;
+  my $aln = shift;
+  my $pep_aln = shift;
+
+  my $result_arrayref;
+
+  my $params = $self->replace($self->param_defaults, $self->params);
+  $self->set_params($params);
+
+  my $action = $self->param('analysis_action');
+  if ($action eq 'slr') {
+    $result_arrayref = $self->run_sitewise_dNdS($tree, $aln, $self->params);
+  } elsif ($action eq 'paml' || $action eq 'paml_m2' || $action eq 'paml_m8') {
+    $result_arrayref = $self->run_paml_sitewise($tree, $aln, $self->params);
+  }
+  return $result_arrayref;
+}
+
 sub run_sitewise_dNdS {
   my $self     = shift;
   my $tree     = shift;
   my $cdna_aln = shift;
   my $params   = shift;
+
+  print "  running SLR...\n" if ($self->debug);
 
   if ($tree->isa("Bio::Tree::TreeI")) {
     $tree = Bio::EnsEMBL::Compara::TreeUtils->from_treeI($tree);
@@ -589,7 +624,6 @@ sub run_sitewise_dNdS {
 
   my $num_leaves = scalar( @{ $tree->get_all_leaves } );
   my $tmpdir     = $self->worker_temp_directory;
-  $self->param('tmpdir',$tmpdir);
 
   # CLEAN UP OLD RESULTS FILES.
   unlink "$tmpdir/slr.res" if ( -e "$tmpdir/slr.res" );
@@ -609,8 +643,11 @@ sub run_sitewise_dNdS {
   $alnout->close();
 
   # OUTPUT THE TREE.
-  my $tree_newick = Bio::EnsEMBL::Compara::TreeUtils->to_newick($tree,{hide_internal_ids => 1});
-  print "Newick: [$tree_newick]\n";
+  my $tree_copy = Bio::EnsEMBL::Compara::TreeUtils->copy_tree($tree);
+  map {$_->name('') if (!$_->is_leaf) } $tree_copy->nodes;
+
+  my $tree_newick = Bio::EnsEMBL::Compara::TreeUtils->to_newick($tree_copy);
+  #print "Newick: [$tree_newick]\n";
   open( OUT, ">$tmpdir/tree" );
   print OUT sprintf( "%d 1\n", $num_leaves );
   print OUT $tree_newick . "\n";
@@ -636,8 +673,6 @@ sub run_sitewise_dNdS {
   #$asdf = `ls $tmpdir`;
   #print $asdf."\n";
 
-  my $results;
-
   my $cwd = cwd();
   chdir($tmpdir);
 
@@ -657,8 +692,8 @@ sub run_sitewise_dNdS {
     $prefix = "unset MALLOC_CHECK_;";
   }
 
-  print "Running SLR!\n";
-  print "$prefix $slrexe\n";
+  #print "Running SLR!\n";
+  #print "$prefix $slrexe\n";
   open( $run, "$prefix $slrexe |" ) or $self->throw("Cannot open exe $slrexe");
   my @output = <$run>;
 
@@ -679,81 +714,52 @@ sub run_sitewise_dNdS {
   close(IN);
 
   chdir($cwd);
-
-  if ($params->{output_to_file}) {
-    my $out_to_file = $params->{output_to_file};
-    print "Outputting to file $out_to_file!!!\n";
-    print join("",@output)."\n";
-    open(OUT,">$out_to_file");
-    print OUT join("",@output);
-    close(OUT);
-  }
-
-  # Parse the output into a $results object.
-  my $results = $self->parse_slr_output(\@output,$params);
-  my $new_pt = $results->{slr_tree};
-
-  $self->param('slr_kappa', $results->{kappa});
-  $self->param('slr_dnds', $results->{omega});
-  $self->param('slr_lnL', $results->{lnL});
-  
-  if ($self->within_hive) {
-#    $self->store_tag( $kappa_key, $results->{'kappa'} );
-#    $self->store_tag( $omega_key, $results->{'omega'} );
-#    $self->store_tag( $lnl_key,   $results->{'lnL'} );
-  }
-
-  # Store results in the table if desired.
-  if ($self->param('genewise_table_output') == 1) {
-    # Create tables if necessary.
-    my $table = $self->param('genewise_table');
-    $self->create_table_from_params( $self->dbc, $table,
-                                     $self->get_genewise_structure );
-
-    my $ps = $self->replace($self->params, {
-      method => $self->param('analysis_action'),
-      dnds => $results->{'omega'},
-      lnl => $results->{'lnL'},
-      kappa => $results->{'kappa'},
-      tree => $new_pt->newick_format,
-      n_leaves => scalar($new_pt->leaves)
-                            });
-    $self->store_params_in_table($self->dbc,$table,$ps);
-  }
-  
-  if ($self->param('sitewise_table_output') == 1) {
-    $self->store_sitewise( $results, $tree, $params );
-  }
-
-  # Reoptimise action.
-  if ( $self->param('analysis_action') =~ m/reoptimise/i ) {
-    # Store new branch lengths back in the original protein_tree_node table.
-    foreach my $leaf ( $tree->leaves ) {
-      my $new_leaf = $new_pt->find_leaf_by_name( $leaf->name );
-      $leaf->distance_to_parent( $new_leaf->distance_to_parent );
-      $leaf->store;
-    }
-    print "  -> Branch lengths updated!\n";
-    return;
-  }
-
-  # Store SLR tree action.
-  if ( $params->{sitewise_store_opt_tree} ) {
-    my $tree_key = "slr_tree";
-#    $self->store_tag( $tree_key, $new_pt->newick_format );
-  }
-
-  print "RETURNING RESULTS!\n";
-  return $results;
+  return \@output;
 }
 
 
+sub parse_sitewise_output_lines {
+  my $self = shift;
+  my $tree = shift;
+  my $aln = shift;
+  my $pep_aln = shift;
+  my $output_arrayref = shift;
+
+  # The results hash contains objects keyed by the amino acid site position
+  my $results_hash;
+  
+  my $action = $self->param('analysis_action');
+  if ($action eq 'slr') {
+    $results_hash = $self->parse_slr_output($tree, $aln, $pep_aln, $output_arrayref);
+  } elsif ($action eq 'paml' || $action eq 'paml_m2' || $action eq 'paml_m8') {
+    $results_hash = $self->parse_paml_output($tree, $aln, $pep_aln, $output_arrayref);
+  }
+
+  return $results_hash;
+}
+
+sub parse_sitewise_file {
+  my $self = shift;
+  my $tree = shift;
+  my $aln = shift;
+  my $pep_aln = shift;
+  my $output_file = shift;
+
+  open(IN,"$output_file");
+  my @output = <IN>;
+  close(IN);
+
+  return $self->parse_sitewise_output_lines($tree, $aln, $pep_aln, \@output);
+}
 
 sub parse_slr_output {
   my $self = shift;
+  my $tree = shift;
+  my $aln = shift;
+  my $pep_aln = shift;
   my $output_lines_arrayref = shift;
-  my $params = shift;
 
+  my $params = $self->params;
   my @output = @$output_lines_arrayref;
 
   my $results;
@@ -777,7 +783,7 @@ sub parse_slr_output {
     if ($next_line_is_it) {
       my $new_tree = $outline;
       $new_pt = Bio::EnsEMBL::Compara::TreeUtils->from_newick($new_tree);
-      print "Reoptimised tree: " . $new_pt->newick_format . "\n";
+      #print "Reoptimised tree: " . $new_pt->newick_format . "\n";
       last;
     }
     # We know that the new tree will show up just after the LnL line.
@@ -788,68 +794,87 @@ sub parse_slr_output {
   my $skipsitewise = $params->{slr_skipsitewise};
   my $tmpdir     = $self->worker_temp_directory;
 
-  if ( !$skipsitewise ) {
-    my $okay = 0;
-    my @sites;
-    my $type = '';
-    my $note = '';
-    my $random = '';
-    foreach my $line (@output) {
-      $_ = $line;
-      $type = '';
-      $note = '';
-      $random = '';
-      chomp $_;
-
-      #      print $_."\n";
-      if (/^\#/) {
-        next;
-      }
-
-      # Parse the notes.
-      if (/All gaps/i) {
-        $note = 'all_gaps';
-      } elsif (/Constant/i) {
-        $note = 'constant';
-      } elsif (/Single char/i) {
-        $note = 'single_char';
-      } elsif (/Synonymous/i) {
-        $note = 'synonymous';
-      }
-
-      if (/\!/)
-      { # Make sure to parse the random note last, because it's sometimes shown alongside other notes.
-        $random = 'random';
-      }
-
-      # Parse the pos/sel test results.
-      if (/\+\+\+\+\s+/) {
-        $type = 'positive4';
-      } elsif (/\+\+\+\s+/) {
-        $type = 'positive3';
-      } elsif (/\+\+\s+/) {
-        $type = 'positive2';
-      } elsif (/\+\s+/) {
-        $type = 'positive1';
-      } elsif (/\-\-\-\-\s+/) {
-        $type = 'negative4';
-      } elsif (/\-\-\-\s+/) {
-        $type = 'negative3';
-      } elsif (/\-\-\s+/) {
-        $type = 'negative2';
-      } elsif (/\-\s+/) {
-        $type = 'negative1';
-      }
-      if (/^\s+(\d+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)/) {
-        my @arr = ( $1, $2, $3, $4, $5, $6, $7, $8, $9, 10, $type, $note, $random );
-        push @sites, \@arr;
-
-        #print join(",",@arr)."\n";
-      } else {
-        #warn("Doesn't look like a result line: [$_]\n");
-      }
+  my $okay = 0;
+  my @sites;
+  my $type = '';
+  my $note = '';
+  my $random = '';
+  foreach my $line (@output) {
+    $_ = $line;
+    $type = '';
+    $note = '';
+    $random = '';
+    chomp $_;
+    
+    #      print $_."\n";
+    if (/^\#/) {
+      next;
     }
-    $results->{'sites'} = \@sites;
+    
+    # Parse the notes.
+    if (/All gaps/i) {
+      $note = 'all_gaps';
+    } elsif (/Constant/i) {
+      $note = 'constant';
+    } elsif (/Single char/i) {
+      $note = 'single_char';
+    } elsif (/Synonymous/i) {
+      $note = 'synonymous';
+    }
+    
+    if (/\!/)
+    { # Make sure to parse the random note last, because it's sometimes shown alongside other notes.
+      $random = 'random';
+    }
+    
+    # Parse the pos/sel test results.
+    if (/\+\+\+\+\s+/) {
+      $type = 'positive4';
+    } elsif (/\+\+\+\s+/) {
+      $type = 'positive3';
+    } elsif (/\+\+\s+/) {
+      $type = 'positive2';
+    } elsif (/\+\s+/) {
+      $type = 'positive1';
+    } elsif (/\-\-\-\-\s+/) {
+      $type = 'negative4';
+    } elsif (/\-\-\-\s+/) {
+      $type = 'negative3';
+    } elsif (/\-\-\s+/) {
+      $type = 'negative2';
+    } elsif (/\-\s+/) {
+      $type = 'negative1';
+    }
+    if (/^\s+(\d+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(\S+)/) {
+      my @arr = ( $1, $2, $3, $4, $5, $6, $7, $8, $9, 10, $type, $note, $random );
+      
+      my (
+        $site,     $neutral, $optimal,  $omega,   $lower, $upper,
+        $lrt_stat, $pval,    $adj_pval, $q_value, $type,  $note, $random
+        ) = @arr;
+      my $nongaps = Bio::EnsEMBL::Compara::AlignUtils->get_nongaps_at_column( $pep_aln, $site );
+      
+      my $signed_lrt = $lrt_stat;
+      $signed_lrt = -$signed_lrt if ($omega < 1);
+
+      my $obj = {
+        aln_position => $site,
+        ncod => $nongaps,
+        nongap_count => $nongaps,
+        omega => $omega,
+        omega_lower => $lower,
+        omega_upper => $upper,
+        lrt_stat => $lrt_stat,
+        signed_lrt => $signed_lrt,
+        type => $type,
+        note => $note,
+        random => $random
+      };
+      $results->{$site} = $obj;
+
+    } else {
+      #warn("Doesn't look like a result line: [$_]\n");
+    }
   }
 
   $self->param('slr_kappa',$results->{kappa});
@@ -857,6 +882,171 @@ sub parse_slr_output {
   $self->param('slr_lnL',$results->{lnL});
 
   return $results;
+}
+
+sub run_paml_sitewise {
+  my $self = shift;
+  my $tree = shift;
+  my $input_cdna = shift;
+  my $params = shift;
+
+  print "  running PAML...\n" if ($self->debug);
+
+  my $tmp = $self->worker_temp_directory;
+  mkpath([$tmp]);
+
+  foreach my $file (qw(mlc rst rub lnf)) {
+    if (-e "${tmp}/${file}") {
+      unlink "${tmp}/${file}";
+    }
+  }
+
+  # PAML has a problem with sequences that start with a number... we need to map
+  # the IDs to avoid this.
+  my $leaf_map;
+  my $seq_map;
+  map {$leaf_map->{$_->node_id} = 's_'.$_->name;} $tree->leaves;
+  map {$seq_map->{$_->id} = 's_'.$_->id} $input_cdna->each_seq;
+  $tree = Bio::EnsEMBL::Compara::TreeUtils->translate_ids($tree, $leaf_map);
+  $input_cdna = Bio::EnsEMBL::Compara::AlignUtils->translate_ids($input_cdna, $seq_map);
+
+  my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
+  #$treeI->get_root_node->branch_length(0);
+
+  # Output the tree and alignment files
+  my $aln_file = ">${tmp}/aln.phy";
+  my $aln_out = Bio::AlignIO->new(
+      '-format'      => 'phylip',
+      '-file'          => $aln_file,
+      '-interleaved' => 0,
+      '-idlength'    => $input_cdna->maxdisplayname_length() + 1
+  );
+  $aln_out->write_aln($input_cdna);
+
+  my $tree_file = "${tmp}/tree.nh";
+  Bio::EnsEMBL::Compara::TreeUtils->to_file($tree, $tree_file);
+
+  # Create a codeml.ctl file here.
+
+  my $sites_model = $params->{paml_model};
+  $sites_model =~ s/M//gi;
+  my $branch_model = $params->{paml_branch_model};
+  my $fix_kappa = $params->{paml_fix_kappa};
+  my $kappa = $params->{paml_kappa};
+  my $fix_omega = $params->{paml_fix_omega};
+  my $omega = $params->{paml_omega};
+  my $fix_alpha = $params->{paml_fix_alpha};
+  my $alpha = $params->{paml_alpha};
+
+  if ($params->{analysis_action} eq 'paml_m2') {
+    $sites_model = '2';
+  } elsif ($params->{analysis_action} eq 'paml_m8') {
+    $sites_model = '8';
+  }
+
+  my $ctl_string = qq^
+seqfile = aln.phy
+treefile = tree.nh
+
+* Interesting stuff we want to change.
+model = ${branch_model}
+NSsites = ${sites_model}
+fix_kappa = ${fix_kappa}
+kappa = ${kappa}
+fix_omega = ${fix_omega}
+omega = ${omega}
+
+* Boring stuff that doesn't change.
+fix_alpha = 1
+alpha = 0
+outfile = mlc
+noisy = 0
+verbose = 1
+runmode = 0
+seqtype = 1
+CodonFreq = 2
+clock = 0
+icode = 0
+Malpha = 0
+getSE = 0
+RateAncestor = 1
+fix_blength = 1
+method = 0
+^;  
+  print $ctl_string."\n";
+  my $cwd = cwd();
+  chdir $tmp;
+  open(OUT, ">codeml.ctl");
+  print OUT $ctl_string."\n";
+  close(OUT);
+
+  system("codeml");
+
+  open(IN, "mlc");
+  my @main_lines = <IN>;
+  close(IN);
+  open(IN, "rst");
+  my @supp_lines = <IN>;
+  close(IN);
+
+  my @results_lines;
+  push @results_lines, split("\n", $ctl_string);
+  push @results_lines, @main_lines;
+  push @results_lines, @supp_lines;
+
+  chdir $cwd;
+  return \@results_lines;
+}
+
+sub parse_paml_output {
+  my $self = shift;
+  my $tree = shift;
+  my $aln = shift;
+  my $pep_aln = shift;
+  my $output_lines_arrayref = shift;
+
+  print "    parsing paml output\n";
+
+  my $codeml = Bio::Greg::Codeml->new();
+  my $codeml_results = $codeml->parse_results($aln, $pep_aln, $output_lines_arrayref);
+
+  my $normalized_results;
+  foreach my $site ( 1 .. $pep_aln->length ) {
+    my $obj = $codeml_results->{$site};
+    #next unless (defined $obj);
+
+    my $omega = $obj->{omega};
+    my $se = $obj->{se};
+    my $prob = $obj->{prob_gt_one};
+    my $pos = $obj->{is_positive_site};
+
+    my $lower = $omega - $se;
+    my $upper = $omega + $se;
+      
+    my $type = '';
+    $type = 'positive1' if ( $omega > 1 && $prob > 0.5 );
+    $type = 'positive2' if ( $omega > 1 && $prob > 0.9 );
+    $type = 'positive4' if ( $pos );
+    $type = 'negative1' if ( $omega < 1 && $prob < 0.5 );
+    $type = 'negative2' if ( $omega < 1 && $prob < 0.1 );
+
+    my $nongaps = Bio::EnsEMBL::Compara::AlignUtils->get_nongaps_at_column( $pep_aln, $site );
+
+    my $obj = {
+      aln_position => $site,
+      ncod => $nongaps,
+      nongap_count => $nongaps,
+      omega => $omega,
+      omega_lower => $lower,
+      omega_upper => $upper,
+      lrt_stat => $prob,
+      type => $type
+    };
+    
+    $normalized_results->{$site} = $obj;
+  }
+
+  return $normalized_results;
 }
 
 sub run_paml {
@@ -869,24 +1059,6 @@ sub run_paml {
 
   my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
   $treeI->get_root_node->branch_length(0);
-
-  if ( $self->param('analysis_action') =~ m/reoptimize/i ) {
-
-    # Not sure if this works. GJ 2009-10-09
-    ### Reoptimize branch lengths.
-    print $tree->newick_format . "\n";
-    my $new_treeI = Bio::Greg::Codeml->get_m0_tree( $treeI, $input_cdna );
-    my $new_pt = Bio::EnsEMBL::Compara::TreeUtils->from_treeI($new_treeI);
-    print $new_pt->newick_format . "\n";
-
-    # Store new branch lengths back in the original protein_tree_node table.
-    foreach my $leaf ( $tree->leaves ) {
-      my $new_leaf = $new_pt->find_leaf_by_name( $leaf->name );
-      $leaf->distance_to_parent( $new_leaf->distance_to_parent );
-      $leaf->store;
-      print "  -> Branch lengths updated!\n";
-    }
-  }
 
   if ( $self->param('analysis_action') =~ m/lrt/i ) {
 
@@ -926,155 +1098,60 @@ sub run_paml {
     $codeml->save_tempfiles(1);
     $codeml->run();
 
-    # Use this block for testing the parsing.
-    #open(IN,"/tmp/cIIZtxAvlt_codeml/rst");
-    #my @supps = <IN>;
-    #close(IN);
-    #my ($naive,$bayes,$se,$prob,$pos) = $codeml->extract_empirical_bayes(\@supps);
-
-    my ( $bayes, $se, $prob, $pos ) = $codeml->extract_empirical_bayes();
-    my $paml_results = $bayes;
-
-    my $results;
-    my @slr_style_sites;
-    foreach my $site ( 1 .. $input_cdna->length / 3 ) {
-      my $omega = $paml_results->{$site};
-      my $se    = $se->{$site};
-      my $prob  = $prob->{$site};
-
-      next if ( !defined $omega );
-      my $lower = $omega - $se;
-      $lower = 0 if ( $lower < 0 );
-      my $upper = $omega + $se;
-
-      my $result = '';
-      $result = 'positive1' if ( $prob > 0.5 );
-      $result = 'positive4' if ( $pos->{$site} );
-
-# Just for reference: slr style output.
-# Site  Neutral  Optimal   Omega    lower    upper LRT_Stat    Pval     Adj.Pval    Q-value Result Note
-# 1     4.77     3.44   0.0000   0.0000   1.4655   2.6626 1.0273e-01 8.6803e-01 1.7835e-02  --     Constant;
-# 0     1        2      3        4        5        6      7          8          9           10     11
-
-      my @slr_style = ('') x 11;
-      $slr_style[0]  = $site;
-      $slr_style[3]  = $omega;
-      $slr_style[4]  = $lower;
-      $slr_style[5]  = $upper;
-      $slr_style[6]  = $prob || 0;
-      $slr_style[10] = $result;
-
-      push @slr_style_sites, \@slr_style;
-    }
-    $results->{'sites'} = \@slr_style_sites;
-
-    $self->store_sitewise( $results, $tree, $params );
   }
 }
 
-sub results_to_psc_hash {
-  my $self = shift;
-  my $results = shift;
-  my $aln_aa = shift;
-
-  my $psc_hash;
-  foreach my $site_obj ( @{ $results->{'sites'} } ) {
-    my (
-      $site,     $neutral, $optimal,  $omega,   $lower, $upper,
-      $lrt_stat, $pval,    $adj_pval, $q_value, $type,  $note, $random
-    ) = @{$site_obj};
-    my $nongaps = Bio::EnsEMBL::Compara::AlignUtils->get_nongaps_at_column( $aln_aa, $site );
-
-    my $obj = {
-      aln_position => $site,
-      ncod => $nongaps,
-      omega => $omega,
-      omega_lower => $lower,
-      omega_upper => $upper,
-      lrt_stat => $lrt_stat,
-      type => $type,
-      note => $note,
-      random => $random
-    };
-
-    $psc_hash->{$site} = $obj;
-  }
-  return $psc_hash;
-}
 
 sub store_sitewise {
   my $self    = shift;
-  my $results = shift;
   my $tree    = shift;
+  my $pep_aln = shift;
+  my $results = shift;
   my $params  = shift;
 
   my $node_id = $self->node_id;
   my $data_id = $self->data_id;
 
-  my $table = 'sitewise_aln';
+  my $table = 'sites';
   $table = $params->{'omega_table'} if ( $params->{'omega_table'} );
+  $self->create_table_from_params( $self->dbc, $table, $self->sitewise_table_structure);
 
-  my $parameter_set_id = $self->parameter_set_id;
+  foreach my $i (1 .. $pep_aln->length) {
+    my $site = $results->{$i};
 
-  #  my $aln_map_aa = $self->param('aln_map_aa');
-  my $input_aa = $self->param('input_aa');
-
-  foreach my $site ( @{ $results->{'sites'} } ) {
-
-# Site  Neutral  Optimal   Omega    lower    upper LRT_Stat    Pval     Adj.Pval    Q-value Result Note
-# 1     4.77     3.44   0.0000   0.0000   1.4655   2.6626 1.0273e-01 8.6803e-01 1.7835e-02  --     Constant;
-# 0     1        2      3        4        5        6      7          8          9           10     11
-    my (
-      $site,     $neutral, $optimal,  $omega,   $lower, $upper,
-      $lrt_stat, $pval,    $adj_pval, $q_value, $type,  $note
-    ) = @{$site};
-
-    my $aln_position = $site;
-    my $orig_aln_position = $self->get_orig_aln_position( $input_aa, $aln_position );
-
+    my $note = $site->{note};
     # These two cases are pretty useless, so we'll skip 'em.
     if ( !$self->param('sitewise_store_gaps') ) {
       next if ( $note eq 'all_gaps' );
+    }
+    if ( !$self->param('sitewise_store_single_chars') ) {
       next if ( $note eq 'single_char' );
     }
-
-    my $nongaps = Bio::EnsEMBL::Compara::AlignUtils->get_nongaps_at_column( $input_aa, $site );
-
-    #next if ($nongaps == 0);
-
-    if ( $self->param('sitewise_filter_order') eq 'after' ) {
-
-# Look at the filtered alignment. If ANY residues are filtered out, we consider this column to be bad.
-# Don't store the resulting sitewise value.
-      my $filtered_aa = $self->param('aa_filtered');
-      my $filtered_site_count =
-        Bio::EnsEMBL::Compara::AlignUtils->count_residues_at_column( $filtered_aa, $site, 'X' );
-
-      #      if (($filtered_site_count+1) / ($nongaps+1) >= 0.5) {
-      if ( $filtered_site_count > 0 ) {
-        print "FILTERED COLUMN! $site\n";
-        next;
-      }
-    }
-
-    my $sth = $tree->adaptor->prepare(
-      "REPLACE INTO $table
-                           (parameter_set_id,
-                            aln_position,
-                            node_id,
-                            data_id,
-                            omega,
-                            omega_lower,
-                            omega_upper,
-                            lrt_stat,
-                            ncod,
-                            type,
-                            note) VALUES (?,?,?,?,?,?,?,?,?,?,?)"
-    );
-    $sth->execute( $parameter_set_id, $orig_aln_position, $node_id, $data_id, $omega, $lower,
-      $upper, $lrt_stat, $nongaps, $type, $note );
-    $sth->finish();
+    
+    my $p = $self->replace($site, {
+      data_id => $data_id,
+      aln_position => $i
+                           });
+    $self->store_params_in_table($self->dbc, $table, $p);
   }
+}
+
+
+sub sitewise_table_structure {
+  my $self = shift;
+
+  return {
+    data_id => 'int',
+    aln_position => 'int',
+    omega => 'float',
+    omega_lower => 'float',
+    omega_upper => 'float',
+    lrt_stat => 'float',
+    nongap_count => 'int',
+    type => 'char16',
+    note => 'char16',
+    unique_keys => 'data_id,aln_position'
+  };
 }
 
 1;

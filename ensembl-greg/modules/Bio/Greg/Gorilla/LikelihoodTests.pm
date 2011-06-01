@@ -262,65 +262,22 @@ sub get_filtered_aln {
 
   $self->set_params($extra);
 
-  $file = $self->save_aln(
-    $aln, {
-      id        => $aln_id,
-      filename  => $aln_id . "_orig",
-      subfolder => $self->param('alignment_output_folder')
-    }
-  );
-  $self->param( 'orig_aln_length', $aln->length );
-  $self->param( 'orig_aln_file',   $file->{rel_file} );
-
-  if ( $self->param('aln_type') =~ m/genomic/i ) {
-    $self->param( 'likelihood_realign_with_prank',       0 );
-    $self->param( 'likelihood_filter_substitution_runs', 1 );
-  }
-
-  if ( $self->param('likelihood_realign_with_prank') ) {
-
-    my $prank_tree = Bio::EnsEMBL::Compara::TreeUtils->copy_tree($tree);
-    map { $_->name('') if ( !$_->is_leaf ) } $prank_tree->nodes;
-
-    # Align with Prank to try and de-align incorrectly called exons.
-    my $pep_aln = Bio::EnsEMBL::Compara::AlignUtils->translate($aln);
-    my $prank_params = { alignment_prank_f => 1 };
-    $pep_aln = $self->align_with_prank( $pep_aln, $prank_tree, $prank_params );
-    $aln = Bio::EnsEMBL::Compara::AlignUtils->peptide_to_cdna_alignment( $pep_aln, $tree );
-    my $prank_aln = $aln;
-
-    $file = $self->save_aln(
-      $aln, {
-        id        => $aln_id,
-        filename  => $aln_id . "_realign",
-        subfolder => $self->param('alignment_output_folder')
-      }
-    );
-    $self->param( 'prank_aln_length', $aln->length );
-    $self->param( 'prank_aln_file',   $file->{rel_file} );
-    if ( $self->debug ) {
-      print "Prank realigned:\n";
-      Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $prank_aln, { full => 1 } )
-        ;    # Debugging print the alignment.
-    }
-  }
-
   if ( $self->param('likelihood_filter_substitution_runs') ) {
-
+    
     my $masked_count =
       Bio::EnsEMBL::Compara::AlignUtils->mask_high_mutation_windows( $aln, 30, 10, 5 );
     $self->param( 'filtered_mut_windows', $masked_count );
-
-    $file = $self->save_aln(
-      $aln, {
-        id        => $aln_id,
-        filename  => $aln_id . "_final",
-        subfolder => $self->param('alignment_output_folder')
-      }
-    );
-    $self->param( 'filtered_aln_length', $aln->length );
-    $self->param( 'filtered_aln_file',   $file->{rel_file} );
   }
+  
+  $file = $self->save_aln(
+    $aln, {
+      id        => $aln_id,
+      filename  => $aln_id,
+      subfolder => $self->param('alignment_output_folder')
+    }
+    );
+  $self->param( 'aln_length', $aln->length );
+  $self->param( 'aln_file',   $file->{rel_file} );
 
   return { tree => $tree, aln => $aln };
 }
@@ -460,9 +417,10 @@ sub store {
 
     # Choose which table to store things in.
     my $subs_table = $table . '_subs';
-    if ( $prefix eq 'h' ) {
 
-      # Store subs from the 'full' primate tree into an 'allsubs' table.
+
+    # Store subs from the full primate tree into an 'allsubs' table.
+    if ( $prefix eq 'h' ) {
       $subs_table = $self->param('output_table') . '_allsubs';
     }
     $self->create_table_from_params( $self->hive_dba, $subs_table, $self->codon_subs_table_def );
@@ -570,12 +528,8 @@ sub get_gene_stats_def {
 
     job_id => 'int',
 
-    orig_aln_length     => 'int',
-    prank_aln_length    => 'int',
-    filtered_aln_length => 'int',
-    orig_aln_file       => 'string',
-    prank_aln_file      => 'string',
-    filtered_aln_file   => 'string',
+    aln_length => 'int',
+    aln_file       => 'string',
 
     filtered_mut_windows => 'int',
     filtered_Hsap        => 'int',

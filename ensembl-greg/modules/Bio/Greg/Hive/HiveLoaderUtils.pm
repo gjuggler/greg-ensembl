@@ -71,6 +71,9 @@ sub init {
 
   my $args = Bio::Greg::EslrUtils->mysqlArgsFromConnection($dba->dbc);
   `mysql $args < $hive_sql`;
+  `mysql $args -e "DELETE FROM meta;"`;
+  my $pipeline_name = $obj->{database};
+  `mysql $args -e "INSERT INTO meta (species_id, meta_key, meta_value) VALUES (1, 'pipeline_name', '$pipeline_name');"`;
 }
 
 sub init_compara_tables {
@@ -80,7 +83,7 @@ sub init_compara_tables {
   my $compara_sql    = "$base_folder/ensembl-greg/sql/compara-basic-tables.sql";
 
   my $args = Bio::Greg::EslrUtils->mysqlArgsFromConnection($self->dba->dbc);
-  `mysql $args < $compara_sql`;  
+  `mysql $args < $compara_sql`;
 }
 
 sub add_job_to_analysis {

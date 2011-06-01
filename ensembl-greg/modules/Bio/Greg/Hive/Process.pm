@@ -5,6 +5,8 @@ use Bio::EnsEMBL::Utils::Argument;
 use Bio::EnsEMBL::Utils::Exception;
 
 use Data::UUID;
+use Data::Types qw(:all);
+
 use Digest::MD5 qw(md5_hex);
 
 use Bio::EnsEMBL::Hive;
@@ -16,6 +18,8 @@ use Bio::EnsEMBL::Compara::DBSQL::DBAdaptor;
 use File::Path qw(make_path);
 use File::Basename;
 use POSIX qw(strftime mktime);
+
+use FreezeThaw qw(freeze thaw cmpStr safeFreeze cmpStrHard);
 
 use Bio::Greg::EslrUtils;
 
@@ -30,6 +34,11 @@ sub get_tree {
   my $tree =
     Bio::EnsEMBL::Compara::ComparaUtils->get_tree_for_comparative_analysis( $self->compara_dba,
     $params );
+
+  if ($tree == -1) {
+    $self->fail_and_die("Failed to get tree (maybe too few nodes)");
+  }
+
   return $tree;
 }
 
@@ -128,10 +137,40 @@ sub fail {
 
 sub fail_and_die {
   my $self    = shift;
+  my $type = shift;
   my $message = shift;
 
+  $self->create_table_from_params($self->hive_dba, 'failed_jobs', $self->failed_job_table_structure);
+
+  # Create an entry in the failed job table structure.
+  $self->param('analysis_id', $self->input_job->analysis_id);
+  my $analysis = $self->hive_dba->get_AnalysisAdaptor->fetch_by_dbID($self->input_job->analysis_id);
+  $self->param('logic_name', $analysis->logic_name);
+  $self->param('job_id', $self->input_job->dbID);
+
+  $self->param('fail_type', $type);
+  $self->param('fail_msg', $message);
+  $self->store_params_in_table($self->hive_dba, 'failed_jobs', $self->params);
+
   $self->input_job->update_status('FAILED');
-  throw($message);
+  die($message);
+}
+
+sub failed_job_table_structure {
+  return {
+    job_id => 'int',
+    analysis_id => 'int',
+    logic_name => 'string',
+    
+    node_id => 'int',
+    gene_name => 'string',
+    gene_id => 'string',
+
+    fail_type => 'string',
+    fail_msg => 'string',
+
+    unique_keys => 'job_id,analysis_id,node_id'
+  };
 }
 
 sub check_tree_aln {
@@ -290,11 +329,6 @@ sub within_hive {
   return $self->db != undef;
 }
 
-sub worker_temp_directory {
-  my $self = shift;
-
-}
-
 sub dbc {
   my $self = shift;
 
@@ -376,7 +410,8 @@ sub worker_temp_directory {
   my $wtd = $self->SUPER::worker_temp_directory;
 
   if (!$self->within_hive) {
-    $wtd = '/tmp/process_tmp/';
+    my $pid = $$;
+    $wtd = "/tmp/process_tmp_${pid}/";
     make_path($wtd);
   }
 
@@ -477,10 +512,11 @@ sub param {
   }
 
   my $param_value;
+  my $orig_value = $self->SUPER::param($param);
   if (@_) {
     $self->SUPER::param( $param, shift @_ );
     $param_value = $self->SUPER::param($param);
-    if ($self->debug) {
+    if ($self->debug && $param_value ne $orig_value) {
       print "Set $param => [$param_value]\n";
     }
   } else {
@@ -498,7 +534,7 @@ sub params {
     my $param_hash;
     foreach my $key (keys %{$self}) {
       next unless ($key =~ m/^_/);
-      print $key."\n";
+      #print $key."\n";
       my $fixed_key = substr($key,1);
       $param_hash->{$fixed_key} = $self->{$key};
     }
@@ -537,7 +573,7 @@ sub load_all_params {
     $self->param( 'parameter_set_id', 0 );
   }
   if ( !defined $self->param('job_id')) {
-    $self->param('job_id',$self->input_job->dbID);
+    $self->param('job_id',$self->job_id);
   }
 
   if ($self->debug) {
@@ -546,12 +582,43 @@ sub load_all_params {
   }
 }
 
+sub store_param {
+  my $self = shift;
+  my $param = shift;
+  my $value = shift;
+  my $flag = shift;
+
+  # First, store in the local param hashref.
+  $self->param($param, $value);
+
+  # Now, make sure this param is stored in our tables structure.
+  my $str = $self->{_genes_structure};
+  if ($flag) {
+    $str->{$param} = $flag;
+  } else {
+    # Default to string value.
+    $str->{$param} = 'string';
+    if (is_int($value)) {
+      $str->{$param} = 'int';
+    } elsif (is_float($value)) {
+      $str->{$param} = 'float';
+    }
+  }
+}
+
+sub job_id {
+  my $self = shift;
+  return $self->input_job->dbID;
+}
+
 sub get_params_from_tree_tags {
   my $self    = shift;
   my $dba     = shift;
   my $node_id = shift;
 
   my $pta  = $dba->get_ProteinTreeAdaptor;
+
+  print "node: $node_id\n";
   my $tree = $pta->fetch_node_by_node_id($node_id);
 
   my $tags = $tree->get_tagvalue_hash;
@@ -659,9 +726,15 @@ sub set_params {
   my $self = shift;
   my $params = shift;
 
+  my $debug_state = $self->debug;
+  $self->debug(0);
+  print("Set params [".$params."]\n");
+
   foreach my $key (keys %$params) {
     $self->param($key,$params->{$key});
   }
+
+  $self->debug($debug_state);
 }
 
 sub get_params_from_string {
@@ -716,82 +789,136 @@ sub create_table_from_params {
   my $table_name = shift;
   my $params     = shift;
 
+  $self->dbc->disconnect_when_inactive(0);
+
   my $dbc = $self->dbc;
 
   # First, create the table with data_id and parameter_set columns.
+  my $sth;
+
   eval {
-    $dbc->do(
-      qq^
-	     CREATE TABLE $table_name (
-				       data_id INT(10) NOT NULL,
-				       parameter_set_id TINYINT(3) NOT NULL DEFAULT 0
-				       ) engine=InnoDB;
-	     ^
-    );
+  $sth = $dbc->do("select count(*) from $table_name where 1=0");
   };
   if ($@) {
-    if ($self->debug) {
-      print "TABLE $table_name EXISTS!!\n";
-    }
-    return;
+    # Create the table shell.
+    $dbc->do(
+      qq^
+      CREATE TABLE $table_name (
+	data_id INT(10) NOT NULL
+      ) engine=InnoDB;
+      ^
+      );
   }
-  print "Creating new table $table_name ...\n";
 
+  # Collect all existing fields into a hashref.
+  $sth = $dbc->prepare("show fields from $table_name;");
+  $sth->execute;
+  my $fields;
+  while ( my $obj = $sth->fetchrow_hashref ) {
+    $fields->{$obj->{Field}} = 1;
+  }
+  $sth->finish;
+  
   my $unique_keys = delete $params->{'unique_keys'};
   my $extra_keys  = delete $params->{'extra_keys'};
-  eval {
+  foreach my $key ( sort keys %$params ) {
+    if ($fields->{$key} == 1) {
+      #print "  key $key exists!\n";
+      next;
+    } else {
+      print "  creating column $key\n";
+      $fields->{$key} = 1;
+    }
 
-    foreach my $key ( sort keys %$params ) {
-      next if ( $key eq 'data_id' || $key eq 'parameter_set_id' );
-      print "Creating column $key\n";
-      my $type = $params->{$key};
+    my $type = $params->{$key};
+    
+    my $not_null = 0;
+    if ( $type =~ m/not null/gi ) {
+      $type =~ s/\s*not null\s*//gi;
+      $not_null = 1;
+    }
+    
+    my $type_map = {
+      'uuid'      => 'BINARY(16)',
+      'timestamp' => 'DATETIME',
+      'tinyint'   => 'TINYINT',
+      'smallint'  => 'SMALLINT',
+      'int'       => 'INT',
+      'string'    => 'TEXT',
+      'char1'     => 'CHAR(1)',
+      'char2'     => 'CHAR(2)',
+      'char4'     => 'CHAR(4)',
+      'char8'     => 'CHAR(8)',
+      'char16'    => 'CHAR(16)',
+      'char32'    => 'CHAR(32)',
+      'char64' => 'CHAR(64)',
+      'float'     => 'FLOAT'
+    };
+    $type = $type_map->{$type};
+    
+    $type = $type . 'NOT NULL ' if ( $not_null == 1 );
+    
+    my $create_cmd = qq^ALTER TABLE $table_name ADD COLUMN `$key` $type^;
+    $dbc->do($create_cmd);
+  }
 
-      my $not_null = 0;
-      if ( $type =~ m/not null/gi ) {
-        $type =~ s/\s*not null\s*//gi;
-        $not_null = 1;
+  $sth = $dbc->prepare("show indexes from $table_name;");
+  $sth->execute;
+  my $indexes;
+  while ( my $obj = $sth->fetchrow_hashref ) {
+    my $key_name = $obj->{Key_name};
+    my $i = $obj->{Seq_in_index};
+    my $colname = $obj->{Column_name};
+    $indexes->{$key_name} = {} if (!defined $indexes->{$key_name});
+    $indexes->{$key_name}->{$i} = $colname;
+  }
+  $sth->finish;
+  
+  if ($unique_keys) {
+    my @toks = split(',', $unique_keys);
+    my $found_match = 0;
+    foreach my $key (keys %$indexes) {
+      my $unq = $indexes->{$key};
+      my $cur_match = 1;
+      
+      for (my $i=0; $i < scalar(@toks); $i++) {
+        my $colname = $toks[$i];
+        if ($unq->{$i+1} ne $colname) {
+          $cur_match = 0;
+        }
       }
-
-      my $type_map = {
-        'uuid'      => 'BINARY(16)',
-        'timestamp' => 'DATETIME',
-        'tinyint'   => 'TINYINT',
-        'smallint'  => 'SMALLINT',
-        'int'       => 'INT',
-        'string'    => 'TEXT',
-        'char1'     => 'CHAR(1)',
-        'char2'     => 'CHAR(2)',
-        'char4'     => 'CHAR(4)',
-        'char8'     => 'CHAR(8)',
-        'char16'    => 'CHAR(16)',
-        'char32'    => 'CHAR(32)',
-        'char64' => 'CHAR(64)',
-        'float'     => 'FLOAT'
-      };
-      $type = $type_map->{$type};
-
-      $type = $type . 'NOT NULL ' if ( $not_null == 1 );
-
-      my $create_cmd = qq^ALTER TABLE $table_name ADD COLUMN `$key` $type^;
-      $dbc->do($create_cmd);
-    }
-
-    my $unique_cmd = "";    #qq^ALTER TABLE $table_name ADD UNIQUE (data_id)^;
-    if ($unique_keys) {
+      if ($cur_match == 1) {
+        $found_match = 1;
+      }
+    }    
+    if (!$found_match) {
       print "Creating UNIQUE $unique_keys\n";
-      $unique_cmd = qq^ALTER TABLE $table_name ADD UNIQUE ($unique_keys)^;
+      my $unique_cmd = qq^ALTER TABLE $table_name ADD UNIQUE ($unique_keys)^;
       $dbc->do($unique_cmd);
+    } else {
+      #print "  NOT creating unique $unique_keys\n";
     }
-
-    if ($extra_keys) {
-      my @keys = split( ',', $extra_keys );
-      foreach my $key (@keys) {
-        print "Creating KEY $key\n";
-        my $key_cmd = qq^ALTER TABLE $table_name ADD KEY (`$key`)^;
+  }
+  
+  if ($extra_keys) {
+    my @toks = split( ',', $extra_keys );
+    
+    for (my $i=0; $i < scalar(@toks); $i++) {
+      my $colname = $toks[$i];
+      my $match = 0;
+      foreach my $key (keys %$indexes) {
+        my $unq = $indexes->{$key};
+        if ($unq->{1} eq $colname) {
+          $match = 1;
+        }
+      }
+      if ($match == 0) {
+        print "Creating KEY $colname\n";
+        my $key_cmd = qq^ALTER TABLE $table_name ADD KEY (`$colname`)^;
         $dbc->do($key_cmd);
       }
-    }
-  };
+    }  
+  }
 }
 
 sub output_rows_to_file {
@@ -890,7 +1017,7 @@ sub get_output_folder {
   if ( defined $self->param('output_folder') ) {
     my $folder = $self->param('output_folder');
 
-    print "Output folder: $folder\n" if ($self->debug);
+    #print "Output folder: $folder\n" if ($self->debug);
     if ( !-e $folder ) {
       print
         "Warning: Output folder was already stored in the database, but the folder did not exist.\n";
@@ -902,7 +1029,7 @@ sub get_output_folder {
 
   my $output_base = Bio::Greg::EslrUtils->scratchDirectory.'/'.$self->hive_dba->dbc->dbname;
 
-  print "output_base: $output_base\n";
+  #print "output_base: $output_base\n";
 
   my $date_string = strftime( "%Y-%m-%d", localtime );
   my $i = 0;
@@ -958,12 +1085,14 @@ sub save_file {
   my $full_dir;
   my $full_file;
   my $rel_file;
+  my $hash_folder = '';
   if ($hash_subfolders) {
     my $lo = 0;
     my $hi = 0;
     my (@md5) = md5_hex($id) =~ /\G(..)/g;
     my $hash_subfolder = join( '/', @md5[ $lo .. $hi ] );
-    
+    $hash_folder = $hash_subfolder;
+
     $full_dir = "$output_base/$subfolder/$hash_subfolder";
     $full_file = "$full_dir/$filename.$extension";
     $rel_file = "$hash_subfolder/$filename.$extension";
@@ -980,8 +1109,40 @@ sub save_file {
   return {
     full_file => $full_file,
     rel_file => $rel_file,
-    full_dir => $full_dir
+    full_dir => $full_dir,
+    hash_folder => $hash_folder
   };
+}
+
+sub output_hash_tsv {
+  my $self = shift;
+  my $arry = shift;
+  my $file = shift;
+
+  my @rows = @{$arry};
+
+  my $columns;
+  map {
+    foreach my $key (keys %$_) {
+      $columns->{$key} = 1;
+    }
+  } @rows;
+
+  open(OUT, ">$file");
+  my @sorted_keys = sort( keys( %$columns ) );
+  print OUT join("\t", @sorted_keys)."\n";
+  #print join("\t", @sorted_keys)."\n";
+  foreach my $row (@rows) {
+    my @values = map { 
+      my $v = $row->{$_};
+      $v = 'NA' if (!defined $v);
+      $v = 'NA' if ($v eq '');
+      $v;
+    } @sorted_keys;
+    print OUT join("\t", @values)."\n";
+    #print join("\t", @values)."\n";
+  }
+  close(OUT);
 }
 
 sub get_hashed_file {
@@ -1042,10 +1203,35 @@ sub get_taxon_ids_from_keepers_list {
 sub DESTROY {
   my $self = shift;
 
-#  $self->cleanup_temp;
+  if (!$self->within_hive) {
+    my $tmp = $self->worker_temp_directory;
+    rmtree($tmp);
+    #$self->cleanup_temp;
+  }
 
   delete $self->{_param_hash};
   $self->SUPER::DESTROY if $self->can("SUPER::DESTROY");
+}
+
+sub thw {
+  my $self = shift;
+  my $file = shift;
+
+  open(IN, $file);
+  my @lines = <IN>;
+  close(IN);
+  my ($obj) = thaw(join('',@lines));
+  return $obj;
+}
+
+sub frz {
+  my $self = shift;
+  my $file = shift;
+  my $obj = shift;
+
+  open(OUT,">$file");
+  print OUT freeze($obj);
+  close(OUT);
 }
 
 1;

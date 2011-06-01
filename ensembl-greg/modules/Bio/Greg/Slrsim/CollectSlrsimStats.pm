@@ -83,20 +83,16 @@ sub get_sites_table_structure {
 
     true_dnds    => 'float',
     true_type    => 'char16',
-    true_entropy => 'float',
     true_ncod    => 'int',
 
-    #    true_ungapped_branch_length => 'float',
     aln_dnds       => 'float',
     aln_dnds_lower => 'float',
     aln_dnds_upper => 'float',
     aln_type       => 'char16',
     aln_note       => 'char16',
-    aln_entropy    => 'float',
     aln_ncod       => 'int',
-
-    #    aln_ungapped_branch_length  => 'float',
     aln_lrt => 'float',
+    nongap_bl  => 'float',
 
     unique_keys => 'data_id,parameter_set_id,aln_position'
   };

@@ -451,7 +451,7 @@ sub prepare {
       '-dir' => $tempdir,
       UNLINK => ( $self->save_tempfiles ? 0 : 1 )
     );
-    print "TEMP DIR: $tempdir\n";
+    #print "TEMP DIR: $tempdir\n";
     my $gene_codon_counts = $self->{_codemlparams}->{gene_codon_counts};
     delete $self->{_codemlparams}->{gene_codon_counts};
     my $alnout = Bio::AlignIO->new(
@@ -556,12 +556,13 @@ sub run {
     $self->error_string( join( '', @output ) );
     if ( ( grep { /error/io } @output ) || !$exit_status ) {
 
-      #       if (!$exit_status) {
-      $self->warn( "ERROR RUNNING CODEML:\n" . $self->error_string );
-      $rc = 0;
+      if (!$exit_status) {
+        $self->throw("Bad codeml exist status!\n". $self->error_string);
+      } else {
+        $self->throw( "ERROR RUNNING CODEML:\n" . $self->error_string );
+        $rc = 0;
+      }
     }
-
-    $self->warn( "Maybe an error: " . $self->error_string ) if ( !$exit_status );
 
     # GJ 2009-01-08: Put the main results into a string and store it.
     open( IN, "$tmpdir/$outfile" );
@@ -617,8 +618,25 @@ sub all_lines {
   my @main_lines = @{$self->main_results};
   my @supp_lines = @{$self->supplementary_results};
   
-  my @all_lines = (@main_lines,@supp_lines);
+  my @all_lines = (@main_lines, @supp_lines);
   return \@all_lines;
+}
+
+sub parse_results {
+  my $self = shift;
+  my $aln = shift;
+  my $pep_aln = shift;
+  my $lines_arrayref = shift;
+
+  my $results;
+
+  my $bayes_results = $self->extract_empirical_bayes($lines_arrayref);
+  $results = Bio::EnsEMBL::Compara::ComparaUtils->replace_params($results, $bayes_results);
+
+  my $lnl = $self->extract_lnL($lines_arrayref);
+  print "LNL: $lnl\n";
+
+  return $results;
 }
 
 # GJ 2009-01-08 : extracts the naive bayes predictions from the supplementary string.
@@ -637,36 +655,40 @@ sub extract_empirical_bayes {
 # 1 M   0.03403 0.08222 0.10935 0.11735 0.11455 0.10627 0.09566 0.08451 0.07399 0.07080 0.11128 ( 4)  0.745 +-  1.067
 # NOTE FROM PAML DOCUMENTATION, p.29: "We suggest that you ignore the NEB output and use the BEB results only."
 
-  my $has_bayes_section = 0;
+  my $results;
   my $bayes_results;
-  my $bayes_se;
-  my $bayes_prob;    # Probability that a given site is greater than one.
   my $pos_sites;
 
   my $site_class_omegas;
 
-  my $naive_output_has_p_gt_one_at_end = 0;
-
+  my $has_bayes_section = 0;
   foreach my $line (@suppl) {
-
-    #      chomp($line);
-    #      next if (length($line) ==0);
+    #print "$line";
     $has_bayes_section = 1 if ( $line =~ m/Bayes Empirical Bayes/i );
   }
 
   #print "Has bayes: $has_bayes_section\n";
-  my $started_bayes         = 0;
-  my $started_pos_sel_sites = 0;
-  my $started_naive         = 0;
+  my $in_supplement = 0;
+  my $seen_bayes         = 0;
+  my $number_of_bayes_classes = 0;
+  my $seen_pos_sel_sites = 0;
+  my $seen_naive         = 0;
+  my $naive_output_has_p_gt_one_at_end = 0;
+
   foreach my $line (@suppl) {
     chomp($line);
+    $line = strip($line);
+    #print "$line\n";
     next if ( length($line) == 0 );
     next
       if ( $line =~ /amino acids/i )
       ;    # Skip lines like: (amino acids refer to 1st sequence: ENSDARP00000087283)
 
-    #      next if ($line =~ /prob/i);
-    #      next if ($line =~ /lnL/i);
+    # Wait until we get to the supplemental part
+    $in_supplement = 1 if ( $line =~ m/supplemental results/i);
+    next unless ($in_supplement);
+
+    
 
     if ( $line =~ /w:\s+(.*)/ ) {
       my $stuff = $1;
@@ -674,37 +696,52 @@ sub extract_empirical_bayes {
       my @toks = split( /\s+/, $stuff );
       for ( my $i = 0 ; $i < scalar(@toks) ; $i++ ) {
         $site_class_omegas->{$i} = $toks[$i];
-        print "Site class: $i " . $toks[$i] . "\n";
+        #print "Site class:$i w:" . $toks[$i] . "\n";
       }
     }
 
-    $started_bayes         = 1 if ( $line =~ m/Bayes Empirical Bayes/i );
-    $started_naive         = 1 if ( $line =~ m/Naive Empirical Bayes/i );
-    $started_pos_sel_sites = 1 if ( $line =~ m/positively selected sites/i && !$has_bayes_section );
-    $started_pos_sel_sites = 1
-      if ( $line =~ m/positively selected sites/i && $has_bayes_section && $started_bayes );
+    $seen_bayes++ if ( $line =~ m/Bayes Empirical Bayes/i );
+    $seen_naive++ if ( $line =~ m/Naive Empirical Bayes/i );
 
-    if ( !$has_bayes_section && $started_naive && !$started_pos_sel_sites ) {
+    if ($seen_bayes && $line =~ m/probabilities for (\d+) classes/i) {
+      $number_of_bayes_classes = $1;
+      #print "  NUMBER OF CLASSES: $number_of_bayes_classes\n";
+    }
+
+    # If we have a bayes section, wait for that one.
+    next if ($has_bayes_section && $seen_naive && !$seen_bayes);
+
+    $seen_pos_sel_sites++ if ( $line =~ m/positively selected sites/i );
+
+    #print "[$seen_bayes $seen_naive $seen_pos_sel_sites]";
+    #print "$line\n";
+    
+    if ( !$has_bayes_section && $seen_naive && !$seen_pos_sel_sites ) {
+
       if ( $line =~ /empirical/i ) {
         if ( $line =~ /w>1/i ) {
           $naive_output_has_p_gt_one_at_end = 1;
         }
       }
-
- #Naive Empirical Bayes (NEB) probabilities for 10 classes& postmean_w
- # 1 M   0.00320 0.01289 0.02424 0.03656 0.04965 0.06350 0.07828 0.09450 0.11369 0.52349 (10)  0.642
+      
+      #Naive Empirical Bayes (NEB) probabilities for 10 classes& postmean_w
+      # 1 M   0.00320 0.01289 0.02424 0.03656 0.04965 0.06350 0.07828 0.09450 0.11369 0.52349 (10)  0.642
       chomp $line;
       my @bits = split( /\s+/, $line );
-      my $pos = $bits[1];
+      my $pos = shift @bits;
+      my $residue = shift @bits;
 
+      # Gets rid of the header line for the NEB output.
+      next if ($line =~ m/w>1/i);
+      
       my $prob_gt_one = 0;
       if ($naive_output_has_p_gt_one_at_end) {
         $prob_gt_one = pop @bits;
       } else {
-        foreach my $site_class ( keys %{$site_class_omegas} ) {
+        foreach my $site_class ( sort keys %{$site_class_omegas} ) {
           my $post_prob = $bits[ $site_class + 3 ];
-
-          #print "  Post prob: ${site_class} $post_prob\n";
+          
+          print "  Post prob: ${site_class} $post_prob\n";
           if ( $site_class_omegas->{$site_class} > 1 ) {
             $prob_gt_one += $post_prob;
           }
@@ -712,43 +749,61 @@ sub extract_empirical_bayes {
       }
 
       my $omega = pop @bits;
-
-      print " -> Naive p(w>1): ${prob_gt_one}\n";
-      $bayes_results->{$pos} = $omega;
-      $bayes_prob->{$pos}    = $prob_gt_one;
-      $bayes_se->{$pos}      = '';
+      
+      my $obj = {
+        omega => $omega,
+        prob_gt_one => $prob_gt_one,
+        se => 0,
+        is_positive_site => 0
+      };
+      $bayes_results->{$pos} = $obj;
     }
 
-    if ( $has_bayes_section && $started_bayes && !$started_pos_sel_sites ) {
+    if ( $has_bayes_section && $seen_bayes && !$seen_pos_sel_sites) {
       next if ( $line =~ /empirical/i );
 
-#Bayes Empirical Bayes (BEB) probabilities for 11 classes (class)& postmean_w
-# 1 M   0.03403 0.08222 0.10935 0.11735 0.11455 0.10627 0.09566 0.08451 0.07399 0.07080 0.11128 ( 4)  0.745 +-  1.067
+      #Bayes Empirical Bayes (BEB) probabilities for 11 classes (class)& postmean_w
+      # 1 M   0.03403 0.08222 0.10935 0.11735 0.11455 0.10627 0.09566 0.08451 0.07399 0.07080 0.11128 ( 4)  0.745 +-  1.067
 
-# GJ 2010-01-25 - the first 10 classes are probably equivalent to a 10-site class model, with the 11th position
-# position being the probability of w>1 integrated over all possible parameter values. So we'll take the last
-# category as the p(w>1) and ignore the rest of the site classes.
-#
+      # GJ 2010-01-25 - PAML docs say nothing, but the the first 10 classes are probably 
+      # equivalent to a 10-site class model, with the 11th position position being the
+      # probability of w>1 integrated over all possible parameter values. So we'll take 
+      # the last category as the p(w>1) and ignore the rest of the site classes.
 
       my @bits            = split( /\s+/, $line );
-      my $pos             = $bits[1];
+
+      # Shave off the beginning.
+      my $pos = shift @bits;
+      my $residue = shift @bits;
+      # Shave off the end.
       my $se              = pop @bits;
       my $plus_minus_sign = pop @bits;
       my $omega           = pop @bits;
 
-# GJ 2010-01-25 ASSUMPTION: we assume the BEB output always gives 11 classes, where the last class is the p(w>1).
-# Is this true??
-      my $prob_gt_one = $bits[13];
+      my $prob_gt_one = 0;
 
-      print " -> BEB p(w>1) = $prob_gt_one\n";
-      $bayes_prob->{$pos}    = $prob_gt_one;
-      $bayes_results->{$pos} = $omega;
-      $bayes_se->{$pos}      = $se;
+      #print "$residue $pos $omega\n";
+
+      # The rest of @bits is the probability of being in each site class.
+      # NOTE: these are NOT necessarily the same number of site classes as chosen in the NSSites
+      # config parameter. Apparently, PAML has a hard-coded 5 classes for M2 and 11 classes for M8.
+      # With both situations, the last class is the only one with p(w)>1, so we'll use the
+      # posterior of being in that class as the posterior of being under pos-sel.
+      my $last_class_posterior = $bits[ $number_of_bayes_classes - 1 ];
+      my $prob_gt_one = $last_class_posterior;
+
+      my $obj = {
+        omega => $omega,
+        prob_gt_one => $prob_gt_one,
+        se => $se,
+        is_positive_site => 0
+      };
+      $bayes_results->{$pos} = $obj;
     }
 
-    if ($started_pos_sel_sites) {
+    if ($seen_pos_sel_sites) {
       next if ( $line =~ m/positively/i );
-      next if ( $line =~ m/Prob(w>1)/i );
+      next if ( $line =~ m/Prob\(w>1\)/i );
       last if ( $line =~ m/lnL/i );
       last if ( $line =~ m/reconstruction/i );
 
@@ -757,12 +812,14 @@ sub extract_empirical_bayes {
       #Positively selected sites
       #     7 T      0.705         3.979 +- 3.258
       #    41 S      0.830         4.654 +- 3.213
-      shift @bits;
       my $site = shift @bits;
-      $pos_sites->{$site} = 1;
+      #print "$site\n";
+      $bayes_results->{$site}->{is_positive_site} = 1;
     }
   }
-  return ( $bayes_results, $bayes_se, $bayes_prob, $pos_sites );
+
+  my $results = $bayes_results;
+  return $results;
 }
 
 # GJ 2009-01-08 : Parse the tree from a block of CODEML-formatted text.
@@ -819,6 +876,7 @@ sub extract_lnL {
       return $lnL;
     }
   }
+  return undef;
 }
 
 sub parse_params {
@@ -932,6 +990,7 @@ sub extract_omegas {
       return @values;
     }
   }
+  return undef;
 }
 
 sub each_line {
@@ -1019,6 +1078,26 @@ sub _set_branch_length {
   $node->branch_length($dnds);
 }
 
+sub parse_m0_dnds {
+  my $class = shift;
+  my $line_arrayref = shift;
+
+  my $param_objs = $class->parse_params($line_arrayref);
+  my $branches = $param_objs->{branches};
+
+  my @params = @{$param_objs->{params}};
+
+  my @params_se = @{$param_objs->{params_se}};
+
+  my $kappa = shift @params;
+  my $kappa_se = shift @params_se;
+
+  my $dnds = shift @params;
+  my $dnds_se = shift @params_se;
+
+  return ($dnds, $dnds_se);
+}
+
 sub parse_branch_params {
   my $class = shift;
   my $line_arrayref = shift;
@@ -1027,6 +1106,7 @@ sub parse_branch_params {
   my $branches = $param_objs->{branches};
 
   my @params = @{$param_objs->{params}};
+
   my @params_se = @{$param_objs->{params_se}};
 
   my $kappa = shift @params;
@@ -1047,7 +1127,11 @@ sub parse_branch_params {
       $looking = 0;
     }
 
-    if ($line =~ m/Model: free dN\/dS Ratios for branches for branches/i) {
+    if ($line =~ m/supplemental results/i) {
+      $looking = 0;
+    }
+
+    if ($line =~ m/Model: free dN\/dS Ratios for branches/i) {
       $free_model = 1;
     }
 
@@ -1059,18 +1143,23 @@ sub parse_branch_params {
         # branch           t        N        S    dN/dS       dN       dS   N*dN   S*dS
         #   5..6       0.101   2374.1    973.9   0.2223   0.0166   0.0747   39.4   72.8
         my @tokens   = split( /\s+/,  $line );
-        my @branches = split( /\.\./, $tokens[0] );
-        my $child    = $branches[1];
-        my $parent = $branches[0];
+        my @brs = split( /\.\./, $tokens[0] );
+        my $child    = $brs[1];
+        my $parent = $brs[0];
         my $id = $child;
         my $parent_id = $parent;
 
         my $branch_label = $tokens[0];
         my $branch_bl_arrayref = $branches->{$branch_label};
+
         my ($bl,$se) = @{$branch_bl_arrayref};
 
         my $dnds_se = -1;
-        $dnds_se = shift @params_se if ($free_model);
+        if ($free_model) {
+          $dnds_se = shift @params_se if ($free_model);
+        } else {
+          $dnds_se = @params_se[0];
+        }
 
         #	print "$child!!\n";
         my $obj = {
@@ -1358,17 +1447,39 @@ sub branch_model_likelihood {
 
   my $default_params = {
     fix_blength => 1,    # Use initial branch lengths as estimates.
-    model       => 2,
     cleandata   => 0,
-    getSE => 1
+
+    model       => 0,
+    NSsites => 0,
+
+    fix_omega => 0,
+    omega => 0.3,
+    fix_kappa => 0,
+    kappa => 4,
+
+    method => 0,
+    getSE => 0,
+    Mgene => 0,
+    aaDist => 0,
+    CodonFreq => 2,
+    Small_Diff => .5e-6
   };
 
-  my @variable_params = qw(model omega Mgene gene_codon_counts cleandata aaDist);
+  my $has_any_fg_branches = 0;
+  foreach my $node ($tree->nodes) {
+    my $id = $node->id;
+    if ($id =~ m/[\#\$]/) {
+      $has_any_fg_branches = 1;
+    }
+  }
+  if ($has_any_fg_branches) {
+    $default_params->{model} = 2;
+  }
 
   # If certain parameters are given, apply them to the parameter object
   # passed to the new Codeml instance.
   my $final_params = {%$default_params};
-  foreach my $param (@variable_params) {
+  foreach my $param (keys %$default_params) {
     $final_params->{$param} = $params->{$param} if ( defined $params->{$param} );
   }
   $final_params->{verbose} = 1;
@@ -1392,14 +1503,18 @@ sub branch_model_likelihood {
   my $lnL    = $class->extract_lnL($lines_ref);
   my $kappa = $class->extract_kappa($lines_ref);
   my @omegas = $class->extract_omegas($lines_ref);
+  my ($dnds, $dnds_se) = $class->parse_m0_dnds($lines_ref);
   #print "Omegas: @omegas\n";
-  my $codeml_tree = $class->parse_codeml_results($lines_ref);
+  #my $codeml_tree = $class->parse_codeml_results($lines_ref);
 
   # Return an object with our results of interest.
   return {
     lnL       => $lnL,
     omegas    => \@omegas,
-    tree => $codeml_tree
+#    tree => $codeml_tree,
+    lines => $lines_ref,
+    dnds => $dnds,
+    dnds_se => $dnds_se
   };
 }
 
@@ -1575,6 +1690,7 @@ sub get_grantham_score_hash {
     foreach my $num (@numbers) {
       my $j_residue = $residues[$j];
       #print "i[$i_residue] j[$j_residue] score[$num] \n";
+      $scores->{$j_residue.$j_residue} = 0;
       $scores->{$i_residue.$j_residue} = strip($num) + 0.0;
       $scores->{$j_residue.$i_residue} = strip($num) + 0.0;
       $j++;

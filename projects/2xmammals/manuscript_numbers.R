@@ -11,7 +11,8 @@ get.numbers <- function(sites) {
   neutral.genes <- subset(gene.types,neg.f < neg.thresh & pos.f >= pos.thresh)
   positive.genes <- subset(gene.types,neg.f >= neg.thresh & pos.f >= pos.thresh)
   purifying.genes <- subset(gene.types,(neg.f >= neg.thresh & pos.f < pos.thresh) | 
-                                       (neg.f < neg.thresh & pos.f < pos.thresh) )
+                                       (neg.f < neg.thresh & pos.f < pos.thresh) 
+  )
 
   df <- data.frame(
     neutral.n = nrow(neutral.genes),
@@ -23,25 +24,30 @@ get.numbers <- function(sites) {
 
 summarize.sites <- function(sites) {
   # BH-correction is applied separately to positive and negative p-values
+  sites[,'pval'] <- 1 - pchisq(sites[,'lrt_stat'],1)
   sites[sites$omega < 1,'pval.adj'] <- p.adjust(sites[sites$omega < 1,'pval'],'fdr')
   sites[sites$omega >= 1,'pval.adj'] <- p.adjust(sites[sites$omega >= 1,'pval'],'fdr')
 
   sub.above.one <- subset(sites, omega > 1)
 
   pos.sites <- subset(sub.above.one, pval.adj < 0.05)
-  pos.domains <- subset(pos.sites, !is.na(domain))
+  pos.domains <- subset(pos.sites, !is.na(pfam_domain))
   
-  n.total.domains <- nrow(unique(sites[,c('node_id','domain')]))
-  n.total.domain.types <- length(unique(sites$domain))
+  n.total.domains <- nrow(unique(sites[,c('node_id','pfam_domain')]))
+  n.total.domain.types <- length(unique(sites$pfam_domain))
   n.total.genes <- length(unique(sites$node_id))
 
-  n.pos.domains <- nrow(unique(pos.domains[,c('node_id','domain')]))
-  n.pos.domain.types <- length(unique(pos.domains$domain))
+  n.pos.domains <- nrow(unique(pos.domains[,c('node_id','pfam_domain')]))
+  n.pos.domain.types <- length(unique(pos.domains$pfam_domain))
   n.pos.genes <- length(unique(pos.sites$node_id))
 
   n.pos.sites <- nrow(pos.sites)
   n.sites <- nrow(sites)  
   f.pos.sites <- n.pos.sites / n.sites
+
+  pos.sites <- subset(sites, omega > 1 & pval < 0.01)
+  neg.sites <- subset(sites, omega < 1 & pval < 0.01)
+  neutral.sites <- subset(sites, pval > 0.01)
 
   `f.less.0.5` <- nrow(subset(sites, omega < 0.5)) / nrow(sites)
   `f.less.1` <- nrow(subset(sites, omega < 1)) / nrow(sites)
@@ -63,8 +69,10 @@ summarize.sites <- function(sites) {
     n.pos.domain.types = n.pos.domain.types,
     n.pos.genes = n.pos.genes,
 
-    n.pos.sites = n.pos.sites,
-    f.pos.sites = f.pos.sites
+    pos.n = n.pos.sites,
+    pos.f = nrow(pos.sites)/n.sites,
+    neg.f = nrow(neg.sites)/n.sites,
+    neutral.f = nrow(neutral.sites)/n.sites
    ))
 }
 
@@ -101,7 +109,7 @@ classify.genes <- function(sites) {
   
   library(plyr)
   library(doBy)
-  gene.types <- ddply(sites,.(node_id),classify.gene)
+#  gene.types <- ddply(sites,.(node_id),classify.gene)
 
   domain.sites <- subset(sites,!is.na(domain))
   domain.types <- ddply(domain.sites,.(domain),classify.gene)

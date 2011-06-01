@@ -19,11 +19,15 @@ sub fetch_input {
 sub run {
   my $self = shift;
 
+  my $num_reps = $self->param('slrsim_replicates');
   my $tree_string = $self->param('tree_string');
   my $tree = Bio::EnsEMBL::Compara::TreeUtils->from_newick($tree_string);
-  my $sim_rep = $self->param('slrsim_rep');
 
-  $self->load_tree_into_database($tree,$sim_rep,$self->params);
+  foreach my $i (1 .. $num_reps) {
+    $self->param('slrsim_rep', $i);
+    $self->load_tree_into_database($tree,$i,$self->params);
+  }
+
 
 }
 
@@ -79,20 +83,21 @@ sub load_tree_into_database {
   print " -> Node ID: $node_id\n";
   $self->param( 'node_id', $node_id );
 
-  #  printf "  > %.50s\n", $node->newick_format;
-
-  # Store all parameters as tags.
   $params->{'slrsim_rep'}         = $sim_rep;
   $params->{'slrsim_tree_length'} = $final_length;
   delete $params->{'slrsim_tree_lengths'};
-  my $sim_param_str = Bio::EnsEMBL::Compara::ComparaUtils->hash_to_string($params);
+  delete $params->{'tree_string'};
+  delete $params->{'output_folder'};
+
+  $self->hash_print($params);
+
+  # Store all parameters as tags.
+  # This is important -- it's how the parameters are getting to the main
+  # Slrsim.pm runnable!
   foreach my $tag ( sort keys %{$params} ) {
     $self->store_tag( $tag, $params->{$tag} );
     sleep(0.05);
   }
-
-  # Store the whole parameter set as a string.
-  $self->store_tag( "params_slrsim", $sim_param_str );
 
   my $output_params = {
     node_id          => $node_id,

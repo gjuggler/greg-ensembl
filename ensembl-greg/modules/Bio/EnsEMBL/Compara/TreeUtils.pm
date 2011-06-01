@@ -1,5 +1,8 @@
 package Bio::EnsEMBL::Compara::TreeUtils;
 
+use strict;
+use warnings;
+
 use Bio::TreeIO;
 use Bio::EnsEMBL::Compara::LocalMember;
 use File::Path;
@@ -41,52 +44,71 @@ sub copy_tree {
   my $node_hash;
   my $root;
 
-  foreach my $node ($tree->nodes) {
-    my $cls = ref($node);
-    $node_hash->{$node} = new $cls;
-  }
-  
-  foreach my $node ($tree->nodes) {
-    my $new_n = $node_hash->{$node};
-
-    # Add node ID, name, and distance.
-    $new_n->node_id($node->node_id);
-    $new_n->name($node->name);
-    $new_n->distance_to_parent($node->distance_to_parent);
-    if ($node->isa("Bio::EnsEMBL::Compara::Member")) {
-      $new_n->source_name($node->source_name);
-      $new_n->stable_id($node->stable_id);
-      $new_n->dbID($node->dbID);
-      $new_n->sequence_id($node->sequence_id);
-      $new_n->genome_db($node->genome_db);
-      $new_n->genome_db_id($node->genome_db_id);
-      $new_n->taxon_id($node->taxon_id) if ($node->can('taxon_id'));
-      #$new_n->{core_transcript} = $node->{core_transcript};
-      $new_n->{core_gene} = $node->{core_gene};
-      $new_n->gene_member($node->gene_member);
-      $new_n->gene_member_id($node->gene_member_id);
-      $new_n->{_adaptor} = $node->{_adaptor};
-    } elsif ($node->isa("Bio::EnsEMBL::Compara::ProteinTree")) {
-      # You'd think we should just use $node->taxon_id to set the new taxon ID here,
-      # but Compara keeps us on our toes by instead requiring us to manually set a tagvalue.
-      # W.T.F.
-      $new_n->taxon_id($node->taxon_id) if ($node->can('taxon_id') && $new_n->can('taxon_id'));
-      $new_n->store_tag('taxon_id',$node->taxon_id) if ($node->can('taxon_id')); 
+  if ($tree->isa("Bio::EnsEMBL::Compara::NestedSet")) {
+    foreach my $node ($tree->nodes) {
+      my $cls = ref($node);
+      $node_hash->{$node} = new $cls;
     }
     
-    my $parent = $node_hash->{$node->parent};
-    if ($parent) {
-      $parent->add_child($new_n);
-    } else {
-      $root = $new_n;
+    foreach my $node ($tree->nodes) {
+      my $new_n = $node_hash->{$node};
+      
+      # Need to copy each tag value over.
+      $node->_load_tags if ($node->can('_load_tags'));
+      $new_n->{_tags} = {};
+      my $tags = $node->{_tags};
+      foreach my $key (keys %$tags) {
+        $new_n->{$key} = $tags->{$key};
+      }
+
+      # Add node ID, name, and distance.
+      $new_n->node_id($node->node_id);
+      $new_n->name($node->name);
+      $new_n->distance_to_parent($node->distance_to_parent);
+      if ($node->isa("Bio::EnsEMBL::Compara::Member")) {
+        $new_n->source_name($node->source_name);
+        $new_n->stable_id($node->stable_id);
+        $new_n->dbID($node->dbID);
+        $new_n->sequence_id($node->sequence_id);
+        if ($node->adaptor && $node->genome_db_id) {
+          $new_n->genome_db($node->genome_db);
+          $new_n->genome_db_id($node->genome_db_id);
+        }
+        $new_n->taxon_id($node->taxon_id) if ($node->can('taxon_id'));
+        $new_n->{_tags}->{taxon_id} = $node->taxon_id if ($node->can('taxon_id'));
+        #$new_n->{core_transcript} = $node->{core_transcript};
+        $new_n->{core_gene} = $node->{core_gene};
+        $new_n->gene_member($node->gene_member);
+        $new_n->gene_member_id($node->gene_member_id);
+        $new_n->{_adaptor} = $node->{_adaptor};
+      } elsif ($node->isa("Bio::EnsEMBL::Compara::ProteinTree")) {
+        # You'd think we should just use $node->taxon_id to set the new taxon ID here,
+        # but Compara keeps us on our toes by instead requiring us to manually set a tagvalue.
+        # W.T.F.
+        #$new_n->taxon_id($node->taxon_id) if ($node->can('taxon_id') && $new_n->can('taxon_id'));
+        #$new_n->store_tag('taxon_id',$node->taxon_id) if ($node->can('taxon_id')); 
+      }
+      
+      if (defined $node->parent) {
+        my $parent = $node_hash->{$node->parent};
+        if (defined $parent) {
+          $parent->add_child($new_n);
+        } else {
+          $root = $new_n;
+        }
+      } else {
+        $root = $new_n;
+      }
+      
+      # This is kind of important -- if we don't call no_autoload_children,
+      # then the NCBITaxonomy tree will try to load subspecies into the NestedSet
+      # object upon copying. Not nice!!!
+      $new_n->no_autoload_children;
+      
+      $new_n->adaptor($node->adaptor);
     }
-
-    # This is kind of important -- if we don't call no_autoload_children,
-    # then the NCBITaxonomy tree will try to load subspecies into the NestedSet
-    # object upon copying. Not nice!!!
-    $new_n->no_autoload_children;
-
-    $new_n->adaptor($node->adaptor);
+  } else {
+    die("copy_tree not implemented for non- NestedSets!");
   }
 
   return $root;
@@ -181,7 +203,8 @@ sub unroot {
   return $tree if (scalar $tree->leaves == 2);
 
   if ($n_at_root == 2) {
-    my $new_root_node, $moving_node;
+    my $new_root_node;
+    my $moving_node;
     my ($child_a,$child_b) = @{$tree->children};
 
     if (scalar @{$child_a->children} == 2) {
@@ -240,10 +263,9 @@ sub to_treeI {
     $newick .= ';' unless ($newick =~ m/;/);
     #warn("Temporary Newick for NSET to TREEI conversion: [$newick]\n");
   }
-  
-  open(my $fake_fh, "+<", \$newick);
+
   my $treein = new Bio::TreeIO
-    (-fh => $fake_fh,
+    (-string => $newick,
      -format => 'newick');
   my $treeI = $treein->next_tree;
   $treein->close;
@@ -342,15 +364,15 @@ sub from_treeI {
   # Kick off the recursive, parallel node adding.
   _add_nodeI_to_node($node,$rootI);
   
-  return bless($node,Bio::EnsEMBL::Compara::NestedSet);
+  return bless($node,'Bio::EnsEMBL::Compara::NestedSet');
 }
 
 # Recursive helper for new_from_TreeI.
 sub _add_nodeI_to_node {
   my $node = shift; # Our node object (Compara)
   my $nodeI = shift; # Our nodeI object (BioPerl)
+  my $node_id_counter = shift; # Node ID counter
 
-  my $i = 0;
   foreach my $c ($nodeI->each_Descendent) {
     my $child = ref($node)->new;
     
@@ -364,7 +386,7 @@ sub _add_nodeI_to_node {
       $child->source_name("");
     }
 
-    $child->node_id($i++) unless ($c->is_Leaf);
+    $child->node_id($node_id_counter++);  # unless ($c->is_Leaf);
     
     # Set name.
     $child->name($name);
@@ -381,7 +403,7 @@ sub _add_nodeI_to_node {
     $child->{'_tags'} = $tags;
 
     # Recurse.
-    _add_nodeI_to_node($child,$c);
+    _add_nodeI_to_node($child, $c, $node_id_counter);
   }
 }
 
@@ -455,16 +477,6 @@ sub scale_max_to {
   return $class->scale($tree,$scale_factor);
 }
 
-sub scale_max_to {
-  my $class = shift;
-  my $tree = shift;
-  my $new_max = shift;
-
-  my $max_dist = $tree->max_distance;
-  my $scale_factor = $new_max / $max_dist;
-  return $class->scale($tree,$scale_factor);
-}
-
 
 # Scales a tree to a certain total branch length.
 # NOTE: Tree is modified in-place!
@@ -481,6 +493,7 @@ sub scale_to {
   } elsif ($tree->isa("Bio::EnsEMBL::Compara::NestedSet")) {
 #    my $total_dist = $tree->max_distance;
 #    my $total_dist = $class->max_distance_unrooted($tree);
+
     my $total_dist = $class->total_distance($tree);
     $scale_factor = $new_total / $total_dist;
   }
@@ -558,8 +571,6 @@ sub to_newick {
   my $tree = shift;
   my $params = shift || {};
 
-  my $hide_internal_ids = $params->{hide_internal_ids} || 0;
-
   my $ref = ref $tree;
   if ($ref =~ /Bio::Tree/i) {
     use Bio::TreeIO;
@@ -572,9 +583,6 @@ sub to_newick {
     $string =~ s/\n//g; # Remove newlines.
     return $string;
   } elsif ($ref =~ /Bio::EnsEMBL/i) {
-    if ($hide_internal_ids) {
-      return $tree->newick_format('full hide_internal_ids');
-    }
     return $tree->newick_format();
   } elsif (-e $tree) {
     my $treeI = $class->treeI_from_file($tree);
@@ -590,9 +598,13 @@ sub to_file {
   my $out_file = shift;
   my $params = shift;
 
+  die("Need to provide a tree and file!") unless ($tree && $out_file);
+
   my $newick = $class->to_newick($tree);
   if ($params->{'node_ids'}) {
     $newick = $tree->newick_format('int_node_id');
+  } elsif (defined $params->{nhx_format} && $params->{nhx_format} == 1) {
+    $newick = $tree->nhx_format;
   }
 
   open(OUT,">".$out_file);
@@ -606,10 +618,6 @@ sub remove_elbows {
   my $class = shift;
   my $tree = shift;
 
-  if (scalar @{$self->children} == 1) {
-    return 
-  }
-  
   my @del_nodes = ();
   foreach my $node ($tree->nodes) {
     my @children = @{$node->children};
@@ -664,7 +672,7 @@ sub remove_members_by_node_id {
   my $node_list = shift;
 
   my @node_ids = @{$node_list};
-  my $ids_hash;
+  my %ids_hash;
   map {$ids_hash{$_}=1} @node_ids;
 
   #print "Removing specified nodes from tree: @node_ids \n";
@@ -706,6 +714,8 @@ sub keep_members_by_method_call {
   return $tree;
 
 }
+
+
 
 sub remove_members_by_method_call {
   my $class = shift;
@@ -811,14 +821,14 @@ sub prune_leaves_outside_taxon {
   my $ncbi_a = $db->get_NCBITaxonAdaptor;
 
   sub is_leaf_within_taxon {
-    my $taxon_id = shift;
+    my $tx_id = shift;
     my $leaf = shift;
     my $db = shift;
 
     my $leaf_taxon = $leaf->taxon_id;
     my $sth = $db->dbc->prepare(qq^
 				SELECT * from ncbi_taxa_node p, ncbi_taxa_node c
-				WHERE p.taxon_id=$taxon_id AND c.taxon_id=$leaf_taxon AND
+				WHERE p.taxon_id=$tx_id AND c.taxon_id=$leaf_taxon AND
 				c.left_index BETWEEN p.left_index AND p.right_index;
 				^);
     $sth->execute();
@@ -833,7 +843,7 @@ sub prune_leaves_outside_taxon {
 
   my @remove_me;
   foreach my $leaf ($tree->leaves) {
-    next if (is_leaf_within_taxon($node_id,$leaf,$db));
+    next if (is_leaf_within_taxon($taxon_id,$leaf,$db));
     
     print "  -> Deleting leaf: " . $leaf->stable_id . "  " . $leaf->taxon->binomial . "\n";
     $class->delete_lineage($tree,$leaf);
@@ -842,6 +852,56 @@ sub prune_leaves_outside_taxon {
   print "  After: " . scalar(@{$tree->get_all_leaves}) . " leaves.\n";
 
   return $tree;
+}
+
+# Returns the subtree of the input tree defined by sequnces which are present in the alignment.
+sub extract_subtree_from_aln {
+  my $class = shift;
+  my $tree = shift;
+  my $aln = shift;
+
+  my $keep_name_hash;
+  map {$keep_name_hash->{$_->id} = 1} $aln->each_seq;
+
+  my @keep_node_ids;
+  foreach my $leaf ($tree->leaves) {
+    if ($keep_name_hash->{$leaf->name}) {
+      push @keep_node_ids, $leaf->node_id;
+    }
+  }
+
+  return $class->extract_subtree_from_leaves($tree, \@keep_node_ids);
+}
+
+sub extract_subtree_from_names {
+  my $class = shift;
+  my $tree = shift;
+  my $name_arrayref = shift;
+  my $return_copy = shift;
+
+  foreach my $node ($tree->nodes) {
+    if (!defined $node->node_id || $node->node_id eq '') {
+      print "No node_id for ".$node->name."\n";
+    } else {
+#      print "  ".$node->node_id."\n";
+    }
+  }
+
+  # Just go through and get the node_ids corresponding to the name input.
+  my @names = @$name_arrayref;
+  my @node_ids;
+  my @nodes = $tree->nodes;
+  foreach my $name (@names) {
+    my ($match) = grep {$_->name eq $name} @nodes;
+    if ($match) {
+      push @node_ids, $match->node_id;
+    } else {
+      print $tree->newick_format."\n";
+      die("Can't find node with name $name\n");
+    }
+  }
+  #print "keeping @node_ids\n";
+  return $class->extract_subtree_from_leaves($tree, \@node_ids, $return_copy);
 }
 
 # Extracts a subtree given a ProteinTree and an arrayref of node_ids.
@@ -860,7 +920,6 @@ sub extract_subtree_from_leaf_objects {
   # Add all ancestors of kept nodes to the keep list.
   my %keepers_hash;
   foreach my $keeper (@keepers) {
-    
     $keepers_hash{$keeper} = 1;
 
     my $parent = $keeper->parent;
@@ -885,6 +944,15 @@ sub extract_subtree_from_leaf_objects {
   return $tree;
 }
 
+sub extract_subtree_from_node_ids {
+  my $class = shift;
+  my $tree = shift;
+  my $node_id_arrayref = shift;
+  
+  return $class->extract_subtree_from_leaves($tree, $node_id_arrayref);
+}
+
+
 
 # Extracts a subtree given a ProteinTree and an arrayref of node_ids.
 # @updated GJ 2010-03-27 : Overhaul for Gorilla project, lots of stuff was broken here.
@@ -894,10 +962,21 @@ sub extract_subtree_from_leaves {
   my $class = shift;
   my $tree = shift;
   my $node_ids = shift;	# Array ref of node_ids.
+  my $return_copy = shift;
+
+  $return_copy = 1 unless (defined $return_copy);
 
   die("Object not a NestedSet!") unless ($tree->isa("Bio::EnsEMBL::Compara::NestedSet"));
 
   my @keepers = @{$node_ids};
+
+  if (scalar @keepers == 1) {
+    # Special case: a single keeper node.
+    my $keep_id = $keepers[0];
+    my $node = $tree->find_node_by_node_id($keep_id);
+    $node = $tree->find_leaf_by_name($keep_id) unless (defined $node);
+    return $node;
+  }
 
   # Add all ancestors of kept nodes to the keep list.
   my %keepers_node_id_hash;
@@ -908,7 +987,7 @@ sub extract_subtree_from_leaves {
       printf "Node [%s] not found in tree [%s]!\n", $keep_id, $tree->newick_format;
       return undef;
     }
-    
+
     $keepers_node_id_hash{$node->node_id} = 1;
 
     my $parent = $node->parent;
@@ -927,14 +1006,30 @@ sub extract_subtree_from_leaves {
       push @remove_me, $node;
     }
   }
-  
-  my $copy = $tree->copy;
 
-  my @copy_remove_me = map {$copy->find_node_by_node_id($_->node_id)} @remove_me;
-
-  $copy = $copy->remove_nodes(\@copy_remove_me);
-  $copy = $copy->minimize_tree if (defined $copy);
-  return $copy;
+  if ($return_copy) {
+    my $copy = $class->copy_tree($tree);
+    
+    my @nodes = $copy->nodes; # Store a cache of all nodes to use for grepping in the sub.
+    
+    # Get the list of all nodes to remove by finding them in the copied tree. We use the node_id
+    # as the connection between the original and copied tree.
+    my @copy_remove_me = map {
+      my $target;
+      my $node_id = $_->node_id;
+      ($target) = grep {$_->node_id == $node_id} @nodes;
+      die("Node ".$_->node_id." ".$_->name." not found in copied tree!") unless (defined $target);
+      $target;
+    } @remove_me;
+    
+    $copy = $copy->remove_nodes(\@copy_remove_me);
+    $copy = $copy->minimize_tree if (defined $copy);
+    return $copy;
+  } else {
+    $tree = $tree->remove_nodes(\@remove_me);
+    $tree = $tree->minimize_tree if (defined $tree);
+    return $tree;
+  }
 }
 
 sub get_minimum_ancestor_from_leaves {
@@ -1015,6 +1110,25 @@ sub subtree {
   return $subtree;
 }
 
+sub translate_ensembl {
+  my $class = shift;
+  my $tree = shift;
+
+  my $map = {
+    "ENSP0.*" => 'Human',
+    "ENSPTRP0.*" => 'Chimpanzee',
+    "ENSGGOP.*" => 'Gorilla',
+    "ENSPPYP0.*" => 'Orangutan',
+    "ENSMMUP0.*" => 'Macaque',
+    "ENSCJAP0.*" => 'Marmoset',
+    "ENSTSYP0.*" => 'Tarsier',
+    "ENSMICP0.*" => 'MouseLemur',
+    "ENSOGAP0.*" => 'Bushbaby',
+  };
+
+  return $class->translate_ids($tree, $map);
+}
+
 sub translate_ids {
   my $class = shift;
   my $tree = shift;
@@ -1030,9 +1144,9 @@ sub translate_ids {
   foreach my $node ($tree->nodes) {
     my $name = $node->name;
     my $node_id = $node->node_id;
-    
-    my $new_name = $map->{$node}; # Mapping defined by node object.
-    $new_name = $map->{$node_id} if (defined $node_id && !defined $new_name);
+
+    my $new_name;
+    $new_name = $map->{$node_id} if (defined $node_id && !defined $new_name); # Defined by node ID.
     $new_name = $map->{$name} if (defined $name && !defined $new_name); # Defined by node name.
     
     if (defined $new_name) {
@@ -1050,11 +1164,20 @@ sub translate_ids {
 
       $node->name($new_name);
       $used_ids->{$new_name} = 1;
-
     }
   }
 
   return $tree;
+}
+
+sub name_to_stable_id {
+  my $class = shift;
+  my $tree = shift;
+
+  my $copy = $class->copy_tree($tree);
+
+  map {$_->stable_id($_->name)} $copy->leaves;
+  return $copy;
 }
 
 sub pretty_print {
@@ -1063,7 +1186,25 @@ sub pretty_print {
   my $params = shift;
 
   my $treeI = $class->to_treeI($tree);
+  if ($treeI->can('ascii')) {
+    print $treeI->ascii(0,0,0);
+  }
+}
 
+sub transfer_branchlengths {
+  my $class = shift;
+  my $source = shift;
+  my $target = shift;
+
+  my @s_nodes = $source->nodes;
+  my @t_nodes = $target->nodes;
+  foreach my $t_node (@t_nodes) {
+    # Find the equivalent source node.
+    my ($s_node) = grep {$_->enclosed_leaves_string eq $t_node->enclosed_leaves_string} @s_nodes;
+    die("No source node!") unless (defined $s_node);
+    
+    $t_node->branch_length($s_node->branch_length);
+  }
 }
 
 1; # Keep perl happy.

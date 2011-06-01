@@ -1,5 +1,6 @@
 package Bio::EnsEMBL::Compara::AlignUtils;
 
+use strict;
 use Bio::AlignIO;
 use Bio::EnsEMBL::Compara::LocalMember;
 use Bio::Tools::CodonTable;
@@ -15,6 +16,25 @@ my $ALN = "Bio::EnsEMBL::Compara::AlignUtils";
 my $COMPARA = "Bio::EnsEMBL::Compara::ComparaUtils";
 
 
+sub translate_ensembl {
+  my $class = shift;
+  my $aln = shift;
+
+  my $map = {
+    "ENSP0.*" => 'Human',
+    "ENSPTRP0.*" => 'Chimpanzee',
+    "ENSGGOP.*" => 'Gorilla',
+    "ENSPPYP0.*" => 'Orangutan',
+    "ENSMMUP0.*" => 'Macaque',
+    "ENSCJAP0.*" => 'Marmoset',
+    "ENSTSYP0.*" => 'Tarsier',
+    "ENSMICP0.*" => 'MouseLemur',
+    "ENSOGAP0.*" => 'Bushbaby',
+  };
+
+  return $class->translate_ids($aln, $map);
+}
+
 sub translate_ids {
   my $class = shift;
   my $aln = shift;
@@ -24,7 +44,7 @@ sub translate_ids {
   my $ensure_unique = 1;
   $ensure_unique = $params->{ensure_unique} if (defined $params->{ensure_unique});
 
-  $aln->set_displayname_flat;  
+  $aln->set_displayname_flat;
   my $new_aln = $aln->new;
 
   my $used_ids;
@@ -33,8 +53,19 @@ sub translate_ids {
     my $id = $seq->id;
     my $nse = $seq->get_nse;
 
+    my $new_id;
     if (defined $id && defined $map->{$id}) {
       my $new_id = $map->{$id};
+    } else {
+      # Treat all map entries as regular expressions.
+      foreach my $map_key (keys %$map) {
+        if ($id =~ m/$map_key/) {
+          $new_id = $map->{$map_key};
+        }
+      }
+    }
+
+    if ($new_id) {
       if ($ensure_unique) {
         while ($used_ids->{$new_id}) {
           $new_id =~ m/_(\d+)$/;
@@ -50,10 +81,21 @@ sub translate_ids {
       $used_ids->{$new_id} = 1;
       $id = $new_id;
     }
+
     $new_aln->add_seq(Bio::LocatableSeq->new(-seq => $seq->seq,
 					     -id => $id));
   }
   return $new_aln;
+}
+
+
+sub hmmbuild {
+  my $class = shift;
+  my $aln = shift;
+  my $tree = shift;
+  my $temp_dir = shift;
+  # Uses Hmmer: http://selab.janelia.org/software/hmmer3/3.0/hmmer-3.0.tar.gz
+
 }
 
 sub dawg_lambda {
@@ -221,7 +263,7 @@ sub read_lines {
 # Calculate the average column entropy (ACE) of an alignment.
 sub column_entropies {
   my $class = shift;
-  my $sa = shift; # SimpleAlign object
+  my $sa = shift; # SimpleAlign object, codon alignment.
 
 # Column entropy = -sum(Pk*log(Pk)), where Pk is the proportion of k in a column
   my $column_entropy_sum;
@@ -230,8 +272,12 @@ sub column_entropies {
     my @col_array = $class->get_column_array($sa,$pos,3);
 #    print join(" ",@col_array)."\n";
 
+    # Mask out gaps and masked codons.
+    @col_array = grep {$_ !~ m/(NNN|---)/i} @col_array;
+
     # Collect the codon proportions into a hash.
     my $n = scalar(@col_array);
+
     my %codon_hash;
     foreach my $codon (@col_array) {
       if (!defined $codon_hash{$codon}) {
@@ -269,6 +315,7 @@ sub average_column_entropy {
   map {$sum = $sum + $_} @ce_array;
   return $sum / scalar(@ce_array);
 }
+
 
 sub total_column_score {
   my $class = shift;
@@ -363,14 +410,392 @@ sub sum_of_pairs_score {
   my $test_pairs = $class->store_pairs($test_aln,$test_obj);
 
   my $true_pair_count = scalar(keys %$true_pairs);
+  my $test_pair_count = scalar(keys %$test_pairs);
   
   my $correct_pair_count = 0;
   foreach my $key (keys %$test_pairs) {
     $correct_pair_count++ if ($true_pairs->{$key});
   }
   
-  return ($correct_pair_count/$true_pair_count);
+  return ($correct_pair_count/$test_pair_count);
 }
+
+
+sub total_aligned_bl {
+  my $class = shift;
+  my $tree = shift;
+  my $ref = shift;
+  my $aln = shift;
+
+  my $obj = $class->_correct_subtree_calc($tree, $ref, $aln);
+  return $obj->{total_aligned_bl};
+}
+
+# Returns the total corectly aligned sites*branchlength
+sub total_correct_bl {
+  my $class = shift;
+  my $tree = shift;
+  my $ref = shift;
+  my $aln = shift;
+
+  my $obj = $class->_correct_subtree_calc($tree, $ref, $aln);
+  return $obj->{total_correct_bl};
+}
+
+sub total_incorrect_bl {
+  my $class = shift;
+  my $tree = shift;
+  my $ref = shift;
+  my $aln = shift;
+
+  my $obj = $class->_correct_subtree_calc($tree, $ref, $aln);
+  return $obj->{total_incorrect_bl};
+}
+
+sub correct_subtree_score {
+  my $class = shift;
+  my $tree = shift;
+  my $ref = shift;
+  my $aln = shift;
+
+  my $obj = $class->_correct_subtree_calc($tree, $ref, $aln);
+  return $obj->{correct_subtree_score};
+}
+
+sub incorrect_subtree_score {
+  my $class = shift;
+  my $tree = shift;
+  my $ref = shift;
+  my $aln = shift;
+
+  my $obj = $class->_correct_subtree_calc($tree, $ref, $aln);
+  return $obj->{incorrect_subtree_score};
+}
+
+sub _correct_subtree_calc {
+  my $class = shift;
+  my $treeI = shift;
+  my $ref = shift;
+  my $aln = shift;
+
+  my $total_bl = $treeI->total_branch_length;
+
+  print $treeI->ascii;
+
+  my $ref_obj = $class->to_arrayrefs($ref);
+  my $aln_obj = $class->to_arrayrefs($aln);
+  my $ref_pairs = $class->store_pairs($ref, $ref_obj);
+  my $aln_pairs = $class->store_pairs($aln, $aln_obj);
+
+  my @id_list = map { $_->id } $ref->each_seq;
+  my $tree_bl_hash;
+  my $tree_strings_hash;
+  my $scores_hash;
+  map { $scores_hash->{$_} = [] } @id_list;
+
+  my $correct_sum;
+  my $incorrect_sum;
+  my $aligned_sum;
+  my $match_sum;
+  my $mismatch_sum;
+
+  my $correct_sum;
+  my $nongap_sum;
+
+  my @correct_bls;
+  my @incorrect_bls;
+  my @aligned_bls;
+  my @match_bls;
+  my @mismatch_bls;
+
+  sub get_subtree_residue_string {
+    my $aln = shift;
+    my $node = shift;
+    my $i = shift;
+
+    my @ids = map {$_->id} $node->leaves;
+    my @residues = map {$class->get_residue($aln,$_,$i)} @ids;
+    my $string = join('',@residues);
+    return $string;
+  }
+
+  foreach my $i ( 1 .. $aln->length ) {
+    my @nongap_ids_at_pos = grep { $aln_obj->{$_}->[$i] !~ m/[-X]/i } @id_list;
+
+    my $aligned_bl = 0;
+    my $nongap_node_strings;
+    my @node_strings = $class->get_subtree_node_strings($treeI, \@nongap_ids_at_pos, $tree_strings_hash);
+    if (scalar(@node_strings) == 1) {
+      $aligned_bl = 0;
+    } else {
+      map {$nongap_node_strings->{$_} = 1} @node_strings;
+      foreach my $node ($treeI->nodes) {
+        next if ($node->is_leaf);
+
+        my @children = $node->children; # Require bifurcation.
+        #next if (scalar(@children) == 1);
+
+        if (scalar(@children) != 2) {
+          my $str = "Not two children for node!";
+          $str .= "\n";
+          $str .= $node->ascii;
+          $str .= "\n";
+          $str .= join(',', @children)."\n";
+          die($str);
+        }
+        my $a = $children[0];
+        my $b = $children[1];
+        my $a_str = get_subtree_residue_string($aln, $a, $i);
+        my $b_str = get_subtree_residue_string($aln, $b, $i);
+        if ($a_str =~ m/^[-X]+$/ || $b_str =~ m/^[-X]+$/) {
+          # All gaps or masked residues on one side or the other -- don't add to aligned bl
+        } else {
+          $aligned_bl += $node->children_branch_length;
+        }
+      }
+    }
+
+    my $seen_aligned_ids;
+    my $seen_misaligned_ids;
+    my $correctly_aligned_hash; 
+    my $aligned_cluster_count = 0;
+    
+    #print STDERR get_column_string($aln, $i) . "\n";
+    my $column_score_string = '';
+    foreach my $this_seq_id (@id_list) {
+      my $this_res_num = $aln_obj->{$this_seq_id}->[$i];
+
+      # Current residue is a gap!
+      if ( $this_res_num eq '-' ) {
+        $scores_hash->{$this_seq_id}->[$i] = -1;
+        $column_score_string .= '-';
+        next;
+      }
+
+      foreach my $other_seq_id (@id_list) {
+        next if ( $this_seq_id eq $other_seq_id );
+        my $other_res_num = $aln_obj->{$other_seq_id}->[$i];
+        if ($other_res_num eq '-') {
+          next;
+        }
+        my $pair_string = join( '_', $this_seq_id, $this_res_num, $other_seq_id, $other_res_num );
+        my ($seq_a, $seq_b) = sort {$a cmp $b} ($this_seq_id,$other_seq_id);
+        if ( defined $ref_pairs->{$pair_string} && $ref_pairs->{$pair_string} == 1 ) {
+          # Collect correctly-aligned pairs
+          if (!defined $seen_aligned_ids->{$this_seq_id}) {
+            $aligned_cluster_count++;
+            $seen_aligned_ids->{$this_seq_id} = $aligned_cluster_count;
+            $seen_aligned_ids->{$other_seq_id} = $aligned_cluster_count; 
+          } elsif (!defined $seen_aligned_ids->{$other_seq_id}) {
+            $seen_aligned_ids->{$other_seq_id} = $aligned_cluster_count; 
+          }
+        } else {
+          # Collect incorrectly-aligned pairs
+          $seen_misaligned_ids->{$this_seq_id} = 1;
+          $seen_misaligned_ids->{$other_seq_id} = 1; 
+        }
+      }
+    }
+
+    # Use a match / mismatch classification approach.
+    # The two branches below a given internal node are assigned to the
+    # match state if any aligned pair can be found passing through this
+    # node.
+    my $match_bl = 0;
+    my $mismatch_bl = 0;
+    foreach my $node ($treeI->nodes) {
+      next if ($node->is_leaf);
+      my @children = $node->children;
+
+      next if (scalar(@children) == 1);
+
+      die ("Not two children for node ".$node->id) unless (scalar(@children) == 2);
+
+      my $a = $children[0];
+      my $b = $children[1];
+      
+      my $hash;
+      my $found_shared_cluster = 0;
+      my $any_a_nongap = 0;
+      my $any_b_nongap = 0;
+
+      foreach my $leaf ($a->leaves) {
+        # Handle gaps.
+        my $this_res_num = $aln_obj->{$leaf->id}->[$i];
+        if ($this_res_num !~ m/[-X]/i) {
+          $any_a_nongap = 1;
+        }
+        if (defined $seen_aligned_ids->{$leaf->id}) {
+          my $cluster = $seen_aligned_ids->{$leaf->id};
+          $hash->{$cluster} = 1;
+        }
+      }
+      foreach my $leaf ($b->leaves) {
+        # Handle gaps.
+        my $this_res_num = $aln_obj->{$leaf->id}->[$i];
+        if ($this_res_num !~ m/[-X]/i) {
+          $any_b_nongap = 1;
+        }
+        if (defined $seen_aligned_ids->{$leaf->id}) {
+          my $cluster = $seen_aligned_ids->{$leaf->id};
+          if ($hash->{$cluster} == 1) {
+            $found_shared_cluster = 1;
+          }
+        }
+      }
+
+      #print $node->enclosed_leaves_string."\n";
+      #print "  ". join('',keys(%$hash))."\n";
+
+      if ($found_shared_cluster == 1) {
+        $match_bl += $node->children_branch_length;
+      } elsif (!$any_a_nongap || !$any_b_nongap) {
+        # One side had no non-gaps, so don't add any branch length.
+      } else {
+        $mismatch_bl += $node->children_branch_length;
+      }
+    }
+
+    my $score = 0;
+    if ($aligned_bl > 0) {
+      $score = $match_bl / $aligned_bl;
+    }
+    
+    my $column_string = $class->get_column_string($aln, $i);
+    #print $column_string."\n";
+    foreach my $k (1 .. $aligned_cluster_count) {
+      my $cluster_string = '';
+      foreach my $seq ($aln->each_seq) {
+        my $res = $class->get_residue($aln, $seq->id, $i);
+        if ($res =~ m/[-X]/i) {
+          $cluster_string .= ' ';
+          next;
+        }
+        my $char = ' ';
+        my $cluster = $seen_aligned_ids->{$seq->id};
+        $char = $cluster if (defined $cluster && $cluster == $k);
+        $cluster_string .= $char;
+      }
+      #print STDERR "$cluster_string\n";
+    }
+
+    my $total = $treeI->total_branch_length;
+    #print "$aligned_bl $match_bl $mismatch_bl $total\n";
+
+    # Sanity check: we should never have more correct BL than we have nongap BL.
+    die if ($score > 1);
+
+    push @match_bls, $match_bl;
+    push @mismatch_bls, $mismatch_bl;
+    push @aligned_bls, $aligned_bl;
+
+    $match_sum += $match_bl;
+    $mismatch_sum += $mismatch_bl;
+    $aligned_sum += $aligned_bl;
+  }
+
+  my $obj = {
+    match_branchlengths => \@match_bls,
+    mismatch_branchlengths => \@mismatch_bls,
+    aligned_branchlengths => \@aligned_bls,
+
+    match_bl => $match_sum,
+    mismatch_bl => $mismatch_sum,
+    aligned_bl => $aligned_sum,
+  };
+
+  return $obj;
+}
+
+sub nongap_branch_lengths {
+  my $class = shift;
+  my $tree = shift;
+  my $aln = shift;
+
+  my $obj = $class->to_arrayrefs($aln);
+  my @id_list = map { $_->id } $aln->each_seq;
+
+  my $tree_bl_hash;
+  my @branchlengths;
+  foreach my $i ( 1 .. $aln->length ) {
+    my @nongap_ids_at_pos = grep { $obj->{$_}->[$i] ne '-' } @id_list;
+    my $nongap_bl = $class->_subtree_bl( $tree, \@nongap_ids_at_pos, $tree_bl_hash );
+
+    push @branchlengths, $nongap_bl;
+  }
+
+  return @branchlengths;
+}
+
+sub _subtree_bl {
+  my $class    = shift;
+  my $tree    = shift;
+  my $seq_ids = shift;
+  my $bl_hash = shift;
+
+  my @id_array = @$seq_ids;
+  @id_array = sort {$a cmp $b} @id_array;
+  my $key = join('_',@id_array);
+  my $existing_value = $bl_hash->{$key};
+  return $existing_value if (defined $existing_value);
+    
+  my $subtree = Bio::EnsEMBL::Compara::TreeUtils->extract_subtree_from_leaves($tree,\@id_array, 1);
+
+  my $total = Bio::EnsEMBL::Compara::TreeUtils->total_distance($subtree);
+  if (scalar($subtree->leaves) == 1) {
+    $total = 0;
+  }
+  $bl_hash->{$key} = $total;
+  return $total;
+}
+
+
+sub get_residue {
+  my $class = shift;
+  my $aln = shift;
+  my $seq_id = shift;
+  my $pos = shift;
+
+  my @seqs = $aln->each_seq;
+  my ($seq) = grep {$_->id eq $seq_id} @seqs;
+  return $seq->subseq($pos,$pos);
+}
+
+
+sub get_subtree_node_strings {
+  my $class = shift;
+  my $tree    = shift;
+  my $seq_ids = shift;
+  my $bl_hash = shift;
+
+  # Optimization: check the branch-length hash, to see if we've already
+  # calculated the total branch length for the given list of IDs.
+  my @id_array = @$seq_ids;
+  @id_array = sort {$a cmp $b} @id_array;
+  my $key = join('_',@id_array);
+  my $existing_value = $bl_hash->{$key};
+  return @{$existing_value} if (defined $existing_value);
+
+  # Get the minimum spanning subtree from a list of IDs
+  my $subtree = $tree->slice_by_ids(@id_array);
+  #print $subtree->ascii;
+
+  if (scalar($subtree->leaves) == 1) {
+    my @leaves = $subtree->leaves;
+    my @node_strings = ($leaves[0]->id);
+    $bl_hash->{$key} = \@node_strings;
+    return @node_strings;
+  }
+
+  my @node_strings;
+  foreach my $node ($subtree->nodes) {
+    push @node_strings, $node->enclosed_leaves_string;
+  }
+  
+  $bl_hash->{$key} = \@node_strings;
+  return @node_strings;
+}
+
 
 sub store_pairs {
   my $class = shift;
@@ -636,6 +1061,9 @@ sub translate {
   foreach my $seq ($aln->each_seq) {
     my $tx = $seq->translate();
     die "Translation for ".$seq->id." contains stop codon!\n" if ($tx =~ m/\*/);
+    my $tmp = $tx->seq;
+    $tmp =~ s/-//g;
+    $tx->end(length($tmp));
     $sa->add_seq($tx);
   }
   return $sa;
@@ -668,6 +1096,60 @@ sub filter_stop_codons {
   return $new_aln;
 }
 
+sub filter_frameshifting_indels {
+  my $class = shift;
+  my $aln = shift;
+  my $ref_seq_id = shift;
+
+  my $ref_seq = $class->get_seq_with_id($aln,$ref_seq_id);
+  my $str = $ref_seq->seq;
+  my $str_nogaps = $str;
+  $str_nogaps =~ s/-//g;
+  
+  # 1) Remove columns where the reference sequence has a gap w/ length != multiple-of-three
+  my @remove_me;
+
+  $_ = $str;
+  while (m/(-+)/g) {
+    my $match = $1;
+    my $len = length($match);
+
+#    next if ($len % 3 == 0); # Multiples of 3 are OK!
+
+    my $end = pos($_);
+    my $start = $end - $len;
+    my $match_substr = substr($_, $start-1, $len+2);
+    #print "$match $match_substr\n";
+
+    # TODO: do some better test for "good" indels here...
+
+    # OK, so we want to remove some columns...
+    foreach my $i ($start .. ($end-1)) {
+      push @remove_me, $i+1;
+    }
+  }
+
+  $aln = $class->remove_columns($aln, \@remove_me);
+
+  # 2) Go through the columns by threes, and turn to gaps any non-complete codons (i.e. gap
+  #    in one or two positions) or stop codons into all gaps.
+  foreach my $seq ($aln->each_seq) {
+    my $id = $seq->id;
+    my $str = $seq->seq;
+    for (my $i=1; $i <= $aln->length - 2; $i+= 3) {
+      my $codon = substr($str, $i-1, 3);
+      if (($codon =~ m/(tag|tga|taa)/gi) or
+          ($codon ne '---' && $codon =~ m/-/g)) {
+        #print "$id $i $codon\n";
+        substr($str, $i-1, 3) = '---';
+      }
+    }
+    $seq->seq($str);
+  }
+
+  return $aln;
+}
+
 sub ensure_multiple_of_three {
   my $class = shift;
   my $aln = shift;
@@ -687,6 +1169,15 @@ sub _filter_seq_stops {
 
   for (my $i=1; $i <= $seq->length-2; $i+= 3) {
     my $seq_str = $seq->seq;
+
+    my $codon_str = $seq->subseq($i, $i+2);
+    if ($codon_str eq '---') {
+      next;
+    }
+
+    my $has_gaps = 0;
+    $has_gaps = 1 if ($codon_str =~ m/-/i);
+
     my $aa = new Bio::PrimarySeq(-seq => $seq->subseq($i,$i+2))->translate->seq;
     
     #substr($seq_str,$i-1,3) = '---' if (substr($seq_str,$i-1,3) =~ m/(tag|tga|taa)/gi);
@@ -695,10 +1186,15 @@ sub _filter_seq_stops {
     if ($be_less_stringent) {
       $is_stop = 1 if ($be_less_stringent && $aa =~ m/(tag|tga|taa)/gi); # Only filter out full-on stop codons.
     } else {
-      $is_stop = 1 if ($aa =~ m/([x\*])/gi); # More stringent -- anything that doesn't translte correctly.
+      $is_stop = 1 if ($aa =~ m/([x\*])/gi); # More stringent -- anything that doesn't translate correctly.
     }
     #print " Masking stop $1 at $i\n" if ($is_stop);
-    substr($seq_str,$i-1,3) = '---' if ($is_stop);
+
+    if ($is_stop && !$has_gaps) {
+      substr($seq_str,$i-1,3) = 'NNN';
+    } elsif ($is_stop && $has_gaps) {
+      substr($seq_str,$i-1,3) = '---';
+    }
     #print "  Masking stop $1 at $i\n"  if (substr($seq_str,$i-1,3) =~ m/(tag|tga|taa)/gi);
     $seq->seq($seq_str);
   }
@@ -706,6 +1202,37 @@ sub _filter_seq_stops {
   return $seq;
 }
 
+sub seq_index {
+  my $class = shift;
+  my $aln = shift;
+  my $id = shift;
+
+  my $i=0;
+  foreach my $seq ($aln->each_seq) {
+    if ($seq->id eq $id) {
+      return $i;
+    }
+    $i++;
+  }
+  return -1;
+}
+
+sub get_nongap_indices {
+  my $class = shift;
+  my $aln = shift;
+  my $id = shift;
+
+  my $ref_seq = $class->get_seq_with_id($aln, $id);
+  warn("Seq [$id] not found while flattening alignment!") unless (defined $ref_seq);
+
+  my $seq = $ref_seq->seq;
+  my @nongap_columns;
+  while ($seq =~ m/[^-]/g) {
+    push @nongap_columns, (pos($seq));
+  }
+  return @nongap_columns;
+}
+  
 =head2 flatten_to_sequence
  Title     : flatten_to_sequence
  Usage     : $aln->flatten_to_sequence($my_favorite_sequence_index)
@@ -738,6 +1265,23 @@ sub flatten_to_sequence {
   return $new_aln;
 }
 
+# Remove columns included in the arrayref. The first alignment column is 1.
+sub remove_columns {
+  my $class = shift;
+  my $aln = shift;
+  my $column_number_arrayref = shift;
+
+  my @column_numbers = sort @{$column_number_arrayref};
+
+  my @remove_cols;
+  foreach my $column (@column_numbers) {
+    my @start_end = ($column-1, $column-1);
+    push @remove_cols, \@start_end;
+  }
+  my $new_aln = $aln->_remove_columns_by_num(\@remove_cols);
+  return $new_aln;
+}
+
 sub combine_alns {
   my $class = shift;
   my @alns = @_;
@@ -758,7 +1302,8 @@ sub combine_alns {
     # Fill in each sequence in the hash with the current alignment, or gaps if that species is currently missing.
     foreach my $id (keys %$seq_hash) {
       my @chars = @{$seq_hash->{$id}};
-      my $seq = Bio::EnsEMBL::Compara::AlignUtils->get_seq_with_id($aln,$id);
+      my ($seq) = grep {$_->id eq $id} $aln->each_seq;
+      #my $seq = Bio::EnsEMBL::Compara::AlignUtils->get_seq_with_id($aln,$id);
       if (defined $seq) {
 	push @chars, split(//,$seq->seq);
       } else {
@@ -870,6 +1415,69 @@ sub remove_gappy_columns_in_threes {
   return $aln;
 }
 
+sub remove_regex_columns_in_threes {
+  my $class = shift;
+  my $aln = shift;
+  my $regex = shift;
+
+  my $cols_hash;
+  my $n = 0;
+  foreach my $seq ($aln->each_seq) {
+    my $seq_str = $seq->seq;
+
+    print $seq->id."\n";
+    my @codons = unpack('(A3)*', $seq_str);
+    print scalar(@codons)."\n";
+    my $i=0;
+    foreach my $codon (@codons) {
+      if ($codon =~ m/$regex/) {
+        $cols_hash->{$i*3} = 1;
+        $cols_hash->{$i*3+1} = 1;
+        $cols_hash->{$i*3+2} = 1;
+      }
+      $i += 1;
+    }
+  }
+
+  my @cols_to_remove = keys %$cols_hash;
+  my $n = scalar(@cols_to_remove);
+  print "Removing $n regex columns...\n";
+
+  $aln = $class->quick_remove_columns($aln, \@cols_to_remove);
+  return $aln;
+}
+
+sub quick_remove_columns {
+  my $class = shift;
+  my $aln = shift;
+  my $cols_arrayref = shift;
+
+  my @cols = @$cols_arrayref;
+  @cols = sort {$b <=> $a} @cols;
+
+  my $keep_hash;
+  map {$keep_hash->{$_-1} = 1} 1 .. $aln->length;
+
+  foreach my $col (@cols) {
+    delete $keep_hash->{$col};
+  }
+  
+  my @keepers = sort {$a <=> $b} keys %$keep_hash;
+
+  my $new_aln = new $aln;
+  foreach my $seq ($aln->each_seq) {
+    my $str = $seq->seq;
+    my @arr = unpack("(A1)*", $str);
+    @arr = @arr[@keepers];
+
+    my $new_seq = new $seq;
+    $new_seq->id($seq->id);
+    $new_seq->seq(join('', @arr));
+    $new_aln->add_seq($new_seq);
+  }
+  return $new_aln;
+}
+
 sub remove_funky_stretches {
   my $class = shift;
   my $aln = shift;
@@ -974,7 +1582,7 @@ sub mask_string {
   my $hi = shift;
 
   my $n = 0;
-  for (my $i=$lo; $i < $hi; $i++) {
+  for (my $i=$lo; $i <= $hi; $i++) {
     if (substr($string,$i,1) ne '-') {
       substr($string,$i,1,'N');
       $n++;
@@ -1149,303 +1757,6 @@ sub prank_filter {
   return $filtered_aln;
 }
 
-sub get_prank_filter_matrices {
-  my $class = shift;
-  my $aln = shift;
-  my $tree = shift;
-  my $params = shift;
-
-  my $defaults = {
-    'prank_filtering_scheme' => 'prank_mean'
-  };
-  $params = Bio::EnsEMBL::Compara::ComparaUtils->replace_params($defaults,$params);  
-
-  $params->{prank_filtering_scheme} = 'prank_mean' if ($params->{prank_filtering_scheme} eq 'prank');
-
-  my $dna_aln = $tree->get_SimpleAlign(-cdna => 1);
-
-  my $node_id = $tree->node_id;
-
-  my $dir = $params->{temp_dir};
-  mkpath([$dir]);
-  my $aln_f = $dir."/aln_${node_id}.fasta";
-  my $tree_f = $dir."/tree_${node_id}.nh";
-  my $out_f = $dir."/aln_filtered_${node_id}";
-  my $xml_f = $out_f.".0.xml";
-
-  # Output tree and alignment.
-  $class->to_file($aln,$aln_f);
-  Bio::EnsEMBL::Compara::TreeUtils->to_file($tree,$tree_f);
-
-  my $prank_bin = "prank_fix";
-  $prank_bin = "prank" if (!-e $prank_bin);
-
-  my $cmd = qq^${prank_bin} -d=$aln_f -t=$tree_f -e -o=$out_f^;
-    system($cmd);
-
-  my $module = XML::LibXML;
-  eval "use $module";
-  use Bio::Greg::Node;
-
-  # Grab information from Prank's XML output.
-  my $parser;
-  eval {
-    $parser = XML::LibXML->new();
-  };
-  if ($@) {
-    print "$@\n";
-    return;
-  }
-  $xml_tree = $parser->parse_file($xml_f);
-  my $root = $xml_tree->getDocumentElement;
-
-  my $newick = ${$root->getElementsByTagName('newick')}[0]->getFirstChild->getData;
-  #print $newick."\n";
-  my $rootNode = Bio::Greg::Node->new();
-  $rootNode = $rootNode->parseTree($newick);
-
-  my %nameToId;
-  my %idToName;
-  my %seqsByName;
-  foreach my $lid (@{$root->getElementsByTagName('leaf')}) {
-    my $tree_name = $lid->getAttribute('id');
-    $nameToId{$lid->getAttribute('name')} = 
-    $idToName{$lid->getAttribute('id')} = $lid->getAttribute('name');
-    my $seq = $lid->findvalue('sequence');
-    $seq =~ s/\s//g;
-    $seqsByName{$lid->getAttribute('name')} = $seq;
-  }
-  my %postprob;
-  foreach my $nid (@{$root->getElementsByTagName('node')}) {
-    my $node = $nid->getAttribute('id');
-    foreach my $pid (@{$nid->getElementsByTagName('probability')}) {
-      my $prob = $pid->getAttribute('id');
-      my $data = $pid->getFirstChild->getData;
-      $data =~ s/\s//g;
-      $postprob{$node}{$prob} = $data;
-    }
-  }
-  my %nameToState;
-  foreach my $sid (${$root->getElementsByTagName('model')}[0]->getElementsByTagName('probability')) {
-    $nameToState{$sid->getAttribute('name')} = $sid->getAttribute('id');
-  }
-
-  # Create a stored 'leaf name string' for each XML node.
-  my $leaf_names_to_xml;
-  my @nodes = $rootNode->nodes();
-  foreach my $node (@nodes) {
-    next if ($node->isLeaf);
-    my @nms = $node->leafNames;
-    @nms = map {$idToName{$_}} @nms;
-    @nms = sort @nms;
-    my $leaf_names = join(" ",@nms);
-    $leaf_names_to_xml->{$leaf_names} = $node->name;
-  }
-
-  my $leaf_names_to_node;
-  my $node_to_xml;
-  foreach my $node ($tree->nodes) {
-    next if ($node->is_leaf);
-
-    my @nms = map {$_->name} $node->leaves;
-    @nms = sort @nms;
-    my $leaf_names = join(" ",@nms);
-    $leaf_names_to_node->{$leaf_names} = $node->name;
-    if ($leaf_names_to_xml->{$leaf_names}) {
-      $node_to_xml->{$node} = $leaf_names_to_xml->{$leaf_names};
-    }
-  }
-  
-  my %pp_hash;
-  my @nodes = $rootNode->nodes();
-  foreach my $node (@nodes) {
-    next if ($node->isLeaf);
-    my @score = split(/,/,$postprob{$node->name}{$nameToState{'postprob'}});
-    $pp_hash->{$node->name} = ();
-    for (my $i=0; $i < scalar(@score); $i++) {
-      $pp_hash->{$node->name}[$i] = $score[$i];
-    }
-  }
-
-  my $aln_len = $aln->length;
-
-  if ($params->{'prank_filtering_scheme'} =~ m/prank_column/i) {
-    my @score_array;
-
-    for (my $i=0; $i < $aln_len; $i++) {
-      my $score_sum = 0;
-      my $bl_sum = 0;
-      foreach my $node ($tree->nodes) {
-        my $bl = $node->distance_to_parent;
-
-        my $xml_node = $node_to_xml->{$node};
-        my $post_prob = $pp_hash->{$xml_node}[$i];
-        if (defined $xml_node && defined $post_prob && $post_prob != -1) {
-          $score_sum += $post_prob * $bl;
-          $bl_sum += 1 * $bl;
-        } else {
-
-        }
-      }
-      $score_array[$i] = 0;
-      if ($bl_sum > 0) {
-        my $weighted_score = $score_sum / $bl_sum;
-        $score_array[$i] = $weighted_score;
-      }
-    }
-
-    foreach my $leaf ($tree->leaves) {
-      my $score_string = "";
-      my $aln_string = $leaf->alignment_string;
-      my @aln_arr = split("",$aln_string);
-      for (my $i=0; $i < $aln_len; $i++) {
-        if ($aln_arr[$i] eq '-') {
-          $score_string .= '-';
-        } else {
-          my $sitewise_score = $score_array[$i] / 10;
-          $sitewise_score = 0 if ($sitewise_score < 0);
-          $sitewise_score = 9 if ($sitewise_score > 9);
-          $score_string .= sprintf("%1d",$sitewise_score);
-        }
-      }
-      $leaf_scores->{$leaf->name} = $score_string;
-    }
-  } elsif ($params->{'prank_filtering_scheme'} eq 'prank' || $params->{'prank_filtering_scheme'} =~ m/prank_mean/i) {
-    foreach my $leaf ($tree->leaves) {
-      my $score_string = "";
-      my $aln_string = $leaf->alignment_string;
-      my @aln_arr = split("",$aln_string);
-
-      for (my $i=0; $i < $aln_len; $i++) {
-        if ($aln_arr[$i] eq '-') {
-          $score_string .= '-';
-        } else {
-          my $sitewise_score = 9;
-
-          my $bl_sum = 0;
-          my $pp_sum = 0;
-          my $node = $leaf;
-          while (my $parent = $node->parent) {
-            my $bl = $node->distance_to_parent;
-
-            my $xml_node = $node_to_xml->{$parent};
-            my $post_prob = $pp_hash->{$xml_node}[$i];
-            if (defined $xml_node && defined $post_prob && $post_prob != -1) {
-              $bl_sum += 1 * $bl;
-              $pp_sum += $post_prob * $bl;
-            } else {
-            }
-            $node = $parent;
-          }
-          $bl_sum = 0.01 if ($bl_sum == 0);
-          my $sitewise_score = $pp_sum / 10 / $bl_sum;
-          $sitewise_score = 0 if ($sitewise_score < 0);
-          $sitewise_score = 9 if ($sitewise_score > 9);
-          $score_string .= sprintf("%1d",$sitewise_score);
-        }
-      }
-      $leaf_scores->{$leaf->name} = $score_string;
-    }
-
-  } elsif ($params->{'prank_filtering_scheme'} =~ m/prank_minimum/i) {
-    foreach my $leaf ($tree->leaves) {
-      my $score_string = "";
-      my $aln_string = $leaf->alignment_string;
-      my @aln_arr = split("",$aln_string);
-
-      for (my $i=0; $i < $aln_len; $i++) {
-        if ($aln_arr[$i] eq '-') {
-          $score_string .= '-';
-        } else {
-          
-          my $min_pp = 100;
-          my $node = $leaf;
-          while (my $parent = $node->parent) {
-
-            my $xml_node = $node_to_xml->{$parent};
-            my $post_prob = $pp_hash->{$xml_node}[$i];
-            if (defined $xml_node && defined $post_prob && $post_prob != -1) {
-              
-              $min_pp = $post_prob if ($post_prob < $min_pp);
-            }
-            $node = $parent;
-          }
-          my $sitewise_score = $min_pp / 10;
-          $sitewise_score = 0 if ($sitewise_score < 0);
-          $sitewise_score = 9 if ($sitewise_score > 9);
-          $score_string .= sprintf("%1d",$sitewise_score);
-        }
-      }
-      $leaf_scores->{$leaf->name} = $score_string;
-    }
-
-  } elsif ($params->{'prank_filtering_scheme'} =~ m/prank_treewise/i) {
-    
-    foreach my $leaf ($tree->leaves) {
-      my $total_dist = $leaf->distance_to_root;
-      my $aln_len = $aln->length;
-      
-      my $aln_string = $leaf->alignment_string;
-      my @aln_arr = split("",$aln_string);
-
-      sub get_other_child {
-        my $parent = shift;
-        my $node = shift;
-        
-        foreach my $child (@{$parent->children}) {
-          return $child if ($node != $child);
-        }
-        return undef;
-      }
-      
-      my @scores;
-      my $score_string = "";
-      for (my $i=0; $i < $aln_len; $i++) {
-        if ($aln_arr[$i] eq '-') {
-          $score_string .= '-';
-          next;
-        }
-        
-        my $total_prob = 0;
-        my $node = $leaf;
-        while (my $parent = $node->parent) {
-          my $bl = $node->distance_to_parent;
-          my $xml_node = $node_to_xml->{$parent};
-          my $post_prob = $pp_hash->{$xml_node}[$i];
-          if ($post_prob != -1) {
-            # We've got nucleotides aligned here. Sum up according to our rules.
-            
-            # Find the fraction of branch length encompassed by our node and the
-            # other node being aligned. If we have more branch length, adjust the weights.
-            my $total_bl = Bio::EnsEMBL::Compara::TreeUtils->total_distance($node);
-            my $other_node = get_other_child($parent,$node);
-            my $other_total_bl = Bio::EnsEMBL::Compara::TreeUtils->total_distance($other_node);
-            
-            my $bl_fraction = $other_total_bl / $total_bl;
-            $bl_fraction = 1 if ($bl_fraction > 1);
-            
-            # Add a value proportional to post_prob, bl, and 'balance' fraction.
-            $total_prob += $post_prob/100 * ($bl / $total_dist) * $bl_fraction;
-            # Add a value to make up for a 'balance' fraction less than 1.
-            $total_prob += 1 * ($bl / $total_dist) * (1 - $bl_fraction);
-            
-            #$total_prob += $post_prob/100 * ($bl / $total_dist);
-          } else {
-            # If the alignment has a gap in the other node, don't penalize it.
-            $total_prob += 100/100 * ($bl / $total_dist);
-          }
-          $node = $parent;
-        }
-        my $score = $total_prob*10 - 1;
-        $score = 0 if ($score < 0);
-        $score_string .= sprintf("%1d",$score);
-      }
-      $leaf_scores->{$leaf->name} = $score_string;
-    }
-    
-  }
-  return ($leaf_scores,[]);
-}
 
 sub filter_sites {
   my $class = shift;
@@ -1530,53 +1841,23 @@ sub mask_below_score {
     $threshold = 9;
   }
   
-  if (!ref $score_hashref && -e $score_hashref) {
-    # If we're just given a string, interpret is as a filename pointing to a T_Coffee score_aln output.
-    my $filename = $score_hashref;
-    $score_hashref = {};
-    
-    my $FH = IO::File->new();
-    $FH->open($filename) || throw("Could not open alignment scores file [$filename]!");
-    <$FH>; #skip header
-    my $i=0;
-    while(<$FH>) {
-      $i++;
-      next if ($i < 7); # skip first 7 lines.
-      next if($_ =~ /^\s+/);  #skip lines that start with space
-      if ($_ =~ /:/) {
-	my ($id,$overall_score) = split(/:/,$_);
-	$id =~ s/^\s+|\s+$//g;
-	$overall_score =~ s/^\s+|\s+$//g;
-	next;
-      }
-      chomp;
-      my ($id, $align) = split;
-      $score_hashref->{$id} ||= '';
-      $score_hashref->{$id} .= $align;
-    }
-    $FH->close;
-  } else {
-    # Nothing to do here... the user should have set this up as a hash_ref with keys as the display_id and values as score_strings.
-    # For example:
-    #  Alignment string
-    #    ABC---DEF
-    #  Score string
-    #    995---339
-  }
+  #  Alignment string
+  #    ABC---DEF
+  #  Score string
+  #    995---339
 
   my $alphabet = 'protein'; # Default to a protein alphabet.
-
   # Create a new shell SimpleAlign object.
   my $new_aln = $aln->new;
 
   # Go through each sequence in the alignment and mask accordingly.
   foreach my $seq ( $aln->each_seq ) {
     $alphabet = $seq->alphabet;
-
     my $label = $seq->display_id;
-#    print $label."\n";
     my $score_string = $score_hashref->{$label};
-#    print $score_string."\n";
+
+    die("No score string found for sequence [$label]!") unless (defined $score_string);
+
     $score_string =~ s/[^\d-]/9/g;   # Convert non-digits and non-dashes into 9s.
     # (The above is necessary because t_coffee leaves leftover letters in the sequence score strings)
     $score_string =~ s/[-]/9/g;   # Convert dashes to 9s, because we will never mask those out.
@@ -1587,8 +1868,8 @@ sub mask_below_score {
     #print join "", @mask_array,"\n";
     my @seq_array = split(//,$seq->seq);
     foreach my $i (0..scalar(@seq_array)-1) {
+      my $char = $seq_array[$i];
       if ($mask_array[$i] == 0 && $alphabet eq 'protein') {
-        my $char = $seq_array[$i];
         next if ($char eq 'X' || $char eq 'x');
         if ($char =~ /[a-z]/) {
           $seq_array[$i] = lc($mask_char);
@@ -1605,13 +1886,11 @@ sub mask_below_score {
     }
     my $new_str = join "", @seq_array;
 
-    if ($seq->seq ne $new_str) {
-      #print "Old: ".$seq->seq."\n";
-      #print "New: ".$new_str."\n";
-    }
-
     # We've got the new alignment sequence, just put it into the new SimpleAlign.
-    my $new_seq = new Bio::LocatableSeq(-seq => $new_str, -id => $label);
+    my $tmp = $new_str;
+    $tmp =~ s/-//g;
+    
+    my $new_seq = new Bio::LocatableSeq(-seq => $new_str, -id => $label, -end => length($tmp));
     $new_aln->add_seq($new_seq);
   }
 
@@ -1683,13 +1962,14 @@ sub remove_seq_from_aln {
   my $aln = shift;
   my $seq_id = shift;
 
-  my $seq = $class->get_seq_with_id($aln,$seq_id);
-
   my $new_aln = $aln->new;
 
-  foreach my $old_seq ($aln->each_seq) {
-    $new_aln->add_seq($old_seq) if ($old_seq != $seq);
+  foreach my $seq ($aln->each_seq) {
+    next if ($seq->id eq $seq_id);
+    my $new_seq = new Bio::LocatableSeq(-seq => $seq->seq, -id => $seq->id);
+    $new_aln->add_seq($new_seq) if ($seq->id ne $seq_id);
   }
+
   return $new_aln;
 }
 
@@ -1795,13 +2075,42 @@ sub get_genomic_align {
   my @exons = @{$ref_tx->get_all_translateable_Exons};
 
   foreach my $exon (@exons) {
-    my $pep_exon = $exon->peptide($tx);
+    my $pep_exon = $exon->peptide($ref_tx);
 
     my $slice = $exon->slice;
-    $exon = $exon->transfer($tx->slice);
+    $exon = $exon->transfer($ref_tx->slice);
     my $dna_seq = $exon->seq->seq;
   }
 
+}
+
+# Given a peptide alignment and CDNA alignment, threads the CDNA sequence through the peptide
+# alignment so both alignments are in 'sync'. Returns a new copy of the altered CDNA alignment.
+sub apply_peptide_alignment_to_cdna_alignment {
+  my $class = shift;
+  my $pep_aln = shift;
+  my $cdna_aln = shift;
+
+  my $new_cdna = $cdna_aln->new;
+
+  foreach my $seq ($pep_aln->each_seq) {
+    my $cdna_seq = $class->get_seq_with_id($cdna_aln, $seq->id);
+    die("No CDNA seq found!") unless (defined $cdna_seq);
+
+    my $pep_string = $seq->seq;
+
+    my $cdna_str = $cdna_seq->seq;
+    $cdna_str =~ s/-//g; # Remove gaps from cdna string.
+    
+    # Thread the unaligned CDNA through the aligned pep.
+    my $cdna_aln_string = $class->cdna_alignment_string($cdna_str,$pep_string);
+    $cdna_aln_string =~ s/ //g;
+
+    my $new_seq = new Bio::LocatableSeq(-seq => $cdna_aln_string, -id => $seq->id, -start => 1, -end => length($cdna_str));
+    $new_cdna->add_seq($new_seq);
+  }
+
+  return $new_cdna;
 }
 
 # Thread cdna sequences through a given peptide alignment and ProteinTree.
@@ -1828,37 +2137,50 @@ sub peptide_to_cdna_alignment {
   return $cdna_aln;
 }
 
+sub copy_aln {
+  my $class = shift;
+  my $aln = shift;
+  
+  my $new_aln = $aln->new;
+
+  foreach my $seq ($aln->each_seq) {
+    my $new_seq = new Bio::LocatableSeq(-seq => $seq->seq, -id => $seq->id);
+    $new_aln->add_seq($new_seq);
+  }
+  return $new_aln;
+}
+
 # Stolen from AlignedMember.pm, wrapped into a standalone method.
 sub cdna_alignment_string {
   my $class = shift;
   my $cdna = shift;  # CDNA string (no gaps)
   my $alignment_string = shift; # Peptide alignment string (with gaps)
 
-    my $cdna_len = length($cdna);
-    my $start = 0;
-    my $cdna_align_string = '';
-
-    #printf "%s %s\n", $self->stable_id,$self->member_id;
-    # foreach my $pep (split(//, $self->alignment_string)) { # Speed up below
-    foreach my $pep (unpack("A1" x length($alignment_string), $alignment_string)) {
-      if($pep eq '-') {
-        $cdna_align_string .= '--- ';
-      } else {
-        my $codon = substr($cdna, $start, 3);
-        unless (length($codon) == 3) {
-          # sometimes the last codon contains only 1 or 2 nucleotides.
-          # making sure that it has 3 by adding as many Ns as necessary
-          $codon .= 'N' x (3 - length($codon));
-        }
-	#print $pep." $codon ";
-	if ($codon =~ m/(tga|tag|taa)/ig) {
-	  #print "$codon ";
-	  print " -> Stop codon found in alignment string! Masking...\n";
-	  $codon = 'N' x length($codon);
-	}
-        $cdna_align_string .= $codon . ' ';
-        $start += 3;
+  my $cdna_len = length($cdna);
+  my $start = 0;
+  my $cdna_align_string = '';
+  
+  #printf "%s %s\n", $self->stable_id,$self->member_id;
+  # foreach my $pep (split(//, $self->alignment_string)) { # Speed up below
+  foreach my $pep (unpack("A1" x length($alignment_string), $alignment_string)) {
+    if($pep eq '-') {
+      $cdna_align_string .= '--- ';
+    } else {
+      my $codon = substr($cdna, $start, 3);
+      unless (length($codon) == 3) {
+        # sometimes the last codon contains only 1 or 2 nucleotides.
+        # making sure that it has 3 by adding as many Ns as necessary
+        $codon .= 'N' x (3 - length($codon));
       }
+      #print $pep." $codon ";
+      if ($codon =~ m/(tga|tag|taa)/ig) {
+        #print "$codon ";
+        print " -> Stop codon found in alignment string! Masking...\n";
+        $codon = 'N' x length($codon);
+      }
+      $cdna_align_string .= $codon . ' ';
+      $start += 3;
+    }
   }
   return $cdna_align_string;
 }

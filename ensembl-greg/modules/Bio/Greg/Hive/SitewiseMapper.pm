@@ -128,7 +128,7 @@ sub collect_uniprot {
 sub collect_exons {
   my $self = shift;
   my $tree = shift;
-  my $aln = shift;
+  my $pep_aln = shift;
 
   my $leaf = $self->human_or_mouse_member($tree);
   if (!defined $leaf) {
@@ -159,8 +159,8 @@ sub collect_exons {
       $exon_position = 'FIRST' if ( $i == 1 );
       $exon_position = 'LAST'  if ( $i == scalar(@exons) );
       
-      my $aln_start = $aln->column_from_residue_number( $leaf->stable_id, $pep_start );
-      my $aln_end   = $aln->column_from_residue_number( $leaf->stable_id, $pep_end );
+      my $aln_start = $pep_aln->column_from_residue_number( $leaf->stable_id, $pep_start );
+      my $aln_end   = $pep_aln->column_from_residue_number( $leaf->stable_id, $pep_end );
       
       foreach my $pos ( $aln_start .. $aln_end ) {
         # Store the smallest distance to an exon junction.
@@ -188,9 +188,9 @@ sub collect_exons {
 sub collect_pfam {
   my $self = shift;
   my $tree = shift;
-  my $aln = shift;
+  my $pep_aln = shift;
 
-  print ("Collecting pfam data...\n") if ($self->debug);
+  print ("  collecting pfam data...\n") if ($self->debug);
 
   # Only take human or mouse protein for pfam reference.
   my $leaf = $self->human_or_mouse_member($tree);
@@ -217,10 +217,10 @@ sub collect_pfam {
     my $lo    = $f->start;
     my $hi    = $f->end;
     $hi = $tx->length if ( $hi > $tx->length );
-    print "$pf_id  lo:$lo hi:$hi hstart:$pf_lo hend:$pf_hi\n" if ($self->debug);
+    print "  $pf_id  lo:$lo hi:$hi hstart:$pf_lo hend:$pf_hi\n" if ($self->debug);
     foreach my $i ( 0 .. ( $hi - $lo ) ) {
       my $pos     = $lo + $i;
-      my $aln_col = $aln->column_from_residue_number( $name, $pos );
+      my $aln_col = $pep_aln->column_from_residue_number( $name, $pos );
 
       $site_objects->{$aln_col} = {
         pfam_domain => $pf_id,
@@ -235,7 +235,7 @@ sub collect_pfam {
 sub do_filter {
   my $self = shift;
   my $tree = shift;
-  my $aln = shift;
+  my $pep_aln = shift;
 
   my $dba = $self->compara_dba;
 
@@ -269,7 +269,7 @@ sub do_filter {
 
   my $site_objects;
 
-  foreach my $aln_position ( 1 .. $aln->length ) {
+  foreach my $aln_position ( 1 .. $pep_aln->length ) {
     my $primate_count  = 0;
     my $glires_count   = 0;
     my $laur_count     = 0;
@@ -278,7 +278,7 @@ sub do_filter {
 
     my $taxon_id_hash = {};
     my $slice;
-    eval { $slice = $aln->slice( $aln_position, $aln_position, 1 ); };
+    eval { $slice = $pep_aln->slice( $aln_position, $aln_position, 1 ); };
     next if ($@);
 
     foreach my $leaf ( $tree->leaves ) {

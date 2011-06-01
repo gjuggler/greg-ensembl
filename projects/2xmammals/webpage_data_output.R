@@ -4,25 +4,66 @@ setwd("/nfs/users/nfs_g/gj1/scratch/gj1_2x_57/2011-01-21_01")
 dbname <- 'gj1_2x_57'
 source('~/src/greg-ensembl/scripts/collect_sitewise.R')
 query <- 'SELECT * FROM web_data WHERE sites_csv IS NOT NULL;'
-genes <- get.vector(con,query)
+web.genes <- get.vector(con,query)
+
+query <- 'SELECT * FROM stats_genes;'
+genes <- get.vector(con, query)
 
 # Split into sub-clades
 print("  splitting genes")
-genes_m <- subset(genes,parameter_set_id==1)
-genes_p <- subset(genes,parameter_set_id==2)
-genes_g <- subset(genes,parameter_set_id==3)
-genes_l <- subset(genes,parameter_set_id==4)
+psets <- list(
+  m = 1,
+  p = 2,
+  g = 3,
+  l = 4
+)
+for (i in 1:length(psets)) {
+  nm <- names(psets)[i]
+  ps <- psets[[i]]
+  cur.genes <- subset(genes, parameter_set_id==ps)
+
+  cur.genes$chr_name <- NULL
+  cur.genes$chr_start <- NULL
+  cur.genes$chr_end <- NULL
+
+  print(paste(nm, ps, nrow(cur.genes)))
+  
+  merged <- merge(cur.genes, web.genes, by=c('data_id'), suffixes=c('','.web'))
+
+  cols <- colnames(merged)
+  non.web.fields <- cols[grep("web",cols, invert=T)]
+  merged <- subset(merged, select=non.web.fields)
+  print(paste(nm, ps, nrow(merged)))
+  assign(paste('genes_',nm,sep=''), merged, envir=.GlobalEnv)
+}
+
+source("~/src/greg-ensembl/scripts/liftOver.R")
+genes_m <- lift.over(genes_m, 'hg19ToHg18')
+genes_p <- lift.over(genes_p, 'hg19ToHg18')
+genes_g <- lift.over(genes_g, 'hg19ToHg18')
+genes_l <- lift.over(genes_l, 'hg19ToHg18')
+
+lift.sites <- function(x) {
+  print(str(x))
+  if (! 'chr_start' %in% colnames(x)) {
+    return(x)
+  }
+  x$chr_end <- x$chr_start + 1
+  return(lift.over(x, 'hg19ToHg18'))
+}
 
 # Load sites from files.
 print("  loading sites")
 load("sites_1.Rdata")
-sites_m <- sites
+sites_m <- lift.sites(sites)
+print(head(sites_m))
+print(nrow(sites_m))
 load("sites_2.Rdata")
-sites_p <- sites
+sites_p <- lift.sites(sites)
 load("sites_3.Rdata")
-sites_g <- sites
+sites_g <- lift.sites(sites)
 load("sites_4.Rdata")
-sites_l <- sites
+sites_l <- lift.sites(sites)
 
 sites_info <- list(
 node_id="the internal Ensembl database ID used to fetch the tree and alignment. Not useful for external purposes.",
@@ -78,7 +119,7 @@ save(
   genes_m,genes_p,genes_g,genes_l,
   sites_info,
   genes_info,
-  file="mammals_slr_tables.Rdata"
+  file="mammals_e57_sitewise_tables.Rdata"
 )
 
 print("  done!")
