@@ -583,7 +583,7 @@ sub _fig_one_indel_sweep {
   my $self   = shift;
   my $scheme = shift;
 
-  my $reps        = $self->reps_param(20);
+  my $reps        = $self->reps_param(100);
   my $base_params = $self->replace( $scheme, $reps);
 
   my $tree = $base_params->{tree_name};
@@ -600,8 +600,8 @@ sub _fig_one_indel_sweep {
 
   my @sets;
   my $params;
-  my @lengths = map { $_ * 1 / 5 } 1 .. 10;
-  my @indels  = map { $_ / 100 } 0 .. 10;
+  my @lengths = map { $_ * 1 / 2.5 } 1 .. 5;
+  my @indels  = map { $_ / 50 } 0 .. 5;
 
   foreach my $path_length (@lengths) {
     $params = $self->replace( $base_params, $self->mean_path_param($path_length) );

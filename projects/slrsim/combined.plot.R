@@ -2,9 +2,16 @@ library(phylosim)
 library(RColorBrewer)
 library(xtable)
 library(plyr)
-source("~/src/greg-ensembl/projects/phylosim/PhyloSimPlots.R")
-source("~/src/greg-ensembl/projects/slrsim/slrsim.functions.R")
-source("~/src/greg-ensembl/projects/slrsim/slrsim.plots.R")
+if (Sys.getenv('USER') == 'gj1') {
+  source("~/src/greg-ensembl/projects/phylosim/PhyloSimPlots.R")
+  source("~/src/greg-ensembl/projects/slrsim/slrsim.functions.R")
+  source("~/src/greg-ensembl/projects/slrsim/slrsim.plots.R")
+} else {
+  source("~/lib/greg-ensembl/projects/phylosim/PhyloSimPlots.R")
+  source("~/lib/greg-ensembl/projects/slrsim/slrsim.functions.R")
+  source("~/lib/greg-ensembl/projects/slrsim/slrsim.plots.R")
+}
+
 
 subplot <- function(x, y) viewport(layout.pos.col=x, layout.pos.row=y)
 vplayout <- function(x, y) {
@@ -163,22 +170,24 @@ multi.plot <- function(color.by='tpr_at_fdr',
   aligners = c('clustalw', 'mafft', 'prank', 'prank_codon', 'True_Alignment')
 ) {
 
-  tbl.a <- read.csv('~/scratch/gj1_fig_one_a/current/table.csv')
-  tbl.b <- read.csv('~/scratch/gj1_fig_one_b/current/table.csv')
-  tbl.c <- read.csv('~/scratch/gj1_fig_one_c/current/table.csv')
-
-  print(unique(tbl.b$aligner))
+  tbl.a <<- read.csv('~/scratch/gj1_fig_one_a/current/table.csv')
+  tbl.b <<- read.csv('~/scratch/gj1_fig_one_b/current/table.csv')
+  #tbl.c <<- read.csv('~/scratch/gj1_fig_one_c/current/table.csv')
 
   plots <- list(
     a = list(tbl.a),
-    b = list(tbl.b),
-    c = list(tbl.c)
+    b = list(tbl.b)
+#    c = list(tbl.c)
   )
 
   all.tbls <- data.frame()
   for (i in 1:length(plots)) {
     cur.stuff <- plots[[i]]
     cur.tbl <- cur.stuff[[1]]
+
+    cur.tbl[cur.tbl$aligner == 'none', 'aligner'] <- 'True_Alignment'
+
+    print(subset(cur.tbl, length==0.4 & ins_rate==0.1))
 
     cur.tbl <- subset(cur.tbl, analysis == 'SLR Sitewise')
     cur.tbl <- subset(cur.tbl, aligner %in% aligners)
@@ -223,11 +232,11 @@ multi.plot <- function(color.by='tpr_at_fdr',
 
   p <- ggplot(all.tbls, aes(x=length, y=ins_rate*2))
   p <- p + theme_bw()
-  x.brks <- c(0.2, 0.6, 1.0, 1.6, 2.0)
-  y.brks <- c(0, 0.04, 0.08, 0.12, 0.16, 0.20)
-  p <- p + scale_x_continuous('Mean Path Length', breaks=x.brks)
-  p <- p + scale_y_continuous('Indel Rate', breaks=y.brks)
-  p <- p + coord_cartesian(xlim=c(0.1, 2.1), ylim=c(-0.005, 0.205))
+#  x.brks <- c(0.2, 0.6, 1.0, 1.6, 2.0)
+#  y.brks <- c(0, 0.04, 0.08, 0.12, 0.16, 0.20)
+#  p <- p + scale_x_continuous('Mean Path Length', breaks=x.brks)
+#  p <- p + scale_y_continuous('Indel Rate', breaks=y.brks)
+#  p <- p + coord_cartesian(xlim=c(0.1, 2.1), ylim=c(-0.005, 0.205))
 
   p <- p + geom_tile(aes(fill=z_val))
 #  p <- p + geom_rect(size=1, data=rect.df, fill=rgb(0,0,0,alpha=0), aes(xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax), colour='black')
@@ -241,12 +250,12 @@ multi.plot <- function(color.by='tpr_at_fdr',
   p <- p + scale_fill_gradientn(z.val, colours=clrs, limits=clr.lim, breaks=breaks)
   p <- p + facet_grid(aligner ~ tree)
   p <- p + opts(
-    legend.position='none',
-    panel.grid.major = theme_blank(),
-    panel.grid.minor = theme_blank(),
-    strip.text.x = theme_blank(),
-    strip.text.y = theme_blank(),
-    strip.background = theme_blank(),
+#    legend.position='none',
+#    panel.grid.major = theme_blank(),
+#    panel.grid.minor = theme_blank(),
+#    strip.text.x = theme_blank(),
+#    strip.text.y = theme_blank(),
+#    strip.background = theme_blank(),
     axis.title.x = theme_blank(),
     axis.title.y = theme_blank()
   )

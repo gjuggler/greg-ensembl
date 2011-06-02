@@ -48,11 +48,16 @@ GetOptions(
 die("No experiment name given!") unless (defined $experiment_name);
 
 # First create a database for the experiment.
-my $url = 'mysql://ensadmin:ensembl@ens-research/gj1_slrsim';
+my $mysql_base = 'mysql://ensadmin:ensembl@ens-research/';
+if (Bio::Greg::EslrUtils->is_ebi) {
+  $mysql_base = 'mysql://slrsim:slrsim@mysql-greg.ebi.ac.uk:4134/';
+}
+
+my $url = "${mysql_base}gj1_slrsim";
 my $dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new( -url => $url );
 $dba->dbc->do("create database if not exists gj1_${experiment_name};");
 
-$url = 'mysql://ensadmin:ensembl@ens-research/' . "gj1_${experiment_name}";
+$url = $mysql_base . "gj1_${experiment_name}";
 my $h = new Bio::Greg::Hive::ComparaHiveLoaderUtils;
 $h->init($url);
 $h->init_compara_tables;
@@ -88,14 +93,14 @@ sub load_tree {
   my $logic_name  = "LoadTree";
   my $module      = "Bio::Greg::Slrsim::LoadTree";
   my $params      = {};
-  $h->create_analysis( $logic_name, $module, $params, 100, 1 );
+  $h->create_analysis( $logic_name, $module, $params, 50, 1 );
 }
 
 sub slrsim {
   my $logic_name = "Slrsim";
   my $module     = "Bio::Greg::Slrsim::Slrsim";
   my $params     = {};
-  $h->create_analysis( $logic_name, $module, $params, 700, 1 );
+  $h->create_analysis( $logic_name, $module, $params, 150, 1 );
 }
 
 sub plots {
