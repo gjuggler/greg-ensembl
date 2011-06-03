@@ -5,6 +5,7 @@ use Bio::EnsEMBL::Hive::Process;
 use Bio::Greg::Hive::Process;
 use File::Path;
 use File::Copy;
+use File::Basename;
 use FreezeThaw qw(freeze thaw cmpStr safeFreeze cmpStrHard);
 
 use base (
@@ -24,7 +25,6 @@ sub param_defaults {
   my $alignment_scores = Bio::Greg::Hive::AlignmentScores::param_defaults;
   my $phylo_analysis = Bio::Greg::Hive::PhyloAnalysis::param_defaults;
 
-
   return $self->replace($phylosim, $align, $alignment_scores, $phylo_analysis, {
     genes_table                        => 'genes',
     sites_table                        => 'sites',
@@ -37,11 +37,27 @@ sub fetch_input {
 
   $self->load_all_params();
 
+  # Load params from the params txt file.
+  my $params_f = $self->_save_file('params', 'txt');
+  print "  loading params from file [". $params_f->{full_file}."]\n";
+  my $params = $self->thw($params_f->{full_file});
+
+  #$self->hash_print($self->params);
+  #$self->hash_print($params);
+
+  foreach my $key (keys %$params) {
+    if ($params->{$key} ne $self->param($key)) {
+      $self->param($key, $params->{$key});
+    }
+  }
+
   $self->create_table_from_params( $self->compara_dba, $self->param('sites_table'),
                                    $self->_sites_table_structure );
   
   $self->create_table_from_params( $self->compara_dba, $self->param('genes_table'),
                                    $self->_genes_table_structure );
+
+  $self->dbc->disconnect_when_inactive(1);
 
 #  print $self->get_output_folder."\n";
 #  my $data_file = $self->get_output_folder . "/data.tar.gz";
@@ -51,7 +67,7 @@ sub fetch_input {
 sub run {
   my $self = shift;
 
-  $self->param('force_recalc', 0);
+#  $self->param('force_recalc', 0);
 #  $self->param('filter', 'none');
 #  $self->param('maximum_mask_fraction', 0.6);
 #  $self->param('alignment_score_filtering', 1);
@@ -100,6 +116,9 @@ sub _simulate_alignment {
 
   my $out_f = $self->_save_file('sim', 'perlobj');
   my $out_file = $out_f->{full_file};
+
+  print "OUTFILE: $out_file\n";
+
   $self->param('sim_file', $out_f->{rel_file});
 
   # Copy the cached aln over if it makes sense.
@@ -107,31 +126,25 @@ sub _simulate_alignment {
   $self->param('cached_sim', $cached_sim);
   if (!-e $out_file && -e $cached_sim) {
     print "  copying cached simulation...\n";
-    mkpath($out_file);
     copy($cached_sim, $out_file) or die("Error copying cached alignment!");
   }
   
   if (!-e $out_file || $self->param('force_recalc')) {
     print "  running simulation\n";
     my $obj = $self->simulate_alignment($tree);
-    my $str = freeze($obj);
-    open(OUT,">$out_file");
-    print OUT freeze($obj);
-    close(OUT);
+    $self->frz($out_file, $obj);
   } else {
     print "  loading simulated aln from file [$out_file]\n";
   }
 
   if (!-e $cached_sim) {
     print "  copying simulation to cache..\n";
+    mkpath(dirname($cached_sim));
     copy($out_file, $cached_sim) or die("Error copying cached simulation!");
   }
+  print "FILE: $out_file\n";
 
-  open(IN, $out_file);
-  my @lines = <IN>;
-  close(IN);
-
-  my ($obj) = thaw(join('',@lines));
+  my $obj = $self->thw($out_file);
   return $obj;
 }
 
@@ -140,6 +153,9 @@ sub _align {
   my $tree = shift;
   my $true_aln = shift;
   my $true_pep_aln = shift;
+
+  $self->pretty_print($true_aln);
+  $self->pretty_print($true_pep_aln);
 
   my $out_f = $self->_save_file('inferred_aln', 'fasta');
   my $out_file = $out_f->{full_file};
@@ -150,7 +166,6 @@ sub _align {
   $self->param('cached_aln', $cached_aln);
   if (!-e $out_file && -e $cached_aln) {
     print "  copying cached alignment...\n";
-    mkpath($out_file);
     copy($cached_aln, $out_file) or die("Error copying cached alignment!");
   }
   
@@ -165,6 +180,7 @@ sub _align {
 
   if (!-e $cached_aln) {
     print "  copying alignment to cache..\n";
+    mkpath(dirname($cached_aln));
     copy($out_file, $cached_aln) or die("Error copying cached alignment!");
   }
 
@@ -177,12 +193,12 @@ sub _cached_file {
   my $filename = shift;
 
   # Caching: common aligned files for each indel/mpl/rep
-  my $aln_id = join('_', ($self->param('slrsim_rep') , $self->param('slrsim_tree_mean_path') , $self->param('phylosim_insertrate')));
+  my $aln_id = $self->param('slrsim_label').'_'.$self->param('slrsim_rep');
   my $f = $self->get_output_folder . '/common';
   my $rep = $self->param('slrsim_rep');
   my $cache_aln_dir = $f . "/$rep";
   mkpath($cache_aln_dir);
-  my $cache_aln_f = $cache_aln_dir."/".$filename;
+  my $cache_aln_f = $cache_aln_dir."/".$aln_id."_".$filename;
 
   return $cache_aln_f;
 }
@@ -484,7 +500,7 @@ sub _genes_table_structure {
     masked_aln_file => 'string',
     sitewise_file => 'string',
 
-    unique_keys              => 'node_id'
+    unique_keys              => 'node_id,slrsim_rep'
   };
   return $structure;
 }
@@ -492,6 +508,7 @@ sub _genes_table_structure {
 sub _sites_table_structure {
   my $structure = {
     node_id          => 'int',
+    slrsim_rep => 'int',
 
     # Site-wise stuff.
     aln_position => 'int',
@@ -509,7 +526,7 @@ sub _sites_table_structure {
     aln_note       => 'char16',
     lrt_stat => 'float',
 
-    unique_keys => 'node_id,aln_position'
+    unique_keys => 'node_id,slrsim_rep,aln_position'
   };
   return $structure;
 }

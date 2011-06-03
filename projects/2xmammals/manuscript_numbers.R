@@ -119,7 +119,13 @@ classify.genes <- function(sites) {
   domain.types <- orderBy(~-pos.f,data=domain.types)
 
   assign('domain.types',domain.types,envir=.GlobalEnv)
-#  assign('gene.types',gene.types,envir=.GlobalEnv)
+  assign('gene.types',gene.types,envir=.GlobalEnv)
+
+  good.domains <- subset(domain.types, n.genes > 5 & n > 500)
+  sorted.domains <- good.domains
+
+  sorted.domains <- orderBy(~ -pos.f, data=sorted.domains)
+  assign('pos.domains',sorted.domains,envir=.GlobalEnv)
 }
 
 summarize.sites.sets <- function() {

@@ -19,12 +19,12 @@ paper.table <- function(df) {
   row <- df[1,]
 
   ret.df <- data.frame(
+    label = row$label,
     tree     = row$tree,
     analysis = row$analysis,
-    aligner  = row$aligner,
     length   = row$tree_length,
     ins_rate    = row$ins_rate,
-    del_rate    = row$del_rate,
+    aligner  = row$aligner,
     filter   = row$filter,
 
     auc      = rrow$auc,
@@ -52,12 +52,10 @@ paper.table <- function(df) {
     `n_sites` = nrow(roc)
   )
 
-  #print(ret.df[, c('tree', 'analysis', 'thresh_at_q', 'thresh_at_fpr', 'thresh_at_fdr')])
+  #aln.acc.df <- df.alignment.accuracy(df)
+  #ret.df <- cbind(ret.df, aln.acc.df)
 
-  aln.acc.df <- df.alignment.accuracy(df)
-  ret.df <- cbind(ret.df, aln.acc.df)
-
-  ret.df <- ret.df[with(ret.df, order(tree,aligner,length,ins_rate,filter)),]
+  ret.df <- ret.df[with(ret.df, order(tree, analysis, length, ins_rate, aligner, filter)),]
   return(ret.df)
 }
 
@@ -190,6 +188,7 @@ slr.roc = function(df, na.rm=T, na.value=-9999) {
   }
 
   print(paste("  slr.roc ",df[1,'slrsim_label']))
+  print(nrow(df))
   return(df)
 }
 
@@ -255,7 +254,6 @@ add.pval <- function(df) {
   } else {
     df$pval <- 1 - pchisq(abs(df[,'lrt_stat']),1)
     df$pval <- df$pval / 2 # Divide p-values by 2 since we're only looking at one side of chi-sq.
-    print(nrow(subset(df, is.na(aln_dnds))))
     if (sum(df$aln_dnds < 1) > 0) {
       df[df$aln_dnds < 1, 'pval' ] <- 1 # Sites with dN/dS estimated below 1 get a p-value of 1.
     }

@@ -23,19 +23,17 @@ sub run {
   my $tree_string = $self->param('tree_string');
   my $tree = Bio::EnsEMBL::Compara::TreeUtils->from_newick($tree_string);
 
+  my $node_id = $self->_load_tree($tree);
+
   foreach my $i (1 .. $num_reps) {
     $self->param('slrsim_rep', $i);
-    $self->load_tree_into_database($tree,$i,$self->params);
+    $self->fan_reps($tree, $node_id, $i, $self->params);
   }
-
-
 }
 
-sub load_tree_into_database {
-  my $self    = shift;
-  my $tree    = shift;
-  my $sim_rep = shift;
-  my $params  = shift;
+sub _load_tree {
+  my $self = shift;
+  my $tree = shift;
 
   my $mba = $self->compara_dba->get_MemberAdaptor;
   my $pta = $self->compara_dba->get_ProteinTreeAdaptor;
@@ -44,6 +42,8 @@ sub load_tree_into_database {
 
   my $ug = new Data::UUID;
   my $unique_string = $ug->create_str();
+
+  my $params = $self->params;
 
   my $tree_mult = $params->{'slrsim_tree_mult'};
   if ($tree_mult) {
@@ -65,6 +65,7 @@ sub load_tree_into_database {
   }
 
   my $final_length = Bio::EnsEMBL::Compara::TreeUtils->total_distance($node);
+  $self->param('slrsim_tree_length', $final_length);
 
   print "Final lenth: $final_length\n";
 
@@ -80,29 +81,44 @@ sub load_tree_into_database {
   $pta->store($node);
 
   my $node_id = $node->node_id;
+
+  $node->release_tree;
+
+  return $node_id;
+}
+
+sub fan_reps {
+  my $self    = shift;
+  my $tree    = shift;
+  my $node_id = shift;
+  my $sim_rep = shift;
+  my $params  = shift;
+
   print " -> Node ID: $node_id\n";
   $self->param( 'node_id', $node_id );
 
   $params->{'slrsim_rep'}         = $sim_rep;
-  $params->{'slrsim_tree_length'} = $final_length;
   delete $params->{'slrsim_tree_lengths'};
   delete $params->{'tree_string'};
   delete $params->{'output_folder'};
 
   $self->hash_print($params);
 
-  # Store all parameters as tags.
-  # This is important -- it's how the parameters are getting to the main
-  # Slrsim.pm runnable!
-  foreach my $tag ( sort keys %{$params} ) {
-    $self->store_tag( $tag, $params->{$tag} );
-    sleep(0.05);
-  }
+  my $params_file = $params->{slrsim_label} . "_params_" . $params->{slrsim_rep};
+  my $file_params = {
+    id => $params->{slrsim_label},
+    filename => $params_file,
+    extension => 'txt',
+    subfolder => 'data'
+  };
+  my $f = $self->save_file($file_params);
+  print "Full file: ".$f->{full_file}."\n";
+  $self->frz($f->{full_file}, $params);
 
   my $output_params = {
-    node_id          => $node_id,
-    parameter_set_id => $self->parameter_set_id,
-    experiment_name  => $params->{'experiment_name'}
+    node_id => $node_id,
+    slrsim_rep => $params->{slrsim_rep},
+    slrsim_label => $params->{slrsim_label}
   };
   my $data_id = $self->new_data_id($output_params);
   $output_params->{data_id} = $data_id;
@@ -110,7 +126,6 @@ sub load_tree_into_database {
   my ($job_id) = @{ $self->dataflow_output_id( $output_params, 1 ) };
   print "  -> Created job: $job_id \n";
 
-  $node->release_tree;
 }
 
 

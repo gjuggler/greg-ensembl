@@ -508,12 +508,13 @@ subset.densities <- function(files,direction='up') {
   list.of.term.lists <- get.term.groups()
   list.of.term.lists[['all']] <- c('')
 #  list.of.term.lists[['clark']] <- c('')
-  print(list.of.term.lists)
+#  print(list.of.term.lists)
 
   all.data <- data.frame()
   for (file in files) {
-#    data <- read.csv(file,header=T)
     load(file)
+#    data <- read.csv(file,header=T)
+    data <- data[,c('Hsap_protein','name','lrt.signed')]
     data$filename <- file
     if (direction == 'none') {
       data$rank <- rank(abs(data$lrt.signed))
@@ -523,11 +524,12 @@ subset.densities <- function(files,direction='up') {
     all.data <- rbind(all.data,data)
   }
   file <- 'subset.densities'
-
   clark.genes <- read.table('clark 2005 genes.txt',sep="\t",stringsAsFactors=F,header=T)
 
   each.df <- ddply(all.data, .(filename), function(data) {
-    print(nrow(data))
+    ks <- data.frame(p.value = 1)
+    ws <- data.frame(p.value = 1)
+
     term.names <- names(list.of.term.lists)
     terms.df <- ldply(term.names, function(x) {
       ret.df <- data.frame()
@@ -539,6 +541,7 @@ subset.densities <- function(files,direction='up') {
       } else {
         term.list <- list.of.term.lists[x]
         rows <- getRowsForTerms(go.data,data,term.list)
+        print(paste(data[1,]$filename,x,nrow(rows)))
       }
       if (nrow(rows) > 0) {
         if (direction == 'none') {
@@ -546,12 +549,16 @@ subset.densities <- function(files,direction='up') {
           ws <- wilcox.test(rows$rank,data$rank)
         } else if (direction == 'up') {
           rows <- subset(rows,lrt.signed > 0)
-          ks <- ks.test(rows$rank,data[data$lrt.signed > 0,]$rank,alternative='l')
-          ws <- wilcox.test(rows$rank,data[data$lrt.signed > 0,]$rank,alternative='g')
+          if (nrow(rows) > 0) {
+            ks <- ks.test(rows$rank,data[data$lrt.signed > 0,]$rank,alternative='l')
+            ws <- wilcox.test(rows$rank,data[data$lrt.signed > 0,]$rank,alternative='g')
+          }
         } else {
           rows <- subset(rows,lrt.signed < 0)
-          ks <- ks.test(rows$rank,data[data$lrt.signed < 0,]$rank,alternative='g')
-          ws <- wilcox.test(rows$rank,data[data$lrt.signed < 0,]$rank,alternative='l')
+          if (nrow(rows) > 0) {
+            ks <- ks.test(rows$rank,data[data$lrt.signed < 0,]$rank,alternative='g')
+            ws <- wilcox.test(rows$rank,data[data$lrt.signed < 0,]$rank,alternative='l')
+          }
         }
         
         group.lbl <- paste(x,"\nN = ",nrow(rows),sep="")
@@ -559,7 +566,11 @@ subset.densities <- function(files,direction='up') {
         group.lbl <- paste(group.lbl,"\nMW = ",format.pval(ws$p.value,digits=3),sep="")
   
 #        print(group.lbl)
-        ret.df <- data.frame(rows,group=x,filename=data[1,]$filename,lbl=group.lbl,sig=ks$p.value,sig.ks=ks$p.value,sig.mw=ws$p.value,n=nrow(rows))
+        if (nrow(rows) > 0) {
+          ret.df <- data.frame(rows,group=x,filename=data[1,]$filename,lbl=group.lbl,sig=ks$p.value,sig.ks=ks$p.value,sig.mw=ws$p.value,n=nrow(rows))
+        } else {
+          ret.df <- data.frame(group=x,filename=data[1,]$filename,lbl=group.lbl,sig=ks$p.value,sig.ks=ks$p.value,sig.mw=ws$p.value,n=nrow(rows))
+        }
       }
       return(ret.df)
     })
@@ -571,21 +582,28 @@ subset.densities <- function(files,direction='up') {
 
   file.diffs <- data.frame()
   files <- unique(each.df$filename)
+  print(files)
   groups <- unique(each.df$group)
   for (i in files) {
     for (j in files) {
       for (k in groups) {
+      if (i == '1' || j == '1') {
+        next
+      }
 #        print(i)
+         print(paste(i,j,k))
         rows.i <- subset(each.df,filename==i & group==k)
         rows.j <- subset(each.df,filename==j & group==k)
-        ks <- ks.test(rows.i$rank,rows.j$rank)
-        file.diffs <- rbind(file.diffs,data.frame(
-          file.i = i,
-          file.j = j,
-          group = k,
-          p = ks$p.value
-        ))
-#        print(format.pval(ks$p.value,digits=3))
+        if (nrow(rows.i) > 0 && nrow(rows.j) > 0) {
+          ks <- ks.test(rows.i$rank,rows.j$rank)
+          file.diffs <- rbind(file.diffs,data.frame(
+            file.i = i,
+            file.j = j,
+            group = k,
+            p = ks$p.value
+          ))
+#         print(format.pval(ks$p.value,digits=3))
+        }
       }
     }
   }
@@ -656,132 +674,6 @@ subset.densities <- function(files,direction='up') {
   dev.off()  
 }
 
-plot.terms <- function(go.data,data,terms,direction='up') {
-  data$rank <- rank(data$lrt.signed)
-
-  terms.df <- ldply(terms, function(term) {
-    ret.df <- data.frame()
-    if (term == 'all') {
-      rows <- data
-    } else if (term == 'clark') {
-      clark.genes <- read.csv('clark 2005 genes.txt',stringsAsFactors=F)
-      rows <- subset(data, Hsap_protein %in% clark.genes$V1)
-    } else {
-      rows <- getRowsForTerms(go.data,data,term)
-    }
-    if (nrow(rows) > 0) {
-      if (direction == 'none') {
-        ks <- ks.test(rows$rank,data$rank)
-        ws <- wilcox.test(rows$rank,data$rank)
-      } else if (direction == 'up') {
-        rows <- subset(rows,lrt.signed > 0)
-        ks <- ks.test(rows$rank,data[data$lrt.signed > 0,]$rank,alternative='l')
-        ws <- wilcox.test(rows$rank,data[data$lrt.signed > 0,]$rank,alternative='g')
-      } else {
-        rows <- subset(rows,lrt.signed < 0)
-        ks <- ks.test(rows$rank,data[data$lrt.signed < 0,]$rank,alternative='g')
-        ws <- wilcox.test(rows$rank,data[data$lrt.signed < 0,]$rank,alternative='l')
-      }
-      
-      group.lbl <- paste(term,"\nN = ",nrow(rows),sep="")
-      group.lbl <- paste(group.lbl,"\nKS = ",format.pval(ks$p.value,digits=3),sep="")
-      group.lbl <- paste(group.lbl,"\nMW = ",format.pval(ws$p.value,digits=3),sep="")
-
-      print(group.lbl)
-      def <- getTermsDefinition(term,'BP',40)
-      ret.df <- data.frame(rows,group=def,lbl=group.lbl,sig=ks$p.value,sig.ks=ks$p.value,sig.mw=ws$p.value,n=nrow(rows))
-    }
-    return(ret.df)
-  })
-
-  print(head(terms.df))
-  p <- ggplot(terms.df,aes(x=rank))
-  p <- p + scale_fill_gradient2(low="red",mid="grey",high="grey",midpoint=-0.8,trans="log10")
-  p <- p + stat_density(aes(
-    ymax = ..scaled.., ymin = -..scaled.., fill=sig),
-    colour = "grey50",
-    geom = "ribbon", position = "identity")
-  p <- p + geom_point(aes(y=0),colour='black',size=1,alpha=0.25,position=position_jitter(height=0))
-  p <- p + geom_text(aes(label=lbl),x=min(terms.df$rank),y=-1,hjust=0,vjust=0,size=2)
-  p <- p + facet_grid(group ~ .)
-  p <- p + opts(strip.text.y = theme_text())
-  return(p)
-}
-
-plot.some.terms <- function() {
-
-  load("lnl_m_Hsap_3_sorted.csv_go_data_up.Rdata")
-  terms <- c('GO:0001525','GO:0006836','GO:0019953','GO:0051216')
-  pdf(file="Ggor.up.terms.pdf")
-  p <- plot.terms(go.data,data,terms,direction='up')
-  print(p)
-  dev.off()
-
-  load("lnl_m_Hsap_3_sorted.csv_go_data_up.Rdata")
-  terms <- c('GO:0043068', 'GO:0050878', 'GO:0007596')
-  pdf(file="Ggor.down.terms.pdf")
-  p <- plot.terms(go.data,data,terms,direction='down')
-  print(p)
-  dev.off()
-
-  load("lnl_m_Hsap_4_sorted.csv_go_data_up.Rdata")
-  terms <- c('GO:0060429','GO:0007605','GO:0048608')
-  pdf(file="Hsap.up.terms.pdf")
-  p <- plot.terms(go.data,data,terms,direction='up')
-  print(p)
-  dev.off()
-
-  load("lnl_m_Hsap_4_sorted.csv_go_data_up.Rdata")
-  terms <- c('GO:0007517', 'GO:0030098', 'GO:0008219')
-  pdf(file="Hsap.down.terms.pdf")
-  p <- plot.terms(go.data,data,terms,direction='down')
-  print(p)
-  dev.off()
-
-  load("lnl_m_Ptro_4_sorted.csv_go_data_up.Rdata")
-  terms <- c('GO:004000','GO:0045087','GO:0005996','GO:0016042')
-  pdf(file="Ptro.up.terms.pdf")
-  p <- plot.terms(go.data,data,terms,direction='up')
-  print(p)
-  dev.off()
-
-  load("lnl_m_Ptro_4_sorted.csv_go_data_up.Rdata")
-  terms <- c('GO:0046058','GO:0006955', 'GO:0007186')
-  pdf(file="Ptro.down.terms.pdf")
-  p <- plot.terms(go.data,data,terms,direction='down')
-  print(p)
-  dev.off()
-
-  load("lnl_m_Hsap_7_sorted.csv_go_data_up.Rdata")
-  terms <- c('GO:0010817', 'GO:0012502', 'GO:0042098', 'GO:0030154', 'GO:0009790')
-  pdf(file="AAb.up.terms.pdf")
-  p <- plot.terms(go.data,data,terms,direction='up')
-  print(p)
-  dev.off()
-
-  load("lnl_m_Hsap_7_sorted.csv_go_data_up.Rdata")
-  terms <- c('GO:0031326', 'GO:0048705', 'GO:0008064')
-  pdf(file="AAb.down.terms.pdf")
-  p <- plot.terms(go.data,data,terms,direction='down')
-  print(p)
-  dev.off()
-
-  load("lnl_m_Hsap_8_sorted.csv_go_data_up.Rdata")
-  terms <- c('GO:0001501','GO:0030154','GO:0001503','GO:0048699')
-  pdf(file="AAc.up.terms.pdf")
-  p <- plot.terms(go.data,data,terms,direction='up')
-  print(p)
-  dev.off()
-
-  load("lnl_m_Hsap_8_sorted.csv_go_data_up.Rdata")
-  terms <- c('GO:0008015', 'GO:0010517', 'GO:0051480')
-  pdf(file="AAc.down.terms.pdf")
-  p <- plot.terms(go.data,data,terms,direction='down')
-  print(p)
-  dev.off()
-
-
-}
 
 do.a.bunch.of.enrichments <- function() {
   file.names <- c()
@@ -820,6 +712,12 @@ do.a.bunch.of.enrichments <- function() {
 
 test.sig.diffs <- function() {
   files <- c(
+#    'chimp_sorted.csv',
+#    'human_sorted.csv',
+#    'gorilla_sorted.csv',
+#    'gc_parallel_sorted.csv',
+#    'hc_parallel_sorted.csv',
+#    'gh_parallel_sorted.csv',
     "lnl_m_Hsap_3_sorted.csv",
     "lnl_m_Hsap_4_sorted.csv",
     "lnl_m_Ptro_4_sorted.csv",
@@ -827,9 +725,11 @@ test.sig.diffs <- function() {
     "lnl_m_Hsap_8_sorted.csv"
   )
 
+  files <- paste(files,'_go_data_up.Rdata',sep='')
+
   subset.densities(files,'up')
   subset.densities(files,'down')
-  subset.densities(files,'none')
+#  subset.densities(files,'none')
 }
 
 cor.enrichments <- function(file.a,file.b) {

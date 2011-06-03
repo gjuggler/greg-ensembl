@@ -77,7 +77,7 @@ get.all.data = function(sites.cols=NULL,genes.cols=NULL,where=NULL) {
     'g.slrsim_tree_file',
     'g.slrsim_rep',
     'g.tree_total_length',
-    'g.tree_mean_path',
+    'g.slrsim_tree_mean_path',
     'g.unmasked_residue_count',
     'g.residue_count',
     'g.sum_of_pairs_score',
@@ -119,7 +119,7 @@ get.all.data = function(sites.cols=NULL,genes.cols=NULL,where=NULL) {
     c('slrsim_tree_file', 'tree'),
     c('slrsim_analysis_name', 'analysis'),
     c('alignment_name', 'aligner'),
-    c('tree_mean_path', 'tree_length'),
+    c('slrsim_tree_mean_path', 'tree_length'),
     c('phylosim_insertrate', 'ins_rate'),
     c('phylosim_deleterate', 'del_rate')
   )
@@ -135,15 +135,32 @@ get.all.data = function(sites.cols=NULL,genes.cols=NULL,where=NULL) {
   return(all)
 }
 
+get.all.sites <- function() {
+  query <- sprintf("select * from sites;")
+  all <- get.vector(con,query,columns='all')
+
+  if (max(all$lrt_stat, na.rm=T) > 1.1) {
+    all[, 'lrt_stat'] <- all[, 'lrt_stat'] * sign(all[, 'aln_dnds'] - .9999)
+  }
+
+  return(all)                          
+}
+
 get.all.genes <- function() {
   query <- sprintf("select * from genes;")
   all <- get.vector(con,query,columns='all')
+  
+  all$aligner <- NULL
+  all$filter <- NULL
+
   new.col.names <- list(
+    c('slrsim_label', 'label'),
     c('slrsim_tree_file', 'tree'),
     c('slrsim_analysis_name', 'analysis'),
-    c('tree_mean_path', 'tree_length'),
+    c('slrsim_tree_mean_path', 'tree_length'),
     c('phylosim_insertrate', 'ins_rate'),
-    c('phylosim_deleterate', 'del_rate')
+    c('alignment_name', 'aligner'),
+    c('filtering_name', 'filter')
   )
   all <- rename.cols(all, new.col.names)
   return(all)                          

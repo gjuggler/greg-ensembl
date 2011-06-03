@@ -80,20 +80,33 @@ sub dump_data {
 
   my $sites_f = $self->param('output_folder') . '/sites.Rdata';
   my $genes_f = $self->param('output_folder') . '/genes.Rdata';
-  my $collect_script   = $self->collect_script;
+  my $merged_f = $self->param('output_folder') . '/merged.Rdata'; 
+ my $collect_script   = $self->collect_script;
   my $functions_script   = $self->functions_script;
 
   my $dbname = $self->dbc->dbname;
 
-  if ( !-e $sites_f || !-e $genes_f) {
+  if ( !-e $sites_f || !-e $genes_f || !-e $merged_f) {
     my $rcmd = qq^
 dbname="$dbname"
 source("${collect_script}")
 source("${functions_script}")
-sites <- get.all.data()
+sites <- get.all.sites()
 genes <- get.all.genes()
-save(sites, genes, file="${sites_f}");
+save(sites, file="${sites_f}");
 save(genes, file="${genes_f}");
+
+print(head(genes))
+print(head(sites))
+
+print("merging sites & genes...")
+
+merge.by <- c('node_id', 'slrsim_rep')
+keep.gene.cols <- c('label', 'tree', 'analysis', 'tree_length', 'ins_rate', 'aligner', 'filter')
+x <- genes[, c(keep.gene.cols, merge.by)]
+merged <- merge(x, sites, by=merge.by)
+print(head(merged))
+save(merged, file="${merged_f}");
 ^;
     #print "$rcmd\n";
     my $params = {};
@@ -107,7 +120,7 @@ sub slrsim_table {
   my $self = shift;
 
   my $folder = $self->get_output_folder;
-  my $file = "${folder}/sites.Rdata";
+  my $file = "${folder}/merged.Rdata";
   my $functions = $self->base . "/projects/slrsim/slrsim.functions.R";
   my $table_file = "${folder}/table.csv";
 
@@ -117,9 +130,9 @@ my $rcmd = qq^
 source("${functions}")
 load("${file}")
 
-sites[, 'slrsim_label'] <- paste( sites[, 'slrsim_label'], sites[, 'analysis'], sep='_')
+merged[, 'slrsim_label'] <- paste( merged[, 'label'], merged[, 'analysis'], sep='_')
 
-paper.df <- ddply(sites, .(slrsim_label), paper.table)
+paper.df <- ddply(merged, .(slrsim_label), paper.table)
 paper.df <- format.numeric.df(paper.df, digits=3)
 write.csv(paper.df, file="${table_file}", row.names=F, quote=F)
 ^;
