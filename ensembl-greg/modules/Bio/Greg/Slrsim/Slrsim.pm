@@ -312,11 +312,15 @@ sub _collect_and_store_results {
 
   #$self->dbc->do('LOCK TABLES sites WRITE');
   #$self->dbc->do('UNLOCK TABLES');
-
-  my $aln_scores_calc = Bio::EnsEMBL::Compara::AlignUtils->_correct_subtree_calc($treeI, $true_pep_aln, $pep_aln);
-  my @aln_entropies = Bio::EnsEMBL::Compara::AlignUtils->column_entropies($aln);
-  my @aln_aligned = @{$aln_scores_calc->{aligned_branchlengths}};
-  my @aln_match = @{$aln_scores_calc->{match_branchlengths}};
+  
+  my $aln_scores_calc;
+  my @aln_entropies;
+  my @aln_aligned;
+  my @aln_match;
+#  my $aln_scores_calc = Bio::EnsEMBL::Compara::AlignUtils->_correct_subtree_calc($treeI, $true_pep_aln, $pep_aln);
+#  my @aln_entropies = Bio::EnsEMBL::Compara::AlignUtils->column_entropies($aln);
+#  my @aln_aligned = @{$aln_scores_calc->{aligned_branchlengths}};
+#  my @aln_match = @{$aln_scores_calc->{match_branchlengths}};
 
   foreach my $seq_position ( 1 .. length($seq_str) ) {
     my $true_column = $true_pep_aln->column_from_residue_number( $id, $seq_position );
@@ -347,9 +351,15 @@ sub _collect_and_store_results {
     $obj->{aln_dnds_lower} = $sitewise_hash->{$aln_column}->{'omega_lower'} || '';
     $obj->{aln_dnds_upper} = $sitewise_hash->{$aln_column}->{'omega_upper'} || '';
 
-    $obj->{entropy} = $aln_entropies[$aln_column-1];
-    $obj->{bl_aligned} = $aln_aligned[$aln_column-1];    
-    $obj->{bl_match} = $aln_match[$aln_column-1];
+    if (defined @aln_entropies) {
+#    $obj->{entropy} = $aln_entropies[$aln_column-1];
+    }
+    if (defined @aln_aligned) {
+#    $obj->{bl_aligned} = $aln_aligned[$aln_column-1];    
+    }
+    if (defined @aln_match) {
+#    $obj->{bl_match} = $aln_match[$aln_column-1];
+    }
 
     $obj->{aln_position} = $aln_column;
     $obj->{seq_position} = $seq_position;
@@ -361,8 +371,9 @@ sub _collect_and_store_results {
     
     my $params = $self->params;
     $params = $self->replace($params, $obj);
-    #printf "%d %d %f %f\n", $true_column, $aln_column, $obj->{true_dnds}, $obj->{lrt_stat} if ($seq_position < 20);
+    printf "%d %d %f %f\n", $true_column, $aln_column, $obj->{true_dnds}, $obj->{lrt_stat} if ($seq_position < 20 || $seq_position > length($seq_str)-20);
     $self->store_params_in_table( $self->dbc, $self->param('sites_table'), $params );
+    sleep(0.1);
   }
 
   # Collect some alignment-wide calculations.
@@ -371,27 +382,33 @@ sub _collect_and_store_results {
   $self->param('aln_length', $aln_length);
 
   # Mean branch lengths.
-  my $aligned_per_site = $aln_scores_calc->{aligned_bl} / $aln_length;
-  my $match_per_site = $aln_scores_calc->{match_bl} / $aln_length;
-  my $mismatch_per_site = $aln_scores_calc->{mismatch_bl} / $aln_length;
-  $self->param('mean_bl_aligned', $aligned_per_site);
-  $self->param('mean_bl_match', $match_per_site);
-  $self->param('mean_bl_mismatch', $mismatch_per_site);
+  if (defined $aln_scores_calc) {
+    my $aligned_per_site = $aln_scores_calc->{aligned_bl} / $aln_length;
+    my $match_per_site = $aln_scores_calc->{match_bl} / $aln_length;
+    my $mismatch_per_site = $aln_scores_calc->{mismatch_bl} / $aln_length;
+    $self->param('mean_bl_aligned', $aligned_per_site);
+    $self->param('mean_bl_match', $match_per_site);
+    $self->param('mean_bl_mismatch', $mismatch_per_site);
+  }
 
-  my $sps = Bio::EnsEMBL::Compara::AlignUtils->sum_of_pairs_score($true_pep_aln, $pep_aln);
-  $self->param('sum_of_pairs_score', $sps);
-  my $tcs = Bio::EnsEMBL::Compara::AlignUtils->total_column_score($true_pep_aln, $pep_aln);
-  $self->param('total_column_score', $tcs);
-  my $match_bl_score = $aln_scores_calc->{match_bl} / $aln_scores_calc->{aligned_bl};
-  $self->param('match_bl_score', $match_bl_score);
-  my $mismatch_bl_score = $aln_scores_calc->{mismatch_bl} / $aln_scores_calc->{aligned_bl};
-  $self->param('mismatch_bl_score', $mismatch_bl_score);
+  my $do_alignment_stats = 0;
+  if ($do_alignment_stats) {
+    my $sps = Bio::EnsEMBL::Compara::AlignUtils->sum_of_pairs_score($true_pep_aln, $pep_aln);
+    $self->param('sum_of_pairs_score', $sps);
+    my $tcs = Bio::EnsEMBL::Compara::AlignUtils->total_column_score($true_pep_aln, $pep_aln);
+    $self->param('total_column_score', $tcs);
+    my $match_bl_score = $aln_scores_calc->{match_bl} / $aln_scores_calc->{aligned_bl};
+    $self->param('match_bl_score', $match_bl_score);
+    my $mismatch_bl_score = $aln_scores_calc->{mismatch_bl} / $aln_scores_calc->{aligned_bl};
+    $self->param('mismatch_bl_score', $mismatch_bl_score);
 #  my $lambda = Bio::EnsEMBL::Compara::AlignUtils->dawg_lambda($pep_aln, $tree, $self->params, $self->worker_temp_directory);
 #  $self->param('lambda', $lambda);
 
-  # Column entropies.
-  my $ce_aln = Bio::EnsEMBL::Compara::AlignUtils->average_column_entropy($aln);
-  $self->param('mean_entropy', $ce_aln);
+    # Column entropies.
+    my $ce_aln = Bio::EnsEMBL::Compara::AlignUtils->average_column_entropy($aln);
+    $self->param('mean_entropy', $ce_aln);
+
+  }
 
   # Masked fraction.
   my $unmasked_n = Bio::EnsEMBL::Compara::AlignUtils->count_residues($unfiltered_pep_aln);
