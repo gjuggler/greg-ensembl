@@ -5,8 +5,12 @@ use Bio::Greg::Codeml;
 use Bio::Greg::Hive::PhyloAnalysis;
 use File::Path;
 
-use base ( 'Bio::Greg::Hive::Process', 'Bio::Greg::Hive::PhyloAnalysis', 'Bio::Greg::StatsCollectionUtils',
-  'Bio::Greg::Hive::Align');
+use base (
+  'Bio::Greg::Hive::Process', 
+  'Bio::Greg::Hive::PhyloAnalysis', 
+  'Bio::Greg::StatsCollectionUtils',
+  'Bio::Greg::Hive::Align',
+  'Bio::Greg::Hive::CountSubstitutions');
 
 my $TREE = 'Bio::EnsEMBL::Compara::TreeUtils';
 
@@ -14,7 +18,7 @@ sub param_defaults {
   return {
     aln_type                    => 'genomic_mammals',
     output_table => 'stats_windows',
-    window_sizes => '10,30,50,100,9999'
+    window_sizes => '30,9999'
   };
 }
 
@@ -43,6 +47,11 @@ sub run {
   my $params = $self->params;
   my $tree   = $self->get_tree;
 
+  $self->param('force_recalc', 0);
+
+  # IMPORTANT - set our data_id to the current node ID.
+  $self->param('data_id', $self->param('node_id'));
+
   $params->{'fail_on_altered_tree'} = 0;
 
   $self->param( 'reference_species', 9606 );
@@ -62,6 +71,7 @@ sub run {
 
   die("No ref member!") unless (defined $ref_member);
   $self->param('ref_member_id',$ref_member->stable_id);
+  $self->param('ref_member', $ref_member);
 
   my $gene_name = $ref_member->get_Gene->external_name || $ref_member->gene_member->stable_id;
   $self->param('gene_name',$gene_name);
@@ -69,8 +79,19 @@ sub run {
 
   my $c_dba = $self->compara_dba;
   my $params = $self->params;
+  print $tree->ascii."\n";
 
   my ($tree, $aln) = $self->_get_aln($tree, $ref_member);
+
+  #print $tree->ascii."\n";
+  #$self->pretty_print($aln, {full => 1});
+
+  #$self->param('force_recalc', 1);
+
+  $aln = $self->_realign($tree, $aln);
+
+  $aln = $self->_mask_aln($tree, $aln);
+  $self->_run_paml($tree, $aln);
 
   my $out_f = $self->_save_file('tree', 'nh');
   my $out_full = $out_f->{full_file};
@@ -81,19 +102,25 @@ sub run {
   my $p_set_id = $self->param('parameter_set_id');
   my $p_short = $self->data_label;
 
+  # Run SLR
   my $sitewise_results = $self->_run_slr($tree, $aln);
+  # Store SLR sitewise
+  my $pep_aln = $self->_tx_aln($aln);
+  $self->store_sitewise($tree, $pep_aln, $sitewise_results, {omega_table => 'slr_sites'});
+
   $self->param('slr_dnds',$sitewise_results->{omega});
   $self->param('slr_kappa',$sitewise_results->{kappa});
 
+  $self->create_table_from_params( $self->dbc, 'genes', $self->genes_table_structure);  
+  $self->store_params_in_table($self->dbc, 'genes', $self->params);
+
+  # Do the windows stuff.
   my $pep_aln = Bio::EnsEMBL::Compara::AlignUtils->translate($aln);
-
-
   # Extract only the site result objects from the sitewise hash.
   my $sites_hash;
   foreach my $i (1 .. $pep_aln->length) {
     $sites_hash->{$i} = $sitewise_results->{$i};
   }
-
 
   # Store windowed p-values.
   my $window_size_string = $self->param('window_sizes');
@@ -102,6 +129,180 @@ sub run {
     $self->run_with_windows($size, $size/2, $aln, $pep_aln, $tree, $ref_member, $sites_hash);
   }
 }
+
+sub _realign {
+  my $self = shift;
+  my $tree = shift;
+  my $aln = shift;
+
+  my $aln_file = $self->_save_file('realigned_aln', 'fasta');
+  my $aln_f = $aln_file->{full_file};
+  if (!-e $aln_f || $self->param('force_recalc')) {
+    print "  realigning with Prank...\n";
+    $self->param('aligner', 'prank_codon');
+    my $pep_aln = $self->_tx_aln($aln);
+    $aln = $self->align($tree, $aln, $pep_aln);
+    Bio::EnsEMBL::Compara::AlignUtils->to_file($aln, $aln_f);
+  }
+  print "  loading re-alignment from file\n";
+  $aln = Bio::EnsEMBL::Compara::AlignUtils->from_file($aln_f);
+  return $aln;
+}
+
+sub _mask_aln {
+  my $self = shift;
+  my $tree = shift;
+  my $aln = shift;
+
+  my $m0 = $self->_save_file('m0_mask', 'perlobj');
+  my $m0_f = $m0->{full_file};
+  if ($self->param('force_recalc') == 1) {
+    unlink($m0_f);
+  }
+  $aln = $self->mask_substitution_runs($tree, $aln, $m0_f);
+
+  my $masked_file = $self->_save_file('masked_aln', 'fasta');
+  my $masked_f = $masked_file->{full_file};
+  if (!-e $masked_f || $self->param('force_recalc')) {
+    Bio::EnsEMBL::Compara::AlignUtils->to_file($aln, $masked_f);
+  }
+  return $aln;
+}
+
+sub _run_paml {
+  my $self = shift;
+  my $tree = shift;
+  my $aln = shift;
+
+  my $m0 = $self->_save_file('m0', 'txt');
+  my $m7 = $self->_save_file('m7', 'txt');
+  my $m8 = $self->_save_file('m8', 'txt');
+
+  $aln = Bio::EnsEMBL::Compara::AlignUtils->copy_aln($aln);
+#  $aln = Bio::EnsEMBL::Compara::AlignUtils->translate_ensembl($aln);
+  $self->pretty_print($aln);
+
+  my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
+#  my $treeI = $self->_get_paml_tree($aln);
+
+  my $res;
+  my $lines;
+  my $params;
+
+  if (!-e $m0->{full_file} || $self->param('force_recalc')) {
+    # M0
+    my $params = {
+      model => 0,
+      fix_blength => 0,
+      getSE => 1,
+      fix_omega => 0,
+      omega => 0.2,
+      Small_Diff => 1e-7
+    };
+    print "  running m0...\n";
+    $res = Bio::Greg::Codeml->branch_model_likelihood( $treeI, $aln, $self->worker_temp_directory, $params );
+    $lines = $res->{lines};
+    _out($m0->{full_file}, $lines);
+  }
+
+  # Copy branch lengths from M0 results to our treeI.
+  $lines = _in($m0->{full_file});
+  my $m0_tree = Bio::Greg::Codeml->parse_codeml_results($lines);
+  Bio::EnsEMBL::Compara::TreeUtils->transfer_branchlengths($m0_tree, $treeI);
+
+  $self->store_subs($tree, $aln, $lines);
+
+  my ($dnds, $dnds_se) = Bio::Greg::Codeml->parse_m0_dnds($lines);
+  $self->param('paml_dnds', $dnds);
+  $self->param('paml_dnds_se', $dnds_se);
+
+  if (!-e $m7->{full_file} || $self->param('force_recalc')) {
+    # M7
+    $params = {
+      model => 0,
+      NSsites => 7,
+      fix_blength => 0,
+      getSE => 1,
+      Small_Diff => 1e-6
+    };
+    print "  running m7...\n";
+    $res = Bio::Greg::Codeml->branch_model_likelihood( $treeI, $aln, $self->worker_temp_directory, $params );
+    $lines = $res->{lines};
+    _out($m7->{full_file}, $lines);
+  }
+
+  $lines = _in($m7->{full_file});
+  my $m7_lnl = Bio::Greg::Codeml->extract_lnL($lines);
+  $self->param('m7_lnl', $m7_lnl);
+
+  if (!-e $m8->{full_file} || $self->param('force_recalc')) {
+    # M8
+    $params = {
+      model => 0,
+      NSsites => 8,
+      fix_blength => 0,
+      omega => 0.3,
+      fix_omega => 0,
+      getSE => 0,
+      Small_Diff => 1e-7
+    };
+    print "  running m8...\n";
+    $res = Bio::Greg::Codeml->branch_model_likelihood( $treeI, $aln, $self->worker_temp_directory, $params );
+    $lines = $res->{lines};
+    _out($m8->{full_file}, $lines);
+  }
+
+  $lines = _in($m8->{full_file});
+  my $m8_lnl = Bio::Greg::Codeml->extract_lnL($lines);
+  $self->param('m8_lnl', $m8_lnl);
+
+  my $pep_aln = $self->_tx_aln($aln);
+  my $sitewise_results = $self->parse_paml_output($tree, $aln, $pep_aln, $lines);
+  $self->store_sitewise($tree, $pep_aln, $sitewise_results, {omega_table => 'paml_sites'});
+
+}
+
+sub _out {
+  my $file = shift;
+  my $lines = shift;
+
+  open(OUT, ">$file");
+  print OUT join("", @$lines) . "\n";
+  close(OUT);
+}
+
+sub _in {
+  my $file = shift;
+  open(IN, $file);
+  my @lines = <IN>;
+  close(IN);
+  return \@lines;
+}
+
+sub _get_paml_tree {
+  my $self = shift;
+  my $aln = shift;
+  
+  my $tree_str = qq^(((((((Human, Chimpanzee), Gorilla), Orangutan), Macaque), Marmoset), Tarsier), (MouseLemur, Bushbaby))^;
+  my $tree = Bio::EnsEMBL::Compara::TreeUtils->from_newick($tree_str);
+  my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
+  
+  foreach my $leaf ($treeI->leaves) {
+    foreach my $i ('', '_1', '_2', '_3') {
+      my $new_child = new $leaf;
+      $new_child->name($leaf->name.$i);
+      
+      $leaf->add_child($new_child);
+    }
+    $leaf->name('');
+  }
+  
+  $tree = Bio::EnsEMBL::Compara::TreeUtils->from_treeI($treeI);
+  $tree = Bio::EnsEMBL::Compara::ComparaUtils->restrict_tree_to_aln($tree, $aln);
+  $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
+  return $treeI;
+}
+
 
 sub _run_slr {
   my $self = shift;
@@ -118,7 +319,7 @@ sub _run_slr {
 
   $self->param('analysis_action', 'slr');
 
-  if (!-e $slr_full_file) {  
+  if (!-e $slr_full_file || $self->param('force_recalc')) {  
     print "  running SLR\n";
     my $output_lines = $self->run_sitewise_analysis($tree, $aln, $pep_aln);
     open(OUT, ">$slr_full_file");
@@ -163,10 +364,6 @@ sub _get_aln {
   my $out_file = $out_f->{full_file};
   $self->param('aln_file', $out_f->{rel_file});
 
-  my $pep_f = $self->_save_file('pep_aln', 'fasta');
-  my $pep_file = $pep_f->{full_file};
-  $self->param('pep_aln_file', $pep_f->{rel_file});
-
   my $c_dba = $self->compara_dba;
 
   if (!-e $out_file) {
@@ -195,11 +392,8 @@ sub _get_aln {
     }
     $aln = Bio::EnsEMBL::Compara::AlignUtils->sort_by_tree($aln,$tree);
     my $pep_aln = Bio::EnsEMBL::Compara::AlignUtils->translate($aln);
-
     Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $aln, { width => 150, full => 1 } ) if ($self->debug);
-
     Bio::EnsEMBL::Compara::AlignUtils->to_file($aln, $out_file);
-    Bio::EnsEMBL::Compara::AlignUtils->to_file($pep_aln, $pep_file);
   } else {
     print "  loading aln from file $out_file\n";
   }
@@ -357,8 +551,6 @@ sub run_with_windows {
     };
     $cur_params = $self->replace($cur_params,$added_params);
     
-    $cur_params->{data_id} = $cur_params->{node_id};
-    
     if ($self->within_hive) {
       $self->store_params_in_table($self->dbc,$self->param('output_table'),$cur_params);
     } else {
@@ -372,6 +564,38 @@ sub run_with_windows {
   }
   
   $self->fail_and_die("No windows covered!") if ($no_windows_yet);
+}
+
+sub genes_table_structure {
+  return {
+    job_id => 'int',
+    data_id => 'int',
+    parameter_set_id => 'int',
+    
+    gene_name => 'string',
+    aln_type => 'char16',
+    parameter_set_name => 'string',
+    parameter_set_shortname => 'char16',
+
+    stable_id_gene => 'string',
+    stable_id_transcript => 'string',
+    stable_id_peptide => 'string',
+
+    slr_dnds => 'float',
+    paml_dnds => 'float',
+    paml_dnds_se => 'float',
+    slr_kappa => 'float',
+
+    m0_lnl => 'float',
+    m7_lnl => 'float',
+    m8_lnl => 'float',
+
+    masked_nucs => 'int',
+    masked_ids => 'string',
+
+    unique_keys => 'data_id,parameter_set_id',
+    
+  };
 }
 
 sub get_table_structure {

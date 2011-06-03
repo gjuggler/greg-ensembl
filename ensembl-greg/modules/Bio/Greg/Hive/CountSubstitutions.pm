@@ -63,9 +63,21 @@ sub run_m0 {
   my $tree = shift;
   my $aln = shift;
 
+  my $m0_params = {
+    model => 0,
+    fix_blength => 0,
+    method => 0,
+    fix_omega => 0,
+    omega => 0.3,
+    getSE => 1,
+    Small_Diff => 1e-7,
+  };
+
   my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
-  my $res = Bio::Greg::Codeml->branch_model_likelihood( $treeI, $aln, $self->worker_temp_directory, $self->params );
-  my $lines = $res->{lines};
+
+  my $lines;
+  my $res = Bio::Greg::Codeml->branch_model_likelihood( $treeI, $aln, $self->worker_temp_directory, $m0_params );
+  $lines = $res->{lines};
   
   return $lines;
 }
@@ -75,11 +87,19 @@ sub store_subs {
   my $tree = shift;
   my $aln = shift;
   my $lines = shift;
+  my $ref_member = shift;
 
-  my ($ref_member) = grep {$_->taxon_id == 9606} $tree->leaves;
-  my $mba = $self->compara_dba->get_MemberAdaptor;
-  $ref_member = $mba->fetch_by_source_stable_id(undef, $ref_member->name);
-  $ref_member->name($ref_member->stable_id);
+  $self->create_table_from_params( $self->compara_dba, 'subs',
+    $self->codon_subs_table_def );
+
+  if (!defined $ref_member) {
+    my ($ref_member) = grep {$_->can('taxon_id') && $_->taxon_id == 9606} $tree->leaves;
+    if (defined $ref_member) {
+      my $mba = $self->compara_dba->get_MemberAdaptor;
+      $ref_member = $mba->fetch_by_source_stable_id(undef, $ref_member->name);
+      $ref_member->name($ref_member->stable_id);
+    }
+  }
 
   my $pep_aln = Bio::EnsEMBL::Compara::AlignUtils->translate($aln);
   my $codeml_tree = Bio::Greg::Codeml->parse_codeml_results($lines);
@@ -136,6 +156,149 @@ sub store_subs {
   return $lines;
 }
 
+sub mask_substitution_runs {
+  my $self = shift;
+  my $tree = shift;
+  my $aln = shift;
+  my $cache_file = shift;
+
+  if (!defined $cache_file) {
+    die("No cache file!");
+  }
+
+  print $tree->ascii."\n";
+
+  $aln = Bio::EnsEMBL::Compara::AlignUtils->copy_aln($aln);
+  my $tree_copy = Bio::EnsEMBL::Compara::TreeUtils->copy_tree($tree);
+  my $aln_copy = Bio::EnsEMBL::Compara::AlignUtils->copy_aln($aln);
+
+  if (!-e $cache_file) {
+
+    print "  calculating mask subs results...\n";
+    my $lines = $self->run_m0($tree_copy, $aln_copy);
+    my @lines = @{$lines};
+    $self->frz($cache_file, $lines);
+  }
+  
+  print "  loading mask subs results from file\n";
+  my $lines = $self->thw($cache_file);
+  my $m0_tree = Bio::Greg::Codeml->parse_codeml_results($lines);
+  
+  # Store substitutions.
+  $self->store_subs($tree_copy, $aln_copy, $lines);
+
+  my @subs = @{$self->param('subs')};
+
+  my $muts;
+  foreach my $s (@subs) {
+    my $key = $s->{leaves_beneath};
+    $muts->{$key} = [] if (!$muts->{$key});
+    push @{$muts->{$key}}, $s;
+  }
+
+  my $pep_aln = $self->_tx_aln($aln);
+  my $to_mask;
+  foreach my $seq ($pep_aln->each_seq) {
+    if (defined $muts->{$seq->id}) {
+      my $dna_seq = Bio::EnsEMBL::Compara::AlignUtils->get_seq_with_id($aln,$seq->id);
+      my $dna_str = $dna_seq->seq;
+      my $str = $seq->seq;
+      my @cur_muts = @{$muts->{$seq->id}};
+
+      my $win_width = 15;
+      for (my $i=1; $i < $pep_aln->length - $win_width; $i++) {
+        my $w_lo = $i;
+        my $w_hi = $i + $win_width;
+        
+        my @ns_subs = grep {
+          ($_->{aln_pos} >= $w_lo &&
+           $_->{aln_pos} < $w_hi &&
+           $_->{mut_nsyn} == 1)
+        } @cur_muts;
+
+        my $win_seq = substr($str,$i-1,$win_width);
+        my $dna_win_seq = substr($dna_str,($i-1)*3,$win_width*3);
+
+        # Find node in paml tree.
+        my $m0_node = $m0_tree->find($seq->id);
+        die "No m0 node!" unless ($m0_node);
+        my $bl = $m0_node->branch_length;
+
+        # Clip to a minimum branch length.
+        my $min_bl = 0.05;
+        $bl = $min_bl if ($bl < $min_bl);
+        
+        # Calc the mean # of n-syn subs per codon per unit branch length
+        my $n_ns = scalar(@ns_subs);
+
+        # Count non-synonymous codons with two or three mutations twice.
+        $n_ns += scalar(grep { $_->{mut_count} > 1 } @ns_subs);
+
+        my $nongap_str = $win_seq;
+        $nongap_str =~ s/[-n]//g;
+        my $n_nongap_codons = int(length($nongap_str));
+        $n_nongap_codons = 1 if ($n_nongap_codons < 1);
+
+        my $ns_per_codon = $n_ns / $n_nongap_codons;
+        my $ns_per_codon_bl = $ns_per_codon / $bl;
+
+        my $max_ns_per_codon_bl = 10;
+        
+        # Decrease the filtering threshold if the current window overlaps a gap.
+        if ($win_seq =~ m/-/g) {
+          $max_ns_per_codon_bl = 5;
+        }
+        # Decrease the threshold even more if the current window overlaps already-masked sequence.
+        if ($win_seq =~ m/x/gi) {
+          $max_ns_per_codon_bl = 5;
+        }
+        
+        if ($win_seq =~ m/x/gi && $win_seq =~ m/-/g) {
+          $max_ns_per_codon_bl = 2.5;
+        }
+
+        #print $seq->id."  " . $win_seq . "  " . $ns_per_codon_bl."\n";
+        
+        if ($ns_per_codon_bl > $max_ns_per_codon_bl
+          ) {
+          print $w_lo."  ". $seq->id."  ".$bl."  ". $ns_per_codon_bl."  ".$ns_per_codon."  ".$n_ns."\n";
+          print "  ".$win_seq."\n";
+          print "  ".$dna_win_seq."\n";
+          foreach my $j ($w_lo .. $w_hi) {
+            $to_mask->{$seq->id." ".$j} = 1;
+          }
+        }
+      }
+    }
+  }
+
+  my $n_masked = 0;
+  my $masked_ids;
+  foreach my $key (sort keys %$to_mask) {
+    my ($id, $aln_pos) = split(' ', $key);    
+    $masked_ids->{$id} = 1;
+    my $seq = Bio::EnsEMBL::Compara::AlignUtils->get_seq_with_id($aln,$id);
+    my $cdna_lo = ($aln_pos-1)*3 + 0;
+    my $cdna_hi = ($aln_pos-1)*3 + 2;
+    
+    my $orig_str = $seq->seq;
+    my ($str, $n) = Bio::EnsEMBL::Compara::AlignUtils->mask_string($orig_str,$cdna_lo,$cdna_hi);
+    $seq->seq($str);
+    $n_masked += $n;
+  }
+  
+  $self->store_param('masked_nucs', $n_masked);
+  $self->store_param('masked_ids', join(', ', sort keys(%{$masked_ids})));
+  
+  return $aln;
+}
+
+sub _tx_aln {
+  my $self = shift;
+  my $aln = shift;
+  return Bio::EnsEMBL::Compara::AlignUtils->translate($aln);
+}
+
 sub _grantham_matrix {
   my $self = shift;
 
@@ -189,19 +352,21 @@ sub extract_substitution_info {
   }
 
   # Store the genomic position in the reference member.
-  my $ref_seq = $aln->get_seq_by_id($ref_member->name);
-  $self->throw("No seq for ref member!") unless ($ref_seq);
-  my $location = $ref_seq->location_from_column($aln_pos);
-  if ($location && $location->location_type ne 'IN-BETWEEN') {
-    my $seq_pos = $location->start;
-    my $coords_obj = $self->get_coords_from_pep_position($ref_member, $seq_pos);
-    $final_params = $self->replace($final_params, $coords_obj);
+  if (defined $ref_member) {
+    my $ref_seq = $aln->get_seq_by_id($ref_member->name);
+    $self->throw("No seq for ref member!") unless ($ref_seq);
+    my $location = $ref_seq->location_from_column($aln_pos);
+    if ($location && $location->location_type ne 'IN-BETWEEN') {
+      my $seq_pos = $location->start;
+      my $coords_obj = $self->get_coords_from_pep_position($ref_member, $seq_pos);
+      $final_params = $self->replace($final_params, $coords_obj);
+    }
   }
-
+  
   # Get the taxon ID of the node (if relevant)
   if ($node->is_Leaf) {
     my ($member) = grep {$_->name eq $node->id} $tree->leaves;
-    if ($member) {
+    if ($member && $member->can('taxon_id')) {
       $final_params->{taxon_id} = $member->taxon_id;
     } else {
       print "No member found for leaf node!\n";
@@ -214,13 +379,19 @@ sub extract_substitution_info {
     my $o = "ENSPPYP0";
     my $macaque = "ENSMMUP0";
     my $marmoset = "ENSCJAP0";
+    my $tarsier = "ENSTYSP0";
+    my $mouse_lemur = "ENSMICP0";
+    my $bushbaby = "ENSOGAP0";
     my $regex_to_tx = {
       "$h" => 9606,
       "$c" => 9598,
       "$g" => 9593,
       "$o" =>  9600,
       "$macaque" => 9544,
-      "$marmoset" => 9483
+      "$marmoset" => 9483,
+      "$tarsier" => 9478,
+      "$mouse_lemur" => 30608,
+      "$bushbaby" => 30611
     };
     my $tx_ids;
     foreach my $ensp (keys %$regex_to_tx) {
@@ -230,12 +401,15 @@ sub extract_substitution_info {
       }
     }
 
-    my $taxon_id;
+    my $taxon_id = 0;
     $taxon_id = 1234 if ($tx_ids->{9606} && $tx_ids->{9598});
     $taxon_id = 207598 if ($tx_ids->{9606} && $tx_ids->{9598} && $tx_ids->{9593});
     $taxon_id = 9604 if ($tx_ids->{9606} && $tx_ids->{9598} && $tx_ids->{9593} && $tx_ids->{9600});
     $taxon_id = 376913 if ($tx_ids->{9606} && $tx_ids->{9598} && $tx_ids->{9593} && $tx_ids->{9600} && $tx_ids->{9544});
     $taxon_id = 9526 if ($tx_ids->{9606} && $tx_ids->{9598} && $tx_ids->{9593} && $tx_ids->{9600} && $tx_ids->{9544} && $tx_ids->{9483});
+    $taxon_id = 10001 if ($tx_ids->{9606} && $tx_ids->{9598} && $tx_ids->{9593} && $tx_ids->{9600} && $tx_ids->{9544} && $tx_ids->{9483} && $tx_ids->{9478});
+    $taxon_id = 10002 if ($tx_ids->{30608} && $tx_ids->{30611});
+    $taxon_id = 10003 if ($tx_ids->{9606} && $tx_ids->{9598} && $tx_ids->{9593} && $tx_ids->{9600} && $tx_ids->{9544} && $tx_ids->{9483} && $tx_ids->{9478} && $tx_ids->{30608} && $tx_ids->{30611});
     $final_params->{taxon_id} = $taxon_id if (defined $taxon_id);
   }
 
@@ -379,7 +553,9 @@ sub _get_sub_pattern {
 
   my $map;
   foreach my $leaf ($tree->leaves) {
-    $map->{$leaf->name} = $leaf->taxon_id;
+    if ($leaf->can('taxon_id')) {
+      $map->{$leaf->name} = $leaf->taxon_id;
+    }
   }
   $pep_aln = Bio::EnsEMBL::Compara::AlignUtils->translate_ids($pep_aln, $map);
   $aln = Bio::EnsEMBL::Compara::AlignUtils->translate_ids($aln, $map);
@@ -391,6 +567,11 @@ sub _get_sub_pattern {
   my ($c_seq) = grep {$_->id == 9598} @seqs;
   my ($g_seq) = grep {$_->id == 9593} @seqs;
   my ($o_seq) = grep {$_->id == 9600} @seqs;
+
+  foreach my $seq ($h_seq, $c_seq, $g_seq, $o_seq) {
+    return undef if (!defined $seq);
+  }
+
   my $h_str = $h_seq->seq;
   my $c_str = $c_seq->seq;
   my $g_str = $g_seq->seq;
