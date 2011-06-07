@@ -138,19 +138,22 @@ sub load_registry {
         -host => 'ens-livemirror',
         -user => 'ensadmin',
         -pass => 'ensembl',
-        #-verbose => 1
+        #-verbose => 1,
       },
       {
         -host => 'ensdb-archive',
         -port => 5304,
         -user => 'ensro',
+#        -user => 'ensadmin',
 #        -pass => 'ensembl',
         #-verbose => 1
       }
       );
     Bio::EnsEMBL::Registry->set_disconnect_when_inactive(1);
-    my $compara_dba = Bio::EnsEMBL::Registry->get_DBAdaptor( 'multi', 'compara' );      
-    printf " >> Using Compara DB at [%s/%s]\n",$compara_dba->dbc->host,$compara_dba->dbc->dbname;
+    my $compara_dba = Bio::EnsEMBL::Registry->get_DBAdaptor( 'multi', 'compara' );
+    if ($compara_dba) {
+      printf " >> Using Compara DB at [%s/%s]\n",$compara_dba->dbc->host,$compara_dba->dbc->dbname;
+    }
   } else {
     #Bio::EnsEMBL::Registry->no_version_check(1);
   }
@@ -1200,7 +1203,7 @@ sub get_one_to_one_ortholog_tree {
     $member = $member->gene_member;
   }
 
-  my $tree = $pta->fetch_by_gene_Member_root_id($member);  
+  my $tree = $pta->fetch_by_gene_Member_root_id($member);
 
   my $orth_types; 
  my $homs = $homology_adaptor->fetch_all_by_Member($member);
@@ -1273,7 +1276,7 @@ sub restrict_tree_to_clade {
     }
   }
 
-  $tree = Bio::EnsEMBL::Compara::TreeUtils->extract_subtree_from_names($tree, \@keep_names);
+  $tree = Bio::EnsEMBL::Compara::TreeUtils->extract_subtree_from_names($tree, \@keep_names, 0);
   return $tree;
 }
 

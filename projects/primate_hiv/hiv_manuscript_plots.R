@@ -21,7 +21,8 @@ run.codeml.analysis <- function() {
 
   for (i in 1:nrow(x)) {
     row <- x[i,]
-    aln.f <- dd.f(paste('data/', row$aln_file, sep=''))
+    print(row) 
+   aln.f <- dd.f(paste('data/', row$aln_file, sep=''))
     print(aln.f)
     
     new.aln.f <- codeml.f(paste(row$gene_name, '.fasta', sep=''))
@@ -30,7 +31,7 @@ run.codeml.analysis <- function() {
     cmd <- sprintf("bsub -q normal \"perl %s/hiv_codeml_tests.pl --aln=%s \"",
       wd.f(''), tools::file_path_as_absolute(new.aln.f))
     print(cmd)
-    system(cmd)
+#    system(cmd)
   }
 }
 
@@ -49,6 +50,7 @@ plot.final.genes <- function() {
 
   for (i in 1:nrow(x)) {
     row <- x[i,]
+    print(row)
     aln.f <- dd.f(paste('data/', row$aln_file, sep=''))
     print(aln.f)
 

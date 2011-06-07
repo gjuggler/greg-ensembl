@@ -16,7 +16,7 @@ my $TREE = 'Bio::EnsEMBL::Compara::TreeUtils';
 
 sub param_defaults {
   return {
-    aln_type                    => 'genomic_mammals',
+    aln_type                    => 'compara',
     output_table => 'stats_windows',
     window_sizes => '30,9999'
   };
@@ -44,8 +44,29 @@ sub data_label {
 sub run {
   my $self = shift;
 
+  my $gene_id = $self->param('gene_id');
+  my $mba = $self->compara_dba->get_MemberAdaptor;
+  my $member = $mba->fetch_by_source_stable_id(undef, $gene_id);
+  my $gene = $member->get_Gene;
+  $self->param('gene_name', $gene->external_name);
+  $self->param('data_id', $member->dbID);
+
+  my $pta = $self->compara_dba->get_ProteinTreeAdaptor;
+  my $protein_tree = $pta->fetch_by_Member_root_id($member);
+  print $protein_tree->ascii."\n";
+
+  my $ortholog_tree = Bio::EnsEMBL::Compara::ComparaUtils->get_one_to_one_ortholog_tree($self->compara_dba, $member, 'ortholog.*');
+  $ortholog_tree = Bio::EnsEMBL::Compara::ComparaUtils->restrict_tree_to_clade($self->compara_dba, $ortholog_tree, 'Primates');
+
+  my $tree = $ortholog_tree;
   my $params = $self->params;
-  my $tree   = $self->get_tree;
+
+#  print $ortholog_tree->ascii."\n";
+
+#  return;
+
+#  my $params = $self->params;
+#  my $tree   = $self->get_tree;
 
   $self->param('force_recalc', 0);
 
@@ -71,6 +92,10 @@ sub run {
 
   die("No ref member!") unless (defined $ref_member);
   $self->param('ref_member_id',$ref_member->stable_id);
+  $self->param('stable_id_gene',$ref_member->get_Gene->stable_id);
+  $self->param('stable_id_transcript',$ref_member->get_Transcript->stable_id);
+  $self->param('stable_id_peptide',$ref_member->stable_id);
+
   $self->param('ref_member', $ref_member);
 
   my $gene_name = $ref_member->get_Gene->external_name || $ref_member->gene_member->stable_id;
@@ -111,6 +136,9 @@ sub run {
   $self->param('slr_dnds',$sitewise_results->{omega});
   $self->param('slr_kappa',$sitewise_results->{kappa});
 
+  $self->param('aln_length', $pep_aln->length);
+  $self->param('seq_length', $ref_member->seq_length);
+
   $self->create_table_from_params( $self->dbc, 'genes', $self->genes_table_structure);  
   $self->store_params_in_table($self->dbc, 'genes', $self->params);
 
@@ -141,7 +169,7 @@ sub _realign {
     print "  realigning with Prank...\n";
     $self->param('aligner', 'prank_codon');
     my $pep_aln = $self->_tx_aln($aln);
-    $aln = $self->align($tree, $aln, $pep_aln);
+    $aln = $self->align(undef, $aln, $pep_aln);
     Bio::EnsEMBL::Compara::AlignUtils->to_file($aln, $aln_f);
   }
   print "  loading re-alignment from file\n";
@@ -179,11 +207,9 @@ sub _run_paml {
   my $m8 = $self->_save_file('m8', 'txt');
 
   $aln = Bio::EnsEMBL::Compara::AlignUtils->copy_aln($aln);
-#  $aln = Bio::EnsEMBL::Compara::AlignUtils->translate_ensembl($aln);
   $self->pretty_print($aln);
 
   my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
-#  my $treeI = $self->_get_paml_tree($aln);
 
   my $res;
   my $lines;
@@ -215,6 +241,9 @@ sub _run_paml {
   my ($dnds, $dnds_se) = Bio::Greg::Codeml->parse_m0_dnds($lines);
   $self->param('paml_dnds', $dnds);
   $self->param('paml_dnds_se', $dnds_se);
+
+  my $m0_lnl = Bio::Greg::Codeml->extract_lnL($lines);
+  $self->param('m0_lnl', $m0_lnl);
 
   if (!-e $m7->{full_file} || $self->param('force_recalc')) {
     # M7
@@ -576,6 +605,9 @@ sub genes_table_structure {
     aln_type => 'char16',
     parameter_set_name => 'string',
     parameter_set_shortname => 'char16',
+
+    aln_length => 'int',
+    seq_length => 'int',
 
     stable_id_gene => 'string',
     stable_id_transcript => 'string',

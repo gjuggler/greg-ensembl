@@ -38,7 +38,7 @@ sub param_defaults {
 
     sitewise_store_opt_tree     => 1,
     sitewise_store_gaps         => 0,
-    sitewise_store_single_chars         => 0,
+    sitewise_store_single_chars         => 1,
     sitewise_minimum_leaf_count => 2,
     sitewise_strip_gaps         => 0,
     sitewise_parameter_sets     => 'all',
