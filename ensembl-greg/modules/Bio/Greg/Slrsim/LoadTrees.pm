@@ -27,7 +27,7 @@ sub fetch_input {
   $self->load_simulation_params();
 
   $self->_output_folder();
-  mkpath( [ $self->_output_folder . "/alns" ] );
+  mkpath( [ $self->_output_folder ]);
 
 }
 
@@ -109,10 +109,19 @@ sub run {
     my $combined_params = $self->replace( $params, $p );
     
     my ($job_id) = @{ $self->dataflow_output_id( $combined_params, 1 ) };
-    print "  -> Created job: $job_id \n";
-    
-    #$self->load_tree_into_database( $base_node, $sim_rep, $params );
-    sleep(0.1);
+    print "  -> Created slrsim job: $job_id \n";    
+    sleep(0.05);
+  }
+
+  # For each unique slrsim_label, flow out a collect_slrsim job.
+  my $label_hash;
+  map {$label_hash->{$_->{slrsim_label}} = 1} @simsets;
+  foreach my $label (keys %$label_hash) {
+    my $params = {
+      slrsim_label => $label
+    };
+    my ($job_id) = @{ $self->dataflow_output_id( $params, 2)};
+    print "  -> Created collection job: $job_id \n";
   }
 }
 
@@ -601,19 +610,19 @@ sub _fig_one_indel_sweep {
   my @sets;
   my $params;
   my @lengths = map { $_ * 1 / 2.5 } 1 .. 5;
-  my @indels  = map { $_ / 50 } 0 .. 5;
+  my @ins_rates  = map { $_ / 50 } 0 .. 5;
 
   foreach my $path_length (@lengths) {
     $params = $self->replace( $base_params, $self->mean_path_param($path_length) );
-    foreach my $indel (@indels) {
+    foreach my $ins_rate (@ins_rates) {
       $tree_obj = Bio::EnsEMBL::Compara::TreeUtils->scale_mean_to( $tree_obj, $path_length );
       my $total_length = Bio::EnsEMBL::Compara::TreeUtils->total_distance($tree_obj);
 
       $params = $self->replace(
         $params, {
-          phylosim_insertrate => $indel,
-          phylosim_deleterate => $indel,
-          slrsim_label        => "${tree}_${analysis}_${aln}_${path_length}_${indel}",
+          phylosim_insertrate => $ins_rate,
+          phylosim_deleterate => $ins_rate,
+          slrsim_label        => "${tree}_${analysis}_${aln}_${path_length}_${ins_rate}",
           slrsim_tree         => $tree_obj,
         }
       );
@@ -761,6 +770,13 @@ sub fig_three_a {
   return \@sets;
 }
 
+sub fig_three_b {
+  my $self = shift;  
+  my @sets;
+  push @sets, @{$self->fig_three('clustalw', $self->scheme_b)};
+  return \@sets;
+}
+
 sub fig_three {
   my $self = shift;
   my $aln = shift;
@@ -769,25 +785,24 @@ sub fig_three {
   my @sets;
   my @subsets_array;
 
-  my @sets;
   my $params;
-  my @lengths = map { $_ * 1 / 5 } 1 .. 10;
-  my @indels  = map { $_ / 100 } 0 .. 10;
+  my @lengths = map { $_ * 1 / 2.5 } 1 .. 5;
+  my @ins_rates  = map { $_ / 50 } 0 .. 5;
 
   my @pairs;
   foreach my $length (@lengths) {
-    foreach my $indel (@indels) {
-      push @pairs, [$length, $indel];
+    foreach my $ins_rate (@ins_rates) {
+      push @pairs, [$length, $ins_rate];
     }
   }
 
   foreach my $pair (@pairs) {
-    my ($length, $indel) = @$pair;
+    my ($length, $ins_rate) = @$pair;
     push @subsets_array, {
       aln => $aln,
       scheme => $scheme,
       length => $length,
-      indel => $indel
+      ins_rate => $ins_rate
     };
   }
 
@@ -798,40 +813,37 @@ sub fig_three {
     my $aln    = $self->aln_param( $subset->{aln} );
     my $aln_s = $subset->{aln};
     my $length = $self->mean_path_param( $subset->{length} );
-    my $indel  = $self->indel_rate_param( $subset->{indel} );
+    my $indel = {
+      phylosim_insertrate => $subset->{ins_rate},
+      phylosim_deleterate => $subset->{ins_rate}
+    };
 
-    foreach my $filter ( 'true', 'none', 'gblocks', 'branchlength_lo', 'branchlength_hi', 'optimal_lo', 'optimal_hi', 'tcoffee_lo', 'tcoffee_hi', 'guidance_lo', 'guidance_hi' ) {
+    foreach my $filter ( 'true', 'none', 'gblocks', 'optimal_a', 'optimal_b', 'optimal_c', 'tcoffee', 'guidance', 'branchlength' ) {
+#    foreach my $filter ( 'true', 'none', 'gblocks', 'branchlength_lo', 'optimal_lo', 'tcoffee_lo') {
       my $tree = $scheme->{tree_name};
-      my $len_indel_s = '_'.$subset->{length} . '_'. $subset->{indel};
+      my $len_indel_s = $subset->{length} . '_'. $subset->{ins_rate};
       
-      my $max_mask = 0.6;
-      if ($filter =~ m/lo/i) {
-        $max_mask = 0.2;
-      }
+      my $max_mask = 0.2;
+      $max_mask = 0.05 if ($filter eq 'optimal_a');
+      $max_mask = 0.1 if ($filter eq 'optimal_b');
+      $max_mask = 0.2 if ($filter eq 'optimal_c');
       
       my $params;
+      $params = $self->replace(
+        $scheme, $aln,
+        $self->filter_param($filter, $max_mask),
+        { slrsim_label => "${tree}_${aln_s}_${filter}_${len_indel_s}" }
+        );
+      
       if ( $filter eq 'true' ) {
-        $params = $self->replace(
-          $scheme,
-          $self->aln_param('true'),
-          $self->filter_param('true', $max_mask),
-          { slrsim_label => "${tree}_True_none_${len_indel_s}" }
-          );
-        $params->{filtering_name} = 'true';
-        $params->{alignment_name} = $aln->{alignment_name};
-      } else {
-        $params = $self->replace(
-          $scheme, $aln,
-          $self->filter_param($filter, $max_mask),
-          { slrsim_label => "${tree}_${aln_s}_${filter}_${len_indel_s}" }
-          );
+        $params = $self->replace($params, $self->aln_param('true'));
       }
       
       $params =
-        $self->replace( 
-          $params, 
-          $self->reps_param(50),
-          $indel, 
+        $self->replace(
+          $params,
+          $self->reps_param(100),
+          $indel,
           $length,
           { experiment_name => 'fig_three' } );
       push @sets, $params;
@@ -1164,7 +1176,6 @@ sub filter_param {
   
   my $f = {
     filter => $filter,
-    filtering_name            => $filter,
     alignment_scores_action   => $filter,
     alignment_score_filtering => 1,
     maximum_mask_fraction => $max_mask
@@ -1172,8 +1183,7 @@ sub filter_param {
 
   if ( $filter eq 'none' || $filter eq 'true' ) {
     $f = {
-      filter => 'none',
-      filtering_name            => 'none',
+      filter => $filter,
       alignment_scores_action   => 'none',
       alignment_score_filtering => 0,
       alignment_score_threshold => 0,

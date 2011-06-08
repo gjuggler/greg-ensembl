@@ -137,13 +137,13 @@ sub _get_alignment_scores {
   } elsif ( $action =~ 'prank' ) {
     print " -> RUN PRANK [$action]\n";
     $params->{prank_filtering_scheme} = $action;
-    $score_hash = $self->run_prank( $tree, $aln, $pep_aln, $params );
+    $self->run_prank( $tree, $aln, $pep_aln, $params );
   } elsif ( $action =~ m/trimal/i ) {
     print " -> RUN TRIMAL [$action]\n";
-    $score_hash = $self->run_trimal( $tree, $aln, $pep_aln, $params );
+    $self->run_trimal( $tree, $aln, $pep_aln, $params );
   } elsif ( $action =~ m/indelign/i ) {
     print " -> RUN INDELIGN [$action]\n";
-    eval { $score_hash = $self->run_indelign( $tree, $aln, $pep_aln, $params ); };
+    eval { $self->run_indelign( $tree, $aln, $pep_aln, $params ); };
     if ($@) {
       print "Indelign error for action [$action]: $@\n";
     }
@@ -155,6 +155,8 @@ sub _get_alignment_scores {
   } elsif ($action =~ m/columns/i) {
     $score_hash = $self->run_columns($tree,$aln,$pep_aln, $params);
   } elsif ($action =~ m/none/i) {
+    $self->run_none($tree, $aln, $pep_aln, $params);
+  } elsif ($action =~ m/true/i) {
     $self->run_none($tree, $aln, $pep_aln, $params);
   } elsif ($action =~ m/branchlength/i) {    
     $self->run_branchlength($tree, $aln, $pep_aln, $params);
@@ -177,8 +179,10 @@ sub decile_and_stringify {
   my @score_bin = ();
 
   foreach my $seq ($pep_aln->each_seq) {
+    print $seq->id."\n";
     foreach my $i (1 .. $pep_aln->length) {
       my $score = $self->get_score($pep_aln, $seq->id, $i);
+      print "  $i $score\n";
       push @score_bin, $score if ($score ne '-');
     }
   }
@@ -194,7 +198,6 @@ sub decile_and_stringify {
   print "$min_score .. $max_score\n";
   print "@indices\n";
   print "@scores\n";
-
 
   my $score_hash;
   my $decile_histogram;
@@ -215,7 +218,9 @@ sub decile_and_stringify {
           }
         }
         
-        if ($self->param('filter') eq 'tcoffee') {
+        my $f = $self->param('filter');
+
+        if ($f =~ m/(tcoffee|gblocks)/i) {
           $cur_decile = $score;
         }
         $score_string .= $cur_decile;
@@ -268,6 +273,7 @@ sub set_score {
     $scores->{$id}->{$pos} = '-';
   } else {
     $scores->{$id}->{$pos} = $score;
+    #print " $id $pos $score\n";
   }
 }
 
@@ -312,7 +318,7 @@ sub run_branchlength {
   my $pep_aln = shift;
   my $params = shift;
 
-  my $action = $self->param('alignment_scores_action');
+  my $action = $self->param('filter');
   my $window_flank = 0;
 
   if ($action eq 'window_branchlength') {
@@ -638,8 +644,9 @@ sub run_gblocks {
   my $defaults = {
     t  => 'p',    # Type of sequence (p=protein,c=codon,d=dna)
     b3 => '8',    # Max # of contiguous nonconserved positions
-    b4 => '5',    # Minimum length of a block
+    b4 => '10',    # Minimum length of a block
     b5 => 'a',    # Allow gap positions (n=none, h=with half,a=all)
+    b6 => 'y',
   };
   my $use_params = $self->replace_params( $defaults, $params );
 
@@ -657,13 +664,15 @@ sub run_gblocks {
 
   my @leaves             = $tree->leaves;
   my $num_leaves         = scalar(@leaves);
-  my $min_leaves_gblocks = int( ( $num_leaves + 1 ) / 2 + 0.5 );
+  my $b1 = int( ( $num_leaves + 1) / 2 + 0.5 );
+  my $b2 = int( ($num_leaves * 0.86) + 0.5);
 
   #Example command: Gblocks 2138.fasta -t=p -b2=20 -b3=50 -b4=3 -b5=a -p=s
   my $cmd = sprintf(
-    "Gblocks %s -t=%s -b1=%s -b2=%s -b3=%s -b4=%s -b5=%s -p=s\n",
-    $filename,           $use_params->{'t'},  $min_leaves_gblocks, $min_leaves_gblocks,
-    $use_params->{'b3'}, $use_params->{'b4'}, $use_params->{'b5'}
+    "Gblocks %s -t=%s -b1=%s -b2=%s -b3=%s -b4=%s -b5=%s -b6=%s -p=s\n",
+    $filename,           $use_params->{'t'},  $b1, $b2,
+    $use_params->{'b3'}, $use_params->{'b4'}, $use_params->{'b5'},
+    $use_params->{'b6'}
   );
   print "GBLOCKS: $cmd\n";
   my $ret = system("$cmd");
@@ -692,10 +701,10 @@ sub run_gblocks {
   }
 
   my @column_scores = split( "", $blocks_string );
-  my %scores_hash;
 
   foreach my $seq ($pep_aln->each_seq) {
     foreach my $i (1 .. $pep_aln->length) {
+      my $col_score = $column_scores[$i-1];
       $self->set_score($pep_aln, $seq->id, $i, $column_scores[$i-1]);
     }
   }

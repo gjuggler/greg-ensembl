@@ -1484,21 +1484,41 @@ sub branch_model_likelihood {
   }
   $final_params->{verbose} = 1;
 
-  # Create the new Codeml object and run it.
-  my $codeml = $class->new(
-    -params         => $final_params,
-    -tree           => $tree,
-    -alignment      => $codon_aln,
-    -tempdir        => $tempdir,
-    no_param_checks => 1
-  );
-  $codeml->save_tempfiles(1);
+  my $lines_ref;
+  eval {
+    # Create the new Codeml object and run it.
+    my $codeml = $class->new(
+      -params         => $final_params,
+      -tree           => $tree,
+      -alignment      => $codon_aln,
+      -tempdir        => $tempdir,
+      no_param_checks => 1
+      );
+    $codeml->save_tempfiles(1);
+    
+    # Note: ignore the $parser object here because it doesn't seem to work...
+    my ( $rs, $parser ) = $codeml->run();
+    $lines_ref = $codeml->all_lines;
+  };
+  if ($@) {
+    print "ERROR - Trying without SEs...\n";
+    $final_params->{getSE} = 0;
 
-  # Note: ignore the $parser object here because it doesn't seem to work...
-  my ( $rs, $parser ) = $codeml->run();
-  my $lines_ref = $codeml->all_lines;
-  my @lines = @$lines_ref;
+    # Create the new Codeml object and run it.
+    my $codeml = $class->new(
+      -params         => $final_params,
+      -tree           => $tree,
+      -alignment      => $codon_aln,
+      -tempdir        => $tempdir,
+      no_param_checks => 1
+      );
+    $codeml->save_tempfiles(1);    
+    my ( $rs, $parser ) = $codeml->run();
+    $lines_ref = $codeml->all_lines;
+  }
 
+  return undef unless (defined $lines_ref);
+    
   # Manually extract likelihood and omega values from the results files.
   my $lnL    = $class->extract_lnL($lines_ref);
   my $kappa = $class->extract_kappa($lines_ref);

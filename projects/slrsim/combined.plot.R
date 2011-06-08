@@ -155,70 +155,107 @@ multi.trees <- function() {
   dev.off()
 }
 
-multi.plots <- function() {
+multi.filters <- function() {
+  tbl.a <<- read.csv('~/scratch/gj1_fig_three_b/current/table.csv')
 
-  multi.plot(color.by='tpr_at_fpr')
+  tbl.a$tdr_at_thresh <- 1 - tbl.a$fdr_at_thresh
 
-  multi.plot(color.by='tpr_at_thresh', aligners=c('clustalw', 'prank_codon', 'True_Alignment'))
-  multi.plot(color.by='fpr_at_thresh', aligners=c('clustalw', 'prank_codon', 'True_Alignment'))
+  true.aln <- subset(tbl.a, filter=='true')
+  none.aln <- subset(tbl.a, filter=='none')
+  print(nrow(true.aln))
+  print(nrow(none.aln))
+
+  tbl.a$aligner <- 'clustalw'
+
+  m.by <- c('length', 'ins_rate')  
+  filter.fields <- c('fpr_at_thresh', 'tpr_at_thresh', 'tdr_at_thresh', 'tpr_at_fpr')
+
+  tbl.m <- tbl.a
+  comb.df <- data.frame()
+  for (fld in filter.fields) {
+    t.fld <- paste(fld, '.true', sep='')
+    n.fld <- paste(fld, '.none', sep='')
+    true.aln[, t.fld] <- true.aln[, fld]
+    none.aln[, n.fld] <- none.aln[, fld]
+    tbl.m <- merge(tbl.m, true.aln[, c(t.fld, 'length', 'ins_rate')], by=m.by)
+    tbl.m <- merge(tbl.m, none.aln[, c(n.fld, 'length', 'ins_rate')], by=m.by)
+
+    tbl.m[, fld] <- tbl.m[, fld] / tbl.m[, n.fld]
+
+    tbl.m[, 'cur.z'] <- tbl.m[, fld]
+    tbl.m[, n.fld] <- NULL
+    tbl.m[, t.fld] <- NULL
+    tbl.m[, 'field'] <- fld
+    comb.df <- rbind(comb.df, tbl.m)
+  }
+  print(nrow(comb.df))
+
+  comb.df$aligner <- comb.df$filter
+  comb.df$tree <- factor(comb.df$field, levels=filter.fields, ordered=T)
+
+#  print(levels(comb.df$tree))
+#  print(levels(comb.df$filter))
+  multi.plot(comb.df, color.by='cur.z', prefix='filt_', relative=T)
 }
 
-#
-# Figure 2 - Tree shapes, TPR_FPR<0.05, and ROC plots at 1.0/0.1
-#
-multi.plot <- function(color.by='tpr_at_fdr', 
-  aligners = c('clustalw', 'mafft', 'prank', 'prank_codon', 'True_Alignment')
-) {
-
+multi.plots <- function() {
   tbl.a <<- read.csv('~/scratch/gj1_fig_one_a/current/table.csv')
   tbl.b <<- read.csv('~/scratch/gj1_fig_one_b/current/table.csv')
   tbl.c <<- read.csv('~/scratch/gj1_fig_one_c/current/table.csv')
-
   plots <- list(
     a = list(tbl.a),
     b = list(tbl.b),
     c = list(tbl.c)
   )
+  multi.plot(plots, color.by='tpr_at_fpr')
+  multi.plot(plots, color.by='tpr_at_thresh', keep=c('clustalw', 'prank_codon', 'True_Alignment'))
+  multi.plot(plots, color.by='fpr_at_thresh', keep=c('clustalw', 'prank_codon', 'True_Alignment'))
+}
 
-  all.tbls <- data.frame()
-  for (i in 1:length(plots)) {
-    cur.stuff <- plots[[i]]
-    cur.tbl <- cur.stuff[[1]]
+#
+# Figure 2 - Tree shapes, TPR_FPR<0.05, and ROC plots at 1.0/0.1
+#
+multi.plot <- function(all.tbls, color.by='tpr_at_fdr',
+  facet.y = 'aligner',
+  facet.x = 'tree',
+  keep = NULL,
+  prefix = '',
+  relative=F
+) {
 
-    cur.tbl[cur.tbl$aligner == 'none', 'aligner'] <- 'True_Alignment'
+  print(nrow(all.tbls))
 
-    print(subset(cur.tbl, length==0.4 & ins_rate==0.1))
+  all.tbls$fx <- all.tbls[, facet.x]
+  all.tbls$fy <- all.tbls[, facet.y]
 
-    cur.tbl <- subset(cur.tbl, analysis == 'SLR Sitewise')
-    cur.tbl <- subset(cur.tbl, aligner %in% aligners)
-    all.tbls <- rbind(all.tbls, cur.tbl)
-  }
+  width <- length(unique(all.tbls$fx)) * 2
+  height <- length(unique(all.tbls$fy))
 
   width <- length(plots) * 2
   height <- length(aligners) * 2
   pdf(file=paste('fig_multi_', color.by, '.pdf', sep=''), width=width+2, height=height)
 
   # Write all-table to a file.
-  write.csv(all.tbls, file="tabl_multi.csv", row.names=FALSE)
+  write.csv(all.tbls, file=paste(prefix, 'fig_multi_.csv', sep=''), row.names=FALSE)
 
   z.val <- color.by
-  all.tbls[,'z_val'] <- all.tbls[, z.val]
+  all.tbls[, 'z_val'] <- all.tbls[, z.val]
 
-  rect.df <- expand.grid(unique(all.tbls[,'aligner']), unique(all.tbls[,'tree']))
-  colnames(rect.df) <- c('aligner', 'tree')
-  rect.df[,'xmin'] <- 0.9
-  rect.df[,'xmax'] <- 1.1
-  rect.df[,'ymin'] <- 0.09
-  rect.df[,'ymax'] <- 0.11
-  rect.df[,'ins_rate'] <- 0
-  rect.df[,'length'] <- 0
-  rect.df[,'z_val'] <- 0
+  #rect.df <- expand.grid(unique(all.tbls[,'aligner']), unique(all.tbls[,'tree']))
+  #colnames(rect.df) <- c('aligner', 'tree')
+  #rect.df[,'xmin'] <- 0.9
+  #rect.df[,'xmax'] <- 1.1
+  #rect.df[,'ymin'] <- 0.09
+  #rect.df[,'ymax'] <- 0.11
+  #rect.df[,'ins_rate'] <- 0
+  #rect.df[,'length'] <- 0
+  #rect.df[,'z_val'] <- 0
 
   n <- 5
   if (z.val == 'fpr_at_thresh') {
-    clr.lim <- c(0, 0.025)
+    clr.lim <- c(0, 0.005)
     clrs <- rev(brewer.pal(n=n, 'Spectral'))
-    all.tbls[, 'z_val'] <- pmin(0.025, all.tbls$z_val)
+    all.tbls[, 'z_val'] <- pmin(0.025, all.tbls$z_val)    
   } else if (z.val == 'tpr_at_thresh') {
     clr.lim <- c(0, 1.0)
     clrs <- brewer.pal(n=n, 'Spectral')
@@ -230,25 +267,22 @@ multi.plot <- function(color.by='tpr_at_fdr',
     clrs <- brewer.pal(n=n, 'Spectral')
   }
 
-  p <- ggplot(all.tbls, aes(x=length, y=ins_rate*2))
+  if (relative) {
+    clr.lim <- c(0, 2)
+    clr.scale <- scale_fill_gradient2(low='red', high='blue', midpoint=1)
+  } else {
+    breaks <- seq(from=clr.lim[1], to=clr.lim[2], length.out=n+1)
+    clr.scale <- scale_fill_gradientn(z.val, colours=clrs, limits=clr.lim, breaks=breaks)
+  }
+
+  all.tbls$z_val <- pmin(clr.lim[2], all.tbls$z_val)
+  all.tbls$z_val <- pmax(clr.lim[1], all.tbls$z_val)
+
+  p <- ggplot(all.tbls, aes(x=length, y=ins_rate))
   p <- p + theme_bw()
-#  x.brks <- c(0.2, 0.6, 1.0, 1.6, 2.0)
-#  y.brks <- c(0, 0.04, 0.08, 0.12, 0.16, 0.20)
-#  p <- p + scale_x_continuous('Mean Path Length', breaks=x.brks)
-#  p <- p + scale_y_continuous('Indel Rate', breaks=y.brks)
-#  p <- p + coord_cartesian(xlim=c(0.1, 2.1), ylim=c(-0.005, 0.205))
-
   p <- p + geom_tile(aes(fill=z_val))
-#  p <- p + geom_rect(size=1, data=rect.df, fill=rgb(0,0,0,alpha=0), aes(xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax), colour='black')
-#  p <- p + scale_colour_brewer(name="Alignment Method", palette="Set1")
-
-#  p <- p + geom_point(aes(colour = z_val), shape=I(2))
-#  p <- p + scale_size(limits = clr.lim, to=c(1, 8))
-
-  breaks <- seq(from=clr.lim[1], to=clr.lim[2], length.out=n+1)
-  #p <- p + scale_fill_gradient(z_val, low='black', high='white', limits=clr.lim)
-  p <- p + scale_fill_gradientn(z.val, colours=clrs, limits=clr.lim, breaks=breaks)
-  p <- p + facet_grid(aligner ~ tree)
+  p <- p + clr.scale
+  p <- p + facet_grid(fy ~ fx)
   p <- p + opts(
 #    legend.position='none',
 #    panel.grid.major = theme_blank(),
@@ -260,7 +294,6 @@ multi.plot <- function(color.by='tpr_at_fdr',
     axis.title.y = theme_blank()
   )
   print(p)
-
   dev.off()
 }
 
@@ -923,14 +956,18 @@ example.roc <- function() {
     p <- p + geom_vline(x=0.05, colour='black', linetype=3)
   }
 
-  p <- ggplot(roc, aes(x=fpr, y=tpr, colour=analysis))
+  roc$is_filtered <- FALSE
+  roc[roc$score == -9999, 'is_filtered'] <- TRUE
+  roc[roc$score == -9999, 'score'] <- 0
+
+  p <- ggplot(roc, aes(x=fpr, y=tpr))
   p <- p + theme_bw()
 
   p <- p + geom_abline(intercept=0, slope=1, colour='gray', linetype=1)
 
   add.areas <- function(roc, p) {
     # AUC polygons.
-    below.fpr <- subset(roc, score > -9999)
+    below.fpr <- subset(roc, is_filtered == FALSE)
     first.row <- below.fpr[1, ]
     last.row <- below.fpr[nrow(below.fpr),]
     last.row$tpr <- 0
@@ -965,8 +1002,9 @@ example.roc <- function() {
   }
 
 #  p <- p + scale_colour_brewer(name="Alignment", palette="Set1")
+#   p <- p + scale_colour_manual(values=c('blue', 'red'))
   p <- p + scale_y_continuous(name="True Positive Rate", limits=c(0,1.0), breaks=c(0, 0.2, 0.4, 0.6, 0.8, 1))
-  p <- p + opts(legend.position = 'none')
+  p <- p + opts(legend.position = 'none') 
 
   p.full <- p + scale_x_continuous(name="False Positive Rate", 
     limits=c(-0.1,1.0), 
@@ -987,8 +1025,11 @@ example.roc <- function() {
 #  p.full <- add.fps(roc, p.full)
   p.zoom <- add.fps(roc, p.zoom)
 
-  p.full <- p.full + geom_line(size=2, colour='blue')
-  p.zoom <- p.zoom + geom_line(size=2, colour='blue')
+  p.full <- p.full + geom_point(size=1, aes(colour=is_filtered))
+  p.zoom <- p.zoom + geom_point(size=1, aes(colour=is_filtered))
+
+  p.full <- p.full + scale_colour_manual(values=c('blue', 'black'))
+  p.zoom <- p.zoom + scale_colour_manual(values=c('blue', 'black'))
 
   p.zoom <- add.fdrs(roc, p.zoom)
   p.zoom <- add.points(roc, p.zoom)
@@ -1006,27 +1047,26 @@ meta.analysis <- function() {
       df <- load.sites(db)
     }
 
-    true <- subset(load.s('gj1_fig_two_c'), filter=='true')
+    asdf <- load.s('gj1_fig_three_a')
+    print(str(asdf))
+
+    true <- subset(load.s('gj1_fig_three_a'), filter=='true')
     true$aligner <- 'True Alignment'
 
-    fsa <- subset(load.s('gj1_fig_two_fsa'), filtering_name=='none')
-    mafft <- subset(load.s('gj1_fig_two_a'), filter=='none')
-    prank <- subset(load.s('gj1_fig_two_b'), filter=='none')
-    prank_c <- subset(load.s('gj1_fig_two_c'), filter=='none')
+    prank_c <- subset(load.s('gj1_fig_three_a'), filter=='none')
 
-    bl.lo <- subset(load.s('gj1_fig_two_c'), filter=='branchlength_lo')
-    bl.hi <- subset(load.s('gj1_fig_two_c'), filter=='branchlength_hi')
-    tc.lo <- subset(load.s('gj1_fig_two_c'), filter=='tcoffee_lo')
-    tc.hi <- subset(load.s('gj1_fig_two_c'), filter=='tcoffee_hi')
+    bl.lo <- subset(load.s('gj1_fig_three_a'), filter=='branchlength_lo')
+    bl.hi <- subset(load.s('gj1_fig_three_a'), filter=='branchlength_hi')
+    tc.lo <- subset(load.s('gj1_fig_three_a'), filter=='tcoffee_lo')
+    tc.hi <- subset(load.s('gj1_fig_three_a'), filter=='tcoffee_hi')
 
     merge.by <- c('tree_length', 'ins_rate', 'slrsim_rep', 'seq_position')
 
     prep.df <- function(df, lbl) {
-      df <- sign.lrt(df)
       df <- df[!duplicated(df[, merge.by]),]
-      df <- df[, c('signed_lrt', merge.by)]
-      df[, paste('lrt.', lbl, sep='')] <- df$signed_lrt
-      df$signed_lrt <- NULL
+      df <- df[, c('lrt_stat', merge.by)]
+      df[, paste('lrt.', lbl, sep='')] <- df$lrt_stat
+      df$lrt_stat <- NULL
       return(df)
     }
 
@@ -1055,25 +1095,20 @@ meta.analysis <- function() {
       return(df)
     }
 
-    meta.aligners <- list(
-      fsa=fsa,
-      prank=prank,
-      prank_c = prank_c,
+    meta <- list(
+      none = prank_c,
       bl.lo = bl.lo,
       bl.hi = bl.hi,
       tc.lo = tc.lo,
       tc.hi = tc.hi
     )
-    meta.aligners <- collect.scores(meta.aligners)
-    meta.aligners <- combine.median(meta.aligners)
+    meta <- collect.scores(meta)
+    meta <- combine.median(meta)
 
     true$lrt_stat <- NULL
-    test.df <- merge(true, meta.aligners, by=merge.by, all.x=T)
-    pt <- summarize.by.labels(test.df, paper.table)
-    print(pt[, c('tpr_at_thresh', 'fdr_at_thresh')])
-
-    pt <- summarize.by.labels(sign.lrt(prank_c), paper.table)
-    print(pt[, c('tpr_at_thresh', 'fdr_at_thresh')])
+    test.df <- merge(true, meta, by=merge.by, all.x=T)
+    pt <- ddply(test.df, c('label'), paper.table)
+    print(pt[, c('tpr_at_thresh', 'fpr_at_thresh', 'fdr_at_thresh')])
 }
 
 merged.datasets <- function(tbl) {
@@ -1407,14 +1442,14 @@ load.tbl <- function(db) {
 load.sites <- function(db) {
   if (exists(db)) {
     print(paste("Loading cached sites from",db))
-    sites <- get(db)
-    return(sites)
+    merged <- get(db)
+    return(merged)
   }
   dir = paste('~/scratch/',db,'/current', sep='')
-  sites.file <- paste(dir, '/', 'sites.Rdata', sep='')
+  sites.file <- paste(dir, '/', 'merged.Rdata', sep='')
   load(sites.file)
-  assign(db, sites, envir=.GlobalEnv)
-  return(sites)
+  assign(db, merged, envir=.GlobalEnv)
+  return(merged)
 }
 
 load.genes <- function(db) {

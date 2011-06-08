@@ -5,14 +5,7 @@ if (exists('drv')) {
   drv <- dbDriver('MySQL')
 }
 
-if (!exists('dbname')) {
-  dbname = 'slrsim_anisimova'
-  host = 'mysql-greg.ebi.ac.uk'
-  port=4134
-  user='slrsim'
-  password='slrsim'
-  userpass='slrsim:slrsim'
-} else if (Sys.getenv('USER') == 'gj1') {
+if (Sys.getenv('USER') == 'gj1') {
   host = 'ens-research'
   port=3306
   user='ensro'
@@ -29,7 +22,6 @@ con <- dbConnect(drv, host=host, port=port, user=user, password=password, dbname
 dbURL = paste("mysql://",userpass,"@",host,":",port,"/",dbname,sep="")
 print(paste("Connected to:",user,"@",host,":",port,"/",dbname))
 print(paste("[",dbURL,"]"))
-#url = paste("mysql://slrsim:slrsim@mysql-greg.ebi.ac.uk:4134/",dbname,sep="")
 
 get.vector = function(con,query,columns=1) {
   res = dbSendQuery(con,query)
@@ -135,15 +127,21 @@ get.all.data = function(sites.cols=NULL,genes.cols=NULL,where=NULL) {
   return(all)
 }
 
-get.all.sites <- function() {
-  query <- sprintf("select * from sites;")
+get.all.sites <- function(slrsim_rep=NULL, node_id=NULL) {
+  if (!is.null(slrsim_rep) && !is.null(node_id)) {
+    nodes.s <- paste(node_id, collapse=',')
+    reps.s <- paste(slrsim_rep, collapse=',')
+    query <- sprintf("select * from sites where node_id IN (%s) and slrsim_rep IN (%s)", nodes.s, reps.s)
+  } else {
+    query <- sprintf("select * from sites;")
+  }
   all <- get.vector(con,query,columns='all')
 
   if (max(all$lrt_stat, na.rm=T) > 1.1) {
     all[, 'lrt_stat'] <- all[, 'lrt_stat'] * sign(all[, 'aln_dnds'] - .9999)
   }
 
-  return(all)                          
+  return(all)
 }
 
 get.all.genes <- function() {

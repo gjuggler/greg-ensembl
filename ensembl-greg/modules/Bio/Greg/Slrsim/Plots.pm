@@ -25,10 +25,6 @@ sub run {
   $self->dump_sql;
   $self->dump_data;
 #  $self->dump_alns;
-
-  # Call the method corresponding to the current experiment.
-  my $experiment_name = $self->param('experiment_name');
-  $self->$experiment_name();
 }
 
 sub dump_sql {
@@ -78,255 +74,39 @@ sub dump_alns {
 sub dump_data {
   my $self = shift;
 
-  my $sites_f = $self->param('output_folder') . '/sites.Rdata';
   my $genes_f = $self->param('output_folder') . '/genes.Rdata';
+  my $results_tbl = $self->param('output_folder') . '/table.csv'; 
+  my $sites_f = $self->param('output_folder') . '/sites.Rdata';
   my $merged_f = $self->param('output_folder') . '/merged.Rdata'; 
- my $collect_script   = $self->collect_script;
-  my $functions_script   = $self->functions_script;
 
+  my $mysql_script = $self->base . "/scripts/mysql_functions.R";
+  my $slrsim_script = $self->base . "/projects/slrsim/slrsim.functions.R";
   my $dbname = $self->dbc->dbname;
-
-  if ( !-e $sites_f || !-e $genes_f || !-e $merged_f) {
-    my $rcmd = qq^
-dbname="$dbname"
-source("${collect_script}")
-source("${functions_script}")
-sites <- get.all.sites()
-genes <- get.all.genes()
-save(sites, file="${sites_f}");
-save(genes, file="${genes_f}");
-
-print(head(genes))
-print(head(sites))
-
-print("merging sites & genes...")
-
-merge.by <- c('node_id', 'slrsim_rep')
-keep.gene.cols <- c('label', 'tree', 'analysis', 'tree_length', 'ins_rate', 'aligner', 'filter')
-x <- genes[, c(keep.gene.cols, merge.by)]
-merged <- merge(x, sites, by=merge.by)
-print(head(merged))
-save(merged, file="${merged_f}");
-^;
-    #print "$rcmd\n";
-    my $params = {};
-    Bio::Greg::EslrUtils->run_r( $rcmd, $params );
-  }
-
-}
-
-# Slrsim table: generic summary table output.
-sub slrsim_table {
-  my $self = shift;
-
-  my $folder = $self->get_output_folder;
-  my $file = "${folder}/merged.Rdata";
-  my $functions = $self->base . "/projects/slrsim/slrsim.functions.R";
-  my $table_file = "${folder}/table.csv";
-
-my $rcmd = qq^
-### Plots::slrsim_table
-
-source("${functions}")
-load("${file}")
-
-merged[, 'slrsim_label'] <- paste( merged[, 'label'], merged[, 'analysis'], sep='_')
-
-paper.df <- ddply(merged, .(slrsim_label), paper.table)
-paper.df <- format.numeric.df(paper.df, digits=3)
-write.csv(paper.df, file="${table_file}", row.names=F, quote=F)
-^;
-  Bio::Greg::EslrUtils->run_r( $rcmd );
-
-}
-
-sub fig_zero {
-  my $self = shift;
-
-  my $folder = $self->get_output_folder;
-
-  # Call slrsim_table to dump the table.
-  my $table_file = "${folder}/table.csv";
-  if (!-e $table_file) {
-    $self->slrsim_table;
-  }  
-
-}
-
-
-sub fig_one_a {
-  my $self = shift;
-
-  $self->fig_one;
-}
-
-sub fig_one_b {
-  my $self = shift;
-
-  $self->fig_one;
-}
-
-sub fig_one_c  {
-  my $self = shift;
-
-  $self->fig_one;
-}
-
-sub fig_one {
-  my $self = shift;
-  my $folder = $self->get_output_folder;
-
-  # Call slrsim_table to dump the table.
-  my $table_file = "${folder}/table.csv";
-  if (!-e $table_file) {
-    $self->slrsim_table;
-  }
-
-}
-
-sub fig_two_a {
-  my $self = shift;
-  $self->fig_two;
-}
-
-sub fig_two_b {
-  my $self = shift;
-  $self->fig_two;
-}
-
-sub fig_two_c {
-  my $self = shift;
-  $self->fig_two;
-}
-
-sub fig_two_d {
-  my $self = shift;
-  $self->fig_two;
-}
-
-sub fig_two_e {
-  my $self = shift;
-  $self->fig_two;
-}
-
-sub fig_two_f {
-  my $self = shift;
-  $self->fig_two;
-}
-
-sub fig_two_h {
-  my $self = shift;
-  $self->fig_two;
-}
-
-sub fig_two_clustalw {
-  my $self = shift;
-  $self->fig_two;
-}
-
-sub fig_two_fsa {
-  my $self = shift;
-  $self->fig_two;
-}
-
-sub fig_three_a {
-  my $self = shift;
-  $self->fig_two;
-}
-
-sub fig_two {
-  my $self = shift;
-
-  my $folder = $self->get_output_folder;
-
-  # Call slrsim_all to dump the data.
-  my $sites_file = "${folder}/sites.Rdata";
-  if (!-e $sites_file) {
-    $self->slrsim_all;
-  }
-
-  # Call slrsim_table to dump the table.
-  my $table_file = "${folder}/table.csv";
-  if (!-e $table_file) {
-    $self->slrsim_table;
-  }
-}
-
-sub ari_indels {
-  my $self = shift;
-
-  my $folder = $self->get_output_folder;
-
-  # Call slrsim_all to dump the data.
-  my $sites_file = "${folder}/sites.Rdata";
-  if (!-e $sites_file) {
-    $self->slrsim_all;
-  }
-
-  # Call slrsim_table to dump the table.
-  my $table_file = "${folder}/table.csv";
-  if (!-e $table_file) {
-    $self->slrsim_table;
-  }
   
-}
-
-sub mammals_sim {
-  my $self = shift;
-
-  my $folder = $self->get_output_folder;
-
-  # Call slrsim_all to dump the data.
-  my $sites_file = "${folder}/sites.Rdata";
-  if (!-e $sites_file) {
-    $self->slrsim_all;
-  }
-
-  # Call slrsim_table to dump the table.
-  my $table_file = "${folder}/table.csv";
-  if (!-e $table_file) {
-    $self->slrsim_table;
-  }
-  
-}
-
-
-# Filter table: return a table of results with multiple filtering results on each line.
-sub filter_table {
-  my $self = shift;
-
-  my $folder = $self->get_output_folder;
-  my $file = "${folder}/sites.Rdata";
-  my $functions = $self->base . "/projects/slrsim/slrsim.functions.R";
-  my $fdr_tpr = "${folder}/fdr_tpr_collated.csv";
-  my $fpr_tpr = "${folder}/tpr_tpr_collated.csv";
-  my $cor = "${folder}/cor_collated.csv";
-  my $auc = "${folder}/auc_collated.csv";
-
 my $rcmd = qq^
-source("${functions}")
+source("${mysql_script}")
+source("${slrsim_script}")
+dbname="${dbname}"
+con <- connect(dbname)
 
-### Plots::filter_table
+genes <- dbGetQuery(con, "select * from genes;")
+save(genes, file="${genes_f}")
+rm(genes)
 
-load("${file}")
+results <- dbGetQuery(con, "select * from slrsim_results;")
+write.csv(results, file="${results_tbl}", row.names=F)
+rm(results)
 
-x <- sites
-x[, 'slrsim_label'] <- paste(x[, 'slrsim_tree_file'], x[,'alignment_name'], x[,'filtering_name'])
-table.df <- ddply(x, .(slrsim_label, phylosim_insertrate, tree_mean_path), paper.table)
-paper.df <- table.df
+sites <- dbGetQuery(con, "select * from sites;")
+save(sites, file="${sites_f}")
+rm(sites)
 
-for (col in c('auc', 'fpr_tpr', 'fdr_tpr', 'cor')) {
-  filter.df <- ddply(paper.df,
-    .(phylosim_insertrate,tree_mean_path,tree,aligner),
-    function(x) {
-      filter.list <- dlply(x,.(filter),function(y) {y[1,col]})
-      return(data.frame(x[1,],filter.list))
-    })
-  write.csv(filter.df,file=paste("${folder}/",col,"_collated.csv",sep=""),row.names=F,quote=F)
-}
-
+merged <- dbGetQuery(con, "select * from merged;")
+save(merged, file="${merged_f}")
+rm(merged)
 ^;
-  Bio::Greg::EslrUtils->run_r( $rcmd );  
+  Bio::Greg::EslrUtils->run_r( $rcmd);
+
 }
 
 sub output_params_file {
