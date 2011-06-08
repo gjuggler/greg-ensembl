@@ -172,12 +172,12 @@ multi.plot <- function(color.by='tpr_at_fdr',
 
   tbl.a <<- read.csv('~/scratch/gj1_fig_one_a/current/table.csv')
   tbl.b <<- read.csv('~/scratch/gj1_fig_one_b/current/table.csv')
-  #tbl.c <<- read.csv('~/scratch/gj1_fig_one_c/current/table.csv')
+  tbl.c <<- read.csv('~/scratch/gj1_fig_one_c/current/table.csv')
 
   plots <- list(
     a = list(tbl.a),
-    b = list(tbl.b)
-#    c = list(tbl.c)
+    b = list(tbl.b),
+    c = list(tbl.c)
   )
 
   all.tbls <- data.frame()
@@ -196,7 +196,7 @@ multi.plot <- function(color.by='tpr_at_fdr',
 
   width <- length(plots) * 2
   height <- length(aligners) * 2
-  pdf(file=paste('fig_multi_', color.by, '.pdf', sep=''), width=width, height=height)
+  pdf(file=paste('fig_multi_', color.by, '.pdf', sep=''), width=width+2, height=height)
 
   # Write all-table to a file.
   write.csv(all.tbls, file="tabl_multi.csv", row.names=FALSE)

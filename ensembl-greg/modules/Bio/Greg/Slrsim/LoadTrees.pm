@@ -492,10 +492,10 @@ sub _fig_zero {
 
   my $params = $scheme;
   $params = $self->replace($params, $self->analysis_param($analysis_type));
-  $params = $self->replace($params, $self->reps_param(20));
+  $params = $self->replace($params, $self->reps_param(50));
 
   my @sets;
-  my @lengths = map { $_ * 1 / 10 } 1 .. 20;
+  my @lengths = map { $_ * 1 / 5 } (0.25, 0.5, 1 .. 10);
   foreach my $path_length (@lengths) {
     my $cur_params = $self->replace( $params, $self->mean_path_param($path_length) );    
     my $tree = $cur_params->{tree_name};
