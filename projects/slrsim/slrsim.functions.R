@@ -4,16 +4,19 @@ library(qvalue)
 
 paper.table <- function(df) {
 
+  print("  cor")
   cor = cor(df$true_dnds,df$aln_dnds,method='spearman',use='complete.obs')
-  roc <- slr.roc(df,na.rm=TRUE)
+  print("  roc")
+  roc <- slr.roc(df)
 
   # Use the technique where the p-value can be doubled because we're just looking
   # at positive selection. This gives thresholds of 2.71 and 5.41 for 5% and 1% FPR.
+  print("  stats")
   stats.05 <- df.stats(df, thresh=2.71, paml_thresh=0.95)
 
   # Use the q-value method to find a threshold. 
-  adj.thresh <- adj.threshold(df, type='bh')
-  stats.bh <- df.stats(df, thresh=adj.thresh, paml_thresh=adj.thresh)
+  #adj.thresh <- adj.threshold(df, type='bh')
+  #stats.bh <- df.stats(df, thresh=adj.thresh, paml_thresh=adj.thresh)
 
   rrow <- roc[1,]
   row <- df[1,]
@@ -32,22 +35,22 @@ paper.table <- function(df) {
     `tpr_at_fpr`    = rrow$tpr_at_fpr,
     `tp_at_fpr`     = rrow$tp_at_fpr,
     `fp_at_fpr`     = rrow$fp_at_fpr,
-    `tpr_at_fdr`    = rrow$tpr_at_fdr,
     `tp_at_fdr`    = rrow$tp_at_fdr,
+    `tpr_at_fdr`    = rrow$tpr_at_fdr,
+    `fp_at_fdr`    = rrow$fp_at_fdr,
+    `fpr_at_fdr`    = rrow$fpr_at_fdr,
     `tp_at_fdr2`    = rrow$tp_at_fdr2,
+    `tpr_at_fdr2`    = rrow$tpr_at_fdr2,
+    `fp_at_fdr2`    = rrow$fp_at_fdr2,
+    `fpr_at_fdr2`    = rrow$fpr_at_fdr2,
     `tpr_at_thresh` = stats.05$tpr,
     `fpr_at_thresh` = stats.05$fpr,
     `tp_at_thresh` = stats.05$tp,
     `fp_at_thresh` = stats.05$fp,
     `fdr_at_thresh`    = stats.05$fdr,
-    `tpr_at_bh` = stats.bh$tpr,
-    `fpr_at_bh` = stats.bh$fpr,
-    `tp_at_bh` = stats.bh$tp,
-    `fp_at_bh` = stats.bh$fp,
-    `fdr_at_bh` = stats.bh$fdr,
-    `thresh_at_bh` = adj.thresh,
     `thresh_at_fpr`    = rrow$thresh_at_fpr,
     `thresh_at_fdr`    = rrow$thresh_at_fdr,
+    `thresh_at_fdr2`    = rrow$thresh_at_fdr2,
     `cor`   = cor,
     `n_sites` = nrow(roc)
   )
@@ -55,7 +58,7 @@ paper.table <- function(df) {
   #aln.acc.df <- df.alignment.accuracy(df)
   #ret.df <- cbind(ret.df, aln.acc.df)
 
-  ret.df <- ret.df[with(ret.df, order(tree, analysis, length, ins_rate, aligner, filter)),]
+  print(ret.df[, c('tpr_at_fpr', 'tpr_at_thresh', 'fpr_at_thresh')])
   return(ret.df)
 }
 
@@ -84,35 +87,14 @@ adj.threshold <- function(df, type='bh', cutoff=0.1) {
   return(threshold)
 }
 
-slr.roc = function(df, na.rm=T, na.value=-9999) {
-  library(doBy)
-  library(plyr)
-
-  if (na.rm) {
-    n.na = nrow(subset(df,is.na(lrt_stat)))
-    df = subset(df,!is.na(lrt_stat))
-    n.left <- nrow(df)
-    #print(sprintf("Removed %d NA rows (%d remaining)",n.na,n.left))
-    if(n.left == 0) {
-      # Think of something to do here. Return empty df?
-    }
-  }
-
-  if (!is.paml(df)) {
-    df$score <- df[, 'lrt_stat']
-  } else {
-    # We've got PAMl data, and the lrt_stat is actually a p-value
-    # for positive selection. So we can sort by this and it should
-    # work out OK.
-    df$score = df$lrt_stat
-  }
+slr.roc = function(df, na.value=-9999) {
+  df$score = df$lrt_stat
 
   # Fix NA rows to a very low score.
-  #print(head(df[is.na(df$lrt_stat),]))
-  df[is.na(df$lrt_stat),'score'] <- na.value
+  df[is.na(df$lrt_stat), 'score'] <- na.value
 
   df$truth = as.integer( df$true_dnds > 1 )
-  df <- orderBy(~-score,data=df)
+  df <- df[order(-df$score), ]
 
   df$tp = cumsum(df$truth)
   df$tn = cumsum(1-df$truth)
@@ -125,30 +107,29 @@ slr.roc = function(df, na.rm=T, na.value=-9999) {
 
   df$fdr = df$fp/(df$count)
 
-  if (!na.rm) {
-    df <- subset(df,score != 1000)
-  }
+  n <- nrow(df)
 
-  df$auc_full <- -1
-  df$auc <- -1
-  if (nrow(df) > 1) {
+  df$auc_full <- 0
+  df$auc <- 0
+  get.auc <- FALSE
+  if (n > 1 && get.auc) {
     auc.df <- subset(df, score > na.value)
-    auc <- area.under.curve(auc.df,x.lim=0.1)
+    auc <- area.under.curve(auc.df, x.lim=0.1)
     df[df$score > na.value, ]$auc <- auc
-    auc_full <- area.under.curve(auc.df,x.lim=1)
+    auc_full <- area.under.curve(auc.df, x.lim=1)
     df[df$score > na.value, ]$auc_full <- auc_full
   }
 
   df$tpr_at_fpr <- 0
   df$fdr_at_fpr <- 1
-  df$tp_at_fpr <- -1
-  df$fp_at_fpr <- -1
+  df$tp_at_fpr <- 0
+  df$fp_at_fpr <- 0
   df$thresh_at_fpr <- max(df$lrt_stat)
-  if (nrow(df) > 1) {
-    fpr.sub <- subset(df,fpr < 0.05)
+  if (n > 1) {
+    fpr.sub <- subset(df, fpr < 0.05)
     if (nrow(fpr.sub) > 0) {
       # Take the last (rightmost) row with fpr < 0.05
-      row <- fpr.sub[nrow(fpr.sub),]
+      row <- fpr.sub[nrow(fpr.sub), ]
       df$tpr_at_fpr <- row$tpr
       df$fdr_at_fpr <- row$fdr
       df$tp_at_fpr <- row$tp
@@ -159,14 +140,14 @@ slr.roc = function(df, na.rm=T, na.value=-9999) {
 
   df$tpr_at_fdr <- 0
   df$fpr_at_fdr <- 1
-  df$tp_at_fdr <- -1
-  df$fp_at_fdr <- -1
+  df$tp_at_fdr <- 0
+  df$fp_at_fdr <- 0
   df$thresh_at_fdr <- max(df$lrt_stat)
-  if (nrow(df) > 1) {
-    fpr.sub <- subset(df,fdr < 0.1)
+  if (n > 1) {
+    fpr.sub <- subset(df, fdr < 0.1)
     if (nrow(fpr.sub) > 0) {
       # Take the last (rightmost) row with fdr < 0.1
-      row <- fpr.sub[nrow(fpr.sub),]
+      row <- fpr.sub[nrow(fpr.sub), ]
       df$tpr_at_fdr <- row$tpr
       df$fpr_at_fdr <- row$fpr
       df$tp_at_fdr <- row$tp
@@ -176,19 +157,22 @@ slr.roc = function(df, na.rm=T, na.value=-9999) {
   }
 
   df$tpr_at_fdr2 <- 0
-  df$tp_at_fdr2 <- -1
-  if (nrow(df) > 1) {
-    fpr.sub <- subset(df,fdr < 0.05)
+  df$fpr_at_fdr2 <- 1
+  df$tp_at_fdr2 <- 0
+  df$fp_at_fdr2 <- 0
+  df$thresh_at_fdr2 <- max(df$lrt_stat)
+  if (n > 1) {
+    fpr.sub <- subset(df, fdr < 0.05)
     if (nrow(fpr.sub) > 0) {
       # Take the last (rightmost) row with fdr < 0.05
-      row <- fpr.sub[nrow(fpr.sub),]
-      df$tp_at_fdr2 <- row$tp
+      row <- fpr.sub[nrow(fpr.sub), ]
       df$tpr_at_fdr2 <- row$tpr
+      df$fpr_at_fdr2 <- row$fpr
+      df$tp_at_fdr2 <- row$tp
+      df$fp_at_fdr2 <- row$fp
+      df$thresh_at_fdr2 <- row$lrt_stat
     }
   }
-
-  print(paste("  slr.roc ",df[1,'slrsim_label']))
-  print(nrow(df))
   return(df)
 }
 

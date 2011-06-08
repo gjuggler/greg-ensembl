@@ -3,6 +3,54 @@ library(ggplot2)
 dbname <<- 'gj1_hiv_full_57_c'
 source("~/src/greg-ensembl/scripts/collect_sitewise.R")
 
+bsub.candidates <- function() {
+  dbname <<- 'gj1_hiv_62'
+  source("~/src/greg-ensembl/scripts/mysql_functions.R")
+  con <- connect(dbname)
+  
+  rows <- read.table(wd.f("candidates_final_ids.txt"))  
+  rows$stable_id <- rows[, 1]
+  for (i in 1:nrow(rows)) {
+    cur.id <- as.character(rows[i, 'stable_id'])
+    job.id <- -1
+    job.id <- dbGetQuery(con, sprintf("select analysis_job_id from analysis_job where input_id like '%%%s%%'", cur.id))
+    job.id <- as.numeric(job.id)
+    
+    if (job.id == -1) {
+      stop("Job not found!")
+    }
+    sql <- sprintf("update analysis_job set status='READY', job_claim=NULL, retry_count=0 where analysis_job_id=%d", job.id)
+    print(sql)
+    dbSendQuery(con, sql)
+    #print(cur.nm)
+    #cmd <- sprintf("bsub -q normal runWorker.pl -url mysql://ensadmin:ensembl@ens-research:3306/gj1_hiv_62 -debug 1 -job_id %d", job.id)
+    #print(cmd)
+    #system(cmd)
+  }  
+}
+
+new.genes <- function() {
+  dbname <<- 'gj1_hiv_62'
+  source("~/src/greg-ensembl/scripts/collect_sitewise.R")
+  genes <- get.vector(con, "select * from genes;")
+
+  genes$lrt <- 2* (genes$m8_lnl - genes$m7_lnl)
+  genes$pval <- pchisq(genes$lrt, df=2, lower.tail=F)
+  genes$pval.bh <- p.adjust(genes$pval, method='BH')
+
+  genes[genes$paml_dnds > 3, 'paml_dnds'] <- 3
+
+  save(genes, file=wd.f("genes.e62.Rdata"))
+  write.csv(genes[, manuscript.fields()], file=wd.f("genes.e62.csv"), row.names=F)
+  new.genes <<- genes[, manuscript.fields()]
+}
+
+manuscript.fields <- function() {
+  c(
+    'stable_id_gene', 'gene_name', 'aln_length', 'masked_nucs', 'paml_dnds', 'slr_dnds', 'pval', 'pval.bh'
+  )
+}
+
 get.genes <- function() {
   genes <- get.vector(con, "select * from genes;")
 

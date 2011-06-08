@@ -53,7 +53,7 @@ sub run {
 
   my $pta = $self->compara_dba->get_ProteinTreeAdaptor;
   my $protein_tree = $pta->fetch_by_Member_root_id($member);
-  print $protein_tree->ascii."\n";
+  #print $protein_tree->ascii."\n";
 
   my $ortholog_tree = Bio::EnsEMBL::Compara::ComparaUtils->get_one_to_one_ortholog_tree($self->compara_dba, $member, 'ortholog.*');
   $ortholog_tree = Bio::EnsEMBL::Compara::ComparaUtils->restrict_tree_to_clade($self->compara_dba, $ortholog_tree, 'Primates');
@@ -61,17 +61,7 @@ sub run {
   my $tree = $ortholog_tree;
   my $params = $self->params;
 
-#  print $ortholog_tree->ascii."\n";
-
-#  return;
-
-#  my $params = $self->params;
-#  my $tree   = $self->get_tree;
-
-  $self->param('force_recalc', 0);
-
-  # IMPORTANT - set our data_id to the current node ID.
-  $self->param('data_id', $self->param('node_id'));
+  print $ortholog_tree->ascii."\n";
 
   $params->{'fail_on_altered_tree'} = 0;
 
@@ -90,32 +80,38 @@ sub run {
     $ref_member = $members[0];
   }
 
+  $ref_member = $member;
+
   die("No ref member!") unless (defined $ref_member);
-  $self->param('ref_member_id',$ref_member->stable_id);
-  $self->param('stable_id_gene',$ref_member->get_Gene->stable_id);
+  my $ref_member = $ref_member->get_canonical_peptide_Member;
+  $self->param('stable_id_gene',$ref_member->gene_member->get_Gene->stable_id);
   $self->param('stable_id_transcript',$ref_member->get_Transcript->stable_id);
   $self->param('stable_id_peptide',$ref_member->stable_id);
-
   $self->param('ref_member', $ref_member);
-
-  my $gene_name = $ref_member->get_Gene->external_name || $ref_member->gene_member->stable_id;
+  my $gene_name = $ref_member->get_Gene->external_name || $ref_member->get_Gene->stable_id;
   $self->param('gene_name',$gene_name);
-  $self->param('gene_id',$gene_name);
 
   my $c_dba = $self->compara_dba;
   my $params = $self->params;
-  print $tree->ascii."\n";
 
+  $ref_member->name($ref_member->stable_id);
   my ($tree, $aln) = $self->_get_aln($tree, $ref_member);
 
-  #print $tree->ascii."\n";
-  #$self->pretty_print($aln, {full => 1});
+  $self->_out_aln($aln, 'orig');
 
-  #$self->param('force_recalc', 1);
+  # Should we remove the more-distant paralogous copy here...?
 
   $aln = $self->_realign($tree, $aln);
 
+  # Flatten to reference sequence again after Prank re-alignment.
+  $aln = Bio::EnsEMBL::Compara::AlignUtils->flatten_to_sequence( $aln, $ref_member->name);
+
+  $self->_out_aln($aln, 'realigned');
+
   $aln = $self->_mask_aln($tree, $aln);
+
+  $self->_out_aln($aln, 'masked');
+
   $self->_run_paml($tree, $aln);
 
   my $out_f = $self->_save_file('tree', 'nh');
@@ -136,6 +132,7 @@ sub run {
   $self->param('slr_dnds',$sitewise_results->{omega});
   $self->param('slr_kappa',$sitewise_results->{kappa});
 
+  $self->param('n_seqs', scalar($pep_aln->each_seq));
   $self->param('aln_length', $pep_aln->length);
   $self->param('seq_length', $ref_member->seq_length);
 
@@ -367,13 +364,11 @@ sub _save_file {
   my $filename_base = shift;
   my $ext = shift;
 
-  my $id = $self->param('gene_id');
-  my $pset = $self->param('parameter_set_shortname');
-
-  my $filename = "${id}_${pset}_$filename_base";
+  my $id = $self->param('gene_name');
+  my $filename = "${id}_$filename_base";
 
   my $file_params = {
-    id => "${id}_${pset}",
+    id => "${id}",
     filename => $filename,
     extension => $ext,
     subfolder => 'data',
@@ -383,6 +378,42 @@ sub _save_file {
   return $file_obj;
 }
 
+sub _out_aln {
+  my $self = shift;
+  my $aln = shift;
+  my $name = shift;
+
+  my $aln_f = $self->_save_file($name, 'fasta');
+  my $pdf_f = $self->_save_file($name, 'pdf');
+
+  if (!-e $aln_f->{full_file} || !-e $pdf_f->{full_file}) {
+    my $tmp = $self->worker_temp_directory;
+    my $aln_file = $aln_f->{full_file};
+    my $pdf_file = $pdf_f->{full_file};
+
+    Bio::EnsEMBL::Compara::AlignUtils->to_file($aln, $aln_file);  
+
+    my $cmd = qq^
+library(phylosim)
+library(RColorBrewer)
+library(plyr)
+source("~/src/greg-ensembl/projects/phylosim/PhyloSimPlots.R")
+source("~/src/greg-ensembl/projects/primate_hiv/hiv_manuscript_plots.R")
+
+aln <- read.aln("${aln_file}")
+rownames(aln) <- ensp.to.species(rownames(aln))
+aln <- sort.aln.if(aln, sort.order())
+
+pep.aln <- aln.tx(aln)
+n.pages <- ceiling( ncol(pep.aln) / 125)
+pdf(file="${pdf_file}", width=30, height=3*n.pages)
+sim <- PhyloSim(); sim\$.alignment <- pep.aln
+plotAlignment(sim, axis.text.size=12, aln.plot.chars=T, aln.char.text.size=3, num.pages=n.pages)
+dev.off()
+^;
+  Bio::Greg::EslrUtils->run_r($cmd);
+  }
+}
 
 sub _get_aln {
   my $self = shift;
@@ -508,7 +539,7 @@ sub run_with_windows {
 
     if (defined $ref_member) {
       # Re-fetch a fresh reference member from the database.
-      my $ref_member_id = $self->param('ref_member_id');
+      my $ref_member_id = $self->param('stable_id_peptide');
       print "ref_member_id: [$ref_member_id]\n" if ($self->debug);
       my $mba        = $self->compara_dba->get_MemberAdaptor;
       $ref_member = $mba->fetch_by_source_stable_id( undef, $ref_member_id );
@@ -599,13 +630,11 @@ sub genes_table_structure {
   return {
     job_id => 'int',
     data_id => 'int',
-    parameter_set_id => 'int',
     
     gene_name => 'string',
     aln_type => 'char16',
-    parameter_set_name => 'string',
-    parameter_set_shortname => 'char16',
 
+    n_seqs => 'int',
     aln_length => 'int',
     seq_length => 'int',
 

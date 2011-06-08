@@ -101,6 +101,18 @@ my $taxid_counter = 999999;
   return $self->name;
 };
 
+*Bio::EnsEMBL::Compara::Member::name = sub {
+  my $self = shift;
+  my $value = shift;
+  if(defined($value)) { $self->add_tag('name', $value); }
+  else { $value = $self->get_tagvalue('name'); }
+  if (!defined $value) {
+    $self->add_tag('name', $self->stable_id);
+    $value = $self->stable_id;
+  }
+  return $value;
+};
+
 *Bio::EnsEMBL::Compara::NestedSet::_internal_nhx_format = sub {
   my $self = shift;
   my $format_mode = shift;
@@ -1214,7 +1226,8 @@ sub get_one_to_one_ortholog_tree {
     my @members = @{$hom->gene_list};
     foreach my $m (@members) {
       #print $m->stable_id." ".$m->member_id."\n";
-      $orth_types->{$m->member_id} = $desc;
+      my $pep_m = $m->get_canonical_peptide_Member;
+      $orth_types->{$pep_m->member_id} = $desc;
     }
   }
 
@@ -1226,6 +1239,9 @@ sub get_one_to_one_ortholog_tree {
       if ($orth_types->{$leaf->gene_member_id}) {
         $keep_members->{$leaf} = $leaf;
       }
+      if ($orth_types->{$leaf->member_id}) {
+        $keep_members->{$leaf} = $leaf;
+      }
     }
     
     #print "  Extracting subtree\n";
@@ -1234,7 +1250,7 @@ sub get_one_to_one_ortholog_tree {
     
     if (defined $tree) {
       foreach my $member ($tree->leaves) {
-        my $type = $orth_types->{$member->gene_member_id};
+        my $type = $orth_types->{$member->member_id};
         $member->add_tag('orth_type',$type);
       }
     }
@@ -2376,6 +2392,8 @@ sub get_compara_or_genomic_aln {
   # Flatten and filter genomic aligns.
   if ( $aln_type =~ m/(genomic|compara)/i ) {
     print "Before flattening: " . $aln->length . "\n";
+    print $ref_member->stable_id."\n";
+    print $ref_member->name."\n";
     $aln = Bio::EnsEMBL::Compara::AlignUtils->flatten_to_sequence( $aln, $ref_member->name);
     $aln = Bio::EnsEMBL::Compara::AlignUtils->filter_stop_codons($aln);
     $aln = Bio::EnsEMBL::Compara::AlignUtils->ensure_multiple_of_three($aln);    

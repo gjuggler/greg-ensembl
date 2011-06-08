@@ -48,10 +48,13 @@ GetOptions(
 die("No experiment name given!") unless (defined $experiment_name);
 
 # First create a database for the experiment.
-my $mysql_base = 'mysql://ensadmin:ensembl@ens-research/';
+my $mysql_base;
 if (Bio::Greg::EslrUtils->is_ebi) {
   $mysql_base = 'mysql://slrsim:slrsim@mysql-greg.ebi.ac.uk:4134/';
+} else {
+  $mysql_base  = 'mysql://ensadmin:ensembl@ens-research/';
 }
+print "  MySQL base [$mysql_base]\n";
 
 my $url = "${mysql_base}gj1_slrsim";
 my $dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new( -url => $url );
@@ -60,6 +63,8 @@ $dba->dbc->do("create database if not exists gj1_${experiment_name};");
 $url = $mysql_base . "gj1_${experiment_name}";
 my $h = new Bio::Greg::Hive::ComparaHiveLoaderUtils;
 $h->init($url);
+
+print "  cleaning tables...\n";
 $h->init_compara_tables;
 
 $h->clean_hive_tables;
@@ -67,18 +72,21 @@ $h->clean_compara_analysis_tables;
 $h->clean_compara_tree_tables;
 my @truncate_tables = qw^
       aln aln_scores omega
-      sites genes
+      sites genes merged slrsim_results
   ^;
 $h->truncate_tables(\@truncate_tables);
 
 load_trees();
 load_tree();
 slrsim();
+calculate_results();
 plots();
 
-$h->connect_analysis( "LoadTrees",   "LoadTree" );
+$h->connect_analysis( "LoadTrees",   "LoadTree", 1 );
+$h->connect_analysis( "LoadTrees",   "CalculateResults", 2 );
 $h->connect_analysis( "LoadTree",   "Slrsim" );
-$h->wait_for("Plots",["LoadTrees","LoadTree", "Slrsim"]);
+$h->wait_for("CalculateResults",["LoadTrees","LoadTree", "Slrsim"]);
+$h->wait_for("Plots",["LoadTrees","LoadTree", "Slrsim", "CalculateResults"]);
 
 sub load_trees {
   my $logic_name  = "LoadTrees";
@@ -100,7 +108,22 @@ sub slrsim {
   my $logic_name = "Slrsim";
   my $module     = "Bio::Greg::Slrsim::Slrsim";
   my $params     = {};
-  $h->create_analysis( $logic_name, $module, $params, 150, 1 );
+
+  if (Bio::Greg::EslrUtils->is_ebi) {  
+    $h->create_analysis( $logic_name, $module, $params, 250, 1 );
+  } else {
+    $h->create_analysis( $logic_name, $module, $params, 800, 1 );
+  }
+}
+
+sub calculate_results {
+  my $logic_name = "CalculateResults";
+  my $module     = "Bio::Greg::Slrsim::CalculateResults";
+  my $params     = {};
+  $h->create_analysis( $logic_name, $module, $params, 30, 1 );
+
+  $params = {
+  };
 }
 
 sub plots {

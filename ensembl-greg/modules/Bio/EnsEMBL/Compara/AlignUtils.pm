@@ -98,6 +98,17 @@ sub hmmbuild {
 
 }
 
+sub has_any_data {
+  my $class = shift;
+  my $aln = shift;
+
+  my $has_data = 0;
+  foreach my $seq ($aln->each_seq) {
+    $has_data = 1 if ($seq->seq =~ m/[[^NX]]/gi);
+  }
+  return $has_data;
+}
+
 sub dawg_lambda {
   # Setup steps:
   # 1) Download lambda.py from the DAWG package and put it somewhere in your PATH.

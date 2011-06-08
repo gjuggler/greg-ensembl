@@ -95,6 +95,8 @@ sub run {
   my $inferred_pep_aln = Bio::EnsEMBL::Compara::AlignUtils->translate($inferred_aln);
 
   # Mask the alignment if needed.
+  $self->param('force_recalc', 1);
+
   my $masked_aln = $self->_mask_alignment($tree, $inferred_aln, $inferred_pep_aln);
   my $masked_pep_aln = Bio::EnsEMBL::Compara::AlignUtils->translate($masked_aln);
 
@@ -215,6 +217,7 @@ sub _mask_alignment {
   if (!-e $scores_file || $self->param('force_recalc')) {
     print "  calculating alignment scores\n";
     my $scores_hash = $self->_get_alignment_scores($tree, $aln, $pep_aln);
+    $self->hash_print($scores_hash);
     open(OUT,">$scores_file");
     print OUT freeze($scores_hash);
     close(OUT);
@@ -246,7 +249,7 @@ sub _mask_alignment {
 
   print "Masked:\n";
   my $tx_masked = Bio::EnsEMBL::Compara::AlignUtils->translate($masked_aln);
-  $self->pretty_print($tx_masked);
+  $self->pretty_print($tx_masked, {full => 1});
 
   return $masked_aln;
 }
@@ -270,10 +273,17 @@ sub _run_sitewise {
   my $out_file = $out_f->{full_file};
   $self->param('sitewise_file', $out_f->{rel_file});
 
+  if (!Bio::EnsEMBL::Compara::AlignUtils->has_any_data($aln)) {
+    return {};
+  }
+
   print "$out_file\n";
   if (!-e $out_file || $self->param('force_recalc')) {
     print("  running sitewise analysis\n");
-    my $output_lines = $self->run_sitewise_analysis($tree,$aln, $pep_aln);
+    my $output_lines = ("");
+    eval {
+      $output_lines = $self->run_sitewise_analysis($tree,$aln, $pep_aln);
+    };
     open(OUT, ">$out_file");
     print OUT join("", @{$output_lines});
     close(OUT);
@@ -325,12 +335,13 @@ sub _collect_and_store_results {
   foreach my $seq_position ( 1 .. length($seq_str) ) {
     my $true_column = $true_pep_aln->column_from_residue_number( $id, $seq_position );
     my $aln_column = $pep_aln->column_from_residue_number( $id, $seq_position );
-    my $true_dnds = $true_sitewise_hash->{$true_column}->{omega};
-    my $aln_dnds = $sitewise_hash->{$aln_column}->{omega};
+    my $true_hash_item = $true_sitewise_hash->{$true_column};
+    my $true_dnds = $true_hash_item->{omega};
+    my $aln_hash_item = $sitewise_hash->{$aln_column};    
+    my $aln_dnds = $aln_hash_item->{omega};
     
     $true_dnds = 0;
     $aln_dnds = 0;
-
     if ( !( defined $aln_dnds && defined $true_dnds ) ) {
       if ( !defined $true_dnds ) {
         my $str = sprintf("No true dnds! aln:%s true:%s\n", $aln_column, $true_column);
@@ -344,12 +355,17 @@ sub _collect_and_store_results {
     $obj->{true_type}      = $true_sitewise_hash->{$true_column}->{'type'}      || '';
     $obj->{true_dnds}      = $true_sitewise_hash->{$true_column}->{'omega'} || '';
 
-    $obj->{aln_type}       = $sitewise_hash->{$aln_column}->{'type'}        || '';
-    $obj->{aln_dnds}       = $sitewise_hash->{$aln_column}->{'omega'} || '';
-    $obj->{aln_note}       = $sitewise_hash->{$aln_column}->{'note'}        || '';
-    $obj->{lrt_stat}        = $sitewise_hash->{$aln_column}->{'lrt_stat'}    || '';
-    $obj->{aln_dnds_lower} = $sitewise_hash->{$aln_column}->{'omega_lower'} || '';
-    $obj->{aln_dnds_upper} = $sitewise_hash->{$aln_column}->{'omega_upper'} || '';
+    if (!defined $aln_hash_item) {
+      $obj->{aln_dnds} = 0;
+      $obj->{lrt_stat} = 0;
+    } else {
+      $obj->{aln_type}       = $sitewise_hash->{$aln_column}->{'type'}        || '';
+      $obj->{aln_dnds}       = $sitewise_hash->{$aln_column}->{'omega'} || '';
+      $obj->{aln_note}       = $sitewise_hash->{$aln_column}->{'note'}        || '';
+      $obj->{lrt_stat}        = $sitewise_hash->{$aln_column}->{'lrt_stat'}    || '';
+      $obj->{aln_dnds_lower} = $sitewise_hash->{$aln_column}->{'omega_lower'} || '';
+      $obj->{aln_dnds_upper} = $sitewise_hash->{$aln_column}->{'omega_upper'} || '';
+    }
 
     if (defined @aln_entropies) {
 #    $obj->{entropy} = $aln_entropies[$aln_column-1];
@@ -466,15 +482,14 @@ sub _genes_table_structure {
     node_id => 'int',
     job_id => 'int',
 
+    data_prefix => 'char4',
+
     slrsim_label                        => 'char64',
     slrsim_analysis_name                => 'string',
 
-    filtering_name                      => 'string',
-    alignment_name                      => 'string',
     aligner => 'string',
     filter => 'string',
     analysis_action                     => 'string',
-    sitewise_filter_order               => 'string',
     alignment_score_threshold           => 'float',
 
     slrsim_rep         => 'int',
@@ -509,13 +524,6 @@ sub _genes_table_structure {
 
     tree_total_length => 'float',
     tree_mean_path => 'float',
-
-    sim_file => 'string',
-    aln_file => 'string',
-    tree_file => 'string',
-    aln_scores_file => 'string',
-    masked_aln_file => 'string',
-    sitewise_file => 'string',
 
     unique_keys              => 'node_id,slrsim_rep'
   };
