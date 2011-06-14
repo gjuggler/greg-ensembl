@@ -156,7 +156,29 @@ multi.trees <- function() {
 }
 
 multi.filters <- function() {
-  tbl.a <<- read.csv('~/scratch/gj1_fig_three_b/current/table.csv')
+  tbl.a <<- read.csv('~/scratch/gj1_fig_three_a/current/table.csv')
+  tbl.b <<- read.csv('~/scratch/gj1_fig_three_b/current/table.csv')
+
+  tbl.a$aligner <- 'prankc'
+  tbl.b$aligner <- 'clustalw'
+
+  reorder.f <- function(tbl) {
+    print(levels(tbl$filter))
+    unq <- unique(c('gblocks', 'guidance', 'tcoffee', 'optimal_c', 'true', as.character(tbl$filter)))
+    
+    tbl$filter <- factor(as.character(tbl$filter), levels=unq, labels=unq, ordered=T)
+    tbl <- tbl[order(tbl$filter),]
+    print(levels(tbl$filter))
+    return(tbl)
+  }
+  tbl.a <- reorder.f(tbl.a)
+  tbl.b <- reorder.f(tbl.b)
+
+  tbl.a$aln.filt <- factor(tbl.a$filter, labels=paste(tbl.a[1,]$aligner, levels(tbl.a$filter), sep=' '))
+  tbl.b$aln.filt <- factor(tbl.b$filter, labels=paste(tbl.b[1,]$aligner, levels(tbl.b$filter), sep=' '))
+  #tbl.b$aln.filt <- paste(tbl.b$aligner, tbl.b$filter, sep=' ')
+  tbl.a <- rbind(tbl.a, tbl.b)
+  #print(head(tbl.a))
 
   tbl.a$tdr_at_thresh <- 1 - tbl.a$fdr_at_thresh
 
@@ -165,10 +187,10 @@ multi.filters <- function() {
   print(nrow(true.aln))
   print(nrow(none.aln))
 
-  tbl.a$aligner <- 'clustalw'
+  tbl.a <- subset(tbl.a, !(filter %in% c('branchlength', 'optimal_a', 'optimal_b', 'none', 'meta')))
 
-  m.by <- c('length', 'ins_rate')  
-  filter.fields <- c('fpr_at_thresh', 'tpr_at_thresh', 'tdr_at_thresh', 'tpr_at_fpr')
+  m.by <- c('length', 'ins_rate', 'aligner')
+  filter.fields <- c('fpr_at_thresh', 'tpr_at_thresh', 'tdr_at_thresh')
 
   tbl.m <- tbl.a
   comb.df <- data.frame()
@@ -177,8 +199,8 @@ multi.filters <- function() {
     n.fld <- paste(fld, '.none', sep='')
     true.aln[, t.fld] <- true.aln[, fld]
     none.aln[, n.fld] <- none.aln[, fld]
-    tbl.m <- merge(tbl.m, true.aln[, c(t.fld, 'length', 'ins_rate')], by=m.by)
-    tbl.m <- merge(tbl.m, none.aln[, c(n.fld, 'length', 'ins_rate')], by=m.by)
+    tbl.m <- merge(tbl.m, true.aln[, c(t.fld, m.by)], by=m.by)
+    tbl.m <- merge(tbl.m, none.aln[, c(n.fld, m.by)], by=m.by)
 
     tbl.m[, fld] <- tbl.m[, fld] / tbl.m[, n.fld]
 
@@ -190,12 +212,29 @@ multi.filters <- function() {
   }
   print(nrow(comb.df))
 
-  comb.df$aligner <- comb.df$filter
   comb.df$tree <- factor(comb.df$field, levels=filter.fields, ordered=T)
 
-#  print(levels(comb.df$tree))
-#  print(levels(comb.df$filter))
-  multi.plot(comb.df, color.by='cur.z', prefix='filt_', relative=T)
+  comb.clustalw <- subset(comb.df, aligner == 'clustalw')
+  comb.prankc <- subset(comb.df, aligner == 'prankc')
+
+  comb.clustalw$aligner <- comb.clustalw$aln.filt
+  comb.prankc$aligner <- comb.prankc$aln.filt
+
+  cw <- multi.plot(comb.clustalw, color.by='cur.z', prefix='filt_', relative=T, plot=F)
+  pc <- multi.plot(comb.prankc, color.by='cur.z', prefix='filt_', relative=T, plot=F)
+
+  cw <- cw + coord_equal(ratio=10)
+  pc <- pc + coord_equal(ratio=10)
+  
+  width <- length(unique(comb.clustalw$tree)) * 2
+  height <- length(unique(comb.clustalw$aligner))
+
+  pdf(file="filt_fig_multi.pdf", width=width+3, height=height)
+  vplayout(2, 1)
+  print(cw, vp=subplot(1,1))
+  print(pc, vp=subplot(2,1))
+  dev.off()
+
 }
 
 multi.plots <- function() {
@@ -220,6 +259,7 @@ multi.plot <- function(all.tbls, color.by='tpr_at_fdr',
   facet.x = 'tree',
   keep = NULL,
   prefix = '',
+  plot = T,
   relative=F
 ) {
 
@@ -228,10 +268,12 @@ multi.plot <- function(all.tbls, color.by='tpr_at_fdr',
   all.tbls$fx <- all.tbls[, facet.x]
   all.tbls$fy <- all.tbls[, facet.y]
 
-  width <- length(unique(all.tbls$fx)) * 2
+  width <- length(unique(all.tbls$fx))
   height <- length(unique(all.tbls$fy))
 
-  pdf(file=paste(prefix, 'fig_multi_', color.by, '.pdf', sep=''), width=width+1, height=height)
+  if (plot) {
+    pdf(file=paste(prefix, 'fig_multi_', color.by, '.pdf', sep=''), width=width+1, height=height)
+  }
 
   # Write all-table to a file.
   write.csv(all.tbls, file=paste(prefix, 'fig_multi_.csv', sep=''), row.names=FALSE)
@@ -266,33 +308,60 @@ multi.plot <- function(all.tbls, color.by='tpr_at_fdr',
   }
 
   if (relative) {
+    #clr.lim <- c(0, max(all.tbls$z_val))
     clr.lim <- c(0, 2)
-    clr.scale <- scale_fill_gradient2(low='red', high='blue', midpoint=1)
+    clr.val <- c(
+      rgb(1, 0, 0),
+      rgb(1, 0.5, 0.5),
+      rgb(1, 0.75, 0.75),
+      rgb(1, 1, 1),
+      rgb(0.75, 0.75, 1),
+      rgb(0.5, 0.5, 1),
+      rgb(0, 0, 1)
+    )  
+    clr.brk <- c(0, 0.25, 0.75, 0.95, 1.05, 1.25, 1.75, 10)
+    clr.lbl <- paste(clr.brk[-length(clr.brk)], clr.brk[-1], sep=' - ')
+    all.tbls$z <- all.tbls$z_val
+
+    for (i in 1:length(clr.val)) {
+      within.rng <- all.tbls$z >= clr.brk[i] & all.tbls$z < clr.brk[i+1]
+      print(paste(i,sum(within.rng)))
+      all.tbls[within.rng, 'z_val'] <- i
+    }
+
+    all.tbls$z_val <- as.factor(all.tbls$z_val)
+
+    clr.scale <- scale_fill_manual(values=clr.val, breaks=1:length(clr.lbl), labels=clr.lbl)
   } else {
     breaks <- seq(from=clr.lim[1], to=clr.lim[2], length.out=n+1)
     clr.scale <- scale_fill_gradientn(z.val, colours=clrs, limits=clr.lim, breaks=breaks)
+    all.tbls$z_val <- pmin(clr.lim[2], all.tbls$z_val)
+    all.tbls$z_val <- pmax(clr.lim[1], all.tbls$z_val)
   }
 
-  all.tbls$z_val <- pmin(clr.lim[2], all.tbls$z_val)
-  all.tbls$z_val <- pmax(clr.lim[1], all.tbls$z_val)
 
-  p <- ggplot(all.tbls, aes(x=length, y=ins_rate))
+  p <- ggplot(all.tbls, aes(x=length, y=ins_rate*2))
   p <- p + theme_bw()
   p <- p + geom_tile(aes(fill=z_val))
   p <- p + clr.scale
   p <- p + facet_grid(fy ~ fx)
   p <- p + opts(
 #    legend.position='none',
-#    panel.grid.major = theme_blank(),
-#    panel.grid.minor = theme_blank(),
+    panel.grid.major = theme_blank(),
+    panel.grid.minor = theme_blank(),
 #    strip.text.x = theme_blank(),
 #    strip.text.y = theme_blank(),
-#    strip.background = theme_blank(),
+    strip.background = theme_blank(),
+    axis.text.x = theme_text(angle=90, hjust=1),
     axis.title.x = theme_blank(),
     axis.title.y = theme_blank()
   )
-  print(p)
-  dev.off()
+  if (plot) {
+    print(p)
+    dev.off()
+  } else {
+    return(p)
+  }
 }
 
 
@@ -1040,23 +1109,32 @@ example.roc <- function() {
 }
 
 meta.analysis <- function() {
+    asdf <- load.sites('gj1_fig_three_a')
+    asdf$label <- T
+    asdf$tree <- T
+    asdf$analysis <- T
+    asdf$true_type <- as.factor(asdf$true_type)
 
-    load.s <- function(db) {
-      df <- load.sites(db)
-    }
+    print(object.sizes())
 
-    asdf <- load.s('gj1_fig_three_a')
-    print(str(asdf))
+    comb.df <- data.frame()
+    for (ln in unique(asdf$tree_length)) {
+      for (ins in unique(asdf$ins_rate)) {
+        print(paste(ln, ins, '...'))
+        cur.asdf <- subset(asdf, tree_length == ln & ins_rate == ins)
+        cur.df <- meta.sub(cur.asdf)
+        comb.df <- rbind(comb.df, cur.df)
+      }
+    }   
+    write.csv(comb.df, file="meta.analysis.csv")
+}
 
-    true <- subset(load.s('gj1_fig_three_a'), filter=='true')
-    true$aligner <- 'True Alignment'
-
-    prank_c <- subset(load.s('gj1_fig_three_a'), filter=='none')
-
-    bl.lo <- subset(load.s('gj1_fig_three_a'), filter=='branchlength_lo')
-    bl.hi <- subset(load.s('gj1_fig_three_a'), filter=='branchlength_hi')
-    tc.lo <- subset(load.s('gj1_fig_three_a'), filter=='tcoffee_lo')
-    tc.hi <- subset(load.s('gj1_fig_three_a'), filter=='tcoffee_hi')
+meta.sub <- function(asdf) {
+    prank_c <- subset(asdf, filter=='none')
+    bl <- subset(asdf, filter=='branchlength')
+    tc <- subset(asdf, filter=='tcoffee')
+    gb <- subset(asdf, filter=='gblocks')
+    true <- subset(asdf, filter=='true')
 
     merge.by <- c('tree_length', 'ins_rate', 'slrsim_rep', 'seq_position')
 
@@ -1071,9 +1149,10 @@ meta.analysis <- function() {
     collect.scores <- function(df.list) {
       df.names <- names(df.list)
       all.sites <- prep.df(df.list[[1]], df.names[1])
-
+  
       for (i in 2:length(df.list)) {
         cur.df <- prep.df(df.list[[i]], df.names[i])
+        #print(str(cur.df))
         all.sites <- merge(all.sites, cur.df, by=merge.by, all.x=T, all.y=T)
       }
       return(all.sites)
@@ -1081,32 +1160,65 @@ meta.analysis <- function() {
 
     combine.median <- function(df) {
       combine.fields <- grep("lrt\\.", colnames(df), value=T)
-      print(combine.fields)
-
+      #print(combine.fields)
+  
       meta.matrix <- as.matrix(df[, combine.fields])
       lrts <- apply(meta.matrix, 1, median, na.rm=T)
       df[, 'lrt_stat'] <- lrts
-      
+        
       for (i in 1:length(combine.fields)) {
         df[, combine.fields[i]] <- NULL
       }
       return(df)
     }
-
+  
     meta <- list(
       none = prank_c,
-      bl.lo = bl.lo,
-      bl.hi = bl.hi,
-      tc.lo = tc.lo,
-      tc.hi = tc.hi
+      bl = bl,
+      tc = tc,
+      gb = gb
     )
+    #print("  collecting scores")
     meta <- collect.scores(meta)
+    #print("  combining median")
     meta <- combine.median(meta)
 
+    #print(colnames(meta))
+    #print(colnames(true))
+    #print("  merging true")
     true$lrt_stat <- NULL
     test.df <- merge(true, meta, by=merge.by, all.x=T)
-    pt <- ddply(test.df, c('label'), paper.table)
-    print(pt[, c('tpr_at_thresh', 'fpr_at_thresh', 'fdr_at_thresh')])
+    return(test.df)
+}
+
+add.len.ins.jobs <- function() {
+  source("~/src/greg-ensembl/scripts/mysql_functions.R")
+
+  dbname <- 'gj1_fig_three_a'
+  con <- connect(dbname)
+
+  genes <- mysqlReadTable(con, 'genes')
+
+  len <- unique(genes$slrsim_tree_mean_path)
+  ins <- unique(genes$phylosim_insertrate)
+
+  for (l in len) {
+    for (i in ins) {
+      sql <- sprintf("INSERT INTO analysis_job (analysis_id, input_id, status) VALUES (4, \"{phylosim_insertrate => %.3f, slrsim_tree_mean_path => %.3f}\", 'READY')", i, l)
+      print(sql)
+      mysqlExecStatement(con, sql)
+    }    
+  }
+
+  print(len)
+  print(ins)
+
+
+}
+
+object.sizes <- function() {
+  return(rev(sort(sapply(ls(envir=.GlobalEnv), function (object.name)
+        object.size(get(object.name))))))
 }
 
 merged.datasets <- function(tbl) {
@@ -1405,12 +1517,6 @@ filter.factors <- function(data) {
     labels <- c(labels, 
       switch(f,
         gblocks = 'Gblocks',
-        optimal = 'Optimal',
-        'optimal_lo' = 'Optimal(low)',
-        'optimal_hi' = 'Optimal(high)',
-        tcoffee = 'T-Coffee',
-        'tcoffee_lo' = 'T-Coffee(low)',
-        'tcoffee_hi' = 'T-Coffee(high)',
         guidance = 'GUIDANCE',
         'guidance_lo' = 'GUIDANCE(low)',
         'guidance_hi' = 'GUIDANCE(high)',
@@ -1418,8 +1524,14 @@ filter.factors <- function(data) {
         branchlength = 'Branch Length',
         'branchlength_lo' = 'Branch Length(low)',
         'branchlength_hi' = 'Branch Length(high)',
+        tcoffee = 'T-Coffee',
+        'tcoffee_lo' = 'T-Coffee(low)',
+        'tcoffee_hi' = 'T-Coffee(high)',
         'No filter' = 'None',
         'none' = 'None',
+        optimal = 'Optimal',
+        'optimal_lo' = 'Optimal(low)',
+        'optimal_hi' = 'Optimal(high)',
         'True Alignment' = 'True Alignment',
         True_Alignment = 'True Alignment',
         true = 'True Alignment'

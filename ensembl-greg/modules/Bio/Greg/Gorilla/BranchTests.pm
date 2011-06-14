@@ -26,7 +26,7 @@ sub fetch_input {
   # Fetch parameters from all possible locations.
   $self->load_all_params();
 
-  $self->{_genes_structure} = $self->genes_table;
+  $self->{_table_structure} = $self->genes_table;
 
   # Create tables if necessary.
   $self->create_table_from_params( $self->compara_dba, 'subs',
@@ -48,7 +48,7 @@ sub run {
   my ($tree, $aln) = $self->_get_tree_and_alignment($ortholog_tree);
   $self->pretty_print($aln);
   print $tree->ascii."\n";
-
+  
   # Fail if we don't have any outgroup primates.
 #  my @outgroups = grep {
 #    $_->taxon_id == 9483 ||
@@ -78,10 +78,7 @@ sub run {
     my $missing_string = join(', ', sort {$a <=> $b} @missing);
     $self->fail("one2one", "Missing $missing_string");
   }
-
-
-  
-
+ 
   my $params = {
     keep_species => join(',', map {$_->taxon_id} $tree->leaves)
   };
@@ -98,6 +95,8 @@ sub run {
     }
   }
 
+  $self->_collect_seqs($genome_tree, $aln, 'seqs_nofilters');
+
   $self->dbc->disconnect_when_inactive(1);
   $self->_run_slr($ortholog_tree, $aln);
   $self->param('aln_use_type', 'genomic_primates');
@@ -107,7 +106,7 @@ sub run {
   $self->_test_for_aln_coverage($genome_tree, $aln);
 
   $self->_run_tests($genome_tree, $aln);
-  $self->_collect_seqs($genome_tree, $aln);
+  $self->_collect_seqs($genome_tree, $aln, 'seqs');
   $self->_plot_subs($genome_tree, $aln);
   $self->_collect_stats($genome_tree, $aln);
 }
@@ -115,7 +114,7 @@ sub run {
 sub write_output {
   my $self = shift;
 
-  $self->create_table_from_params( $self->dbc, 'genes', $self->{_genes_structure});
+  $self->create_table_from_params( $self->dbc, 'genes', $self->{_table_structure});
   $self->store_params_in_table($self->dbc, 'genes', $self->params);
 }
 
@@ -127,7 +126,9 @@ sub _tx_aln {
 
 sub _get_tree_and_alignment {
   my $self = shift;
-  my $tree = shift;
+  my $ortho_tree = shift;
+
+  $ortho_tree = Bio::EnsEMBL::Compara::TreeUtils->copy_tree($ortho_tree);
 
   #my @aln_types = ('compara', 'genomic_primates', 'genomic_mammals', 'genomic_all');
   my @aln_types = ('genomic_primates');
@@ -136,7 +137,7 @@ sub _get_tree_and_alignment {
   my $use_file;
 
   foreach my $type (@aln_types) {
-    my $tree_copy = Bio::EnsEMBL::Compara::TreeUtils->copy_tree($tree);
+    my $tree_copy = Bio::EnsEMBL::Compara::TreeUtils->copy_tree($ortho_tree);
 
     my $f = $self->_save_file('aln_'.$type, 'fasta');
     my $file = $f->{full_file};
@@ -167,12 +168,6 @@ sub _get_tree_and_alignment {
       my $aln = $tree_aln_obj->{aln};
       my $aln_tree = $tree_aln_obj->{tree};
       
-      # Realign compara alignments w/ PRANK...
-#      if ($type eq 'compara') {
-#        $params->{alignment_pagan_codon_model} = 1;
-#        $aln = $self->align_with_pagan($aln, $aln_tree, $params);
-#      }
-
       Bio::EnsEMBL::Compara::AlignUtils->to_file($aln, $file);
       #Bio::EnsEMBL::Compara::AlignUtils->to_file($raw_aln, $raw_file);
     }
@@ -182,23 +177,23 @@ sub _get_tree_and_alignment {
   my $tree_file = $tree_f->{full_file};
   $self->store_param('tree_file', $tree_f->{rel_file});
   if (!-e $tree_file || $self->param('force_recalc')) {
-    Bio::EnsEMBL::Compara::TreeUtils->to_file($tree, $tree_file);
+    Bio::EnsEMBL::Compara::TreeUtils->to_file($ortho_tree, $tree_file);
   }
   my $tree_from_file = Bio::EnsEMBL::Compara::TreeUtils->from_file($tree_file);
   my $aln = Bio::EnsEMBL::Compara::AlignUtils->from_file($use_file->{full_file});
 
   # Get sub-tree of primate sequences.
-  $tree = Bio::EnsEMBL::Compara::ComparaUtils->restrict_tree_to_clade(
-    $self->compara_dba, $tree, "Primates"
+  $ortho_tree = Bio::EnsEMBL::Compara::ComparaUtils->restrict_tree_to_clade(
+    $self->compara_dba, $ortho_tree, "Primates"
     );
   
   # Restrict the tree & alignment to each other.
-  $tree = Bio::EnsEMBL::Compara::ComparaUtils->restrict_tree_to_aln($tree, $aln);
-  $aln = Bio::EnsEMBL::Compara::ComparaUtils->restrict_aln_to_tree($aln, $tree);
+  $ortho_tree = Bio::EnsEMBL::Compara::ComparaUtils->restrict_tree_to_aln($ortho_tree, $aln);
+  $aln = Bio::EnsEMBL::Compara::ComparaUtils->restrict_aln_to_tree($aln, $ortho_tree);
 
   #$self->param('aln_use_type', $use_type);
 
-  return ($tree, $aln);
+  return ($ortho_tree, $aln);
 }
 
 sub _run_slr {
@@ -207,7 +202,9 @@ sub _run_slr {
   my $aln_orig = shift;
 
   $self->param('analysis_action', 'slr');
+  print $tree_orig->ascii."\n";
   my $tree = Bio::EnsEMBL::Compara::TreeUtils->copy_tree($tree_orig);
+  print $tree->ascii."\n";
   my $ref_member = $self->_ref_member($tree);
 
   my $f = $self->_save_file('aln_compara', 'fasta');
@@ -337,7 +334,7 @@ sub _mask_sub_runs {
   my $m0_tree = Bio::Greg::Codeml->parse_codeml_results($lines);
 
   # Store substitutions.
-  $self->store_subs($tree_copy, $aln_copy, $lines);
+  $self->store_subs($tree_copy, $aln_copy, $lines, undef, 'subs_nofilters');
 
   my @subs = @{$self->param('subs')};
   
@@ -499,7 +496,7 @@ sub _run_tests {
   print "  loading m0 results from file\n";
   my $lines = $self->thw($m0_f->{full_file});
   # Store substitutions.
-  $self->store_subs($tree_copy, $aln_copy, $lines);
+  $self->store_subs($tree_copy, $aln_copy, $lines, undef, 'subs');
 
   # Store m0 omega.
   my @omegas = Bio::Greg::Codeml->extract_omegas($lines);
@@ -1260,10 +1257,10 @@ sub _collect_stats {
   $self->store_param('gene_id', $member->get_Gene->stable_id);
   $self->store_param('protein_id', $member->stable_id);
   $self->store_param('gene_name', $member->get_Gene->external_name);
-  $self->store_param('chr_name', $member->get_Transcript->slice->seq_region_name);
+  $self->store_param('chr_name', ''.$member->get_Transcript->slice->seq_region_name);
   $self->store_param('chr_start', $member->get_Transcript->coding_region_start);
   $self->store_param('chr_end', $member->get_Transcript->coding_region_end);
-  $self->store_param('chr_strand', $member->get_Transcript->slice->strand);
+  $self->store_param('chr_strand', ''.$member->get_Transcript->slice->strand);
 
   # Alignment stats.
   my $pep_aln = $self->_tx_aln($aln);
@@ -1280,10 +1277,11 @@ sub _collect_seqs {
   my $self = shift;
   my $tree = shift;
   my $aln = shift;
+  my $tbl_name = shift;
 
   my $pep_aln = $self->_tx_aln($aln);
 
-  $self->create_table_from_params( $self->dbc, 'seqs', $self->_seqs_table_structure);
+  $self->create_table_from_params( $self->dbc, $tbl_name, $self->_seqs_table_structure);
   foreach my $pos (1 .. $pep_aln->length) {
     my $lo = ($pos-1)*3 + 1;
     my $hi = ($pos-1)*3 + 3;
@@ -1309,7 +1307,7 @@ sub _collect_seqs {
         $p->{$char} = '---';
       }
     }
-    $self->store_params_in_table($self->dbc, 'seqs', $p);
+    $self->store_params_in_table($self->dbc, $tbl_name, $p);
   }
 }
 
@@ -1348,12 +1346,14 @@ sub _get_sub_patterns_from_aln {
     }
   }
 
+  $aln = Bio::EnsEMBL::Compara::AlignUtils->translate_ensembl($aln);
+
   my @seqs = $aln->each_seq;
 
-  my ($h_seq) = grep {$_->id == 9606} @seqs;
-  my ($c_seq) = grep {$_->id == 9598} @seqs;
-  my ($g_seq) = grep {$_->id == 9593} @seqs;
-  my ($o_seq) = grep {$_->id == 9600} @seqs;
+  my ($h_seq) = grep {$_->id == 'Human'} @seqs;
+  my ($c_seq) = grep {$_->id == 'Chimpanzee'} @seqs;
+  my ($g_seq) = grep {$_->id == 'Gorilla'} @seqs;
+  my ($o_seq) = grep {$_->id == 'Orangutan'} @seqs;
   my $h_str = $h_seq->seq;
   my $c_str = $c_seq->seq;
   my $g_str = $g_seq->seq;

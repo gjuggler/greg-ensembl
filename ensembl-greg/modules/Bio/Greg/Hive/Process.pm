@@ -592,7 +592,7 @@ sub store_param {
   $self->param($param, $value);
 
   # Now, make sure this param is stored in our tables structure.
-  my $str = $self->{_genes_structure};
+  my $str = $self->{_table_structure};
   if ($flag) {
     $str->{$param} = $flag;
   } else {

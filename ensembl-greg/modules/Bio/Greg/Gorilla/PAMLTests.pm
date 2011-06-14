@@ -22,9 +22,16 @@ sub fetch_input {
   # Fetch parameters from all possible locations.
   $self->load_all_params();
 
-  # Create tables if necessary.
-  $self->create_table_from_params( $self->compara_dba, 'results',
-    $self->results_table );
+  $self->{_table_structure} = $self->results_table;
+}
+
+
+sub write_output {
+  my $self = shift;
+
+  $self->create_table_from_params( $self->dbc, 'results', $self->{_table_structure});
+  $self->store_params_in_table($self->dbc, 'results', $self->params);
+
 }
 
 sub run {
@@ -32,23 +39,38 @@ sub run {
 
   $self->param('data_id', $self->param('lrt_lo').' to '.$self->param('lrt_hi'));
 
-  my $aln = $self->_collect_aln;
+  my $tree = Bio::EnsEMBL::Compara::TreeUtils->from_newick("(((((h,c),g),o),m),r);");
+  print $tree->ascii."\n";
+
+  my $filtered_aln = $self->_collect_aln('seqs');
+  my $unfiltered_aln = $self->_collect_aln('seqs_nofilters');
+
+  $self->pretty_print($self->_tx_aln($filtered_aln));
+  $self->pretty_print($self->_tx_aln($unfiltered_aln));
+
+  $self->store_param('aln_length', $filtered_aln->length);
+  $self->store_param('aln_length_nofilt', $unfiltered_aln->length);
+
+  $self->_run_paml($tree, $filtered_aln, '');
+  $self->_run_paml($tree, $unfiltered_aln, 'nofilt');
 }
 
 sub _collect_aln {
   my $self = shift;
+  my $table = shift;
 
-  my $f = $self->_save_file('codon_aln', 'fasta');
+  my $f = $self->_save_file("${table}_aln", 'fasta');
   print $f->{full_file}."\n";
+
   if (!-e $f->{full_file} || $self->param('force_recalc')) {
     my $lo = $self->param('lrt_lo');
     my $hi = $self->param('lrt_hi');
 
-    print "  collecting aln from $lo to $hi...\n";
+    print "  collecting aln from ${table} [$lo to $hi]...\n";
 
     my $query = qq^
 SELECT %s AS string FROM 
-  gj1_gorilla.seqs seqs JOIN gj1_gorilla.sites sites
+  gj1_gorilla.${table} seqs JOIN gj1_gorilla.sites sites
   ON (seqs.data_id=sites.data_id AND seqs.aln_position=sites.aln_position)
   WHERE sites.lrt_stat*sign(sites.omega-.9999) > ? AND
         sites.lrt_stat*sign(sites.omega-.9999) < ?
@@ -75,26 +97,14 @@ SELECT %s AS string FROM
     Bio::EnsEMBL::Compara::AlignUtils->to_file($aln, $f->{full_file});
     print "  done!\n";
   }
-  print "  loading aln...\n";
+  print "  loading aln from file...\n";
   my $aln = Bio::EnsEMBL::Compara::AlignUtils->from_file($f->{full_file});
-  print "  done!\n";
-
-  $self->pretty_print($aln);
-  $self->pretty_print($self->_tx_aln($aln));
 
   # Do any necessary filtering of the alignment - remove codons with gaps or Ns,
   # for example...
   $aln = Bio::EnsEMBL::Compara::AlignUtils->remove_regex_columns_in_threes($aln, "[-N]");
 
-  $self->pretty_print($aln);
-  $self->pretty_print($self->_tx_aln($aln));
-
   die "Alignment not a multiple of 3!" unless ($aln->length % 3 == 0);
-
-  my $tree = Bio::EnsEMBL::Compara::TreeUtils->from_newick("(((((h,c),g),o),m),r);");
-  print $tree->ascii."\n";
-
-  $self->_run_paml($tree, $aln);
 
   return $aln;
 }
@@ -103,12 +113,16 @@ sub _run_paml {
   my $self = shift;
   my $tree = shift;
   my $aln = shift;
+  my $prefix = shift;
 
   my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
 
-  my $res_f = $self->_save_file('paml_results', 'perlobj');
-  if (!-e $res_f->{full_file} || $self->param('force_recalc')) {
+  my $branch_f = $self->_save_file("paml_branch_${prefix}", 'txt');
+  my $m0_f = $self->_save_file("paml_m0_${prefix}", 'txt');
 
+  $prefix .= '_' if ($prefix ne '');
+
+  if (!-e $m0_f->{full_file} || $self->param('force_recalc')) {
     my $m0_params = {
       model => 0,
       fix_blength => 0,
@@ -118,53 +132,54 @@ sub _run_paml {
     };
     print "  running PAML m0...\n";
     my $m0 = Bio::Greg::Codeml->branch_model_likelihood( $treeI, $aln, $self->worker_temp_directory, $m0_params );
+    
+    open(OUT, ">".$m0_f->{full_file});
+    print OUT join("\n", @{$m0->{lines}}) . "\n";
+    close(OUT);
+  }
 
-    my $m0_tree = Bio::Greg::Codeml->parse_codeml_results($m0->{lines});
-    Bio::EnsEMBL::Compara::TreeUtils->transfer_branchlengths($m0_tree, $treeI);
-    $treeI->root->branch_length(0.01); # Set small b.l. on the root node.
+  print "  loading m0 results...\n";
+  open(IN, $m0_f->{full_file});
+  my @m0_lines = <IN>;
+  close(IN);
 
-    print $treeI->newick."\n";
-
-    my $branches_params = {
+  my ($dnds, $dnds_se) = Bio::Greg::Codeml->parse_m0_dnds(\@m0_lines);
+  $self->store_param($prefix.'m0_dnds', $dnds);
+  $self->store_param($prefix.'m0_dnds_se', $dnds_se);
+  my $m0_tree = Bio::Greg::Codeml->parse_codeml_results(\@m0_lines);
+  Bio::EnsEMBL::Compara::TreeUtils->transfer_branchlengths($m0_tree, $treeI);
+  $treeI->root->branch_length(0.01); # Set small b.l. on the root node.
+  print $treeI->newick."\n";
+  
+  if (!-e $branch_f->{full_file} || $self->param('force_recalc')) {
+    my $branch_params = {
       model => 1,
-      fix_blength => 0,
+      fix_blength => 1,
       method => 1,
       cleandata => 0,
       getSE => 1,
-      Small_Diff => 1e-7
+      Small_Diff => 1e-6
     };
     print "  running PAML branches...\n";
-    my $branches = Bio::Greg::Codeml->branch_model_likelihood( $treeI, $aln, $self->worker_temp_directory, $branches_params);
-
-    my $res_hash = {
-      m0 => $m0->{lines},
-      branches => $branches->{lines}
-    };
-    $self->frz($res_f->{full_file}, $res_hash);
+    my $branch = Bio::Greg::Codeml->branch_model_likelihood( $treeI, $aln, $self->worker_temp_directory, $branch_params );
+    
+    open(OUT, ">".$branch_f->{full_file});
+    print OUT join("\n", @{$branch->{lines}}) . "\n";
+    close(OUT);
   }
-  print"  loading PAML results...\n";
-  my $res_hash = $self->thw($res_f->{full_file});
 
-  my $branches = $res_hash->{branches};
-  my $m0 = $res_hash->{m0};
-
-  my $branch_f = $self->_save_file('paml_branch', 'txt');
-  open(OUT, ">".$branch_f->{full_file});
-  print OUT join("\n", @{$branches}) . "\n";
-  close(OUT);
-
-  my $m0_f = $self->_save_file('paml_m0', 'txt');
-  open(OUT, ">".$m0_f->{full_file});
-  print OUT join("\n", @{$m0}) . "\n";
-  close(OUT);
-
-  my @omegas = Bio::Greg::Codeml->extract_omegas($m0);
-  print "@omegas\n";
-  my $branches_tree = Bio::Greg::Codeml->parse_codeml_results($branches);
+  print "  loading branch results...\n";
+  open(IN, $branch_f->{full_file});
+  my @branch_lines = <IN>;
+  close(IN);
+  my $branch_tree = Bio::Greg::Codeml->parse_codeml_results(\@branch_lines);
   
-  foreach my $node ($branches_tree->nodes) {
-    print $node->enclosed_leaves_string."\n";
+  foreach my $node ($branch_tree->nodes) {
     $self->hash_print($node->get_tagvalue_hash);
+    my $enclosed = $node->enclosed_leaves_string('');
+    $self->store_param($prefix.$enclosed.'_dnds', 0.0+$node->get_tag_value('dN/dS'));
+    $self->store_param($prefix.$enclosed.'_dnds_se', 0.0+$node->get_tag_value('dN/dS_se'));
+    $self->store_param($prefix.$enclosed.'_ds', 0.0+$node->get_tag_value('dS'));
   }
 
 }
@@ -176,10 +191,11 @@ sub _tx_aln {
 }
 
 sub results_table {
-  return {
+  my $p = {
     data_id => 'int',
-    unique_keys => 'data_id',
+    unique_keys => 'data_id'
   };
+  return $p;
 }
 
 sub _save_file {

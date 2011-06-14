@@ -150,12 +150,14 @@ sub load_registry {
         -host => 'ens-livemirror',
         -user => 'ensadmin',
         -pass => 'ensembl',
+        -db_version => 60,
         #-verbose => 1,
       },
       {
         -host => 'ensdb-archive',
         -port => 5304,
         -user => 'ensro',
+        -db_version => 60,
 #        -user => 'ensadmin',
 #        -pass => 'ensembl',
         #-verbose => 1

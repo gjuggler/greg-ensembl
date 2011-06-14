@@ -393,3 +393,65 @@ df.alignment.accuracy = function(df) {
   )
   return(out.df)
 }
+
+meta.sub <- function(asdf) {
+    bl <- subset(asdf, filter=='branchlength')
+    tc <- subset(asdf, filter=='tcoffee')
+    gb <- subset(asdf, filter=='gblocks')
+    true <- subset(asdf, filter=='true')
+
+    merge.by <- c('tree_length', 'ins_rate', 'slrsim_rep', 'seq_position')
+
+    prep.df <- function(df, lbl) {
+      df <- df[!duplicated(df[, merge.by]),]
+      df <- df[, c('lrt_stat', merge.by)]
+      df[, paste('lrt.', lbl, sep='')] <- df$lrt_stat
+      df$lrt_stat <- NULL
+      return(df)
+    }
+
+    collect.scores <- function(df.list) {
+      df.names <- names(df.list)
+      all.sites <- prep.df(df.list[[1]], df.names[1])
+  
+      for (i in 2:length(df.list)) {
+        cur.df <- prep.df(df.list[[i]], df.names[i])
+        #print(str(cur.df))
+        all.sites <- merge(all.sites, cur.df, by=merge.by, all.x=T, all.y=T)
+      }
+      return(all.sites)
+    }
+
+    combine.median <- function(df) {
+      combine.fields <- grep("lrt\\.", colnames(df), value=T)
+      #print(combine.fields)
+  
+      meta.matrix <- as.matrix(df[, combine.fields])
+      lrts <- apply(meta.matrix, 1, median, na.rm=T)
+      df[, 'lrt_stat'] <- lrts
+        
+      for (i in 1:length(combine.fields)) {
+        df[, combine.fields[i]] <- NULL
+      }
+      return(df)
+    }
+  
+    meta <- list(
+      none = prank_c,
+      bl = bl,
+      tc = tc,
+      gb = gb
+    )
+    #print("  collecting scores")
+    meta <- collect.scores(meta)
+    #print("  combining median")
+    meta <- combine.median(meta)
+
+    #print(colnames(meta))
+    #print(colnames(true))
+    #print("  merging true")
+    true$lrt_stat <- NULL
+    test.df <- merge(true, meta, by=merge.by, all.x=T)
+
+    return(test.df)
+}

@@ -86,7 +86,7 @@ sub copy_tree {
         # but Compara keeps us on our toes by instead requiring us to manually set a tagvalue.
         # W.T.F.
         #$new_n->taxon_id($node->taxon_id) if ($node->can('taxon_id') && $new_n->can('taxon_id'));
-        #$new_n->store_tag('taxon_id',$node->taxon_id) if ($node->can('taxon_id')); 
+        $new_n->store_tag('taxon_id',$node->taxon_id) if ($node->can('taxon_id')); 
       }
       
       if (defined $node->parent) {

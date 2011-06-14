@@ -89,21 +89,32 @@ source("${slrsim_script}")
 dbname="${dbname}"
 con <- connect(dbname)
 
-genes <- dbGetQuery(con, "select * from genes;")
-save(genes, file="${genes_f}")
-rm(genes)
+if (!file.exists("${genes_f}")) {
+  genes <- dbGetQuery(con, "select * from genes;")
+  save(genes, file="${genes_f}")
+  rm(genes)
+}
 
-results <- dbGetQuery(con, "select * from slrsim_results;")
-write.csv(results, file="${results_tbl}", row.names=F)
-rm(results)
+if (!file.exists("${results_tbl}")) {
+  results <- dbGetQuery(con, "select * from slrsim_results;")
+  write.csv(results, file="${results_tbl}", row.names=F)
+  rm(results)
+}
 
-sites <- dbGetQuery(con, "select * from sites;")
-save(sites, file="${sites_f}")
-rm(sites)
+if (!file.exists("${sites_f}")) {
+  sites <- dbGetQuery(con, "select * from sites;")
+  save(sites, file="${sites_f}")
+  rm(sites)
+}
 
-merged <- dbGetQuery(con, "select * from merged;")
-save(merged, file="${merged_f}")
-rm(merged)
+
+if (!file.exists("${merged_f}")) {
+  merged <- dbGetQuery(con, 
+    "select label, tree, analysis, tree_length, ins_rate, aligner, filter, slrsim_rep, seq_position, lrt_stat, aln_dnds, true_dnds, true_type from merged;"
+  )
+  save(merged, file="${merged_f}")
+  rm(merged)
+}
 ^;
   Bio::Greg::EslrUtils->run_r( $rcmd);
 

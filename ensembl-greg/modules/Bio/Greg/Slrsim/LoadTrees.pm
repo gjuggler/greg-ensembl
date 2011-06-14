@@ -123,6 +123,20 @@ sub run {
     my ($job_id) = @{ $self->dataflow_output_id( $params, 2)};
     print "  -> Created collection job: $job_id \n";
   }
+
+  my $len_ins_hash;
+  map {$len_ins_hash->{$_->{slrsim_tree_length}.'_'.$_->{phylosim_insertrate}} = 1} @simsets;
+  foreach my $len_ins (keys %$len_ins_hash) {
+    my @toks = split('_', $len_ins);
+    my $len = $toks[0];
+    my $ins = $toks[1];
+    my $params = {
+      slrsim_tree_length => $len,
+      phylosim_insertrate => $ins
+    };
+    my ($job_id) = @{ $self->dataflow_output_id( $params, 2)};
+  }
+
 }
 
 sub _get_tree_from_file {

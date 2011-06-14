@@ -95,7 +95,6 @@ sub run {
   my $inferred_pep_aln = Bio::EnsEMBL::Compara::AlignUtils->translate($inferred_aln);
 
   # Mask the alignment if needed.
-  $self->param('force_recalc', 1);
 
   my $masked_aln = $self->_mask_alignment($tree, $inferred_aln, $inferred_pep_aln);
   my $masked_pep_aln = Bio::EnsEMBL::Compara::AlignUtils->translate($masked_aln);
@@ -103,6 +102,7 @@ sub run {
   # Run the sitewise analysis.
   my $sitewise_hash = $self->_run_sitewise($tree, $masked_aln, $masked_pep_aln);
 
+  $self->hash_print($sitewise_hash);
   # Collect and store results.
   $self->_collect_and_store_results($tree, $treeI,
                                     $masked_aln, $masked_pep_aln, $sitewise_hash, 
@@ -274,6 +274,7 @@ sub _run_sitewise {
   $self->param('sitewise_file', $out_f->{rel_file});
 
   if (!Bio::EnsEMBL::Compara::AlignUtils->has_any_data($aln)) {
+    print "No data!!\n";
     return {};
   }
 

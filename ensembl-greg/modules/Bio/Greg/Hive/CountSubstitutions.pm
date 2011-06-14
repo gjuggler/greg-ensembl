@@ -88,8 +88,9 @@ sub store_subs {
   my $aln = shift;
   my $lines = shift;
   my $ref_member = shift;
+  my $table = shift;
 
-  $self->create_table_from_params( $self->compara_dba, 'subs',
+  $self->create_table_from_params( $self->compara_dba, $table,
     $self->codon_subs_table_def );
 
   if (!defined $ref_member) {
@@ -139,7 +140,7 @@ sub store_subs {
         $n_s++ if ($obj->{mut_syn} == 1);
 
         my $params = $self->replace( $self->params, $obj );
-        $self->store_params_in_table( $self->dbc, 'subs', $params );
+        $self->store_params_in_table( $self->dbc, $table, $params );
         
         push @unwrapped_subs, $obj;
       } else {

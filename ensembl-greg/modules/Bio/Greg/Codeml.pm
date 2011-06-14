@@ -566,9 +566,17 @@ sub run {
 
     # GJ 2009-01-08: Put the main results into a string and store it.
     open( IN, "$tmpdir/$outfile" );
-    my @main_results_lines = <IN>;
-    $self->main_results( \@main_results_lines );
+    my $within_seqs = 0;
+    my @main_results_lines;
+    foreach my $line (<IN>) {
+      $within_seqs = 1 if ($line =~ m/seed used/gi);
+      $within_seqs = 0 if ($line =~ m/CODONML/g);
+      
+      next if ($within_seqs);
+      push @main_results_lines, $line;
+    }
     close(IN);
+    $self->main_results( \@main_results_lines );
 
     eval {
       $parser = Bio::Tools::Phylo::PAML->new(
@@ -584,9 +592,17 @@ sub run {
       # GJ 2009-01-08 : Parse the supplementary results.
       #
       open( IN, "$tmpdir/rst" );
-      my @supps = <IN>;
-      $self->supplementary_results( \@supps );
+      my $within_subs = 0;
+      my @supps;
+      foreach my $line (<IN>) {
+        $within_subs = 1 if ($line =~ m/summary of changes along branches/gi);
+        $within_subs = 0 if ($line =~ m/list of extant/gi);
+
+        next if (!$within_subs);
+        push @supps, $line;
+      }
       close(IN);
+      $self->supplementary_results( \@supps );
     };
     warn() if $@;
 
@@ -635,6 +651,8 @@ sub parse_results {
 
   my $lnl = $self->extract_lnL($lines_arrayref);
   print "LNL: $lnl\n";
+
+  $results->{lnl} = $lnl;
 
   return $results;
 }
