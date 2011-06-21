@@ -207,9 +207,6 @@ ternary.plot <- function(a, b, c, clr=NA) {
   h <- hist(a-c, breaks=brks, plot=F)
   ac.df <- data.frame(mid=h$mids, count=h$counts/n)
 
-  if (!is.na(clr[1])) {
-  }
-
   clr[is.na(clr)] <- median(clr, na.rm=T)
   md <<- median(clr, na.rm=T)
   print(summary(clr))
@@ -217,8 +214,13 @@ ternary.plot <- function(a, b, c, clr=NA) {
   d <- data.frame(xx=x, yy=y, a=a, b=b, c=c, clr=clr)
   p <- ggplot(d, aes(x=xx, y=yy))
   p <- p + theme_bw()
-  p <- p + geom_point(size=0.5, aes(colour=clr))
-  p <- p + scale_colour_gradient()
+
+  if (!is.na(clr[1])) {
+    p <- p + geom_point(size=0.5, aes(colour=clr))
+    p <- p + scale_colour_gradient()
+  } else {
+    p <- p + geom_point(size=0.5)
+  }
 
   cf <<- cos(pi/3)
   sf <<- sin(pi/3)

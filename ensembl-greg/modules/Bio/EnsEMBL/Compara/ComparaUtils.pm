@@ -1452,6 +1452,8 @@ sub get_quality_array_for_member {
 
   my $tx = $member->get_Transcript;
 
+  print $tx->stable_id."\n";
+
   my $cache_object = {};
 
   my @qual_array      = ();
@@ -2138,14 +2140,14 @@ sub restrict_tree_to_aln {
 
     $seq = Bio::EnsEMBL::Compara::AlignUtils->get_seq_with_id( $aln, $leaf->name );
 
-    if ($leaf->stable_id) {
+    if ($leaf->can('stable_id') && $leaf->stable_id) {
       $seq = Bio::EnsEMBL::Compara::AlignUtils->get_seq_with_id( $aln, $leaf->stable_id );
     }
-    if ($leaf->adaptor) {
+    if ($leaf->can('genome_db') && $leaf->genome_db) {
       $seq = Bio::EnsEMBL::Compara::AlignUtils->get_seq_with_id( $aln, $leaf->genome_db->name )
         if ( !defined $seq );
     }
-    if ($leaf->taxon_id) {
+    if ($leaf->can('taxon') && $leaf->taxon) {
       $seq = Bio::EnsEMBL::Compara::AlignUtils->get_seq_with_id( $aln, $leaf->taxon->binomial )
         if ( !defined $seq );
       $seq = Bio::EnsEMBL::Compara::AlignUtils->get_seq_with_id( $aln, $leaf->taxon->ensembl_alias )
@@ -2380,13 +2382,17 @@ sub get_compara_or_genomic_aln {
   #Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $aln, { width => 150, full => 1 } );
 
   # Compare the alignment pep sequence to the original transcript (sanity check).
-  if (!Bio::EnsEMBL::Compara::AlignUtils->contains_sequence( $aln, $ref_member->sequence_cds )) {
+  if (!Bio::EnsEMBL::Compara::AlignUtils->contains_sequence( $aln, $ref_member->sequence_cds, $params )) {
+
+    my $pep_aln = Bio::EnsEMBL::Compara::AlignUtils->translate($aln, $params);
     
     Bio::EnsEMBL::Compara::AlignUtils->pretty_print($aln,{full => 1});
-    my $pep_aln = Bio::EnsEMBL::Compara::AlignUtils->translate($aln);
     Bio::EnsEMBL::Compara::AlignUtils->pretty_print($pep_aln,{full => 1});
     print $ref_member->sequence_cds." ".$ref_member->stable_id."\n";
-    die("Alignment doesn't contain the exact ref member CDS!") unless ($extra_info->{off_phase_start});
+    print $ref_member->sequence." ".$ref_member->stable_id."\n";
+    #warn("Alignment doesn't contain the exact ref member CDS... checking for amino acid identity.");
+    
+    die("Alignment doesn't contain ref member cds!") unless ($extra_info->{off_phase_start});
   }
 
   # Flatten and filter genomic aligns.
@@ -2395,16 +2401,16 @@ sub get_compara_or_genomic_aln {
     print $ref_member->stable_id."\n";
     print $ref_member->name."\n";
     $aln = Bio::EnsEMBL::Compara::AlignUtils->flatten_to_sequence( $aln, $ref_member->name);
-    $aln = Bio::EnsEMBL::Compara::AlignUtils->filter_stop_codons($aln);
-    $aln = Bio::EnsEMBL::Compara::AlignUtils->ensure_multiple_of_three($aln);    
-    if ( Bio::EnsEMBL::Compara::AlignUtils->has_stop_codon($aln) ) {
+    $aln = Bio::EnsEMBL::Compara::AlignUtils->filter_stop_codons($aln, $params);
+    $aln = Bio::EnsEMBL::Compara::AlignUtils->ensure_multiple_of_three($aln);
+    if ( Bio::EnsEMBL::Compara::AlignUtils->has_stop_codon($aln, $params) ) {
       die("STOP CODON!!!");
     }
     print "After flattening: " . $aln->length . "\n";
   }
 
   $aln = Bio::EnsEMBL::Compara::AlignUtils->sort_by_tree( $aln, $tree );
-  my $pep_aln = Bio::EnsEMBL::Compara::AlignUtils->translate($aln);
+  my $pep_aln = Bio::EnsEMBL::Compara::AlignUtils->translate($aln, $params);
 
   return {
     tree    => $tree,
@@ -2516,7 +2522,7 @@ sub get_bases_for_slice {
       if ( length($seq) != $from_length ) {
         print "$seq\n";
         print "$from_length ".length($seq)."\n";
-        die("Length(seq) != from_length!");
+#        die("Length(seq) != from_length!");
       }
 
       substr( $seq_template, $from_start-1, $from_length, $seq );

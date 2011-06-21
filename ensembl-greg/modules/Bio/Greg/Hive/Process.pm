@@ -582,6 +582,22 @@ sub load_all_params {
   }
 }
 
+sub init_table {
+  my $self = shift;
+  my $params = shift;
+
+  $self->{_table_structure} = $params;
+}
+
+sub write_table {
+  my $self = shift;
+  my $table_name = shift;
+
+  $self->create_table_from_params( $self->dbc, $table_name, $self->{_table_structure});
+  $self->store_params_in_table($self->dbc, $table_name, $self->params);  
+  
+}
+
 sub store_param {
   my $self = shift;
   my $param = shift;
@@ -592,7 +608,8 @@ sub store_param {
   $self->param($param, $value);
 
   # Now, make sure this param is stored in our tables structure.
-  my $str = $self->{_genes_structure};
+  $self->{_table_structure} = {} if (!defined $self->{_table_structure});
+  my $str = $self->{_table_structure};
   if ($flag) {
     $str->{$param} = $flag;
   } else {
@@ -797,7 +814,7 @@ sub create_table_from_params {
   my $sth;
 
   eval {
-  $sth = $dbc->do("select count(*) from $table_name where 1=0");
+  $sth = $dbc->do("select count(*) from $table_name where 1=0;");
   };
   if ($@) {
     # Create the table shell.
@@ -1106,6 +1123,10 @@ sub save_file {
   my ($f,$d) = fileparse($full_file);
   make_path($d);
 
+  if (!defined $self->param('data_prefix')) {
+    $self->store_param('data_prefix', $hash_folder);
+  }
+
   return {
     full_file => $full_file,
     rel_file => $rel_file,
@@ -1232,6 +1253,12 @@ sub frz {
   open(OUT,">$file");
   print OUT freeze($obj);
   close(OUT);
+}
+
+sub _tx_aln {
+  my $self = shift;
+  my $aln = shift;
+  return Bio::EnsEMBL::Compara::AlignUtils->translate($aln, $self->params);
 }
 
 1;

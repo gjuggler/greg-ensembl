@@ -210,7 +210,14 @@ add.grantham <- function(x) {
   return(merge(x, y[,c('data_id', 'pval.gr.gorilla')]))
 }
 
-get.pvals <- function() {
+get.pvals <- function(nofilter=F) {
+  prefix <- ''
+  subs.tbl <- 'subs'
+  if (nofilter) {
+    prefix='nofilter_'
+    subs.tbl <- 'subs_nofilters'
+  }
+
   # Collect genes and PAML inferred substitutions from the SQL tables.
   if (!exists("ggenes")) {
     source("~/src/greg-ensembl/scripts/collect_sitewise.R")
@@ -224,11 +231,11 @@ get.pvals <- function() {
   if (!exists("subs")) {
     source("~/src/greg-ensembl/scripts/collect_sitewise.R")
     print("  loading subs")
-    subs <- get.vector(con, 'select data_id, aln_pos, mut_nsyn, taxon_id, pattern, confidence, nongap_count from subs')
+    subs <- get.vector(con, sprintf('select data_id, aln_pos, mut_nsyn, taxon_id, pattern, confidence, nongap_count from %s', subs.tbl))
 
     subs <- subset(subs, taxon_id %in% c(9593, 9606, 9598, 9600, 9544, 9478, 9483, 1234, 207598, 9604, 376913, 9526))
     assign("subs", subs, envir=.GlobalEnv)
-    save(subs, file=pdf.f('subs.Rdata'))
+    save(subs, file=pdf.f(paste(prefix, 'subs.Rdata', sep='')))
   }
   if (!exists("sites")) {
     source("~/src/greg-ensembl/scripts/collect_sitewise.R")
@@ -236,24 +243,26 @@ get.pvals <- function() {
     sites <- get.vector(con, 'select data_id, aln_position as aln_pos, omega, lrt_stat, nongap_count as nongap_mammal from sites')
     sites[sites$omega < 1, 'lrt_stat'] <- -sites[sites$omega < 1, 'lrt_stat'] # Create signed LRT.
     assign("sites", sites, envir=.GlobalEnv)
-    save(sites, file=pdf.f('sites.Rdata'))
+    save(sites, file=pdf.f(paste(prefix, 'sites.Rdata', sep='')))
   }
   if (!exists("subs.sites")) {
     print("  merging subs & sites")
     subs.sites <- merge(sites, subs, by=c('data_id', 'aln_pos'), all.x=TRUE)
     print(nrow(subs.sites))
     assign("subs.sites", subs.sites, envir=.GlobalEnv)
-    save(subs.sites, file=pdf.f('subs.sites.Rdata'))
+    save(subs.sites, file=pdf.f(paste(prefix, 'subs.sites.Rdata', sep='')))
   }
   if (!exists("merged")) {
     print("  merging genes & subs")
     merged <- merge(ggenes[, c('data_id', 'aln_length', 'm0_dnds', 'slr_dnds')], 
       subs.sites, by=c('data_id'))
     assign("merged", merged, envir=.GlobalEnv)
-    save(merged, file=pdf.f('merged.Rdata'))
+    save(merged, file=pdf.f(paste(prefix, 'merged.Rdata', sep='')))
   }
   g <- ggenes
   s <- subs.sites
+
+  return()
 
   muts.per.codon <- nrow(subset(s, taxon_id==9593 & !is.na(mut_nsyn))) / nrow(s)
 
@@ -359,7 +368,9 @@ get.lrts <- function() {
     # Branch-sites models.
     get.branchsites <- TRUE
     if (get.branchsites) {
-      for (i in 11:17) {    
+      for (i in 11:18) {    
+        if (i %in% c(13,14)) {next}
+
         lrt.key <- paste('lrt','.',i,sep='')
         pval.key <- paste('pval','.',i,sep='')
         pval.adj.key <- paste('pval.adj','.',i,sep='')
@@ -427,8 +438,17 @@ reload.lrts.into.results <- function() {
 }
 
 collect.results <- function() {
+  rm(ggenes, envir=.GlobalEnv); rm(subs, envir=.GlobalEnv);
+  rm(sites, envir=.GlobalEnv); rm(subs.sites, envir=.GlobalEnv); rm(merged, envir=.GlobalEnv);
+
   get.lrts()
-  y <- get.pvals()
+  x <- get.pvals(nofilter=T)
+
+  rm(ggenes, envir=.GlobalEnv); rm(subs, envir=.GlobalEnv);
+  rm(sites, envir=.GlobalEnv); rm(subs.sites, envir=.GlobalEnv); rm(merged, envir=.GlobalEnv);
+
+  get.lrts()
+  y <- get.pvals(nofilter=F)
   y <- remove.false.positives(y)
 
   write.csv(y, file="~/src/greg-ensembl/projects/gorilla/table.csv",row.names=F)
@@ -1563,7 +1583,7 @@ id.to.name <- function(x, ids) {
 
 
 dnds.figure <- function(x, dnds.field='m0_dnds', gc.field='gc_3', 
-  gc.quantile.count=1, dnds.quantile.count=2, boot.reps=10) {
+  gc.quantile.count=1, dnds.quantile.count=1, boot.reps=10) {
 
   x[, 'gc_tmp'] <- x[, gc.field]
   gc.q <- quantile(x$gc_tmp, c(0.33, 0.67, 1.0))
@@ -1732,10 +1752,36 @@ dnds.figure <- function(x, dnds.field='m0_dnds', gc.field='gc_3',
   assign('dnds.figure.df', comb.df, envir=.GlobalEnv)
 }
 
-alt.dnds.calc <- function(x, boot.reps=10) {
-  if (!exists("coded.subs")) {
+alt.dnds.calcs <- function() {
+
+  load(pdf.f("nofilter_merged.Rdata"))
+  alt.dnds.calc(merged, prefix='nofilter_')
+  rm(merged, envir=.GlobalEnv)
+
+  load(pdf.f("nofilter_merged.Rdata"))
+  alt.dnds.calc(merged, prefix='nofilter_all_')
+  rm(merged, envir=.GlobalEnv)
+  
+  load(pdf.f("merged.Rdata"))
+  alt.dnds.calc(merged, prefix='')
+  rm(merged, envir=.GlobalEnv)
+
+  load(pdf.f("merged.Rdata"))
+  alt.dnds.calc(merged, prefix='all_')  
+  rm(merged, envir=.GlobalEnv)
+
+
+  # Doing X chromosome on its own is pretty much stupid.
+  #load(pdf.f("merged.Rdata"))
+  #merged <- merge(merged, ggenes[, c('data_id', 'chr_name')])
+  #print(table(merged$chr_name))
+  #alt.dnds.calc(subset(merged, chr_name=='X'), prefix='x_')
+}
+
+alt.dnds.calc <- function(x, boot.reps=10, prefix='') {
+
     print("  coding subs")
-    x <- subset(x, nongap_mammal > 20)
+    #x <- subset(x, nongap_mammal > 20)
 #    x <- subset(x, confidence > 0.9 & nongap_count==6 & nongap_mammal > 25)
     nsyn <- !is.na(x$mut_nsyn) & x$mut_nsyn==1
     syn <- !is.na(x$mut_nsyn) & x$mut_nsyn==0
@@ -1745,12 +1791,14 @@ alt.dnds.calc <- function(x, boot.reps=10) {
     x[, 'c.s'] <- as.numeric(x$taxon_id == 9598) & syn
     x[, 'g.ns'] <- as.numeric(x$taxon_id == 9593) & nsyn
     x[, 'g.s'] <- as.numeric(x$taxon_id == 9593) & syn
+    print("  hcg")
     x[, 'hc.ns'] <- as.numeric(x$taxon_id == 1234) & nsyn
     x[, 'hc.s'] <- as.numeric(x$taxon_id == 1234) & syn
     x[, 'hcg.ns'] <- as.numeric(x$taxon_id == 207598) & nsyn
     x[, 'hcg.s'] <- as.numeric(x$taxon_id == 207598) & syn
     x[, 'o.ns'] <- as.numeric(x$taxon_id == 9600) & nsyn
     x[, 'o.s'] <- as.numeric(x$taxon_id == 9600) & syn
+    print("  hcgo")
     x[, 'hcgo.ns'] <- as.numeric(x$taxon_id == 9604) & nsyn
     x[, 'hcgo.s'] <- as.numeric(x$taxon_id == 9604) & syn
     x[, 'm.ns'] <- as.numeric(x$taxon_id == 9544) & nsyn
@@ -1759,6 +1807,7 @@ alt.dnds.calc <- function(x, boot.reps=10) {
     x[, 'hcgom.s'] <- as.numeric(x$taxon_id == 376913) & syn
     x[, 'r.ns'] <- as.numeric(x$taxon_id == 9483) & nsyn
     x[, 'r.s'] <- as.numeric(x$taxon_id == 9483) & syn
+    print("  all")
     x[, 'all.ns'] <- nsyn
     x[, 'all.s'] <- syn
     drop.cols <- c('aln_length', 'mut_nsyn', 'taxon_id')
@@ -1766,10 +1815,11 @@ alt.dnds.calc <- function(x, boot.reps=10) {
       x[, drop.cols[i]] <- NULL
     }
     x$pattern <- as.factor(x$pattern)
-    assign('coded.subs', x, envir=.GlobalEnv)
-    print(nrow(x))
+    coded.subs <- x
+    save(coded.subs, file=pdf.f(paste(prefix, 'coded.subs.Rdata', sep='')))
+    assign('coded.subs', coded.subs, envir=.GlobalEnv)
+    print(nrow(coded.subs))
     print("  done!")
-  }
 
   x <- coded.subs
 
@@ -1779,14 +1829,15 @@ alt.dnds.calc <- function(x, boot.reps=10) {
   print("  done!")
   print(nrow(x))
 
-  below.zero <- coded.subs
-  below.q <- quantile(below.zero$lrt_stat, c(0, 0.05, 0.33, 0.67, 0.98, 1))
+  below.q <- quantile(coded.subs$lrt_stat, c(0, 0.05, 0.33, 0.67, 0.98, 1))
 
-#  above.zero <- subset(coded.subs, lrt_stat > 0)
-#  above.q <- quantile(above.zero$lrt_stat, c(0, 0.5, 1))
+  lrt.lo <- c(-209.746, -42.855, -22.819, -10.092, 1.729)  
+  lrt.hi <- c(-42.855, -22.819, -10.092, 1.729, 118.981)
 
-  lrt.lo <- c(below.q[1:(length(below.q)-1)])
-  lrt.hi <- c(below.q[2:length(below.q)])
+  if (prefix == 'all_' || prefix == 'nofilter_all_') {
+    lrt.lo <- c(-500)
+    lrt.hi <- c(500)
+  }
 
   names(lrt.lo) <- NULL
   names(lrt.hi) <- NULL
@@ -1836,12 +1887,13 @@ alt.dnds.calc <- function(x, boot.reps=10) {
         }
       }
 
-      do.boot = F
+      do.boot = T
       if (do.boot) {
         boot.ratio <- boot(x2, sum.ratio, R=boot.reps)
         ci.ratio <- boot.ci(boot.ratio, type='basic')
         d.mean <- sum.ratio(x2, 1:nrow(x2))
         bt <- c(ci.ratio$basic[1, 4], d.mean, ci.ratio$basic[1, 5])
+        print(bt)
       } else {
         d.mean <- sum.ratio(x2)
         bt <- c(d.mean, d.mean, d.mean)
@@ -1864,16 +1916,31 @@ alt.dnds.calc <- function(x, boot.reps=10) {
     }
   }
 
-  assign("dnds.df", comb.df, envir=.GlobalEnv)
+#  assign("dnds.df", comb.df, envir=.GlobalEnv)
   print(comb.df)
-  write.csv(dnds.df, file=pdf.f("dnds.csv"), row.names=F)
+  write.csv(comb.df, file=pdf.f(paste(prefix, "dnds.csv", sep='')), row.names=F)
 }
 
-alt.dnds.fig <- function() {
+alt.dnds.figs <- function() {
+  alt.dnds.fig(prefix='')
+  alt.dnds.fig(prefix='all_')
+  alt.dnds.fig(prefix='nofilter_')
+  alt.dnds.fig(prefix='nofilter_all_')
+}
+
+alt.dnds.fig <- function(prefix='') {
+  dnds.df <- read.csv(pdf.f(paste(prefix, 'dnds.csv', sep='')), stringsAsFactors=F)
+  print(head(dnds.df))
+
   x <- dnds.df
   x$max.subs <- max(x$tot.subs)
 
   n <- length(unique(x$lrt))
+  x <- subset(x, !(species %in% c('H/C/G/O/M ancestor', 'Marmoset')))
+
+  x$species <- as.character(x$species)
+  x$species <- factor(x$species, labels=ancestor.order(), levels=ancestor.order())
+  print(unique(x$species))
 
   p.df <- function(df) {
     lo <- df[1, 'lrt.lo']
@@ -1887,19 +1954,19 @@ alt.dnds.fig <- function() {
       ymin=lo, ymax=hi, y=mean
     ))
     p <- p + geom_rect(width=0.75, alpha=0.3, position='identity')
-    p <- p + geom_rect(fill='black', aes(ymin=mean-0.0002, ymax=mean+0.0002), width=0.75, alpha=0.6, position='identity')
-    p <- p + scale_y_continuous("dN/dS Estimate", limits=c(0, max(df$hi)))
+     p <- p + geom_segment(colour='black', aes(x=as.numeric(species)-0.3, xend=as.numeric(species)+0.3, y=mean, yend=mean), size=0.5)
+#    p <- p + scale_y_continuous("dN/dS Estimate", limits=c(0, max(df$hi)))
     p <- p + scale_x_discrete("Species / ancestral lineage")
     p <- p + theme_bw()
     p <- p + opts(
       axis.text.x = theme_text(angle=90, hjust=1),
-      title = paste('SLR LRT', lbl)
+      title = paste('LRT', lbl)
     )
     return(p)
   }
 
   print(n)
-  pdf(file=pdf.f("alt.dnds.pdf"), width=5*n, height=5)
+  pdf(file=pdf.f(paste(prefix, "alt.dnds.pdf", sep='')), width=5*n, height=5)
   vplayout(n, 1)
   for (i in 1:n) {
     cur.df <- subset(x, lrt == i)
@@ -1909,17 +1976,308 @@ alt.dnds.fig <- function() {
   dev.off()
 }
 
+combined.dnds.figs <- function() {
+
+  combined.dnds.fig(prefix='')
+  combined.dnds.fig(prefix='all_')
+  combined.dnds.fig(prefix='nofilter_')
+  combined.dnds.fig(prefix='nofilter_all_')
+
+}
+
+combined.dnds.fig <- function(prefix='') {
+
+  subs.df <- read.csv(file=paste(prefix, 'dnds.csv', sep=''))
+  paml.df <- read.csv(file=paste(prefix, 'paml_dnds.csv', sep=''))
+
+  subs.df$group <- 'Substitutions'
+  paml.df$group <- 'PAML'
+  subs.df$x_off <- -1
+  paml.df$x_off <- 1
+
+  keep.flds <- c('species', 'lrt', 'mean', 'lo', 'hi', 'group', 'x_off')
+  x <- rbind(subs.df[, keep.flds], paml.df[, keep.flds])
+
+  x <- subset(x, !(species %in% c('H/C/G/O/M ancestor', 'Marmoset')))
+  x$species <- as.character(x$species)
+  x$species <- factor(x$species, labels=ancestor.order(), levels=ancestor.order())
+  print(unique(x$species))
+
+  x$dx <- 0.2
+  x$wd <- 0.25/2
+
+  lrt.lbls <- lrt.quantiles()
+  y.lim <- NA
+
+  if (length(grep('all', prefix)) > 0) {
+    lrt.lbls <- c('[0, 1]')
+    y.lim <- c(0.15, 0.3)
+  }
+
+  p.df <- function(df) {
+    lrt.bin <- df[1, 'lrt']
+    lrt.lbl <- lrt.lbls[lrt.bin]
+
+    p <- ggplot(df, aes(
+      x=species,
+      xmin=as.numeric(species)-wd + x_off*dx,
+      xmax=as.numeric(species)+wd + x_off*dx,
+      ymin=lo, ymax=hi, y=mean,
+      fill=group
+    ))
+    p <- p + geom_rect(width=0.33, alpha=0.3, colour='black')
+    p <- p + geom_segment(colour='black', aes(
+      x=as.numeric(species)-wd + x_off*dx,
+      xend=as.numeric(species)+wd + x_off*dx,
+      y=mean, yend=mean), size=0.5)
+#    p <- p + scale_y_continuous('', limits=c(0, max(df$hi)))
+    if (!is.na(y.lim)) {
+      p <- p + scale_y_continuous('', limits=y.lim)
+    } else {
+      p <- p + scale_y_continuous('')
+    }
+    p <- p + scale_x_discrete('')
+    p <- p + scale_fill_manual('', values=c('blue', 'red'))
+    p <- p + theme_bw()
+    p <- p + opts(
+      axis.text.x = theme_text(angle=90, hjust=1),
+      title = lrt.lbl,
+      legend.position = 'none'
+    )
+    return(p)
+  }
+
+  n <- length(unique(x$lrt))
+  pdf(file=pdf.f(paste(prefix, "comb.dnds.pdf", sep='')), width=4*n, height=4)
+  vplayout(n, 1)
+  for (i in 1:n) {
+    cur.df <- subset(x, lrt == i)
+    p <- p.df(cur.df)
+    print(p, vp=subplot(i, 1))
+  }
+  dev.off()  
+}
+
+paml.xy.fig <- function() {
+  source("~/src/greg-ensembl/scripts/mysql_functions.R")
+  dbname <- 'gj1_dnds'
+  con <- connect(dbname)
+
+  res.df <- dbReadTable(con, 'results')
+
+  res.df <- subset(res.df, data_id != -500)
+
+  spc.to.lbl <- c(
+    'h' = 'Human',
+    'c' = 'Chimpanzee',
+    'ch' = 'H/C ancestor',
+    'g' = 'Gorilla',
+    'cgh' = 'H/C/G ancestor',
+    'o' = 'Orangutan',
+    'cgho' = 'H/C/G/O ancestor',
+    'm' = 'Macaque'
+  )
+  nms <- names(spc.to.lbl)
+
+  col_prefix <- ''
+
+  data.ids <- sort(res.df[, 'data_id'])
+  plot.df <- data.frame()
+  for (i in 1:length(data.ids)) {
+    data.id <- data.ids[i]
+    for (j in 1:length(nms)) {
+      cur.row <- res.df[i, ]
+      dnds.lbl <- paste(nms[j], '_dnds', sep='')
+      se.lbl <- paste(nms[j], '_dnds_se', sep='')
+
+      dnds.lbl <- paste(col_prefix, dnds.lbl, sep='')
+      se.lbl <- paste(col_prefix, se.lbl, sep='')
+      dnds.val <- cur.row[, dnds.lbl]
+      dnds.se <- cur.row[, se.lbl]
+
+      dnds.h <- cur.row[, 'h_dnds']
+      dnds.h.se <- cur.row[, 'h_dnds_se']
+
+      if(is.na(dnds.se)) {
+        dnds.se <- 0
+      }
+
+      cur.df <- data.frame(
+        species = spc.to.lbl[j],
+        data.id = data.id,
+        x = dnds.h,
+        y = dnds.val / dnds.h,
+        y_lo = (dnds.val-dnds.se) / (dnds.h),
+        y_hi = (dnds.val+dnds.se) / (dnds.h)
+      )
+      plot.df <- rbind(plot.df, cur.df)
+    }
+  }
+  print(plot.df)
+
+  plot.df$species <- with(plot.df, reorder(species, y, function(x){-x[1]}))
+  
+  p <- ggplot(plot.df, aes(x=x, y=y, colour=species))
+  p <- p + theme_bw()
+  p <- p + geom_line()
+  p <- p + geom_point()
+  p <- p + geom_errorbar(aes(ymin=y_lo, ymax=y_hi), width=0.1, alpha=0.5)
+  p <- p + scale_colour_discrete("Species")
+   p <- p + scale_x_log10("dN/dS in human")
+   p <- p + scale_y_continuous("dN/dS relative to human")
+
+  pdf(file=pdf.f("paml.xy.pdf"), width=6, height=5)
+  print(p)
+  dev.off()
+  
+
+}
+
+paml.dnds.figs <- function() {
+  .paml.dnds.fig(prefix='all_')
+  .paml.dnds.fig(prefix='nofilter_all_')
+  .paml.dnds.fig(prefix='nofilter_')
+  .paml.dnds.fig(prefix='')
+}
+
+.paml.dnds.fig <- function(prefix='') {
+  source("~/src/greg-ensembl/scripts/mysql_functions.R")
+  dbname <- 'gj1_dnds'
+  con <- connect(dbname)
+
+  res.df <- dbReadTable(con, 'results')
+
+  if (length(grep('all', prefix)) > 0) {
+    res.df <- subset(res.df, data_id == -500)
+  } else {
+    res.df <- subset(res.df, data_id != -500)
+  }
+
+  col_prefix <- ''
+  if (length(grep('nofilter', prefix)) > 0) {
+    col_prefix <- 'nofilt_'
+  }
+
+  spc.to.lbl <- c(
+    'h' = 'Human',
+    'c' = 'Chimpanzee',
+    'ch' = 'H/C ancestor',
+    'g' = 'Gorilla',
+    'cgh' = 'H/C/G ancestor',
+    'o' = 'Orangutan',
+    'cgho' = 'H/C/G/O ancestor',
+    'm' = 'Macaque',
+#    'cghmo' = 'H/C/G/O/M ancestor',
+#    'r' = 'Marmoset',
+    'm0' = 'All'
+  )
+  nms <- names(spc.to.lbl)
+
+  data.ids <- sort(res.df[, 'data_id'])
+  plot.df <- data.frame()
+  for (i in 1:length(data.ids)) {
+    data.id <- data.ids[i]
+    for (j in 1:length(nms)) {
+      cur.row <- res.df[i, ]
+      dnds.lbl <- paste(nms[j], '_dnds', sep='')
+      se.lbl <- paste(nms[j], '_dnds_se', sep='')
+
+      dnds.lbl <- paste(col_prefix, dnds.lbl, sep='')
+      se.lbl <- paste(col_prefix, se.lbl, sep='')
+      dnds.val <- cur.row[, dnds.lbl]
+      dnds.se <- cur.row[, se.lbl]
+
+      if(is.na(dnds.se)) {
+        dnds.se <- 0
+      }
+
+      cur.df <- data.frame(
+        species = spc.to.lbl[j],
+        data.id = data.id,
+        lrt = i,
+        lrt.lbl = lrt.quantiles()[i],
+        mean = dnds.val,
+        lo = dnds.val - dnds.se,
+        hi = dnds.val + dnds.se
+      )
+      plot.df <- rbind(plot.df, cur.df)
+    }
+  }
+  print(plot.df)
+  write.csv(plot.df, file=pdf.f(paste(prefix, 'paml_dnds.csv', sep='')), row.names=F)
+
+  p.df <- function(df) {
+    lbl <- df[1, 'data.id']
+
+    p <- ggplot(df, aes(
+      x=species,
+      xmin=as.numeric(species)-0.3,
+      xmax=as.numeric(species)+0.3,    
+      ymin=lo, ymax=hi, y=mean
+    ))
+    p <- p + theme_bw()
+    p <- p + geom_rect(width=0.75, alpha=0.3, position='identity')
+#    p <- p + geom_rect(fill='black', aes(ymin=mean-0.0002, ymax=mean+0.0002), width=0.75, alpha=0.6, position='identity')
+     p <- p + geom_segment(colour='black', aes(x=as.numeric(species)-0.3, xend=as.numeric(species)+0.3, y=mean, yend=mean), size=0.5)
+     p <- p + scale_y_continuous('')
+#    p <- p + scale_y_continuous('', limits=c(0, max(df$hi)))
+#    p <- p + scale_y_continuous('', limits=c(0, 1.8))
+    p <- p + scale_x_discrete('')
+    p <- p + opts(
+      axis.text.x = theme_text(angle=90, hjust=1),
+      title = df[1, 'lrt.lbl']
+    )
+    return(p)
+  }
+
+  n <- length(unique(plot.df$data.id))
+  data.ids <- unique(plot.df$data.id)
+  pdf(file=pdf.f(paste(prefix, "paml.dnds.pdf", sep='')), width=5*n, height=5)
+  vplayout(n, 1)
+  for (i in 1:length(data.ids)) {
+    cur.id <- data.ids[i]
+    cur.df <- subset(plot.df, data.id == cur.id)
+    p <- p.df(cur.df)
+    print(p, vp=subplot(i, 1))
+  }
+  dev.off()
+}
+
+lrt.quantiles <- function() {
+  return(c(
+    '[0, 0.05]',
+    '[0.05, 0.33]',
+    '[0.33, 0.67]',
+    '[0.67, 0.98]',
+    '[0.98, 1]'))
+}
+
+ancestor.order <- function() {
+  fld.pairs <- list(
+    'Human' = c('h.ns', 'h.s'),
+    'Chimpanzee' = c('c.ns', 'c.s'),
+    'H/C ancestor' = c('hc.ns', 'hc.s'),
+    'Gorilla' = c('g.ns', 'g.s'),
+    'H/C/G ancestor' = c('hcg.ns', 'hcg.s'),
+    'Orangutan' = c('o.ns', 'o.s'),
+    'H/C/G/O ancestor' = c('hcgo.ns', 'hcgo.s'),
+    'Macaque' = c('m.ns', 'm.s'),
+#    'H/C/G/O/M ancestor' = c('hcgom.ns', 'hcgom.s'),
+#    'Marmoset' = c('r.ns', 'r.s'),
+    'All' = c('all.ns', 'all.s')
+  )
+  return(names(fld.pairs))
+}
+
 pop.size.calc <- function(dnds_a, dnds_b) {
-
   w <- 1e50
-
   n <- 1
 
   root.a <- uniroot(function(x) 2*x / (1 - exp(-2*x)) - dnds_a, lower=-w, upper=w)
   root.b <- uniroot(function(x) 2*x / (1 - exp(-2*x)) - dnds_b, lower=-w, upper=w)
   
-  print(root.a$root)
-  print(root.b$root)
+  #print(root.a$root)
+  #print(root.b$root)
   return(root.b$root / root.a$root)
 
   dnds.f <- function(x) 2*n*x / (1 - exp(-2*n*x))

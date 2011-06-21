@@ -30,7 +30,10 @@ sub run {
   
   my $results_table = "slrsim_results";
   my $merged_table = "merged";
+
   my $slrsim_label = $self->param('slrsim_label');
+  my $slrsim_tree_mean_path = $self->param('slrsim_tree_mean_path');
+  my $phylosim_insertrate = $self->param('phylosim_insertrate');
 
 my $rcmd = qq^
 source("${mysql_script}")
@@ -59,7 +62,19 @@ rename.cols <- function(data, old.new.list) {
 }
 
 ### Get genes.
-sql <- sprintf("select * from genes where slrsim_label='%s'", "${slrsim_label}")
+
+do.meta <- ("${slrsim_label}" == 'NO LABEL')
+
+if (!do.meta) {
+  sql <- sprintf("select * from genes where slrsim_label='%s'", "${slrsim_label}")
+} else {
+  print("  loading meta...")
+  sql <- sprintf("select * from genes where slrsim_tree_mean_path between %.3f and %.3f AND phylosim_insertrate between %.3f and %.3f",
+    ${slrsim_tree_mean_path}-0.01, ${slrsim_tree_mean_path}+0.01,
+    ${phylosim_insertrate}-0.01, ${phylosim_insertrate}+0.01);
+  print(sql)
+}
+
 genes <- dbGetQuery(con, sql)
 genes <- rename.cols(genes, new.col.names)
 genes[, 'label'] <- as.factor(genes[, 'label'])
@@ -77,6 +92,14 @@ print(head(sites))
 print(paste(genes[1, 'label'], nrow(sites)))
 
 merged <- merge(genes, sites, by=c('node_id', 'slrsim_rep'))
+
+if (do.meta) {
+  print("  Collecting meta-results...")
+  merged <- meta.sub(merged)
+  merged[, 'label'] <- paste('meta', "${slrsim_tree_mean_path}", "${phylosim_insertrate}", sep='_')
+  merged[, 'filter'] <- 'meta'
+}
+
 res.df <- paper.table(merged)
 
 if(dbExistsTable(con, "${results_table}")) {
@@ -85,10 +108,12 @@ if(dbExistsTable(con, "${results_table}")) {
   dbWriteTable(con, "${results_table}", res.df)
 }
 
-if(dbExistsTable(con, "${merged_table}")) {
-  dbWriteTable(con, "${merged_table}", merged, append = T)
-} else {
-  dbWriteTable(con, "${merged_table}", merged)
+if (!do.meta) {
+  if(dbExistsTable(con, "${merged_table}")) {
+    dbWriteTable(con, "${merged_table}", merged, append = T)
+  } else {
+    dbWriteTable(con, "${merged_table}", merged)
+  }
 }
 ^;
   Bio::Greg::EslrUtils->run_r( $rcmd );

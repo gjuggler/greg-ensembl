@@ -1,9 +1,12 @@
-if (exists('drv')) {
-  lapply(dbListConnections(drv),dbDisconnect)
-} else {
-  library(RMySQL)
-  drv <- dbDriver('MySQL')
-}
+library(RMySQL)
+
+# Close outstanding results & connections.
+conns <- dbListConnections(MySQL())
+lapply(conns, function(x) {
+  results <- dbListResults(x)
+  lapply(results, function(y) dbClearResult(y))
+  dbDisconnect(x)
+})
 
 connect <- function(dbname=NULL) {
   if(is.null(dbname)) {

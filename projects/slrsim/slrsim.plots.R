@@ -6,6 +6,18 @@ vplayout <- function(x, y) {
   pushViewport(viewport(layout=grid.layout(y,x)))
 }
 
+rzipf <- function(n, a, b) {
+  uni <- runif(n)
+
+  all.zip <- pzipf(0:a, a, b)
+
+  ys <- sapply(uni, function(x) {
+    which.zip <- min(which(x <= all.zip))
+    which.zip -1
+  })
+  ys
+}
+
 plot.indel.distribution <- function(indel_label) {
   library(VGAM)
   toks <- unlist(strsplit(indel_label,' '))

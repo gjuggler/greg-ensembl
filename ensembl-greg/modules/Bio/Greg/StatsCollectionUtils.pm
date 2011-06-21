@@ -772,20 +772,24 @@ sub get_coords_from_pep_position {
       chr_end => $end,
       chr_strand => $strand,
       chr => $chr,
-      strand => $strand
+      strand => $strand,
+      'hg19_name' => $chr,
+      'hg19_pos' => $start,
     };
 
     # Map to old coordinates.
-    my @old_coords = $asm_mapper->map( $chr, $start, $end, $strand, $new_cs );
-    my ($old_coord) = @old_coords;
-    if ($old_coord) {
-      $obj = $self->replace($obj,{
-        'hg19_name' => $chr,
-        'hg18_name' => $chr,
-        'hg19_pos'  => $start,
-        'hg18_pos'  => $coord->start,
-                            });
-    }
+    eval {
+      my @old_coords = $asm_mapper->map( $chr, $start, $end, $strand, $new_cs );
+      my ($old_coord) = @old_coords;
+      if ($old_coord) {
+        $obj = $self->replace($obj,{
+          'hg19_name' => $chr,
+          'hg18_name' => $chr,
+          'hg19_pos'  => $start,
+          'hg18_pos'  => $coord->start,
+                              });
+      }
+    };
     return $obj;
   }
 
@@ -814,6 +818,36 @@ sub get_ref_member {
   
   $self->param('ref_member_id',$ref_member->stable_id);
   return $ref_member;
+}
+
+sub standard_deviation {
+  my $self = shift;
+  my $numbers_hashref = shift;
+
+  my @numbers = @{$numbers_hashref};
+
+  #Prevent division by 0 error in case you get junk data
+  return -1 unless(scalar(@numbers));
+
+  # Step 1, find the mean of the numbers
+  my $total1 = 0;
+  foreach my $num (@numbers) {
+    $total1 += $num;
+  }
+  my $mean1 = $total1 / (scalar @numbers);
+
+  # Step 2, find the mean of the squares of the differences
+  # between each number and the mean
+  my $total2 = 0;
+  foreach my $num (@numbers) {
+    $total2 += ($mean1-$num)**2;
+  }
+  my $mean2 = $total2 / (scalar @numbers);
+
+  # Step 3, standard deviation is the square root of the
+  # above mean
+  my $std_dev = sqrt($mean2);
+  return $std_dev;
 }
 
 

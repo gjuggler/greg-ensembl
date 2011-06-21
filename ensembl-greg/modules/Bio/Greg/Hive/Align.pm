@@ -270,6 +270,9 @@ sub align_with_prank {
   }
 
   my $full_output_file = $output_file . '.1.fas';
+  if (!defined $tree) {
+    $full_output_file = $output_file . '.2.fas';
+  }
 
   print "PRANK CMD: $cmd\n";
 
