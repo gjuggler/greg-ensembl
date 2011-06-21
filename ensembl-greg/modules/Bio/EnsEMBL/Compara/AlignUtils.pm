@@ -16,6 +16,26 @@ my $ALN = "Bio::EnsEMBL::Compara::AlignUtils";
 my $COMPARA = "Bio::EnsEMBL::Compara::ComparaUtils";
 
 
+sub translate_chars {
+  my $class = shift;
+  my $aln = shift;
+  my $map = shift;
+
+  my $aln_copy = $class->copy_aln($aln);
+
+  foreach  my $seq ($aln_copy->each_seq) {
+    my $str = $seq->seq;
+
+    foreach my $key (keys %$map) {
+      my $val = $map->{$key};
+      $str =~ s/$key/$val/g;
+    }
+    $seq->seq($str);
+  }
+  
+  return $aln_copy;
+}
+
 sub translate_ensembl {
   my $class = shift;
   my $aln = shift;
@@ -946,12 +966,16 @@ sub get_nongaps_at_column {
   my $pos = shift;
   
   my $nongap_count = 0;
+  my $str = '';
   foreach my $seq ($aln->each_seq) {
-    next if ($pos >= $seq->length);
+    next if ($pos > $seq->length);
     my $residue = $seq->subseq($pos,$pos);
-    #print $residue;
-    $nongap_count++ if ($residue !~ /[-x]/i);
+    #print "$pos $residue\n";
+    #$str .= $residue;
+    $nongap_count++ if ($residue !~ /[-]/i);
   }
+  #print Spos." ". $nongap_count." ".$str."\n";
+
   return $nongap_count;
 }
 
@@ -963,6 +987,8 @@ sub count_residues_at_column {
   my $aln = shift;
   my $pos = shift;
   my $char = shift;
+
+  $char = "-x" unless (defined $char);
 
   my $char_count = 0;
   foreach my $seq ($aln->each_seq) {
@@ -1060,17 +1086,21 @@ sub get_seq_with_id {
     return $seq if ($seq->id eq $id);
   }
   
-  warn("aln_get_seq_with_id: No sequence with id $id found!\n");
+  #warn("aln_get_seq_with_id: No sequence with id $id found!\n");
   return undef;
 }
 
 sub translate {
   my $class = shift;
   my $aln = shift;
+  my $params = shift;
+
+  my $codon_table_id = 1;
+  $codon_table_id = $params->{bioperl_codontable_id} if (defined $params->{bioperl_codontable_id});
 
   my $sa = $aln->new;
   foreach my $seq ($aln->each_seq) {
-    my $tx = $seq->translate();
+    my $tx = $seq->translate(-codontable_id => $codon_table_id);
     die "Translation for ".$seq->id." contains stop codon!\n" if ($tx =~ m/\*/);
     my $tmp = $tx->seq;
     $tmp =~ s/-//g;
@@ -1098,10 +1128,11 @@ sub cigar_lines {
 sub filter_stop_codons {
   my $class = shift;
   my $aln = shift;
+  my $params = shift;
 
   my $new_aln = $aln->new;
   foreach my $seq ($aln->each_seq) {
-    $new_aln->add_seq($class->_filter_seq_stops($seq));
+    $new_aln->add_seq($class->_filter_seq_stops($seq, $params));
   }
 
   return $new_aln;
@@ -1176,7 +1207,13 @@ sub ensure_multiple_of_three {
 sub _filter_seq_stops {
   my $class = shift;
   my $seq = shift;
-  my $be_less_stringent = shift || 0;
+  my $params = shift;
+
+  my $be_less_stringent = $params->{be_less_stringent};
+  $be_less_stringent = 0 unless (defined $be_less_stringent);
+
+  my $codon_table_id = 1;
+  $codon_table_id = $params->{bioperl_codontable_id} if (defined $params->{bioperl_codontable_id});
 
   for (my $i=1; $i <= $seq->length-2; $i+= 3) {
     my $seq_str = $seq->seq;
@@ -1189,13 +1226,14 @@ sub _filter_seq_stops {
     my $has_gaps = 0;
     $has_gaps = 1 if ($codon_str =~ m/-/i);
 
-    my $aa = new Bio::PrimarySeq(-seq => $seq->subseq($i,$i+2))->translate->seq;
+    my $aa = new Bio::PrimarySeq(-seq => $seq->subseq($i,$i+2),
+      -codontable_id => $codon_table_id)->translate->seq;
     
     #substr($seq_str,$i-1,3) = '---' if (substr($seq_str,$i-1,3) =~ m/(tag|tga|taa)/gi);
     #print "$aa\n";
     my $is_stop;
     if ($be_less_stringent) {
-      $is_stop = 1 if ($be_less_stringent && $aa =~ m/(tag|tga|taa)/gi); # Only filter out full-on stop codons.
+      $is_stop = 1 if ($be_less_stringent && $codon_str =~ m/(tag|tga|taa)/gi); # Only filter out full-on stop codons.
     } else {
       $is_stop = 1 if ($aa =~ m/([x\*])/gi); # More stringent -- anything that doesn't translate correctly.
     }
@@ -1341,20 +1379,35 @@ sub contains_sequence {
   my $class = shift;
   my $aln = shift;
   my $seq_str = shift;
+  my $params = shift;
 
-  my $ref_aa = new Bio::LocatableSeq(-seq=>$seq_str)->translate->seq;
-  $ref_aa =~ s/\*//g;
+  print $params->{bioperl_codontable_id}."\n";
+
+  my $codontable_id = 1;
+  $codontable_id = $params->{bioperl_codontable_id} if (defined $params->{bioperl_codontable_id});
+
+  my $ref_aa = new Bio::PrimarySeq(-seq=>$seq_str)->translate(-codontable_id => $codontable_id)->seq;
+  $ref_aa =~ s/[\*X]//g;
   
+  print "REF AA: $ref_aa\n";
+
   foreach my $seq ($aln->each_seq) {
     my $compare_str = $seq->seq;
     my $nogaps = $compare_str;
     $nogaps =~ s/-//g;
-    my $nogaps_aa = new Bio::LocatableSeq(-seq=>$nogaps)->translate->seq;
-    $nogaps_aa =~ s/\*//g;
-    #print $nogaps_aa."\n";
-    #print $ref_aa."\n\n";
+    my $nogaps_aa = new Bio::PrimarySeq(-seq=>$nogaps)->translate( -codontable_id => $codontable_id)->seq;
+    $nogaps_aa =~ s/[\*X]//g;
+
+    print "NOGAPS: $nogaps_aa\n";
+
+    #print $nogaps_aa." ".$seq->id."\n";
+    #print $ref_aa."\n";
     
     return 1 if ($nogaps_aa eq $ref_aa);
+
+    # Try taking one aa off of the nogaps sequence.
+    my $nogaps_shorter = substr($nogaps_aa, 0, length($nogaps_aa)-1);
+    return 1 if ($nogaps_shorter eq $ref_aa);
   }
   return 0;
 }
@@ -1984,6 +2037,32 @@ sub remove_seq_from_aln {
   return $new_aln;
 }
 
+sub remove_empty_seqs {
+  my $class = shift;
+  my $aln = shift;
+
+  my @empty_seqs;
+  foreach my $seq ($aln->each_seq) {
+    my $str = $seq->seq;
+    #print "Testing for empty:\n";
+    #print $str."\n";
+    if ($str !~ m/[^-X]/g) {
+      push @empty_seqs, $seq;
+    }
+  }
+
+  my $n = scalar(@empty_seqs);
+  if ($n > 0) {
+    print "  found $n empty seqs!\n";
+  }
+
+  foreach my $seq (@empty_seqs) {
+    $aln = $class->remove_seq_from_aln($aln, $seq->id);
+  }
+
+  return $aln;
+}
+
 sub pretty_print {
   my $class = shift;
   my $aln = shift;
@@ -2199,11 +2278,15 @@ sub cdna_alignment_string {
 sub has_stop_codon {
   my $class = shift;
   my $aln = shift;
+  my $params = shift;
+
+  my $codonTableId = 1;
+  $codonTableId = $params->{bioperl_codontable_id} if (defined $params->{bioperl_codontable_id});
 
   my @seqs = $aln->each_seq;
   my @seq_strings = map {$_->seq} @seqs;
 
-  my $code = Bio::Tools::CodonTable->new();
+  my $code = Bio::Tools::CodonTable->new( -codontable_id => $codonTableId);
 
   for (my $i=0; $i < $aln->length-2; $i+= 3) {
     foreach my $str (@seq_strings) {

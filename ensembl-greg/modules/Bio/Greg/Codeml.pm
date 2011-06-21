@@ -593,12 +593,16 @@ sub run {
       #
       open( IN, "$tmpdir/rst" );
       my $within_subs = 0;
+      my $within_bayes = 0;
       my @supps;
       foreach my $line (<IN>) {
         $within_subs = 1 if ($line =~ m/summary of changes along branches/gi);
         $within_subs = 0 if ($line =~ m/list of extant/gi);
 
-        next if (!$within_subs);
+        $within_bayes = 1 if ($line =~ m/empirical bayes/gi);
+        $within_bayes = 0 if ($line =~ m/marginal reconstructions/gi);
+
+        next if (!($within_subs || $within_bayes));
         push @supps, $line;
       }
       close(IN);
@@ -703,9 +707,8 @@ sub extract_empirical_bayes {
       ;    # Skip lines like: (amino acids refer to 1st sequence: ENSDARP00000087283)
 
     # Wait until we get to the supplemental part
-    $in_supplement = 1 if ( $line =~ m/supplemental results/i);
+    $in_supplement = 1 if ( $line =~ m/time used/i);
     next unless ($in_supplement);
-
     
 
     if ( $line =~ /w:\s+(.*)/ ) {
@@ -1474,6 +1477,8 @@ sub branch_model_likelihood {
     omega => 0.3,
     fix_kappa => 0,
     kappa => 4,
+
+    icode => 0,
 
     method => 0,
     getSE => 0,

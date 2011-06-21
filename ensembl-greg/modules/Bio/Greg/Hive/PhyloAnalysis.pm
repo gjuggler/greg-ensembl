@@ -37,8 +37,8 @@ sub param_defaults {
     genewise_table => 'dnds_genes',
 
     sitewise_store_opt_tree     => 1,
-    sitewise_store_gaps         => 0,
-    sitewise_store_single_chars         => 1,
+    sitewise_skip_gaps         => 0,
+    sitewise_skip_single_chars         => 0,
     sitewise_minimum_leaf_count => 2,
     sitewise_strip_gaps         => 0,
     sitewise_parameter_sets     => 'all',
@@ -598,6 +598,8 @@ sub run_sitewise_dNdS {
   my $cdna_aln = shift;
   my $params   = shift;
 
+  $params = $self->replace($self->params, $params);
+
   print "  running SLR...\n" if ($self->debug);
 
   if ($tree->isa("Bio::Tree::TreeI")) {
@@ -613,6 +615,10 @@ sub run_sitewise_dNdS {
   my $codonf       = $params->{slr_codonf};
   my $freqtype     = $params->{slr_freqtype};
   my $skipsitewise = $params->{slr_skipsitewise};
+  my $icode = $params->{icode};
+
+  my $gencode = 'universal';
+  $gencode = 'mammalian' if ($icode == 1);
 
   $slrexe = "Slr" if (!-e $slrexe);
   $slrexe = "/nfs/users/nfs_g/gj1/bin/Slr_Linux_shared" if ( !-e $slrexe );
@@ -660,7 +666,7 @@ sub run_sitewise_dNdS {
   print SLR "treefile\: tree\n";
   my $outfile = "slr.res";
   print SLR "outfile\: $outfile\n";
-  print SLR "gencode\: universal\n";
+  print SLR "gencode\: $gencode\n";
   print SLR "aminof\: $aminof\n";
   print SLR "codonf\: $codonf\n";
   print SLR "freqtype\: $freqtype\n";
@@ -864,7 +870,7 @@ sub parse_slr_output {
         omega => $omega,
         omega_lower => $lower,
         omega_upper => $upper,
-        lrt_stat => $lrt_stat,
+        lrt_stat => $signed_lrt,
         signed_lrt => $signed_lrt,
         type => $type,
         note => $note,
@@ -1121,11 +1127,13 @@ sub store_sitewise {
 
     my $note = $site->{note};
     # These two cases are pretty useless, so we'll skip 'em.
-    if ( !$self->param('sitewise_store_gaps') ) {
-      next if ( $note eq 'all_gaps' );
+    if ( $self->param('sitewise_skip_gaps') ) {
+      #next if ( $note eq 'all_gaps' );
+      next if ($site->{nongap_count} == 0);
     }
-    if ( !$self->param('sitewise_store_single_chars') ) {
-      next if ( $note eq 'single_char' );
+    if ( $self->param('sitewise_skip_single_chars') ) {
+      #next if ( $note eq 'single_char' );
+      next if ($site->{nongap_count} == 1);
     }
     
     my $p = $self->replace($site, {

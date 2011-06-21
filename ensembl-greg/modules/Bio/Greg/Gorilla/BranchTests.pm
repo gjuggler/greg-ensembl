@@ -114,8 +114,8 @@ sub run {
 sub write_output {
   my $self = shift;
 
-  $self->create_table_from_params( $self->dbc, 'genes', $self->{_table_structure});
-  $self->store_params_in_table($self->dbc, 'genes', $self->params);
+  $self->write_table('genes');
+
 }
 
 sub _tx_aln {

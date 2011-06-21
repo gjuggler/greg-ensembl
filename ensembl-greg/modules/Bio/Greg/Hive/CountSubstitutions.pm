@@ -82,7 +82,7 @@ sub run_m0 {
   return $lines;
 }
 
-sub store_subs {
+sub load_subs {
   my $self = shift;
   my $tree = shift;
   my $aln = shift;
@@ -90,8 +90,23 @@ sub store_subs {
   my $ref_member = shift;
   my $table = shift;
 
-  $self->create_table_from_params( $self->compara_dba, $table,
-    $self->codon_subs_table_def );
+  my $subs_obj = $self->store_subs($tree, $aln, $lines, $ref_member, undef);
+  return $subs_obj;
+}
+
+sub store_subs {
+  my $self = shift;
+  my $tree = shift;
+  my $aln = shift;
+  my $lines = shift;
+  my $ref_member = shift;
+  my $table = shift;
+  
+
+  if (defined $table) {
+    $self->create_table_from_params( $self->compara_dba, $table,
+                                     $self->codon_subs_table_def );
+  }
 
   if (!defined $ref_member) {
     my ($ref_member) = grep {$_->can('taxon_id') && $_->taxon_id == 9606} $tree->leaves;
@@ -140,7 +155,10 @@ sub store_subs {
         $n_s++ if ($obj->{mut_syn} == 1);
 
         my $params = $self->replace( $self->params, $obj );
-        $self->store_params_in_table( $self->dbc, $table, $params );
+
+        if (defined $table) {
+          $self->store_params_in_table( $self->dbc, $table, $params );
+        }
         
         push @unwrapped_subs, $obj;
       } else {
@@ -149,12 +167,14 @@ sub store_subs {
       }
     }
 
-    printf("Stored %3s substitutions for %15.15s [%3s ws, %3s sw, %3s ns, %3s s]\n",
-      $i, $id, $n_ws, $n_sw, $n_ns, $n_s) if ( $self->debug );
+    my $verb = 'Stored';
+    $verb = 'Loaded' if (!defined $table);
+    printf("${verb} %3s substitutions for %15.15s [%3s ns, %3s s]\n",
+             $i, $id, $n_ns, $n_s) if ( $self->debug );
   }
 
   $self->param('subs', \@unwrapped_subs);
-  return $lines;
+  return \@unwrapped_subs;
 }
 
 sub mask_substitution_runs {
@@ -186,9 +206,8 @@ sub mask_substitution_runs {
   my $m0_tree = Bio::Greg::Codeml->parse_codeml_results($lines);
   
   # Store substitutions.
-  $self->store_subs($tree_copy, $aln_copy, $lines);
-
-  my @subs = @{$self->param('subs')};
+  my $subs_obj = $self->load_subs($tree_copy, $aln_copy, $lines);
+  my @subs = @{$subs_obj};
 
   my $muts;
   foreach my $s (@subs) {
@@ -358,9 +377,11 @@ sub extract_substitution_info {
     $self->throw("No seq for ref member!") unless ($ref_seq);
     my $location = $ref_seq->location_from_column($aln_pos);
     if ($location && $location->location_type ne 'IN-BETWEEN') {
-      my $seq_pos = $location->start;
-      my $coords_obj = $self->get_coords_from_pep_position($ref_member, $seq_pos);
-      $final_params = $self->replace($final_params, $coords_obj);
+      eval {
+        my $seq_pos = $location->start;
+        my $coords_obj = $self->get_coords_from_pep_position($ref_member, $seq_pos);
+        $final_params = $self->replace($final_params, $coords_obj);
+      };
     }
   }
   
@@ -378,6 +399,7 @@ sub extract_substitution_info {
     my $c = "ENSPTRP0";
     my $g = "ENSGGOP0";
     my $o = "ENSPPYP0";
+    my $gibbon = "ENSNLEP0";
     my $macaque = "ENSMMUP0";
     my $marmoset = "ENSCJAP0";
     my $tarsier = "ENSTYSP0";
@@ -387,7 +409,8 @@ sub extract_substitution_info {
       "$h" => 9606,
       "$c" => 9598,
       "$g" => 9593,
-      "$o" =>  9600,
+      "$o" =>  9601,
+      "$gibbon" => 61853,
       "$macaque" => 9544,
       "$marmoset" => 9483,
       "$tarsier" => 9478,
@@ -403,14 +426,25 @@ sub extract_substitution_info {
     }
 
     my $taxon_id = 0;
+    # Human-chimp: pan-homo artificial clade
     $taxon_id = 1234 if ($tx_ids->{9606} && $tx_ids->{9598});
-    $taxon_id = 207598 if ($tx_ids->{9606} && $tx_ids->{9598} && $tx_ids->{9593});
-    $taxon_id = 9604 if ($tx_ids->{9606} && $tx_ids->{9598} && $tx_ids->{9593} && $tx_ids->{9600});
-    $taxon_id = 376913 if ($tx_ids->{9606} && $tx_ids->{9598} && $tx_ids->{9593} && $tx_ids->{9600} && $tx_ids->{9544});
-    $taxon_id = 9526 if ($tx_ids->{9606} && $tx_ids->{9598} && $tx_ids->{9593} && $tx_ids->{9600} && $tx_ids->{9544} && $tx_ids->{9483});
-    $taxon_id = 10001 if ($tx_ids->{9606} && $tx_ids->{9598} && $tx_ids->{9593} && $tx_ids->{9600} && $tx_ids->{9544} && $tx_ids->{9483} && $tx_ids->{9478});
+    # Human-gorilla: Homininae
+    $taxon_id = 207598 if ($tx_ids->{9606} && $tx_ids->{9593});
+    # Human-orang: Hominidae (great apes)
+    $taxon_id = 9604 if ($tx_ids->{9606} && $tx_ids->{9601});
+    # Human-gibbon: Hominoidea (apes)
+    $taxon_id = 314295 if ($tx_ids->{9606} && $tx_ids->{61853});
+    # Human-macaque: Haplorrhini
+    $taxon_id = 376913 if ($tx_ids->{9606} && $tx_ids->{9544});
+    # Human-marmoset: Catarrhini
+    $taxon_id = 9526 if ($tx_ids->{9606} && $tx_ids->{9483});
+    # Human-tarsier: artificial clade
+    $taxon_id = 10001 if ($tx_ids->{9606} && $tx_ids->{9478});
+    # Mouse lemur and galago internal artificial clade
     $taxon_id = 10002 if ($tx_ids->{30608} && $tx_ids->{30611});
-    $taxon_id = 10003 if ($tx_ids->{9606} && $tx_ids->{9598} && $tx_ids->{9593} && $tx_ids->{9600} && $tx_ids->{9544} && $tx_ids->{9483} && $tx_ids->{9478} && $tx_ids->{30608} && $tx_ids->{30611});
+    # Human-{mouse_lemur or galago}
+    $taxon_id = 10003 if ($tx_ids->{9606} && ($tx_ids->{30608} || $tx_ids->{30611}) );
+
     $final_params->{taxon_id} = $taxon_id if (defined $taxon_id);
   }
 
