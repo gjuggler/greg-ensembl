@@ -1,11 +1,10 @@
 library(plyr)
 library(ggplot2)
-dbname <<- 'gj1_hiv_full_57_c'
-source("~/src/greg-ensembl/scripts/collect_sitewise.R")
+source("~/src/greg-ensembl/scripts/mysql_functions.R")
+#con <- connect(dbname='gj1_hiv_full_57_c')
 
 bsub.candidates <- function() {
   dbname <<- 'gj1_hiv_62'
-  source("~/src/greg-ensembl/scripts/mysql_functions.R")
   con <- connect(dbname)
   
   rows <- read.table(wd.f("candidates_final_ids.txt"))  
@@ -30,38 +29,74 @@ bsub.candidates <- function() {
 }
 
 new.genes <- function() {
-  dbname <<- 'gj1_hiv_62'
-  source("~/src/greg-ensembl/scripts/collect_sitewise.R")
+  dbname <- 'gj1_hiv_62'
+  con <- connect(dbname)
   genes <- get.vector(con, "select * from genes;")
 
   genes$lrt <- 2* (genes$m8_lnl - genes$m7_lnl)
   genes$pval <- pchisq(genes$lrt, df=2, lower.tail=F)
   genes$pval.bh <- p.adjust(genes$pval, method='BH')
 
-  genes[genes$paml_dnds > 3, 'paml_dnds'] <- 3
+  rows <- read.table(wd.f("candidates_final_ids.txt"))  
+  rows$gene_id <- rows[, 1]
+  genes <- merge(rows, genes, all.x=T)
+
+  genes <- format.numeric.df(genes, digits=4)
+  
+#  genes[genes$paml_dnds > 3, 'paml_dnds'] <- 3
 
   save(genes, file=wd.f("genes.e62.Rdata"))
-  write.csv(genes[, manuscript.fields()], file=wd.f("genes.e62.csv"), row.names=F)
+  write.csv(genes[, manuscript.fields()], file=wd.f("genes.e62.csv"), row.names=F, quote=F)
   new.genes <<- genes[, manuscript.fields()]
 }
 
 manuscript.fields <- function() {
   c(
-    'stable_id_gene', 'gene_name', 'aln_length', 'masked_nucs', 'paml_dnds', 'slr_dnds', 'pval', 'pval.bh'
+    'gene_id', 'gene_name', 'aln_length', 'n_seqs', 'masked_nucs', 'paml_dnds', 'slr_dnds', 'pval', 'pval.bh'
   )
 }
 
-get.genes <- function() {
+output.package <- function() {               
+  dbname <- 'gj1_hiv_62'
+  con <- connect(dbname)
+
+  print("Output package")
+  print(con)
+
+  print(object.sizes())
+  
+  print("  genes")
+  genes <<- get.genes(con)
+  print(object.sizes())
+
+  return()
+
+  print("  windows")
+  windows_30 <<- get.vector(con, "select * from windows where peptide_window_width=30;")
+  windows_full <<- get.vector(con, "select * from windows where peptide_window_width=9999;")
+  print(object.sizes())
+
+  print("  PAML")
+  paml_sites <<- get.vector(con, "select * from paml_sites;")
+  print(object.sizes())
+
+  print("  SLR")
+  slr_sites <<- get.vector(con, "select * from slr_sites;")
+  print(object.sizes())
+
+  save(genes, windows_30, windows_full, paml_sites, slr_sites, file=scratch.f("output.Rdata"))
+}
+
+get.genes <- function(con) {
   genes <- get.vector(con, "select * from genes;")
 
-  genes$lrt <- 2* (genes$m8_lnl - genes$m7_lnl)
+  genes$lrt <- 2 * (genes$m8_lnl - genes$m7_lnl)
   genes$pval <- pchisq(genes$lrt, df=2, lower.tail=F)
   genes$pval.bh <- p.adjust(genes$pval, method='BH')
 
-  genes[genes$paml_dnds > 3, 'paml_dnds'] <- 3
-
-  save(genes, file=wd.f("genes.Rdata"))
-  assign("genes", genes, envir=.GlobalEnv)
+#  save(genes, file=wd.f("genes.Rdata"))
+#  assign("genes", genes, envir=.GlobalEnv)
+  return(genes)
 }
 
 interaction.dnds <- function() {
@@ -432,3 +467,43 @@ wd.f <- function(file) {
   return(paste("~/src/greg-ensembl/projects/primate_hiv/", file, sep=''))
 }
 
+scratch.f <- function(file) {
+  return(paste("/nfs/users/nfs_g/gj1/scratch/gj1_hiv_62/2011-06-03_01/", file, sep=''))
+}
+
+object.sizes <- function() {
+  all.objs <- ls(envir=.GlobalEnv)
+  is.function <- sapply(all.objs, function(x) {typeof(get(x)) == 'closure'})
+  all.objs <- all.objs[!is.function]
+  return(rev(sort(sapply(all.objs, function (object.name) {
+        object.size(get(object.name))
+      }))))
+}
+
+read.go <- function(filename) {
+  tbl <- read.delim(filename, header=FALSE, comment.char="!", sep="\t")
+
+  #print(str(tbl))
+  uni.id <- tbl[, 2]
+  tbl[, 2] <- tbl[, 3]
+  tbl[, 3] <- uni.id
+
+  tbl <- tbl[!duplicated(tbl[, 2]),]
+  #print(str(tbl))
+
+  write.table(tbl, file=paste(filename, ".mod", sep=""), sep="\t", quote=F, row.names=F, col.names=F)
+  x <- readGAF(paste(filename, ".mod", sep=""))
+  x
+}
+
+format.numeric.df <- function(x,digits=3) {  
+  nums <- unlist(lapply(x,is.double))
+  #print(nums)
+  for (col in names(x)) {
+    if (nums[col] == TRUE) {
+      x[,col] <- formatC(x[,col],digits=digits,format='fg')
+    }
+  }
+
+  return(x)
+}

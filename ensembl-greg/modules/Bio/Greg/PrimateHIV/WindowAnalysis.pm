@@ -5,6 +5,8 @@ use Bio::Greg::Codeml;
 use Bio::Greg::Hive::PhyloAnalysis;
 use File::Path;
 
+use Bio::Align::DNAStatistics;
+
 use base (
   'Bio::Greg::Hive::Process', 
   'Bio::Greg::Hive::PhyloAnalysis', 
@@ -28,11 +30,17 @@ sub fetch_input {
   # Fetch parameters from all possible locations.
   $self->load_all_params();
 
-  # Create tables if necessary.
-  $self->create_table_from_params( $self->compara_dba, $self->param('output_table'),
-                                   $self->get_table_structure );  
+  $self->init_table($self->genes_table);
 
-  Bio::EnsEMBL::Compara::ComparaUtils->load_registry();
+  # Create tables if necessary.
+  $self->create_table_from_params( $self->compara_dba, 'windows',
+                                   $self->windows_table );
+}
+
+sub write_output {
+  my $self = shift;
+
+  $self->write_table('genes');
 }
 
 sub data_label {
@@ -56,7 +64,13 @@ sub run {
   #print $protein_tree->ascii."\n";
 
   my $ortholog_tree = Bio::EnsEMBL::Compara::ComparaUtils->get_one_to_one_ortholog_tree($self->compara_dba, $member, 'ortholog.*');
+  if (!defined $ortholog_tree) {
+    $self->fail_and_die("no_orthologs", "Nothing left from one2one_orthologs: [$ortholog_tree]");
+  }
   $ortholog_tree = Bio::EnsEMBL::Compara::ComparaUtils->restrict_tree_to_clade($self->compara_dba, $ortholog_tree, 'Primates');
+  if (!defined $ortholog_tree || scalar($ortholog_tree->leaves) < 2) {
+    $self->fail_and_die("no_orthologs", "Nothing other than human peptide left after restricting to clade: [$ortholog_tree]");
+  }
 
   my $tree = $ortholog_tree;
   my $params = $self->params;
@@ -84,35 +98,64 @@ sub run {
 
   die("No ref member!") unless (defined $ref_member);
   my $ref_member = $ref_member->get_canonical_peptide_Member;
-  $self->param('stable_id_gene',$ref_member->gene_member->get_Gene->stable_id);
-  $self->param('stable_id_transcript',$ref_member->get_Transcript->stable_id);
-  $self->param('stable_id_peptide',$ref_member->stable_id);
+  $self->param('gene_id',$ref_member->gene_member->get_Gene->stable_id);
+  $self->param('transcript_id',$ref_member->get_Transcript->stable_id);
+  $self->param('protein_id',$ref_member->stable_id);
   $self->param('ref_member', $ref_member);
   my $gene_name = $ref_member->get_Gene->external_name || $ref_member->get_Gene->stable_id;
   $self->param('gene_name',$gene_name);
+
+  $self->param('chr_name', ''.$ref_member->get_Transcript->slice->seq_region_name);
+  $self->param('chr_start', $ref_member->get_Transcript->coding_region_start);
+  $self->param('chr_end', $ref_member->get_Transcript->coding_region_end);
+  $self->param('chr_strand', ''.$ref_member->get_Transcript->slice->strand);
+
+  if ($self->param('chr_name') =~ m/MT/gi) {
+    $self->param('bioperl_codontable_id', 2);
+    $self->param('icode', 1);
+  } else {
+    $self->param('bioperl_codontable_id', 1);
+    $self->param('icode', 0);
+  }
 
   my $c_dba = $self->compara_dba;
   my $params = $self->params;
 
   $ref_member->name($ref_member->stable_id);
   my ($tree, $aln) = $self->_get_aln($tree, $ref_member);
-
   $self->_out_aln($aln, 'orig');
 
-  # Should we remove the more-distant paralogous copy here...?
+  $aln = Bio::EnsEMBL::Compara::AlignUtils->remove_empty_seqs($aln);
+  if (scalar($aln->each_seq) < 3) {
+    $self->fail_and_die("seq_count", "Not enough sequences for PAML analysis!");
+  }
+  if ($aln->length > 15000) {
+    $self->fail_and_die("aln_length", "Alignment too long - over 15k nucleotides!");
+  }
+
+  my ($tree, $aln) = $self->_remove_paralogs($tree, $aln, $ref_member);
+  my $genome_tree = $self->_get_genome_tree($tree);
+  $tree = $genome_tree;
+#  $self->_out_aln($aln, 'paralogs_removed');
+
+  if (scalar($aln->each_seq) < 3) {
+    $self->fail_and_die("seq_count", "Not enough sequences for PAML analysis!");
+  }
 
   $aln = $self->_realign($tree, $aln);
-
-  # Flatten to reference sequence again after Prank re-alignment.
   $aln = Bio::EnsEMBL::Compara::AlignUtils->flatten_to_sequence( $aln, $ref_member->name);
+#  $self->_out_aln($aln, 'realigned');
 
-  $self->_out_aln($aln, 'realigned');
+  $tree = Bio::EnsEMBL::Compara::ComparaUtils->restrict_tree_to_aln($tree, $aln);
 
   $aln = $self->_mask_aln($tree, $aln);
+#  $self->_out_aln($aln, 'masked');
 
-  $self->_out_aln($aln, 'masked');
+  if (scalar($aln->each_seq) < 3) {
+    $self->fail_and_die("seq_count", "Not enough sequences for PAML analysis!");
+  }
 
-  $self->_run_paml($tree, $aln);
+  $self->_run_paml($tree, $aln, $ref_member);
 
   my $out_f = $self->_save_file('tree', 'nh');
   my $out_full = $out_f->{full_file};
@@ -136,11 +179,8 @@ sub run {
   $self->param('aln_length', $pep_aln->length);
   $self->param('seq_length', $ref_member->seq_length);
 
-  $self->create_table_from_params( $self->dbc, 'genes', $self->genes_table_structure);  
-  $self->store_params_in_table($self->dbc, 'genes', $self->params);
-
   # Do the windows stuff.
-  my $pep_aln = Bio::EnsEMBL::Compara::AlignUtils->translate($aln);
+  my $pep_aln = Bio::EnsEMBL::Compara::AlignUtils->translate($aln, $self->params);
   # Extract only the site result objects from the sitewise hash.
   my $sites_hash;
   foreach my $i (1 .. $pep_aln->length) {
@@ -159,7 +199,7 @@ sub _realign {
   my $self = shift;
   my $tree = shift;
   my $aln = shift;
-
+  
   my $aln_file = $self->_save_file('realigned_aln', 'fasta');
   my $aln_f = $aln_file->{full_file};
   if (!-e $aln_f || $self->param('force_recalc')) {
@@ -171,6 +211,7 @@ sub _realign {
   }
   print "  loading re-alignment from file\n";
   $aln = Bio::EnsEMBL::Compara::AlignUtils->from_file($aln_f);
+
   return $aln;
 }
 
@@ -184,6 +225,7 @@ sub _mask_aln {
   if ($self->param('force_recalc') == 1) {
     unlink($m0_f);
   }
+
   $aln = $self->mask_substitution_runs($tree, $aln, $m0_f);
 
   my $masked_file = $self->_save_file('masked_aln', 'fasta');
@@ -198,13 +240,13 @@ sub _run_paml {
   my $self = shift;
   my $tree = shift;
   my $aln = shift;
+  my $ref_member = shift;
 
   my $m0 = $self->_save_file('m0', 'txt');
   my $m7 = $self->_save_file('m7', 'txt');
   my $m8 = $self->_save_file('m8', 'txt');
 
   $aln = Bio::EnsEMBL::Compara::AlignUtils->copy_aln($aln);
-  $self->pretty_print($aln);
 
   my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
 
@@ -223,7 +265,7 @@ sub _run_paml {
       Small_Diff => 1e-7
     };
     print "  running m0...\n";
-    $res = Bio::Greg::Codeml->branch_model_likelihood( $treeI, $aln, $self->worker_temp_directory, $params );
+    $res = Bio::Greg::Codeml->branch_model_likelihood( $treeI, $aln, $self->worker_temp_directory, $self->replace($self->params, $params) );
     $lines = $res->{lines};
     _out($m0->{full_file}, $lines);
   }
@@ -231,9 +273,12 @@ sub _run_paml {
   # Copy branch lengths from M0 results to our treeI.
   $lines = _in($m0->{full_file});
   my $m0_tree = Bio::Greg::Codeml->parse_codeml_results($lines);
+
+  print $m0_tree->ascii."\n";
+  print $treeI->ascii."\n";
   Bio::EnsEMBL::Compara::TreeUtils->transfer_branchlengths($m0_tree, $treeI);
 
-  $self->store_subs($tree, $aln, $lines);
+  $self->store_subs($tree, $aln, $lines, $ref_member, 'subs');
 
   my ($dnds, $dnds_se) = Bio::Greg::Codeml->parse_m0_dnds($lines);
   $self->param('paml_dnds', $dnds);
@@ -252,7 +297,7 @@ sub _run_paml {
       Small_Diff => 1e-6
     };
     print "  running m7...\n";
-    $res = Bio::Greg::Codeml->branch_model_likelihood( $treeI, $aln, $self->worker_temp_directory, $params );
+    $res = Bio::Greg::Codeml->branch_model_likelihood( $treeI, $aln, $self->worker_temp_directory, $self->replace($self->params, $params) );
     $lines = $res->{lines};
     _out($m7->{full_file}, $lines);
   }
@@ -273,7 +318,7 @@ sub _run_paml {
       Small_Diff => 1e-7
     };
     print "  running m8...\n";
-    $res = Bio::Greg::Codeml->branch_model_likelihood( $treeI, $aln, $self->worker_temp_directory, $params );
+    $res = Bio::Greg::Codeml->branch_model_likelihood( $treeI, $aln, $self->worker_temp_directory, $self->replace($self->params, $params) );
     $lines = $res->{lines};
     _out($m8->{full_file}, $lines);
   }
@@ -303,6 +348,51 @@ sub _in {
   my @lines = <IN>;
   close(IN);
   return \@lines;
+}
+
+sub _get_genome_tree {
+  my $self = shift;
+  my $tree = shift;
+
+  my $params = {
+    keep_species => join(',', map {$_->taxon_id} $tree->leaves)
+  };
+  my $genome_tree = Bio::EnsEMBL::Compara::ComparaUtils->get_genome_tree_subset($self->compara_dba, $params);
+
+  # Match up genome tree names to gene tree IDs.
+  my $id_hash;
+  map {$id_hash->{$_->taxon_id} = $_->name} $tree->leaves;
+  foreach my $node ($genome_tree->nodes) {
+    if ($node->is_leaf) {
+      $node->name($id_hash->{$node->taxon_id});
+    } else {
+      $node->name('');
+    }
+  }
+
+  my $taxid_to_name = {
+    9606 => 'Human',
+    9593 => 'Gorilla',
+    9598 => 'Chimpanzee',
+    9601 => 'Orangutan',
+    9544 => 'Macaque',
+    9483 => 'Marmoset',
+    9478 => 'Tarsier',
+    30608 => 'Mouse lemur',
+    30611 => 'Bushbaby'
+  };
+
+  my @missing_names = ();
+  foreach my $tx_id (keys %$taxid_to_name) {
+    push @missing_names, $taxid_to_name->{$tx_id} if (! defined $id_hash->{$tx_id});
+  }
+
+
+  @missing_names = sort {$a cmp $b} @missing_names;
+  my $missing_string = join(", ", @missing_names);
+  $self->param('missing_species', $missing_string);
+
+  return $genome_tree;
 }
 
 sub _get_paml_tree {
@@ -341,7 +431,7 @@ sub _run_slr {
 
   $self->param('slr_file', $out_f->{rel_file});
 
-  my $pep_aln = Bio::EnsEMBL::Compara::AlignUtils->translate($aln);
+  my $pep_aln = Bio::EnsEMBL::Compara::AlignUtils->translate($aln, $self->params);
 
   $self->param('analysis_action', 'slr');
 
@@ -426,13 +516,13 @@ sub _get_aln {
 
   my $c_dba = $self->compara_dba;
 
-  if (!-e $out_file) {
+  if (!-e $out_file || $self->param('force_recalc')) {
     print "  fetching aln...\n";
     my $tree_aln_obj =
       Bio::EnsEMBL::Compara::ComparaUtils->get_compara_or_genomic_aln( $c_dba, $tree, $ref_member,
                                                                        $self->params );
     if ($tree_aln_obj == -1) {
-      $self->fail_and_die("Error getting tree or aln!");
+      $self->fail_and_die("error_fetching", "Error getting tree or aln!");
     }
 
     my $aln = $tree_aln_obj->{aln};
@@ -442,16 +532,16 @@ sub _get_aln {
     
     Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $aln, { width => 150, full => 1 } ) if ($self->debug);
     if (!defined $tree) {
-      $self->fail_and_die("Tree undefined: [$tree]");
+      $self->fail_and_die("tree_undef", "Tree undefined: [$tree]");
     }
     if (scalar($tree->leaves) < 2) {
-      $self->fail_and_die("Tree too small!".' '.$self->param('aln_type').' '.$tree->newick_format);
+      $self->fail_and_die("small_tree", "Tree too small!".' '.$self->param('aln_type').' '.$tree->newick_format);
     }
     if ($aln->length < 50) {
-      $self->fail_and_die("Alignment too short!".' '.$self->param('aln_type').' '.$tree->newick_format.' '.$aln->length);
+      $self->fail_and_die("small_aln", "Alignment too short!".' '.$self->param('aln_type').' '.$tree->newick_format.' '.$aln->length);
     }
     $aln = Bio::EnsEMBL::Compara::AlignUtils->sort_by_tree($aln,$tree);
-    my $pep_aln = Bio::EnsEMBL::Compara::AlignUtils->translate($aln);
+    my $pep_aln = Bio::EnsEMBL::Compara::AlignUtils->translate($aln, $self->params);
     Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $aln, { width => 150, full => 1 } ) if ($self->debug);
     Bio::EnsEMBL::Compara::AlignUtils->to_file($aln, $out_file);
   } else {
@@ -463,8 +553,67 @@ sub _get_aln {
   return ($tree, $aln);
 }
 
-sub write_output {
-  my $self = shift;  
+sub _remove_paralogs {
+  my $self = shift;
+  my $tree = shift;
+  my $aln = shift;
+  my $ref_member = shift;
+
+  my $tax_id_hash;
+  foreach my $leaf ($tree->leaves) {
+    my $tx_id = $leaf->taxon_id;
+    if (!defined $tax_id_hash->{$tx_id}) {
+      $tax_id_hash->{$tx_id} = 0;
+    } else {
+      $tax_id_hash->{$tx_id} = 1;
+    }
+  }
+
+  my $paralog_count = 0;
+  map {$paralog_count += $tax_id_hash->{$_}} keys %$tax_id_hash;
+  $self->store_param('species_with_paralogs', $paralog_count);
+
+  # Calculate distances between each sequence. Turn Ns to gaps so they don't mess up
+  # the calculations.
+  my $map = {
+    'N' => '-'
+  };
+  my $aln_copy = Bio::EnsEMBL::Compara::AlignUtils->translate_chars($aln, $map);
+  my $stats = Bio::Align::DNAStatistics->new();
+  my $jcmatrix = $stats->distance(-align => $aln_copy, 
+                                  -method => 'D_JukesCantor');
+
+  my $ref_id = $ref_member->stable_id;  
+  my  ($ref_seq) = grep {$_->id eq $ref_id} $aln->each_seq;
+  foreach my $taxon_id (keys %$tax_id_hash) {
+    if ($tax_id_hash->{$taxon_id} > 0) {
+      my @entries = grep {$_->taxon_id == $taxon_id} $tree->leaves;
+      @entries = sort {$a->seq_length <=> $b->seq_length || 
+                         $a->stable_id cmp $b->stable_id} @entries;
+
+      my $min_dist = 9999;
+      my $min_id = $entries[0];
+      foreach my $entry (@entries) {
+        my $other_id = $entry->stable_id;
+        my $dist = $jcmatrix->get_entry($ref_id, $other_id);
+        printf "%s %.3f\n", $other_id, $dist;
+        my ($other_seq) = grep {$_->id eq $other_id} $aln->each_seq;
+
+        $min_id = $other_id if ($dist < $min_dist && $dist > 0);
+        $min_dist = $dist if ($dist < $min_dist && $dist > 0);
+      }
+
+      foreach my $entry (@entries) {
+          # Remove all but the closest paralog from the alignment.
+        if ($entry->stable_id ne $min_id) {
+          $aln = Bio::EnsEMBL::Compara::AlignUtils->remove_seq_from_aln($aln, $entry->stable_id);
+        }
+      }
+    }
+  }
+
+  $tree = Bio::EnsEMBL::Compara::ComparaUtils->restrict_tree_to_aln( $tree, $aln );
+  return ($tree, $aln);
 }
 
 sub run_with_windows {
@@ -539,12 +688,12 @@ sub run_with_windows {
 
     if (defined $ref_member) {
       # Re-fetch a fresh reference member from the database.
-      my $ref_member_id = $self->param('stable_id_peptide');
+      my $ref_member_id = $ref_member->stable_id;
       print "ref_member_id: [$ref_member_id]\n" if ($self->debug);
       my $mba        = $self->compara_dba->get_MemberAdaptor;
       $ref_member = $mba->fetch_by_source_stable_id( undef, $ref_member_id );
-      my $lo_coords = $self->get_coords_from_pep_position($ref_member,$lo);
-      my $hi_coords = $self->get_coords_from_pep_position($ref_member,$hi);
+      my $lo_coords = $self->get_coords_from_pep_position($ref_member, $lo);
+      my $hi_coords = $self->get_coords_from_pep_position($ref_member, $hi);
 
       $cur_params = $self->replace($cur_params,{
         stable_id_peptide => $ref_member->stable_id,
@@ -593,13 +742,25 @@ sub run_with_windows {
     my $pval = $self->combined_pval($window_hash,'fisher');
     
     # Get the mean dn/ds for the window
+    my @decent_omegas;
     my $omega_total = 0;
-    map {$omega_total += $_->{omega} } @window_sites;
+    foreach my $site (@window_sites) {
+      my $cur_omega = $site->{omega};
+      # We cap the max dN/dS at 3 for the purpose of calculating the mean.
+      $cur_omega = 3 if ($cur_omega > 3);
+      push @decent_omegas, $cur_omega;
+      $omega_total += $cur_omega;
+    }
     my $mean_dnds = -1;
     if (scalar(@window_sites) > 0) {
       $mean_dnds = sprintf "%.3f", $omega_total / scalar(@window_sites);
     }
-    
+
+    my $std_dev = $self->standard_deviation(\@decent_omegas);
+    my $omega_lo = $mean_dnds - $std_dev;
+    my $omega_hi = $mean_dnds + $std_dev;
+    $omega_lo = 0 if ($omega_lo < 0);
+
     print "window[$lo-$hi] pval[$pval]\n" if ($self->debug);
     my @pos_sites = grep {$_->{omega} > 1} @window_sites;
     my $added_params = {
@@ -607,12 +768,14 @@ sub run_with_windows {
       'pval' => $pval,
       'n_sites' => scalar(@window_sites),
       'n_pos_sites' => scalar(@pos_sites),
-      'mean_dnds' => $mean_dnds
+      'mean_omega' => $mean_dnds,
+      'omega_lower' => $omega_lo,
+      'omega_upper' => $omega_hi
     };
     $cur_params = $self->replace($cur_params,$added_params);
     
     if ($self->within_hive) {
-      $self->store_params_in_table($self->dbc,$self->param('output_table'),$cur_params);
+      $self->store_params_in_table($self->dbc, 'windows', $cur_params);
     } else {
       $self->hash_print($cur_params);
       push @rows, $cur_params;
@@ -626,26 +789,30 @@ sub run_with_windows {
   $self->fail_and_die("No windows covered!") if ($no_windows_yet);
 }
 
-sub genes_table_structure {
+sub genes_table {
   return {
     job_id => 'int',
     data_id => 'int',
+    data_prefix => 'char4',
     
-    gene_name => 'string',
-    aln_type => 'char16',
+    gene_name => 'char32',
+    gene_id => 'char32',
+    transcript_id => 'char32',
+    protein_id => 'char32',
+
+    chr_name => 'char16',
+    chr_start => 'int',
+    chr_end => 'int',
+    chr_strand => 'int',
 
     n_seqs => 'int',
     aln_length => 'int',
     seq_length => 'int',
 
-    stable_id_gene => 'string',
-    stable_id_transcript => 'string',
-    stable_id_peptide => 'string',
-
     slr_dnds => 'float',
+    slr_kappa => 'float',
     paml_dnds => 'float',
     paml_dnds_se => 'float',
-    slr_kappa => 'float',
 
     m0_lnl => 'float',
     m7_lnl => 'float',
@@ -653,28 +820,25 @@ sub genes_table_structure {
 
     masked_nucs => 'int',
     masked_ids => 'string',
+    missing_species => 'string',
+    species_with_paralogs => 'int',
 
-    unique_keys => 'data_id,parameter_set_id',
-    
+    unique_keys => 'data_id',    
   };
 }
 
-sub get_table_structure {
+sub windows_table {
   my $self = shift;
 
   my $structure = {
     job_id => 'int',
     data_id   => 'int',
-    parameter_set_id => 'int',
+    data_prefix => 'char4',
 
-    gene_name => 'string',
-    aln_type => 'char16',
-    parameter_set_name => 'string',
-    parameter_set_shortname => 'char16',
-
-    stable_id_gene => 'string',
-    stable_id_transcript => 'string',
-    stable_id_peptide => 'string',
+    gene_name => 'char32',
+    gene_id => 'char32',
+    transcript_id => 'char32',
+    protein_id => 'char32',
 
     peptide_window_start => 'int',
     peptide_window_end => 'int',
@@ -691,26 +855,15 @@ sub get_table_structure {
     'hg18_window_start' => 'int',
     'hg18_window_end'   => 'int',
 
-    filtered_Hsap => 'int',
-    filtered_Ptro => 'int',
-    filtered_Ggor => 'int',
-    filtered_Ppyg => 'int',
-    filtered_Mmul => 'int',
-
     pval => 'float',
+    mean_omega => 'float',
+    omega_lower => 'float',
+    omega_upper => 'float',
     n_leaves => 'int',
     n_sites    => 'int',
     n_pos_sites    => 'int',
 
-    slr_file => 'string',
-    tree_file => 'string',
-    aln_file => 'string',
-    pep_aln_file => 'string',
-
-    slr_dnds => 'float',
-    slr_kappa => 'float',
-
-    unique_keys => 'data_id,parameter_set_id,peptide_window_start,peptide_window_width',
+    unique_keys => 'data_id,peptide_window_start,peptide_window_width',
   };
 
   return $structure;
