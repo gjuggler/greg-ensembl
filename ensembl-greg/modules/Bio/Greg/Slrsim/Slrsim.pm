@@ -95,8 +95,6 @@ sub run {
   my $inferred_pep_aln = Bio::EnsEMBL::Compara::AlignUtils->translate($inferred_aln);
 
   # Mask the alignment if needed.
-  $self->param('force_recalc', 1);
-
   my $masked_aln = $self->_mask_alignment($tree, $inferred_aln, $inferred_pep_aln);
   my $masked_pep_aln = Bio::EnsEMBL::Compara::AlignUtils->translate($masked_aln);
 
@@ -267,6 +265,76 @@ sub _run_sitewise {
     if ($model) {
       $out_suffix .= '_'.$model;
     }
+
+    my $null_f = $self->_save_file('lrt_null', 'out');
+    my $null_file = $null_f->{full_file};
+    $self->param('LRT null file', $null_f->{rel_file});
+    my $alt_f = $self->_save_file('lrt_alt', 'out');
+    my $alt_file = $alt_f->{full_file};
+    $self->param('LRT alt file', $alt_f->{rel_file});
+
+    if (!-e $null_file || !-e $alt_file) {
+      my $null_lines;
+      my $alt_lines;
+
+      my $leaf_map;
+      my $seq_map;
+      map {$leaf_map->{$_->name} = 's_'.$_->name;} $tree->leaves;
+      map {$seq_map->{$_->id} = 's_'.$_->id} $aln->each_seq;
+      $tree = Bio::EnsEMBL::Compara::TreeUtils->translate_ids($tree, $leaf_map);
+      $aln = Bio::EnsEMBL::Compara::AlignUtils->translate_ids($aln, $seq_map);
+      my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
+
+      if ($model =~ m/8/) {
+        # M7 vs M8 LRT
+        my $params = {
+          NSsites => 8
+        };
+        my $res = Bio::Greg::Codeml->branch_model_likelihood($treeI,$aln, $self->worker_temp_directory, $params);
+        $alt_lines = $res->{lines};
+        
+        my $params = {
+          NSsites => 7
+        };
+        my $res = Bio::Greg::Codeml->branch_model_likelihood($treeI,$aln, $self->worker_temp_directory, $params);
+        $null_lines = $res->{lines};
+      } else {
+        # M1 vs M2 LRT
+        
+        my $params = {
+          NSsites => 2
+        };
+        my $res = Bio::Greg::Codeml->branch_model_likelihood($treeI,$aln, $self->worker_temp_directory, $params);
+        $alt_lines = $res->{lines};
+        
+        my $params = {
+          NSsites => 1
+        };
+        my $res = Bio::Greg::Codeml->branch_model_likelihood($treeI,$aln, $self->worker_temp_directory, $params);
+        $null_lines = $res->{lines};
+      } 
+
+      open(OUT, ">$null_file");
+      print OUT join("", @{$null_lines});
+      close(OUT);
+      open(OUT, ">$alt_file");
+      print OUT join("", @{$alt_lines});
+      close(OUT);
+    }
+
+    print "  loading LRTs from file...\n";
+    open(IN, $null_file);
+    my @null_lines = <IN>;
+    close(IN);
+    open(IN, $alt_file);
+    my @alt_lines = <IN>;
+    close(IN);
+
+    my $null_lnl = Bio::Greg::Codeml->extract_lnL(\@null_lines);
+    my $alt_lnl = Bio::Greg::Codeml->extract_lnL(\@alt_lines);
+    
+    $self->param('lnl_null', $null_lnl);
+    $self->param('lnl_alt', $alt_lnl);
   }
 
   my $out_f = $self->_save_file($out_suffix, 'out');
@@ -389,7 +457,7 @@ sub _collect_and_store_results {
     $params = $self->replace($params, $obj);
     printf "%d %d %f %f\n", $true_column, $aln_column, $obj->{true_dnds}, $obj->{lrt_stat} if ($seq_position < 20 || $seq_position > length($seq_str)-20);
     $self->store_params_in_table( $self->dbc, $self->param('sites_table'), $params );
-    sleep(0.1);
+    sleep(0.2);
   }
 
   # Collect some alignment-wide calculations.
@@ -510,6 +578,9 @@ sub _genes_table_structure {
     mean_bl_aligned => 'float',
     mean_bl_match => 'float',
     mean_bl_mismatch => 'float',
+
+    lnl_null => 'float',
+    lnl_alt => 'float',
 
     sum_of_pairs_score => 'float',
     total_column_score => 'float',

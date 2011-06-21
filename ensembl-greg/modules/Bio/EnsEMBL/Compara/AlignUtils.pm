@@ -55,7 +55,7 @@ sub translate_ids {
 
     my $new_id;
     if (defined $id && defined $map->{$id}) {
-      my $new_id = $map->{$id};
+      $new_id = $map->{$id};
     } else {
       # Treat all map entries as regular expressions.
       foreach my $map_key (keys %$map) {
@@ -104,7 +104,7 @@ sub has_any_data {
 
   my $has_data = 0;
   foreach my $seq ($aln->each_seq) {
-    $has_data = 1 if ($seq->seq =~ m/[[^NX]]/gi);
+    $has_data = 1 if ($seq->seq =~ m/[^NX]/gi);
   }
   return $has_data;
 }
