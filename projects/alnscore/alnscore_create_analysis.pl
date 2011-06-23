@@ -44,12 +44,12 @@ sub aln_score {
   my $params      = {};
   $h->create_analysis( $logic_name, $module, $params, 400, 1 );
 
-  my @aligners = ('clustalw', 'mafft', 'prank');
+  my @aligners = ('clustalw', 'mafft', 'muscle', 'probcons', 'fsa', 'prank', 'prank_codon');
   #my @aligners = ('mafft');
-  my @mpls = (0.05, 0.1, 0.2, 0.5, 1.0, 1.5, 2.0, 3.0);
+  my @mpls = (0.1, 0.2, 0.5, 1.0, 1.5, 2.0, 3.0);
   #my @mpls = (0.5);
   my @trees = ('balanced.nh', 'ladder.nh');
-  my $n_reps = 20;
+  my $n_reps = 40;
   #my $n_reps = 1;
 
   my $i=0;
