@@ -2,24 +2,29 @@ library(plyr)
 library(doBy)
 library(qvalue)
 
-paper.table <- function(df) {
+adj.paper.table <- function(df) {
+  paper.table(df, adjust.pvals=T)
+}
+
+paper.table <- function(df, adjust.pvals=F) {
 
   print("  cor")
-  cor = cor(df$true_dnds,df$aln_dnds,method='spearman',use='complete.obs')
+  print(head(df))
+  cor = cor(df$true_dnds, df$aln_dnds, method='spearman', use='complete.obs')
+  cor_pearson = cor(df$true_dnds, df$aln_dnds, method='pearson', use='complete.obs')
+
   print("  roc")
   roc <- slr.roc(df)
 
   # Use the technique where the p-value can be doubled because we're just looking
   # at positive selection. This gives thresholds of 2.71 and 5.41 for 5% and 1% FPR.
   print("  stats")
-  stats.05 <- df.stats(df, thresh=2.71, paml_thresh=0.95)
-
-  # Use the q-value method to find a threshold. 
-  #adj.thresh <- adj.threshold(df, type='bh')
-  #stats.bh <- df.stats(df, thresh=adj.thresh, paml_thresh=adj.thresh)
+  stats.05 <- df.stats(df, thresh=2.71, paml_thresh=0.95, adjust.pvals=adjust.pvals)
 
   rrow <- roc[1,]
   row <- df[1,]
+
+  n.genes <- length(unique(df$slrsim_rep))
 
   ret.df <- data.frame(
     label = row$label,
@@ -30,29 +35,23 @@ paper.table <- function(df) {
     aligner  = row$aligner,
     filter   = row$filter,
 
-    auc      = rrow$auc,
-    auc_full = rrow$auc_full,
     `tpr_at_fpr`    = rrow$tpr_at_fpr,
     `tp_at_fpr`     = rrow$tp_at_fpr,
     `fp_at_fpr`     = rrow$fp_at_fpr,
-    `tp_at_fdr`    = rrow$tp_at_fdr,
-    `tpr_at_fdr`    = rrow$tpr_at_fdr,
-    `fp_at_fdr`    = rrow$fp_at_fdr,
-    `fpr_at_fdr`    = rrow$fpr_at_fdr,
-    `tp_at_fdr2`    = rrow$tp_at_fdr2,
-    `tpr_at_fdr2`    = rrow$tpr_at_fdr2,
-    `fp_at_fdr2`    = rrow$fp_at_fdr2,
-    `fpr_at_fdr2`    = rrow$fpr_at_fdr2,
+    `tpr_at_fpr2`    = rrow$tpr_at_fpr2,
+    `tp_at_fpr2`     = rrow$tp_at_fpr2,
+    `fp_at_fpr2`     = rrow$fp_at_fpr2,
     `tpr_at_thresh` = stats.05$tpr,
     `fpr_at_thresh` = stats.05$fpr,
+    `fdr_at_thresh`    = stats.05$fdr,
     `tp_at_thresh` = stats.05$tp,
     `fp_at_thresh` = stats.05$fp,
-    `fdr_at_thresh`    = stats.05$fdr,
     `thresh_at_fpr`    = rrow$thresh_at_fpr,
-    `thresh_at_fdr`    = rrow$thresh_at_fdr,
-    `thresh_at_fdr2`    = rrow$thresh_at_fdr2,
+    `thresh_at_fpr2`    = rrow$thresh_at_fpr2,
     `cor`   = cor,
-    `n_sites` = nrow(roc)
+    `cor_pearson` = cor_pearson,
+    `n_sites` = nrow(roc),
+    `n_genes` = n.genes
   )
 
   #aln.acc.df <- df.alignment.accuracy(df)
@@ -62,30 +61,6 @@ paper.table <- function(df) {
   return(ret.df)
 }
 
-adj.threshold <- function(df, type='bh', cutoff=0.1) {
-  df <- add.pval(df)
-
-  threshold <- NA
-
-  df <- subset(df, !is.na(pval))
-  if (nrow(df) > 0) {
-    try({
-      if (type == 'qval') {
-        q.res <- qvalue(p=df$pval, pi0.method='bootstrap')
-        df$p.adj <- q.res$qvalues
-      } else {
-        df$p.adj <- p.adjust(df$pval, method='BH')
-      }
-      df <- orderBy(~pval,data=df)
-      max.sig.row <- 1
-      if (min(df$p.adj) <= cutoff) {
-        max.sig.row <- max(which(df$p.adj <= cutoff))
-      }
-      threshold = df[max.sig.row,]$lrt_stat
-    })
-  }
-  return(threshold)
-}
 
 slr.roc = function(df, na.value=-9999) {
   df$score = df$lrt_stat
@@ -138,41 +113,24 @@ slr.roc = function(df, na.value=-9999) {
     }
   }
 
-  df$tpr_at_fdr <- 0
-  df$fpr_at_fdr <- 1
-  df$tp_at_fdr <- 0
-  df$fp_at_fdr <- 0
-  df$thresh_at_fdr <- max(df$lrt_stat)
+  df$tpr_at_fpr2 <- 0
+  df$fdr_at_fpr2 <- 1
+  df$tp_at_fpr2 <- 0
+  df$fp_at_fpr2 <- 0
+  df$thresh_at_fpr2 <- max(df$lrt_stat)
   if (n > 1) {
-    fpr.sub <- subset(df, fdr < 0.1)
+    fpr.sub <- subset(df, fpr < 0.01)
     if (nrow(fpr.sub) > 0) {
-      # Take the last (rightmost) row with fdr < 0.1
+      # Take the last (rightmost) row with fpr < 0.01
       row <- fpr.sub[nrow(fpr.sub), ]
-      df$tpr_at_fdr <- row$tpr
-      df$fpr_at_fdr <- row$fpr
-      df$tp_at_fdr <- row$tp
-      df$fp_at_fdr <- row$fp
-      df$thresh_at_fdr <- row$lrt_stat
+      df$tpr_at_fpr2 <- row$tpr
+      df$fdr_at_fpr2 <- row$fdr
+      df$tp_at_fpr2 <- row$tp
+      df$fp_at_fpr2 <- row$fp
+      df$thresh_at_fpr2 <- row$lrt_stat
     }
   }
 
-  df$tpr_at_fdr2 <- 0
-  df$fpr_at_fdr2 <- 1
-  df$tp_at_fdr2 <- 0
-  df$fp_at_fdr2 <- 0
-  df$thresh_at_fdr2 <- max(df$lrt_stat)
-  if (n > 1) {
-    fpr.sub <- subset(df, fdr < 0.05)
-    if (nrow(fpr.sub) > 0) {
-      # Take the last (rightmost) row with fdr < 0.05
-      row <- fpr.sub[nrow(fpr.sub), ]
-      df$tpr_at_fdr2 <- row$tpr
-      df$fpr_at_fdr2 <- row$fpr
-      df$tp_at_fdr2 <- row$tp
-      df$fp_at_fdr2 <- row$fp
-      df$thresh_at_fdr2 <- row$lrt_stat
-    }
-  }
   return(df)
 }
 
@@ -215,36 +173,6 @@ is.paml = function(df) {
   return(FALSE)
 }
 
-sign.lrt <- function(df) {
-  print("signing lrt...")
-  df[,'signed_lrt'] = df$lrt_stat
-  if (length(df$omega) > 0) {
-    # dn/ds values are stored as omega.
-    df[df$omega < 1,]$signed_lrt = -df[df$omega < 1,]$signed_lrt
-  } else if (length(df$aln_dnds) > 0) {
-    # dn/ds values are stored as aln_dnds
-    df[df$aln_dnds < 1,]$signed_lrt = -df[df$aln_dnds < 1,]$signed_lrt
-  } else {
-    print("Check how you're storing dn/ds values!!!")
-    q()
-  }
-  return(df)
-}
-
-add.pval <- function(df) {
-  # Turn the lrt_stat score into p-values for positive selection.
-  if (is.paml(df)) {
-    df$pval <- 1 - df$lrt_stat
-  } else {
-    df$pval <- 1 - pchisq(abs(df[,'lrt_stat']),1)
-    df$pval <- df$pval / 2 # Divide p-values by 2 since we're only looking at one side of chi-sq.
-    if (sum(df$aln_dnds < 1) > 0) {
-      df[df$aln_dnds < 1, 'pval' ] <- 1 # Sites with dN/dS estimated below 1 get a p-value of 1.
-    }
-  }
-  return(df)
-}
-
 combine.pvals <- function(df.a, df.b, label) {  
   merge.by <- c('tree_length', 'ins_rate', 'slrsim_rep', 'seq_position')
 
@@ -275,15 +203,38 @@ combine.pvals <- function(df.a, df.b, label) {
 
 df.stats = function(df,
   thresh=3.8,
-  paml_thresh=0.95) {
+  paml_thresh=0.95,
+  adjust.pvals=F) {
 
-  aln_thresh = 1
-  if (is.paml(df)) {
-    thresh = paml_thresh
-    aln_thresh = -1
+  if (adjust.pvals) {
+    aa <- df[1, ]$analysis_action
+    if (aa == 'paml_m8' || aa == 'paml_m2') {
+      print("PAML!!!")
+
+      lnl_alt <- df$lnl_alt
+      lnl_null <- df$lnl_null
+      lnl_diff <- 2* (lnl_alt - lnl_null)
+      chisq.t <- qchisq(0.95, df=2)
+
+      n.nonsig <- sum(lnl_diff < chisq.t)
+      print(paste(n.nonsig, "non-significant LRT sites!"))
+
+      # set all posterior probs to 0 if the LRT isn't significant at 5%
+      df[lnl_diff < chisq.t, 'lrt_stat'] <- 0
+    } else {
+      # Do the gene-by-gene Hochberg '88 correction to p-values.
+      df[is.na(df$lrt_stat), 'lrt_stat'] <- 0      
+      df$pval.tmp <- pchisq(abs(df$lrt_stat), df=1, lower.tail=F)
+      df <- ddply(df, c('label', 'slrsim_rep'), function(x) {
+        x$pval.tmp <- p.adjust(x$pval.tmp, method='hochberg')
+        x
+      })
+      # Set all LRT values to 0 if the adjusted p-value isn't significant at 5%
+      df[df$pval.tmp > 0.05, 'lrt_stat'] <- 0
+      df$pval.tmp <- NULL
+    }
   }
 
-  # Collect stats for SLR-type runs.
   pos_pos = nrow(subset(df,true_type=="positive1" & lrt_stat>thresh))
   neg_pos = nrow(subset(df,true_type!="positive1" & lrt_stat>thresh))
   neg_neg = nrow(subset(df,true_type!="positive1" & !(lrt_stat>thresh)))
@@ -295,12 +246,6 @@ df.stats = function(df,
   all_neg = nrow(subset(df,!(lrt_stat>thresh)))
 
   all = nrow(df)
-
-  if (nrow(subset(df,!is.na(true_dnds) & !is.na(aln_dnds))) > 0) {
-    cor = cor(df$true_dnds,df$aln_dnds,method='spearman',use='complete.obs')
-  } else {
-    cor = 0
-  }
 
   # see http://en.wikipedia.org/wiki/Receiver_operating_characteristic
   sens = pos_pos/pos_all  # also: tpr, power, hit rate, recall (anisimova 2002 as power)
@@ -332,7 +277,8 @@ df.stats = function(df,
     aln_neg_count = all_neg,
     tp = pos_pos,
     tn = neg_neg,
-    cor = cor
+    fp = neg_pos,
+    fn = pos_neg
   ))
 }
 

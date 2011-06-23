@@ -72,7 +72,8 @@ sub run {
   my $true_pep_aln = Bio::EnsEMBL::Compara::AlignUtils->translate($true_aln);
   
   # Choose sizes at which to align / subset / score the subsets.
-  my @sizes = (2, 4, 6, 10, 16, 24, 32);
+  #my @sizes = (2, 4, 6, 10, 16, 24, 32);
+  my @sizes = (2, 6, 16, 24);
 
   my $whole_aln = $self->_align($treeI, $true_aln, $true_pep_aln, 'all');
 
@@ -234,13 +235,10 @@ sub _score_aln {
   my $mean_bl = $treeI->root->mean_branch_length;
 
   my $params = {
-    $prefix.'_tcs' => $tcs,
     $prefix.'_sps' => $sps,
-#    $prefix.'_mmbl' => $mmbl,
-#    $prefix.'_cbl' => $cbl,
-#    $prefix.'_pbl' => $pbl,
     n_seqs => scalar($treeI->leaves),
     mpl => sprintf("%.3f", $mpl),
+    mean_bl => $mean_bl,
     total_bl => $total_bl
   };
   return $params;
@@ -278,24 +276,15 @@ sub _aln_table_structure {
 
     tree => 'char16',
     aligner => 'char16',
-
     n_seqs => 'int',
+    mpl => 'float',
+    orig_mpl => 'float',
 
     total_bl => 'float',
-    orig_mpl => 'float',
-    mpl => 'float',
+    mean_bl => 'float',
     
-    sub_tcs => 'float',
     sub_sps => 'float',
-    sub_mmbl => 'float',
-    sub_cbl => 'float',
-    sub_pbl => 'float',
-
-    aln_tcs => 'float',
     aln_sps => 'float',
-    aln_mmbl => 'float',
-    aln_cbl => 'float',
-    aln_pbl => 'float',
 
     unique_keys => 'data_id,replicate,n_seqs'
 

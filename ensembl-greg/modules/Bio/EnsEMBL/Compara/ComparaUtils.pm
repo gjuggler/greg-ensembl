@@ -63,7 +63,7 @@ my $taxid_counter = 999999;
 *Bio::EnsEMBL::Compara::NestedSet::ascii = sub {
   my $self = shift;
   my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($self);
-  return $treeI->ascii;
+  return $treeI->ascii(@_);
 };
 *Bio::EnsEMBL::Compara::NestedSet::enclosed_leaves_string = sub {
   my $self = shift;
@@ -1138,6 +1138,7 @@ sub restrict_aln_to_tree {
   foreach my $leaf ( $tree->leaves ) {
     $ok_id_hash->{ $leaf->name } = 1;
     if ($leaf->isa("Bio::EnsEMBL::Compara::Member")) {
+      print "MEMBER\n";
       $ok_id_hash->{ $leaf->stable_id } = 1;
       my $taxon = $leaf->taxon;
       $ok_id_hash->{ $leaf->genome_db->name }    = 1;
@@ -1150,8 +1151,9 @@ sub restrict_aln_to_tree {
 
   my $new_aln = $aln->new;
   foreach my $seq ( $aln->each_seq ) {
+    my $new_seq = Bio::LocatableSeq->new( -seq => $seq->seq, -id => $seq->id );
     if ( $ok_id_hash->{ $seq->id } ) {
-      $new_aln->add_seq($seq);
+      $new_aln->add_seq($new_seq);
     }
   }
   return $new_aln;

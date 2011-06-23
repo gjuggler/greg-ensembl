@@ -395,35 +395,7 @@ sub total_column_score {
       $correct_col_count++;
     }
   }
-  
-  # Put aligned columns into hashtables.
-#  my %true_cols;
-#  foreach my $i (1..$true_aln->length) {
-#    my $col_string = '';
-#    foreach my $key (keys %$true_obj) {
-#      $col_string .= $key.'.'.$true_obj->{$key}->[$i+1];
-#    }
-#    #print $col_string;
-#    $true_cols{$col_string} = 1;
-#  }
-#
-#  my %test_cols;
-#  foreach my $i (1..$test_aln->length) {
-#    my $col_string = '';
-#    foreach my $key (keys %$test_obj) {
-#      print $test_obj->{$key}->[$i+1];
-#      $col_string .= $key.'.'.$test_obj->{$key}->[$i+1];
-#    }
-#    #print $col_string;
-#    $test_cols{$col_string} = 1;
-#  }
-#
-#  my $true_col_count = scalar(keys %true_cols);
-#  my $correct_col_count = 0;
-#  foreach my $key (keys %test_cols) {
-#    $correct_col_count++ if ($true_cols{$key});
-#  }
-  
+    
   return ($correct_col_count / $true_col_count);
 }
 
@@ -511,8 +483,6 @@ sub _correct_subtree_calc {
 
   my $total_bl = $treeI->total_branch_length;
 
-  print $treeI->ascii;
-
   my $ref_obj = $class->to_arrayrefs($ref);
   my $aln_obj = $class->to_arrayrefs($aln);
   my $ref_pairs = $class->store_pairs($ref, $ref_obj);
@@ -529,6 +499,8 @@ sub _correct_subtree_calc {
   my $aligned_sum;
   my $match_sum;
   my $mismatch_sum;
+  my $unambiguous_sum;
+  my $partial_sum;
 
   my $correct_sum;
   my $nongap_sum;
@@ -587,19 +559,19 @@ sub _correct_subtree_calc {
     }
 
     my $seen_aligned_ids;
-    my $seen_misaligned_ids;
+    #my $seen_misaligned_ids;
     my $correctly_aligned_hash; 
     my $aligned_cluster_count = 0;
     
     #print STDERR get_column_string($aln, $i) . "\n";
-    my $column_score_string = '';
+#    my $column_score_string = '';
     foreach my $this_seq_id (@id_list) {
       my $this_res_num = $aln_obj->{$this_seq_id}->[$i];
 
       # Current residue is a gap!
       if ( $this_res_num eq '-' ) {
         $scores_hash->{$this_seq_id}->[$i] = -1;
-        $column_score_string .= '-';
+        #$column_score_string .= '-';
         next;
       }
 
@@ -622,8 +594,8 @@ sub _correct_subtree_calc {
           }
         } else {
           # Collect incorrectly-aligned pairs
-          $seen_misaligned_ids->{$this_seq_id} = 1;
-          $seen_misaligned_ids->{$other_seq_id} = 1; 
+          #$seen_misaligned_ids->{$this_seq_id} = 1;
+          #$seen_misaligned_ids->{$other_seq_id} = 1;
         }
       }
     }
@@ -634,6 +606,9 @@ sub _correct_subtree_calc {
     # node.
     my $match_bl = 0;
     my $mismatch_bl = 0;
+    my $unambiguously_match_bl = 0;
+    my $partial_match_bl = 0;
+
     foreach my $node ($treeI->nodes) {
       next if ($node->is_leaf);
       my @children = $node->children;
@@ -649,90 +624,95 @@ sub _correct_subtree_calc {
       my $found_shared_cluster = 0;
       my $any_a_nongap = 0;
       my $any_b_nongap = 0;
+      my $found_any_mismatch = 0;
 
-      foreach my $leaf ($a->leaves) {
-        # Handle gaps.
-        my $this_res_num = $aln_obj->{$leaf->id}->[$i];
-        if ($this_res_num !~ m/[-X]/i) {
-          $any_a_nongap = 1;
-        }
-        if (defined $seen_aligned_ids->{$leaf->id}) {
-          my $cluster = $seen_aligned_ids->{$leaf->id};
-          $hash->{$cluster} = 1;
-        }
-      }
-      foreach my $leaf ($b->leaves) {
-        # Handle gaps.
-        my $this_res_num = $aln_obj->{$leaf->id}->[$i];
-        if ($this_res_num !~ m/[-X]/i) {
-          $any_b_nongap = 1;
-        }
-        if (defined $seen_aligned_ids->{$leaf->id}) {
-          my $cluster = $seen_aligned_ids->{$leaf->id};
-          if ($hash->{$cluster} == 1) {
-            $found_shared_cluster = 1;
+      my $n_pairs = 0;
+
+      my $pair_hash;
+      my $pair_count = 0;
+      my $correct_pair_count = 0;
+      foreach my $x ($a->leaves) {
+        my $x_chr = $aln_obj->{$x->id}->[$i];
+        foreach my $y ($b->leaves) {
+          my $y_chr = $aln_obj->{$y->id}->[$i];
+          next if ($x_chr =~ m/[-X]/i);
+          next if ($y_chr =~ m/[-X]/i);
+          next if (defined $pair_hash->{$x->id.$y->id});
+          $pair_count++;
+          my $x_cluster = $seen_aligned_ids->{$x->id};
+          my $y_cluster = $seen_aligned_ids->{$y->id};
+          if (defined $x_cluster && defined $y_cluster && $x_cluster == $y_cluster) {
+            $correct_pair_count++;
           }
+          $pair_hash->{$y->id.$x->id} = 1;
+          $pair_hash->{$x->id.$y->id} = 1;
         }
       }
+      #print $i."  ". $correct_pair_count . " / " . $pair_count . "\n";
 
-      #print $node->enclosed_leaves_string."\n";
-      #print "  ". join('',keys(%$hash))."\n";
+      if ($pair_count > 0) {
+        my $child_bl = $node->children_branch_length;
+        $partial_match_bl += ($correct_pair_count / $pair_count) * $child_bl;
 
-      if ($found_shared_cluster == 1) {
-        $match_bl += $node->children_branch_length;
-      } elsif (!$any_a_nongap || !$any_b_nongap) {
-        # One side had no non-gaps, so don't add any branch length.
-      } else {
-        $mismatch_bl += $node->children_branch_length;
+        $unambiguously_match_bl += $child_bl if ($correct_pair_count == $pair_count);
+        $mismatch_bl += $child_bl if ($correct_pair_count == 0);
+        $match_bl += $child_bl if ($correct_pair_count > 0);
       }
     }
 
-    my $score = 0;
-    if ($aligned_bl > 0) {
-      $score = $match_bl / $aligned_bl;
-    }
-    
-    my $column_string = $class->get_column_string($aln, $i);
-    #print $column_string."\n";
-    foreach my $k (1 .. $aligned_cluster_count) {
-      my $cluster_string = '';
-      foreach my $seq ($aln->each_seq) {
-        my $res = $class->get_residue($aln, $seq->id, $i);
-        if ($res =~ m/[-X]/i) {
-          $cluster_string .= ' ';
-          next;
+    my $do_extra_tests = 0;
+    if ($do_extra_tests) {
+      my $score = 0;
+      if ($aligned_bl > 0) {
+        $score = $match_bl / $aligned_bl;
+      }
+      
+      my $column_string = $class->get_column_string($aln, $i);
+      #print $column_string."\n";
+      foreach my $k (1 .. $aligned_cluster_count) {
+        my $cluster_string = '';
+        foreach my $seq ($aln->each_seq) {
+          my $res = $class->get_residue($aln, $seq->id, $i);
+          if ($res =~ m/[-X]/i) {
+            $cluster_string .= ' ';
+            next;
+          }
+          my $char = ' ';
+          my $cluster = $seen_aligned_ids->{$seq->id};
+          $char = $cluster if (defined $cluster && $cluster == $k);
+          $cluster_string .= $char;
         }
-        my $char = ' ';
-        my $cluster = $seen_aligned_ids->{$seq->id};
-        $char = $cluster if (defined $cluster && $cluster == $k);
-        $cluster_string .= $char;
+        #print STDERR "$cluster_string\n";
       }
-      #print STDERR "$cluster_string\n";
     }
 
-    my $total = $treeI->total_branch_length;
+    #my $total = $treeI->total_branch_length;
     #print "$aligned_bl $match_bl $mismatch_bl $total\n";
 
     # Sanity check: we should never have more correct BL than we have nongap BL.
-    die if ($score > 1);
+    #die if ($score > 1);
 
-    push @match_bls, $match_bl;
-    push @mismatch_bls, $mismatch_bl;
-    push @aligned_bls, $aligned_bl;
+    #push @match_bls, $match_bl;
+    #push @mismatch_bls, $mismatch_bl;
+    #push @aligned_bls, $aligned_bl;
 
     $match_sum += $match_bl;
     $mismatch_sum += $mismatch_bl;
     $aligned_sum += $aligned_bl;
+    $unambiguous_sum += $unambiguously_match_bl;
+    $partial_sum += $partial_match_bl;
   }
 
   my $obj = {
-    match_branchlengths => \@match_bls,
-    mismatch_branchlengths => \@mismatch_bls,
-    aligned_branchlengths => \@aligned_bls,
+#    match_branchlengths => \@match_bls,
+#    mismatch_branchlengths => \@mismatch_bls,
+#    aligned_branchlengths => \@aligned_bls,
 
     match_bl => $match_sum,
     mismatch_bl => $mismatch_sum,
     aligned_bl => $aligned_sum,
+    complete_match_bl => $unambiguous_sum,
+    partial_bl => $partial_sum
   };
 
   return $obj;
@@ -1436,7 +1416,9 @@ sub remove_blank_columns {
     }
   }
   $aln = $aln->_remove_columns_by_num(\@cols_to_remove);
-  return ($aln,$new_to_old,$old_to_new);
+  $aln->{_old_to_new} = $old_to_new;
+  $aln->{_new_to_old} = $new_to_old;
+  return $aln;
 }
 
 # Removes blank columns in threes, and returns a codon-wise column mapping.

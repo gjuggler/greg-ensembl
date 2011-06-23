@@ -67,12 +67,13 @@ sub fetch_input {
 sub run {
   my $self = shift;
 
-#  $self->param('force_recalc', 0);
+#  $self->param('force_recalc', 1);
 #  $self->param('filter', 'none');
 #  $self->param('maximum_mask_fraction', 0.6);
 #  $self->param('alignment_score_filtering', 1);
 
-  my $tree = $self->get_tree;
+  my $tree = $self->_get_tree;
+  print $tree->ascii."\n";
   my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
 
   # Output the tree to file.
@@ -101,7 +102,6 @@ sub run {
   # Run the sitewise analysis.
   my $sitewise_hash = $self->_run_sitewise($tree, $masked_aln, $masked_pep_aln);
 
-  $self->hash_print($sitewise_hash);
   # Collect and store results.
   $self->_collect_and_store_results($tree, $treeI,
                                     $masked_aln, $masked_pep_aln, $sitewise_hash, 
@@ -109,6 +109,20 @@ sub run {
                                     $inferred_aln, $inferred_pep_aln
     );
 
+}
+
+sub _get_tree {
+  my $self = shift;
+
+  my $tree_file = $self->param('slrsim_tree_file');
+  my $mpl = $self->param('slrsim_tree_mean_path');
+
+  $tree_file = Bio::Greg::EslrUtils->baseDirectory."/projects/slrsim/trees/".$tree_file;
+  print "$tree_file\n";
+
+  my $tree = Bio::EnsEMBL::Compara::TreeUtils->from_file($tree_file);
+  $tree = Bio::EnsEMBL::Compara::TreeUtils->scale_mean_to( $tree, $mpl );
+  return $tree;
 }
 
 sub _simulate_alignment {
@@ -256,13 +270,32 @@ sub _mask_alignment {
 
 sub _run_sitewise {
   my $self = shift;
-  my $tree = shift;
-  my $aln = shift;
+  my $tree_orig = shift;
+  my $aln_orig = shift;
   my $pep_aln = shift;
+
+  my $tree = Bio::EnsEMBL::Compara::TreeUtils->copy_tree($tree_orig);
+  my $aln = Bio::EnsEMBL::Compara::AlignUtils->copy_aln($aln_orig);
+
+  my $leaf_map;
+  my $seq_map;
+  map {$leaf_map->{$_->name} = 's_'.$_->name;} $tree->leaves;
+  map {$seq_map->{$_->id} = 's_'.$_->id} $aln->each_seq;
+  $tree = Bio::EnsEMBL::Compara::TreeUtils->translate_ids($tree, $leaf_map);
+  $aln = Bio::EnsEMBL::Compara::AlignUtils->translate_ids($aln, $seq_map);
 
   my $out_suffix = 'sitewise';
   if ($self->param('analysis_action') =~ m/paml/i) {
-    my $model = $self->param('paml_model');
+    my $model;
+    my $action = $self->param('analysis_action');
+    if ($action =~ m/2/g) {
+      $model = 'M2';
+    } elsif ($action =~ m/8/g) {
+      $model = 'M8';
+    } else {
+      die("Unrecognized analysis_action parameter for PAML");
+    }
+    print "PAML MODEL: $model\n";
     if ($model) {
       $out_suffix .= '_'.$model;
     }
@@ -274,16 +307,10 @@ sub _run_sitewise {
     my $alt_file = $alt_f->{full_file};
     $self->param('LRT alt file', $alt_f->{rel_file});
 
-    if (!-e $null_file || !-e $alt_file) {
+    if (!-e $null_file || !-e $alt_file || $self->param('force_recalc')) {
       my $null_lines;
       my $alt_lines;
 
-      my $leaf_map;
-      my $seq_map;
-      map {$leaf_map->{$_->name} = 's_'.$_->name;} $tree->leaves;
-      map {$seq_map->{$_->id} = 's_'.$_->id} $aln->each_seq;
-      $tree = Bio::EnsEMBL::Compara::TreeUtils->translate_ids($tree, $leaf_map);
-      $aln = Bio::EnsEMBL::Compara::AlignUtils->translate_ids($aln, $seq_map);
       my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
 
       if ($model =~ m/8/) {
@@ -301,7 +328,7 @@ sub _run_sitewise {
         $null_lines = $res->{lines};
       } else {
         # M1 vs M2 LRT
-        
+
         my $params = {
           NSsites => 2
         };
@@ -315,6 +342,7 @@ sub _run_sitewise {
         $null_lines = $res->{lines};
       } 
 
+      print "  Outputting Null and Alt models!\n";
       open(OUT, ">$null_file");
       print OUT join("", @{$null_lines});
       close(OUT);
@@ -324,9 +352,11 @@ sub _run_sitewise {
     }
 
     print "  loading LRTs from file...\n";
+    print "  $null_file\n";
     open(IN, $null_file);
     my @null_lines = <IN>;
     close(IN);
+    print "  $alt_file\n";
     open(IN, $alt_file);
     my @alt_lines = <IN>;
     close(IN);
@@ -337,6 +367,8 @@ sub _run_sitewise {
     $self->param('lnl_null', $null_lnl);
     $self->param('lnl_alt', $alt_lnl);
   }
+
+  $self->param('force_recalc', 1);
 
   my $out_f = $self->_save_file($out_suffix, 'out');
   my $out_file = $out_f->{full_file};
@@ -350,17 +382,15 @@ sub _run_sitewise {
   print "$out_file\n";
   if (!-e $out_file || $self->param('force_recalc')) {
     print("  running sitewise analysis\n");
-    my $output_lines = ("");
-    eval {
-      $output_lines = $self->run_sitewise_analysis($tree,$aln, $pep_aln);
-    };
+    my $output_lines = $self->run_sitewise_analysis($tree, $aln, $pep_aln);
     open(OUT, ">$out_file");
     print OUT join("", @{$output_lines});
     close(OUT);
-  } else {
-    print("  parsing sitewise results [$out_file]\n");
   }
 
+  $self->param('force_recalc', 0);
+
+  print("  loading sitewise results [$out_file]\n");
   my $sitewise_results = $self->parse_sitewise_file($tree, $aln, $pep_aln, $out_file);
   return $sitewise_results;
 }

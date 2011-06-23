@@ -107,11 +107,11 @@ sub simulate_alignment {
 
   my $params = Bio::Greg::Hive::PhyloSim::param_defaults;
   $params = $self->replace($params, $self->params);
-  $self->set_params($params);
+  #$self->set_params($params);
 
   my $obj;
   if ( $self->param('phylosim_simulation_program') eq 'indelible' ) {
-    $obj = $self->simulate_alignment_indelible( $tree, $self->params );
+    $obj = $self->simulate_alignment_indelible( $tree, $params );
   } elsif ( $self->param('phylosim_simulation_program') eq 'phylosim' ) {
     $obj = $self->simulate_alignment_phylosim( $tree, $self->params );
   }
@@ -266,7 +266,8 @@ $models_trees_partitions
   my $aln = Bio::EnsEMBL::Compara::AlignUtils->from_file($aln_f);
 
   my $orig_pep_aln = Bio::EnsEMBL::Compara::AlignUtils->translate($aln);
-  my ($pep_aln, $new_to_old, $old_to_new) = Bio::EnsEMBL::Compara::AlignUtils->remove_blank_columns($orig_pep_aln);
+  my $pep_aln = Bio::EnsEMBL::Compara::AlignUtils->remove_blank_columns($orig_pep_aln);
+  my $old_to_new = $pep_aln->{_old_to_new};
   $aln = Bio::EnsEMBL::Compara::AlignUtils->remove_blank_columns_in_threes($aln);
 
   my $sitewise_hash;

@@ -29,6 +29,7 @@ sub run {
   my $dbname = $self->dbc->dbname;
   
   my $results_table = "slrsim_results";
+  my $adj_results_table = "slrsim_results_adj";
   my $merged_table = "merged";
 
   my $slrsim_label = $self->param('slrsim_label');
@@ -85,9 +86,6 @@ nodes.s <- paste(unique(genes[, 'node_id']), collapse=',')
 reps.s <- paste(unique(genes[, 'slrsim_rep']), collapse=',')
 sql <- sprintf("select * FROM sites WHERE node_id IN (%s) AND slrsim_rep IN (%s)", nodes.s, reps.s)
 sites <- dbGetQuery(con, sql)
-if (max(sites[, 'lrt_stat'], na.rm=T) > 1.1) {
-  sites[, 'lrt_stat'] <- sites[, 'lrt_stat'] * sign(sites[, 'aln_dnds'] - .9999)
-}
 print(head(sites))
 print(paste(genes[1, 'label'], nrow(sites)))
 
@@ -101,20 +99,30 @@ if (do.meta) {
 }
 
 res.df <- paper.table(merged)
-
 if(dbExistsTable(con, "${results_table}")) {
-  dbWriteTable(con, "${results_table}", res.df, append = T)
+  dbUpdateVars(con, "${results_table}", res.df, 'label')
 } else {
-  dbWriteTable(con, "${results_table}", res.df)
+  dbWriteTable(con, "${results_table}", res.df, row.names=F)
+  dbSendQuery(con, "ALTER TABLE ${results_table} ADD UNIQUE (label(64));")
 }
 
-if (!do.meta) {
-  if(dbExistsTable(con, "${merged_table}")) {
-    dbWriteTable(con, "${merged_table}", merged, append = T)
-  } else {
-    dbWriteTable(con, "${merged_table}", merged)
-  }
+adj.res.df <- adj.paper.table(merged)
+row.names(adj.res.df) <- adj.res.df[, 'label']
+if(dbExistsTable(con, "${adj_results_table}")) {
+  dbUpdateVars(con, "${adj_results_table}", adj.res.df, 'label')
+} else {
+  dbWriteTable(con, "${adj_results_table}", adj.res.df, row.names=F)
+  dbSendQuery(con, "ALTER TABLE ${adj_results_table} ADD UNIQUE (label(64));")
 }
+
+#if (!do.meta) {
+#  if(dbExistsTable(con, "${merged_table}")) {
+#    dbWriteTable(con, "${merged_table}", merged, append = T, row.names=F)
+#  } else {
+#    dbWriteTable(con, "${merged_table}", merged, row.names=F)
+#    dbSendQuery(con, "ALTER TABLE ${merged_table} ADD UNIQUE (label(64),slrsim_rep,aln_position);")
+#  }
+#}
 ^;
   Bio::Greg::EslrUtils->run_r( $rcmd );
 

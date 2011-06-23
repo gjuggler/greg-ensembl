@@ -441,7 +441,7 @@ sub mean_path {
   my $dist  = 0;
   map { $dist += $class->dist_to_root($_); } $tree->leaves;
   $dist = $dist / scalar( $tree->leaves );
-  return sprintf "%.3f", $dist;
+  return sprintf "%.4f", $dist;
 }
 
 sub dist_to_root {
@@ -1137,8 +1137,12 @@ sub translate_ids {
 
   $tree = $class->copy_tree($tree); # Important!!
   
+  print $tree->ascii."\n";
+
   my $ensure_unique = 1;
   $ensure_unique = $params->{ensure_unique} if (defined $params->{ensure_unique});
+  my $use_node_ids = 0;
+  $use_node_ids = $params->{use_node_ids} if (defined $params->{use_node_ids});
 
   my $used_ids;
   foreach my $node ($tree->nodes) {
@@ -1146,7 +1150,9 @@ sub translate_ids {
     my $node_id = $node->node_id;
 
     my $new_name;
-    $new_name = $map->{$node_id} if (defined $node_id && !defined $new_name); # Defined by node ID.
+    if ($use_node_ids) {
+      $new_name = $map->{$node_id} if (defined $node_id && !defined $new_name); # Defined by node ID.
+    }
     $new_name = $map->{$name} if (defined $name && !defined $new_name); # Defined by node name.
     
     if (defined $new_name) {

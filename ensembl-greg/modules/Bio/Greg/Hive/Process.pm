@@ -242,11 +242,13 @@ sub compara_dba {
       print " >> No compara in hive DB -- falling back to ens-livemirror!!\n";
       $self->load_registry();
       $compara_dba = Bio::EnsEMBL::Registry->get_DBAdaptor( 'multi', 'compara' );
-      
-      printf " >> Using Compara DB at [%s/%s]\n",$compara_dba->dbc->host,$compara_dba->dbc->dbname;
-      #      $compara_dba->disconnect_when_inactive(1);
+
+      if ($compara_dba) {
+        printf " >> Using Compara DB at [%s/%s]\n",$compara_dba->dbc->host,$compara_dba->dbc->dbname;
+        #      $compara_dba->disconnect_when_inactive(1);
+      }
       };
-    $self->{_compara_dba} = $compara_dba;
+    $self->{_compara_dba} = $compara_dba if (defined $compara_dba);
   }
   return $self->{_compara_dba};
 }
@@ -637,6 +639,8 @@ sub get_params_from_tree_tags {
 
   print "node: $node_id\n";
   my $tree = $pta->fetch_node_by_node_id($node_id);
+
+  return {} unless (defined $tree);
 
   my $tags = $tree->get_tagvalue_hash;
 

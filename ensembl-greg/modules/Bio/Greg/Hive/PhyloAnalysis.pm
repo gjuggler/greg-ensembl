@@ -581,13 +581,13 @@ sub run_sitewise_analysis {
   my $result_arrayref;
 
   my $params = $self->replace($self->param_defaults, $self->params);
-  $self->set_params($params);
+  #$self->set_params($params);
 
   my $action = $self->param('analysis_action');
   if ($action eq 'slr') {
-    $result_arrayref = $self->run_sitewise_dNdS($tree, $aln, $self->params);
+    $result_arrayref = $self->run_sitewise_dNdS($tree, $aln, $params);
   } elsif ($action eq 'paml' || $action eq 'paml_m2' || $action eq 'paml_m8') {
-    $result_arrayref = $self->run_paml_sitewise($tree, $aln, $self->params);
+    $result_arrayref = $self->run_paml_sitewise($tree, $aln, $params);
   }
   return $result_arrayref;
 }
@@ -909,15 +909,28 @@ sub run_paml_sitewise {
 
   # PAML has a problem with sequences that start with a number... we need to map
   # the IDs to avoid this.
-  my $leaf_map;
-  my $seq_map;
-  map {$leaf_map->{$_->node_id} = 's_'.$_->name;} $tree->leaves;
-  map {$seq_map->{$_->id} = 's_'.$_->id} $input_cdna->each_seq;
-  $tree = Bio::EnsEMBL::Compara::TreeUtils->translate_ids($tree, $leaf_map);
-  $input_cdna = Bio::EnsEMBL::Compara::AlignUtils->translate_ids($input_cdna, $seq_map);
+  my $needs_translating = 0;
+  foreach my $leaf ($tree->leaves) {
+    my $id = $leaf->name;
+    if ($id =~ m/^[0-9]+$/g) {
+      $needs_translating = 1;
+    }
+  }
+  if ($needs_translating) {
+    die("Needs translating!");
+    my $leaf_map;
+    my $seq_map;
+    map {$leaf_map->{$_->node_id} = 's_'.$_->name;} $tree->leaves;
+    map {$seq_map->{$_->id} = 's_'.$_->id} $input_cdna->each_seq;
+    $tree = Bio::EnsEMBL::Compara::TreeUtils->translate_ids($tree, $leaf_map);
+    $input_cdna = Bio::EnsEMBL::Compara::AlignUtils->translate_ids($input_cdna, $seq_map);
+  }
 
   my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
   #$treeI->get_root_node->branch_length(0);
+
+  #$self->pretty_print($input_cdna);
+  #print $treeI->ascii;
 
   # Output the tree and alignment files
   my $aln_file = ">${tmp}/aln.phy";
@@ -978,6 +991,7 @@ getSE = 0
 RateAncestor = 1
 fix_blength = 1
 method = 0
+
 ^;  
   print $ctl_string."\n";
   my $cwd = cwd();
@@ -996,9 +1010,11 @@ method = 0
   close(IN);
 
   my @results_lines;
-  push @results_lines, split("\n", $ctl_string);
+  #push @results_lines, split("\n", $ctl_string);
   push @results_lines, @main_lines;
   push @results_lines, @supp_lines;
+
+  #print "@results_lines\n";
 
   chdir $cwd;
   return \@results_lines;

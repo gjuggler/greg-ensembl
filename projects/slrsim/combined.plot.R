@@ -50,8 +50,8 @@ multi.methods <- function() {
     c = list(tree.c)
   )
 
-  pdf(file="fig_zero.pdf", width=20, height=8)
-  vplayout(8, 3)
+  pdf(file="fig_zero.pdf", width=8, height=20)
+  vplayout(3, 7)
 
   for (i in 1:length(plots)) {
     cur.stuff <- plots[[i]]
@@ -60,7 +60,7 @@ multi.methods <- function() {
     sim <- PhyloSim()
     setPhylo(sim, cur.tree)
     p <- f(sim)
-    print(p, vp=subplot(1, i))
+    print(p, vp=subplot(i, 1))
   }
 
   p.field <- function(field, lbl, keep.legend=F) {
@@ -75,7 +75,7 @@ multi.methods <- function() {
 
     p <- p + scale_x_continuous(name="Tree Length", limits=c(0, 2), breaks=c(0, 0.4, 0.8, 1.2, 1.6, 2.0))
     p <- p + scale_y_continuous(name=lbl, limits=c(0, 1), breaks = c(0, 0.2, 0.4, 0.6, 0.8, 1))
-    p <- p + facet_grid(tree ~ .)
+    p <- p + facet_grid(. ~ tree)
     p <- p + opts(
       axis.title.x = theme_blank(),
       axis.title.y = theme_blank(),
@@ -91,25 +91,22 @@ multi.methods <- function() {
   }
 
   p <- p.field('cor', 'Sitewise Correlation')
-  print(p, vp=subplot(2, 1:3))
+  print(p, vp=subplot(1:3, 2))
   
-  p <- p.field('auc', 'AUC (FPR<0.1)')
-  print(p, vp=subplot(3, 1:3))
+  p <- p.field('tpr_at_fpr', 'TPR_5%')
+  print(p, vp=subplot(1:3, 3))
 
-  p <- p.field('tpr_at_fpr', 'TPR at FPR<0.05')
-  print(p, vp=subplot(4, 1:3))
+  p <- p.field('tpr_at_fpr2', 'TPR_1%')
+  print(p, vp=subplot(1:3, 4))
 
-  p <- p.field('tpr_at_fdr', 'TPR at FDR<0.1')
-  print(p, vp=subplot(5, 1:3))
+  p <- p.field('tpr_at_thresh', 'TPR')
+  print(p, vp=subplot(1:3, 5))
 
-  p <- p.field('tpr_at_thresh', 'TPR at Default Threshold')
-  print(p, vp=subplot(6, 1:3))
+  p <- p.field('tpr_at_thresh', 'TPR (LRT/BH)')
+  print(p, vp=subplot(1:3, 6))
 
-  p <- p.field('tpr_at_bh', 'TPR at Adjusted Threshold')
-  print(p, vp=subplot(7, 1:3))
-
-  p <- p.field('tpr_at_fdr', '', keep.legend=T)
-  print(p, vp=subplot(8, 1:3))
+  p <- p.field('tpr_at_thresh', '', keep.legend=T)
+  print(p, vp=subplot(1:3, 7))
 
   dev.off()  
 }
@@ -241,11 +238,12 @@ multi.plots <- function() {
   tbl.a <<- read.csv('~/scratch/gj1_fig_one_a/current/table.csv')
   tbl.b <<- read.csv('~/scratch/gj1_fig_one_b/current/table.csv')
   tbl.c <<- read.csv('~/scratch/gj1_fig_one_c/current/table.csv')
-  plots <- list(
-    a = list(tbl.a),
-    b = list(tbl.b),
-    c = list(tbl.c)
-  )
+
+  tbl.a$tree <- 'artificial'
+  tbl.b$tree <- 'bglobin'
+  tbl.c$tree <- 'encode'
+  plots <- rbind(tbl.a, tbl.b, tbl.c)
+
   multi.plot(plots, color.by='tpr_at_fpr')
   multi.plot(plots, color.by='tpr_at_thresh', keep=c('clustalw', 'prank_codon', 'True_Alignment'))
   multi.plot(plots, color.by='fpr_at_thresh', keep=c('clustalw', 'prank_codon', 'True_Alignment'))
@@ -264,6 +262,9 @@ multi.plot <- function(all.tbls, color.by='tpr_at_fdr',
 ) {
 
   print(nrow(all.tbls))
+
+  print(str(all.tbls))
+  print(facet.x)
 
   all.tbls$fx <- all.tbls[, facet.x]
   all.tbls$fy <- all.tbls[, facet.y]

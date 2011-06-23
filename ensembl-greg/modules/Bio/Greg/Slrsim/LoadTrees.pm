@@ -64,6 +64,7 @@ sub run {
 
   $self->disconnect_when_inactive(0);
 
+  my $node_id = 1;
   foreach my $params (@simsets) {
     $self->verify_params($params);
 
@@ -99,6 +100,7 @@ sub run {
     }
     
     my $p = {
+      node_id => $node_id++,
       slrsim_replicates       => $replicates,
       tree_string      => $tree_string,
       parameter_set_id => $self->parameter_set_id,
@@ -1089,7 +1091,7 @@ sub omega_param {
   my $omega_name = shift;
 
   my $distr_params = $self->param('omega_distributions')->{$omega_name};
-  $self->hash_print($distr_params);
+  #$self->hash_print($distr_params);
   return $distr_params;
 }
 

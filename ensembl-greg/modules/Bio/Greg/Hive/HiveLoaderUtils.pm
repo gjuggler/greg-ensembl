@@ -74,6 +74,7 @@ sub init {
   `mysql $args -e "DELETE FROM meta;"`;
   my $pipeline_name = $obj->{database};
   `mysql $args -e "INSERT INTO meta (species_id, meta_key, meta_value) VALUES (1, 'pipeline_name', '$pipeline_name');"`;
+  `mysql $args -e "INSERT INTO meta (species_id, meta_key, meta_value) VALUES (NULL, 'schema_version', '60');"`;
 }
 
 sub init_compara_tables {
