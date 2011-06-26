@@ -15,7 +15,7 @@ use base (
   'Bio::Greg::Hive::Align',
   'Bio::Greg::Hive::AlignmentScores',
   'Bio::Greg::Hive::PhyloAnalysis',
-  );
+);
 
 sub param_defaults {
   my $self = shift;
@@ -47,6 +47,7 @@ sub fetch_input {
 
   foreach my $key (keys %$params) {
     if ($params->{$key} ne $self->param($key)) {
+      print "  Loading param $key from file\n";
       $self->param($key, $params->{$key});
     }
   }
@@ -67,6 +68,9 @@ sub fetch_input {
 sub run {
   my $self = shift;
 
+  $self->param('node_id', $self->param('data_id'));
+  $self->param('scratch_dir', 'scratch101');
+
 #  $self->param('force_recalc', 1);
 #  $self->param('filter', 'none');
 #  $self->param('maximum_mask_fraction', 0.6);
@@ -75,12 +79,6 @@ sub run {
   my $tree = $self->_get_tree;
   print $tree->ascii."\n";
   my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
-
-  # Output the tree to file.
-  my $tree_f = $self->_save_file('tree', 'nh');
-  my $out_file = $tree_f->{full_file};
-  $self->param('tree_file', $tree_f->{rel_file});
-  Bio::EnsEMBL::Compara::TreeUtils->to_file($tree, $out_file);
 
   # First, simulate the true alignment.
   my $sim_obj = $self->_simulate_alignment($tree);
@@ -176,12 +174,13 @@ sub _align {
   my $out_file = $out_f->{full_file};
   $self->param('aln_file', $out_f->{rel_file});
 
-  # Copy the cached aln over if it makes sense.
+  # Use the cached aln if it makes sense.
   my $cached_aln = $self->_cached_file('aln.fasta');
   $self->param('cached_aln', $cached_aln);
   if (!-e $out_file && -e $cached_aln) {
-    print "  copying cached alignment...\n";
-    copy($cached_aln, $out_file) or die("Error copying cached alignment!");
+    #print "  copying cached alignment...\n";
+    #copy($cached_aln, $out_file) or die("Error copying cached alignment!");
+    $out_file = $cached_aln;
   }
   
   if (!-e $out_file || $self->param('force_recalc')) {
@@ -223,6 +222,10 @@ sub _mask_alignment {
   my $tree = shift;
   my $aln = shift;
   my $pep_aln = shift;
+
+  if ($self->param('filter') eq 'none') {
+    return $aln;
+  }
 
   my $scores_f = $self->_save_file('aln_scores', 'perlobj');
   my $scores_file = $scores_f->{full_file};
@@ -368,8 +371,6 @@ sub _run_sitewise {
     $self->param('lnl_alt', $alt_lnl);
   }
 
-  $self->param('force_recalc', 1);
-
   my $out_f = $self->_save_file($out_suffix, 'out');
   my $out_file = $out_f->{full_file};
   $self->param('sitewise_file', $out_f->{rel_file});
@@ -387,8 +388,6 @@ sub _run_sitewise {
     print OUT join("", @{$output_lines});
     close(OUT);
   }
-
-  $self->param('force_recalc', 0);
 
   print("  loading sitewise results [$out_file]\n");
   my $sitewise_results = $self->parse_sitewise_file($tree, $aln, $pep_aln, $out_file);

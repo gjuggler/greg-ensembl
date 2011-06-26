@@ -1049,6 +1049,11 @@ sub get_output_folder {
   }
 
   my $output_base = Bio::Greg::EslrUtils->scratchDirectory.'/'.$self->hive_dba->dbc->dbname;
+  if ($self->param('scratch_dir') eq 'scratch101' && !Bio::Greg::EslrUtils->is_ebi) {
+    # Allow alternative 101 scratch dir.
+    print "   >> Using SCRATCH 101\n";
+    $output_base = Bio::Greg::EslrUtils->scratchDirectory.'101/'.$self->hive_dba->dbc->dbname;
+  }
 
   #print "output_base: $output_base\n";
 

@@ -1,12 +1,5 @@
-if (exists('drv')) {
-  lapply(dbListConnections(drv),dbDisconnect)
-  rm(drv)
-  library(RMySQL)
-  drv <- dbDriver('MySQL')
-} else {
-  library(RMySQL)
-  drv <- dbDriver('MySQL')
-}
+library(RMySQL)
+lapply(dbListConnections(MySQL()),dbDisconnect)
 
 if (!exists('dbname')) {
   dbname = 'gj1_eslr_57'
