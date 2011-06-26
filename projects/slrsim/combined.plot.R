@@ -23,93 +23,111 @@ vplayout <- function(x, y) {
 # Figure 1 - Power of three sitewise methods under zero indel rate.
 #
 multi.methods <- function() {
-  tree.a <- read.tree('trees/artificial.nh')
-  tree.b <- read.tree('trees/bglobin.nh')
-  tree.c <- read.tree('trees/encode.nh') 
   tbl <- read.csv('~/scratch/gj1_fig_zero/current/table.csv')
-  
-  f <- function(sim) {
-    p <- plotTree(sim, 
-      tree.do.plot=F,
-      line.width=0.75,
-      axis.text.size=1.8,
-      tree.xlim.expand=c(0.05, 0.4)
-    )
-    p <- p$grob
-    p <- p + theme_bw()
-    p <- p + opts(
-      axis.title.x = theme_blank(),
-      axis.title.y = theme_blank()
-    )
-    return(p)
-  }
+  tbl[, 'tdr_at_thresh'] <- 1 - tbl[, 'fdr_at_thresh']
 
-  plots <- list(
-    a = list(tree.a),
-    b = list(tree.b),
-    c = list(tree.c)
-  )
-
-  pdf(file="fig_zero.pdf", width=8, height=20)
-  vplayout(3, 7)
-
-  for (i in 1:length(plots)) {
-    cur.stuff <- plots[[i]]
-    cur.tree <- cur.stuff[[1]]
-    # Plot tree to the left.
-    sim <- PhyloSim()
-    setPhylo(sim, cur.tree)
-    p <- f(sim)
-    print(p, vp=subplot(i, 1))
-  }
-
-  p.field <- function(field, lbl, keep.legend=F) {
-    tbl[, 'z_value'] <- tbl[, field]
-    p <- ggplot(tbl, aes(x=length, y=z_value, colour=analysis))
-    p <- p + theme_bw()
-    p  <- p + geom_line(alpha=0.8)
-    p <- p + scale_colour_brewer(name="Analysis Method", palette="Set1")
-
-    p <- p + geom_hline(y=0.5, colour='gray')
-    p <- p + geom_vline(x=1.0, colour='gray')
-
-    p <- p + scale_x_continuous(name="Tree Length", limits=c(0, 2), breaks=c(0, 0.4, 0.8, 1.2, 1.6, 2.0))
-    p <- p + scale_y_continuous(name=lbl, limits=c(0, 1), breaks = c(0, 0.2, 0.4, 0.6, 0.8, 1))
-    p <- p + facet_grid(. ~ tree)
-    p <- p + opts(
-      axis.title.x = theme_blank(),
-      axis.title.y = theme_blank(),
-      strip.text.x = theme_blank(),
-      strip.text.y = theme_blank(),
-      strip.background = theme_blank(),
-      title = paste(lbl,sep='')
-    )
-    if (!keep.legend) {
-      p <- p + opts(legend.position = 'none')
+  comb.df <- data.frame()
+  y.fields <- c('tpr_at_thresh', 'fpr_at_thresh', 'tpr_at_fpr2', 'cor_pearson')
+  for (field in y.fields) {
+    cur.df <- tbl
+    cur.df$stat <- field
+    cur.df$y.val <- cur.df[, field]
+    if (field == 'fpr_at_thresh') {
+      cur.df$y.val <- cur.df[, field] * 100
     }
-    return(p)
+    if (field == 'fdr_at_thresh') {
+      cur.df$y.val <- cur.df[, field] * 3
+    }
+    
+    comb.df <- rbind(comb.df, cur.df)
   }
 
-  p <- p.field('cor', 'Sitewise Correlation')
-  print(p, vp=subplot(1:3, 2))
-  
-  p <- p.field('tpr_at_fpr', 'TPR_5%')
-  print(p, vp=subplot(1:3, 3))
+  comb.df$stat <- factor(comb.df$stat, levels=y.fields)
 
-  p <- p.field('tpr_at_fpr2', 'TPR_1%')
-  print(p, vp=subplot(1:3, 4))
-
-  p <- p.field('tpr_at_thresh', 'TPR')
-  print(p, vp=subplot(1:3, 5))
-
-  p <- p.field('tpr_at_thresh', 'TPR (LRT/BH)')
-  print(p, vp=subplot(1:3, 6))
-
-  p <- p.field('tpr_at_thresh', '', keep.legend=T)
-  print(p, vp=subplot(1:3, 7))
-
-  dev.off()  
+  pdf(file="fig_zero.pdf", width=6, height=5)
+  p <- ggplot(comb.df, aes(x=length, y=y.val, colour=analysis, linetype=analysis))
+  p <- p + theme_bw()
+  p  <- p + geom_line(alpha=0.7)
+  clrs <- c('gray10', 'gray10', 'gray10')
+  line.types <- c('dashed', 'dotted', 'solid')
+  p <- p + scale_colour_manual(name="Analysis Method", values=clrs)
+  p <- p + scale_linetype_manual(name="Analysis Method", values=line.types)
+  p <- p + scale_y_continuous(limits=c(0, 1))
+  p <- p + facet_grid(stat ~ tree)
+  p <- p + coord_equal(ratio=2)
+  p <- p + opts(
+    axis.text.x = theme_text(angle=90, hjust=1),
+    axis.title.x = theme_blank(),
+    axis.title.y = theme_blank(),
+    strip.text.x = theme_blank(),
+    strip.text.y = theme_blank(),
+    strip.background = theme_blank(),
+#    panel.grid.minor = theme_line(colour='gray60', size=0.2),
+    panel.grid.major = theme_line(colour='gray80', size=0.2)
+  )
+  print(p)
+  dev.off()
 }
+
+multi.aligners <- function() {
+  tbl.a <- read.csv('~/scratch/gj1_fig_one_a/current/table.csv')
+  tbl.b <- read.csv('~/scratch/gj1_fig_one_b/current/table.csv')
+  tbl.c <- read.csv('~/scratch/gj1_fig_one_c/current/table.csv')
+  
+  tbl.a$tree <- 'artificial'
+  tbl.b$tree <- 'bglobin'
+  tbl.c$tree <- 'encode'
+  
+  tbl <- rbind(tbl.a, tbl.b, tbl.c)
+  tbl <- subset(tbl, ins_rate %in% c(0, 0.05))
+  tbl <- subset(tbl, aligner %in% c('clustalw', 'mafft', 'prank_codon', 'none'))
+  tbl[, 'tdr_at_thresh'] <- 1 - tbl[, 'fdr_at_thresh']
+
+  tbl$indel_rate <- tbl$ins_rate * 2
+  tbl$indel_rate <- factor(tbl$indel_rate)
+
+  tbl <- aln.factors(tbl)
+
+  comb.df <- data.frame()
+  y.fields <- c('tpr_at_thresh', 'fpr_at_thresh', 'tpr_at_fpr2', 'cor_pearson')
+  for (field in y.fields) {
+    cur.df <- tbl
+    cur.df$stat <- field
+    cur.df$y.val <- cur.df[, field]
+    if (field == 'fpr_at_thresh') {
+      cur.df$y.val <- cur.df[, field] * 100
+    }
+    comb.df <- rbind(comb.df, cur.df)
+  }
+
+  comb.df$stat <- factor(comb.df$stat, levels=y.fields)
+
+  pdf(file="fig_aligners.pdf", width=6, height=5)
+  p <- ggplot(comb.df, aes(x=length, y=y.val, linetype=aligner, colour=indel_rate))
+  p <- p + theme_bw()
+  p  <- p + geom_line(alpha=0.7)
+  line.clrs <- c('black', '#FF3333')
+  p <- p + scale_colour_manual(name="Indel Rate", values=line.clrs)
+  line.types <- c(1, 2, 3, 4)
+  p <- p + scale_linetype_manual(name="Aligner", values=line.types)
+  p <- p + scale_y_continuous(limits=c(0, 1))
+  p <- p + scale_x_continuous(limits=c(0, 2))
+  p <- p + facet_grid(stat ~ tree)
+  p <- p + coord_equal(ratio=2)
+  p <- p + opts(
+    axis.text.x = theme_text(angle=90, hjust=1),
+    axis.title.x = theme_blank(),
+    axis.title.y = theme_blank(),
+    strip.text.x = theme_blank(),
+    strip.text.y = theme_blank(),
+    strip.background = theme_blank(),
+#    panel.grid.minor = theme_line(colour='gray60', size=0.2),
+    panel.grid.major = theme_line(colour='gray80', size=0.2)
+  )
+  print(p)
+  dev.off()
+}
+
 
 multi.trees <- function() {
   tree.a <- read.tree('trees/artificial.nh')
@@ -244,7 +262,7 @@ multi.plots <- function() {
   tbl.c$tree <- 'encode'
   plots <- rbind(tbl.a, tbl.b, tbl.c)
 
-  multi.plot(plots, color.by='tpr_at_fpr')
+  multi.plot(plots, color.by='tpr_at_fpr2', keep=c('clustal', 'prank_codon', 'True_Alignment'))
   multi.plot(plots, color.by='tpr_at_thresh', keep=c('clustalw', 'prank_codon', 'True_Alignment'))
   multi.plot(plots, color.by='fpr_at_thresh', keep=c('clustalw', 'prank_codon', 'True_Alignment'))
 }
@@ -261,10 +279,12 @@ multi.plot <- function(all.tbls, color.by='tpr_at_fdr',
   relative=F
 ) {
 
+  print(color.by)
   print(nrow(all.tbls))
+#  print(str(all.tbls))
 
-  print(str(all.tbls))
-  print(facet.x)
+  all.tbls <- aln.factors(all.tbls)
+#  all.tbls$aligner <- factor(all.tbls$aligner, values=aln.values)
 
   all.tbls$fx <- all.tbls[, facet.x]
   all.tbls$fy <- all.tbls[, facet.y]
@@ -273,7 +293,7 @@ multi.plot <- function(all.tbls, color.by='tpr_at_fdr',
   height <- length(unique(all.tbls$fy))
 
   if (plot) {
-    pdf(file=paste(prefix, 'fig_multi_', color.by, '.pdf', sep=''), width=width+1, height=height)
+    pdf(file=paste(prefix, 'fig_multi_', color.by, '.pdf', sep=''), width=width+3, height=height)
   }
 
   # Write all-table to a file.
@@ -292,21 +312,17 @@ multi.plot <- function(all.tbls, color.by='tpr_at_fdr',
   #rect.df[,'length'] <- 0
   #rect.df[,'z_val'] <- 0
 
-  n <- 5
+  n <- 8
   if (z.val == 'fpr_at_thresh') {
     clr.lim <- c(0, 0.005)
-    clrs <- rev(brewer.pal(n=n, 'Spectral'))
-    all.tbls[, 'z_val'] <- pmin(0.025, all.tbls$z_val)    
   } else if (z.val == 'tpr_at_thresh') {
     clr.lim <- c(0, 1.0)
-    clrs <- brewer.pal(n=n, 'Spectral')
   } else if (z.val == 'tpr_at_fpr' || z.val == 'tpr_at_fdr') {
     clr.lim <- c(0, 1.0)
-    clrs <- brewer.pal(n=n, 'Spectral')
   } else {
     clr.lim <- c(0, 1.0)
-    clrs <- brewer.pal(n=n, 'Spectral')
   }
+  clrs <- c('white', 'blue', 'red')
 
   if (relative) {
     #clr.lim <- c(0, max(all.tbls$z_val))
@@ -324,28 +340,30 @@ multi.plot <- function(all.tbls, color.by='tpr_at_fdr',
     clr.lbl <- paste(clr.brk[-length(clr.brk)], clr.brk[-1], sep=' - ')
     all.tbls$z <- all.tbls$z_val
 
-    for (i in 1:length(clr.val)) {
-      within.rng <- all.tbls$z >= clr.brk[i] & all.tbls$z < clr.brk[i+1]
-      print(paste(i,sum(within.rng)))
-      all.tbls[within.rng, 'z_val'] <- i
-    }
-
-    all.tbls$z_val <- as.factor(all.tbls$z_val)
-
-    clr.scale <- scale_fill_manual(values=clr.val, breaks=1:length(clr.lbl), labels=clr.lbl)
   } else {
-    breaks <- seq(from=clr.lim[1], to=clr.lim[2], length.out=n+1)
-    clr.scale <- scale_fill_gradientn(z.val, colours=clrs, limits=clr.lim, breaks=breaks)
-    all.tbls$z_val <- pmin(clr.lim[2], all.tbls$z_val)
-    all.tbls$z_val <- pmax(clr.lim[1], all.tbls$z_val)
+    clr.brk <- seq(from=clr.lim[1], to=clr.lim[2], length.out=n+1)
+    clr.lbl <- paste(sprintf("%.4f",clr.brk[-length(clr.brk)]), sprintf("%.4f", clr.brk[-1]), sep=' - ')
+
+    clr.rmp <- colorRampPalette(clrs, bias=2)
+    clr.val <- clr.rmp(n)
+    clr.val <- brewer.pal(n=n, name='Spectral')
+    print(clr.val)
   }
 
+  for (i in 1:length(clr.val)) {
+    within.rng <- all.tbls$z >= clr.brk[i] & all.tbls$z < clr.brk[i+1]
+    print(paste(i,sum(within.rng)))
+    all.tbls[within.rng, 'z_val'] <- i
+  }
+  all.tbls$z_val <- factor(all.tbls$z_val, levels=1:length(clr.val))
+  clr.scale <- scale_fill_manual(color.by, values=clr.val, breaks=1:length(clr.lbl), labels=clr.lbl)
 
   p <- ggplot(all.tbls, aes(x=length, y=ins_rate*2))
   p <- p + theme_bw()
   p <- p + geom_tile(aes(fill=z_val))
   p <- p + clr.scale
   p <- p + facet_grid(fy ~ fx)
+  p <- p + coord_equal(ratio=10)
   p <- p + opts(
 #    legend.position='none',
     panel.grid.major = theme_blank(),
@@ -1428,7 +1446,7 @@ aln.factors <- function(data) {
   aligners <- unique(data$aligner)
   filters <- unique(data$filter)
 
-  ordered.f <- c('clustalw', 'mafft', 'probcons', 'fsa', 'fsa_careful', 'prank', 'pagan', 'prank_codon', 'true')
+  ordered.f <- rev(c('clustalw', 'mafft', 'probcons', 'fsa', 'fsa_careful', 'prank', 'pagan', 'prank_codon', 'true', 'none'))
   aligners <- unique(c(ordered.f[ordered.f %in% aligners], as.character(aligners)))
 
   levels <- c()

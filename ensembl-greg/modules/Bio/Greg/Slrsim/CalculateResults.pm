@@ -74,6 +74,7 @@ if (!do.meta) {
     ${slrsim_tree_mean_path}-0.01, ${slrsim_tree_mean_path}+0.01,
     ${phylosim_insertrate}-0.01, ${phylosim_insertrate}+0.01);
   print(sql)
+  q()
 }
 
 genes <- dbGetQuery(con, sql)
@@ -86,17 +87,16 @@ nodes.s <- paste(unique(genes[, 'node_id']), collapse=',')
 reps.s <- paste(unique(genes[, 'slrsim_rep']), collapse=',')
 sql <- sprintf("select * FROM sites WHERE node_id IN (%s) AND slrsim_rep IN (%s)", nodes.s, reps.s)
 sites <- dbGetQuery(con, sql)
-print(head(sites))
 print(paste(genes[1, 'label'], nrow(sites)))
 
 merged <- merge(genes, sites, by=c('node_id', 'slrsim_rep'))
 
-if (do.meta) {
-  print("  Collecting meta-results...")
-  merged <- meta.sub(merged)
-  merged[, 'label'] <- paste('meta', "${slrsim_tree_mean_path}", "${phylosim_insertrate}", sep='_')
-  merged[, 'filter'] <- 'meta'
-}
+#if (do.meta) {
+#  print("  Collecting meta-results...")
+#  merged <- meta.sub(merged)
+#  merged[, 'label'] <- paste('meta', "${slrsim_tree_mean_path}", "${phylosim_insertrate}", sep='_')
+#  merged[, 'filter'] <- 'meta'
+#}
 
 res.df <- paper.table(merged)
 if(dbExistsTable(con, "${results_table}")) {

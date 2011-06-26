@@ -7,6 +7,7 @@ use File::Path;
 use File::Copy;
 use File::Basename;
 use FreezeThaw qw(freeze thaw cmpStr safeFreeze cmpStrHard);
+use Time::HiRes qw(sleep);
 
 use base (
   'Bio::Greg::StatsCollectionUtils',
@@ -368,8 +369,6 @@ sub _run_sitewise {
     $self->param('lnl_alt', $alt_lnl);
   }
 
-  $self->param('force_recalc', 1);
-
   my $out_f = $self->_save_file($out_suffix, 'out');
   my $out_file = $out_f->{full_file};
   $self->param('sitewise_file', $out_f->{rel_file});
@@ -387,8 +386,6 @@ sub _run_sitewise {
     print OUT join("", @{$output_lines});
     close(OUT);
   }
-
-  $self->param('force_recalc', 0);
 
   print("  loading sitewise results [$out_file]\n");
   my $sitewise_results = $self->parse_sitewise_file($tree, $aln, $pep_aln, $out_file);
@@ -431,6 +428,9 @@ sub _collect_and_store_results {
 #  my @aln_entropies = Bio::EnsEMBL::Compara::AlignUtils->column_entropies($aln);
 #  my @aln_aligned = @{$aln_scores_calc->{aligned_branchlengths}};
 #  my @aln_match = @{$aln_scores_calc->{match_branchlengths}};
+
+  my $dbh = $self->db_handle;
+  $dbh->begin_work;
 
   foreach my $seq_position ( 1 .. length($seq_str) ) {
     my $true_column = $true_pep_aln->column_from_residue_number( $id, $seq_position );
@@ -488,9 +488,11 @@ sub _collect_and_store_results {
     my $params = $self->params;
     $params = $self->replace($params, $obj);
     printf "%d %d %f %f\n", $true_column, $aln_column, $obj->{true_dnds}, $obj->{lrt_stat} if ($seq_position < 20 || $seq_position > length($seq_str)-20);
-    $self->store_params_in_table( $self->dbc, $self->param('sites_table'), $params );
-    sleep(0.2);
+    $self->store_params_in_table( $dbh, $self->param('sites_table'), $params );
+    #sleep(0.05);
   }
+
+  $dbh->commit;
 
   # Collect some alignment-wide calculations.
   # Alignment.
