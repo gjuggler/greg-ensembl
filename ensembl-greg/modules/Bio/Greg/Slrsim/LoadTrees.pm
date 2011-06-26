@@ -628,6 +628,9 @@ sub _fig_one_indel_sweep {
   my @lengths = map { $_ * 1 / 5 } 1 .. 10;
   my @ins_rates  = map { $_ / 100 } 0 .. 10;
 
+  push @lengths, 0.1;
+  push @lengths, 0.05;
+
   foreach my $path_length (@lengths) {
     $params = $self->replace( $base_params, $self->mean_path_param($path_length) );
     foreach my $ins_rate (@ins_rates) {

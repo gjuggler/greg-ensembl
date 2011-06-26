@@ -63,7 +63,11 @@ sub fan_reps {
     slrsim_rep => $params->{slrsim_rep},
     slrsim_label => $params->{slrsim_label}
   };
-  my $data_id = $self->new_data_id($output_params);
+  #my $data_id = $self->new_data_id($output_params);
+
+  # Create a unique ID based on the node ID, # of reps, and current rep.
+  my $n_reps = $self->param('slrsim_replicates');
+  my $data_id = int($node_id * $n_reps) + $params->{slrsim_rep};
   $output_params->{data_id} = $data_id;
 
   my ($job_id) = @{ $self->dataflow_output_id( $output_params, 1 ) };
