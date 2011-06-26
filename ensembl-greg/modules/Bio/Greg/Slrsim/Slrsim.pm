@@ -7,6 +7,7 @@ use File::Path;
 use File::Copy;
 use File::Basename;
 use FreezeThaw qw(freeze thaw cmpStr safeFreeze cmpStrHard);
+use Time::HiRes qw(sleep);
 
 use base (
   'Bio::Greg::StatsCollectionUtils',
@@ -431,6 +432,9 @@ sub _collect_and_store_results {
 #  my @aln_aligned = @{$aln_scores_calc->{aligned_branchlengths}};
 #  my @aln_match = @{$aln_scores_calc->{match_branchlengths}};
 
+  my $dbh = $self->db_handle;
+  $dbh->begin_work;
+
   foreach my $seq_position ( 1 .. length($seq_str) ) {
     my $true_column = $true_pep_aln->column_from_residue_number( $id, $seq_position );
     my $aln_column = $pep_aln->column_from_residue_number( $id, $seq_position );
@@ -487,9 +491,11 @@ sub _collect_and_store_results {
     my $params = $self->params;
     $params = $self->replace($params, $obj);
     printf "%d %d %f %f\n", $true_column, $aln_column, $obj->{true_dnds}, $obj->{lrt_stat} if ($seq_position < 20 || $seq_position > length($seq_str)-20);
-    $self->store_params_in_table( $self->dbc, $self->param('sites_table'), $params );
-    sleep(0.2);
+    $self->store_params_in_table( $dbh, $self->param('sites_table'), $params );
+    #sleep(0.05);
   }
+
+  $dbh->commit;
 
   # Collect some alignment-wide calculations.
   # Alignment.

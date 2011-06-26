@@ -9,17 +9,15 @@ adj.paper.table <- function(df) {
 paper.table <- function(df, adjust.pvals=F) {
 
   print("  cor")
-  print(head(df))
-  cor = cor(df$true_dnds, df$aln_dnds, method='spearman', use='complete.obs')
-  cor_pearson = cor(df$true_dnds, df$aln_dnds, method='pearson', use='complete.obs')
+  cor.df <- subset(df, aln_dnds <= 3)
+  cor = cor(cor.df$true_dnds, cor.df$aln_dnds, method='spearman', use='complete.obs')
+  cor_pearson = cor(cor.df$true_dnds, cor.df$aln_dnds, method='pearson', use='complete.obs')
 
   print("  roc")
   roc <- slr.roc(df)
 
-  # Use the technique where the p-value can be doubled because we're just looking
-  # at positive selection. This gives thresholds of 2.71 and 5.41 for 5% and 1% FPR.
   print("  stats")
-  stats.05 <- df.stats(df, thresh=2.71, paml_thresh=0.95, adjust.pvals=adjust.pvals)
+  stats.05 <- df.stats(df, slr_thresh=3.84, paml_thresh=0.95, adjust.pvals=adjust.pvals)
 
   rrow <- roc[1,]
   row <- df[1,]
@@ -57,7 +55,7 @@ paper.table <- function(df, adjust.pvals=F) {
   #aln.acc.df <- df.alignment.accuracy(df)
   #ret.df <- cbind(ret.df, aln.acc.df)
 
-  print(ret.df[, c('tpr_at_fpr', 'tpr_at_thresh', 'fpr_at_thresh')])
+  print(ret.df[, c('tpr_at_fpr', 'tpr_at_thresh', 'fpr_at_thresh', 'cor')])
   return(ret.df)
 }
 
@@ -201,39 +199,54 @@ combine.pvals <- function(df.a, df.b, label) {
   return(merged)
 }
 
+adjust.pvals <- function(df) {
+  aa <- df[1, ]$analysis_action
+  if (aa == 'paml_m8' || aa == 'paml_m2') {
+    lnl_alt <- df$lnl_alt
+    lnl_null <- df$lnl_null
+    lnl_diff <- 2* (lnl_alt - lnl_null)
+    chisq.t <- qchisq(0.95, df=2)
+
+    n.nonsig <- sum(lnl_diff < chisq.t)
+    print(paste(n.nonsig, "non-significant LRT sites!"))
+    n.sig <- sum(lnl_diff >= chisq.t)
+    print(paste(n.sig, "significant LRT sites!"))
+
+    # set all posterior probs to 0 if the LRT isn't significant at 5%
+    df[lnl_diff < chisq.t, 'lrt_stat'] <- 0
+  } else {
+    # Do the gene-by-gene Hochberg '88 correction to p-values.
+    df[is.na(df$lrt_stat), 'lrt_stat'] <- 0      
+    df$pval.tmp <- pchisq(abs(df$lrt_stat), df=1, lower.tail=F)
+    df <- ddply(df, c('label', 'slrsim_rep'), function(x) {
+      x$pval.tmp <- p.adjust(x$pval.tmp, method='hochberg')
+      x
+    })
+    # Set all LRT values to 0 if the adjusted p-value isn't significant at 5%
+    df[df$pval.tmp > 0.05, 'lrt_stat'] <- 0
+    df$pval.tmp <- NULL
+  }
+
+  return(df)
+}
+
 df.stats = function(df,
-  thresh=3.8,
+  slr_thresh=3.8,
   paml_thresh=0.95,
-  adjust.pvals=F) {
+  adjust.pvals=F
+  ) {
+
+  aa <- df[1, ]$analysis_action
+  if (aa == 'paml_m8' || aa == 'paml_m2') {
+    thresh <- paml_thresh
+  } else {
+    thresh <- slr_thresh
+  }
 
   if (adjust.pvals) {
-    aa <- df[1, ]$analysis_action
-    if (aa == 'paml_m8' || aa == 'paml_m2') {
-      print("PAML!!!")
-
-      lnl_alt <- df$lnl_alt
-      lnl_null <- df$lnl_null
-      lnl_diff <- 2* (lnl_alt - lnl_null)
-      chisq.t <- qchisq(0.95, df=2)
-
-      n.nonsig <- sum(lnl_diff < chisq.t)
-      print(paste(n.nonsig, "non-significant LRT sites!"))
-
-      # set all posterior probs to 0 if the LRT isn't significant at 5%
-      df[lnl_diff < chisq.t, 'lrt_stat'] <- 0
-    } else {
-      # Do the gene-by-gene Hochberg '88 correction to p-values.
-      df[is.na(df$lrt_stat), 'lrt_stat'] <- 0      
-      df$pval.tmp <- pchisq(abs(df$lrt_stat), df=1, lower.tail=F)
-      df <- ddply(df, c('label', 'slrsim_rep'), function(x) {
-        x$pval.tmp <- p.adjust(x$pval.tmp, method='hochberg')
-        x
-      })
-      # Set all LRT values to 0 if the adjusted p-value isn't significant at 5%
-      df[df$pval.tmp > 0.05, 'lrt_stat'] <- 0
-      df$pval.tmp <- NULL
-    }
+    df <- adjust.pvals(df)
   }
+
 
   pos_pos = nrow(subset(df,true_type=="positive1" & lrt_stat>thresh))
   neg_pos = nrow(subset(df,true_type!="positive1" & lrt_stat>thresh))

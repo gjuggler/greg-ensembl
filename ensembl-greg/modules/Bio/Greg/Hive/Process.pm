@@ -303,12 +303,12 @@ sub db_handle {
     my $dbc = $self->dbc;
     my $dbh = $dbc->db_handle;
     $self->param( '_compara_dbh', $dbh );
-    print $dbh. "\n";
+    print "DB HANDLE: ". $dbh. "\n";
   }
 
   my $dbh = $self->param('_compara_dbh');
 
-  my $ping = $dbh->ping;
+  #my $ping = $dbh->ping;
   #print "PING: $ping\n";
 
   #  if (!$ping) {
@@ -1005,7 +1005,6 @@ sub store_params_in_table {
     }
   } @fields;
   $sth2->execute(@values);
-  $sth2->finish;
 }
 
 sub store_tag {

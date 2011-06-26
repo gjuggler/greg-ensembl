@@ -899,12 +899,12 @@ sub run_paml_sitewise {
   print "  running PAML...\n" if ($self->debug);
 
   my $tmp = $self->worker_temp_directory;
-  mkpath([$tmp]);
+  #mkpath([$tmp]);
 
   foreach my $file (qw(mlc rst rub lnf)) {
-    if (-e "${tmp}/${file}") {
-      unlink "${tmp}/${file}";
-    }
+  #  if (-e "${tmp}/${file}") {
+  #    unlink "${tmp}/${file}";
+  #  }
   }
 
   # PAML has a problem with sequences that start with a number... we need to map
@@ -967,7 +967,6 @@ sub run_paml_sitewise {
 seqfile = aln.phy
 treefile = tree.nh
 
-* Interesting stuff we want to change.
 model = ${branch_model}
 NSsites = ${sites_model}
 fix_kappa = ${fix_kappa}
@@ -975,7 +974,6 @@ kappa = ${kappa}
 fix_omega = ${fix_omega}
 omega = ${omega}
 
-* Boring stuff that doesn't change.
 fix_alpha = 1
 alpha = 0
 outfile = mlc
@@ -991,7 +989,6 @@ getSE = 0
 RateAncestor = 1
 fix_blength = 1
 method = 0
-
 ^;  
   print $ctl_string."\n";
   my $cwd = cwd();

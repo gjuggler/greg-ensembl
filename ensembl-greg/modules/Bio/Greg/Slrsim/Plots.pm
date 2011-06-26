@@ -76,6 +76,7 @@ sub dump_data {
 
   my $genes_f = $self->param('output_folder') . '/genes.Rdata';
   my $results_tbl = $self->param('output_folder') . '/table.csv'; 
+  my $results_tbl_adj = $self->param('output_folder') . '/table_adj.csv'; 
   my $sites_f = $self->param('output_folder') . '/sites.Rdata';
   my $merged_f = $self->param('output_folder') . '/merged.Rdata'; 
 
@@ -98,6 +99,12 @@ if (!file.exists("${genes_f}")) {
 if (!file.exists("${results_tbl}")) {
   results <- dbGetQuery(con, "select * from slrsim_results;")
   write.csv(results, file="${results_tbl}", row.names=F)
+  rm(results)
+}
+
+if (!file.exists("${results_tbl_adj}")) {
+  results <- dbGetQuery(con, "select * from slrsim_results_adj;")
+  write.csv(results, file="${results_tbl_adj}", row.names=F)
   rm(results)
 }
 
