@@ -19,6 +19,9 @@ paper.table <- function(df, adjust.pvals=F) {
   print("  stats")
   stats.05 <- df.stats(df, slr_thresh=3.84, paml_thresh=0.95, adjust.pvals=adjust.pvals)
 
+  print("  filtered fraction")
+  df.ff <- df.filter.fraction(df)
+
   rrow <- roc[1,]
   row <- df[1,]
 
@@ -49,11 +52,9 @@ paper.table <- function(df, adjust.pvals=F) {
     `cor`   = cor,
     `cor_pearson` = cor_pearson,
     `n_sites` = nrow(roc),
-    `n_genes` = n.genes
+    `n_genes` = n.genes,
+    `filtered_fraction` = df.ff$filtered_fraction
   )
-
-  #aln.acc.df <- df.alignment.accuracy(df)
-  #ret.df <- cbind(ret.df, aln.acc.df)
 
   print(ret.df[, c('tpr_at_fpr', 'tpr_at_thresh', 'fpr_at_thresh', 'cor')])
   return(ret.df)
@@ -324,6 +325,23 @@ df.gene.detection.rate = function(df) {
 
 df.cor = function(df) {
   return(list(cor=cor(df$true_dnds,df$aln_dnds,method='spearman',use='complete.obs')))
+}
+
+df.filter.fraction = function(df) {
+  first.r <- function(x,field) {
+    return(x[1, field])
+  }                      
+  mean.f <- function(field) {
+    return(mean(by(df, df$node_id, first.r, field)))
+  }
+  sum.f <- function(field) {
+    return(sum(by(df, df$node_id, first.r, field)))
+  }
+
+  out.df <- data.frame(
+    filtered_fraction=1 - (sum.f('residue_count') / sum.f('unmasked_residue_count'))
+  )
+  return(out.df)
 }
 
 df.alignment.accuracy = function(df) {

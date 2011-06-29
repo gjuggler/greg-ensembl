@@ -47,8 +47,6 @@ sub fetch_input {
 sub run {
   my $self = shift;
 
-  $self->compara_dba->dbc->disconnect_when_inactive(1);
-
   my $tree = $self->param('tree');
   my $aln  = $self->param('aln');
   my $pep_aln = Bio::EnsEMBL::Compara::AlignUtils->translate($aln);
@@ -76,9 +74,6 @@ sub mask_alignment {
   #my $score_hash = $self->_get_alignment_scores($tree, $aln, $pep_aln);
 
   my $threshold = 9;
-  my $maximum_mask_fraction = $self->param('maximum_mask_fraction');
-  print "max mask fraction: $maximum_mask_fraction\n";
-
   my $mask_character = 'N';
 
   # Triplicate the alignment scores to match the CDNA alignment.
@@ -90,34 +85,10 @@ sub mask_alignment {
     $str = join("",@arr);      
     $score_hash->{$seq->id} = $str;
   }
-
-  # Respect the maximum masked fraction if needed.
-  if ($maximum_mask_fraction) {
-    my $orig_threshold = $threshold;
-    my $max_fraction = $self->param('maximum_mask_fraction');
-
-    my $unmasked_n = $ALN->count_residues($aln);
-    my $masked_fraction = 1.1;
-    my $tmp_threshold = $threshold + 1;
-    
-    while ($masked_fraction > $max_fraction) {
-      $tmp_threshold--;
-      my $tmp_masked_aln = $ALN->mask_below_score($aln,$tmp_threshold,$score_hash,$mask_character);
-      my $masked_n = $ALN->count_residues($tmp_masked_aln, 1); # 1 indicates we're counting a CDNA sequence.
-      
-      $masked_fraction = 1 - ($masked_n / $unmasked_n);
-    }
-    $threshold = $tmp_threshold;
-    my $masked_str = sprintf("%.3f",$masked_fraction);
-    print "Respecting maximum fraction of $max_fraction... reduced threshold from ${orig_threshold} to ${threshold} (masked fraction: ${masked_str}!\n";
-  }
   
   printf " -> Masking sequences at alignment score threshold: >= %d\n",$threshold;
-
   $self->param('aln_mask_threshold', $threshold);
-
   $aln = $ALN->mask_below_score($aln, $threshold, $score_hash, $mask_character);
-
   return $aln;
 }
 
@@ -167,42 +138,44 @@ sub _get_alignment_scores {
   }
 
   # TODO: Get score deciles, and convert to 0-9 score strings.
-  my $score_hash = $self->decile_and_stringify($pep_aln);
+  my $score_hash = $self->get_score_hash($pep_aln);
 
   return $score_hash;
 }
 
-sub decile_and_stringify {
+sub get_score_hash {
   my $self = shift;
   my $pep_aln = shift;
 
-  my @score_bin = ();
+  my $filter = $self->param('filter');
+  my $max_mask_f = $self->param('maximum_mask_fraction');
 
-  foreach my $seq ($pep_aln->each_seq) {
-    print $seq->id."\n";
-    foreach my $i (1 .. $pep_aln->length) {
-      my $score = $self->get_score($pep_aln, $seq->id, $i);
-      print "  $i $score\n";
-      push @score_bin, $score if ($score ne '-');
-    }
+  print "  MAX MASK F: $max_mask_f\n";
+
+  my @scores = $self->sorted_scores($pep_aln);
+  print "@scores\n";
+  my $max_mask_index = int($max_mask_f * (scalar(@scores)-1) );
+  my $max_mask_t = $scores[$max_mask_index];
+  print "  MAX MASK Threshold: $max_mask_t\n";
+
+  # Do a hard threshold based on the different filters.
+  my $t = 0.9;
+  $t = 7 if ($filter eq 'tcoffee');
+  $t = 5 if ($filter eq 'gblocks');
+  $t = 0.5 if ($filter eq 'guidance');
+  $t = 0.5 if ($filter eq 'optimal');
+  $t = 0.5 if ($filter eq 'branchlength');
+  $t = 50 if ($filter eq 'prank');
+  $t = 50 if ($filter eq 'prank_mean');
+  
+  # Reduce the threshold to the max_mask_t if the default threshold will
+  # mask out *more* than [mask_mask_fraction] sites
+  if ($t > $max_mask_t) {
+    print "  USING MAX MASK T!\n";
+    $t = $max_mask_t 
   }
 
-  @score_bin = sort {$a <=> $b} @score_bin;
-  my $max_score = $score_bin[scalar(@score_bin)-1];
-  my $min_score = $score_bin[0];
-  @score_bin = grep {$_ < $max_score} @score_bin;
-
-  my @indices = map {int($_ * (scalar(@score_bin)-1) / 10)} 0..9;
-  my @scores = map {$score_bin[$_]} @indices;
-
-  print "$min_score .. $max_score\n";
-  print "@indices\n";
-  print "@scores\n";
-
   my $score_hash;
-  my $decile_histogram;
-  map {$decile_histogram->{$_} = 0} 0 .. 9;
-
   foreach my $seq ($pep_aln->each_seq) {
     my $score_string = '';
     foreach my $i (1 .. $pep_aln->length) {
@@ -210,33 +183,42 @@ sub decile_and_stringify {
 
       if ($score eq '-') {
         $score_string .= '-';
-      } else {
-        my $cur_decile = 0;
-        foreach my $decile (0 .. 9) {
-          if ($score >= $scores[$decile]) {
-              $cur_decile = $decile 
-          }
-        }
-        
-        my $f = $self->param('filter');
+      } else {        
 
-        if ($f =~ m/(tcoffee|gblocks)/i) {
-          $cur_decile = $score;
+        if ($score > $t) {
+          $score = 9;
+        } else {
+          $score = 0;
         }
-        $score_string .= $cur_decile;
-        $decile_histogram->{$cur_decile}++;
+        $score_string .= $score;
       }
     }
 #    print "$score_string\n";
     $score_hash->{$seq->id} = $score_string;
   }
+  return $score_hash;  
+}
 
-  foreach my $key (sort keys %$decile_histogram) {
-    print $key."  ".$decile_histogram->{$key}."\n";
+sub sorted_scores {
+  my $self = shift;
+  my $pep_aln = shift;
+
+  my @score_bin = ();
+  foreach my $seq ($pep_aln->each_seq) {
+#    print $seq->id."\n";
+    foreach my $i (1 .. $pep_aln->length) {
+      my $n_nongap = Bio::EnsEMBL::Compara::AlignUtils->get_nongaps_at_column($pep_aln, $i);
+      next if ($n_nongap <= 1);
+      my $score = $self->get_score($pep_aln, $seq->id, $i);
+#      print "  $i $score\n";
+      push @score_bin, $score if ($score ne '-');
+    }
   }
 
-  return $score_hash;
+  @score_bin = sort {$a <=> $b} @score_bin;
+  return @score_bin;
 }
+
 
 sub get_score {
   my $self = shift;
@@ -644,7 +626,7 @@ sub run_gblocks {
   my $defaults = {
     t  => 'p',    # Type of sequence (p=protein,c=codon,d=dna)
     b3 => '8',    # Max # of contiguous nonconserved positions
-    b4 => '10',    # Minimum length of a block
+    b4 => '3',    # Minimum length of a block
     b5 => 'a',    # Allow gap positions (n=none, h=with half,a=all)
     b6 => 'y',
   };
@@ -869,10 +851,7 @@ sub run_prank {
 
   $params->{temp_dir} = $self->worker_temp_directory;
 
-  my $threshold = $params->{'prank_filtering_threshold'} || 7;
-  my $scores= $self->_get_prank_filter_matrices( $tree, $aln, $pep_aln, $params );
-
-  return $scores;
+  $self->_get_prank_filter_matrices( $tree, $aln, $pep_aln, $params );
 }
 
 sub _get_prank_filter_matrices {
@@ -881,13 +860,6 @@ sub _get_prank_filter_matrices {
   my $aln = shift;
   my $pep_aln = shift;
   my $params = shift;
-
-  my $defaults = {
-    'prank_filtering_scheme' => 'prank_mean'
-  };
-  $params = Bio::EnsEMBL::Compara::ComparaUtils->replace_params($defaults,$params);  
-
-  $params->{prank_filtering_scheme} = 'prank_minimum' if ($params->{prank_filtering_scheme} eq 'prank');
 
   my $node_id = $tree->node_id;
 
@@ -902,8 +874,7 @@ sub _get_prank_filter_matrices {
   $ALN->to_file($pep_aln,$aln_f);
   Bio::EnsEMBL::Compara::TreeUtils->to_file($tree,$tree_f);
 
-  my $prank_bin = "prank_fix";
-  $prank_bin = "prank" if (!-e $prank_bin);
+  my $prank_bin = "prank";
 
   my $cmd = qq^${prank_bin} -d=$aln_f -t=$tree_f -e -o=$out_f^;
   system($cmd);
@@ -1047,6 +1018,9 @@ sub _get_prank_filter_matrices {
       for (my $i=0; $i < $aln_len; $i++) {
         if ($aln_arr[$i] eq '-') {
           $score_string .= '-';
+
+          # Set the score.
+          $self->set_score($pep_aln, $seq->id, $i+1, '-');
         } else {
           my $sitewise_score = 9;
 
@@ -1066,7 +1040,11 @@ sub _get_prank_filter_matrices {
             $node = $parent;
           }
           $bl_sum = 0.01 if ($bl_sum == 0);
-          my $sitewise_score = $pp_sum / 10 / $bl_sum;
+          my $sitewise_score = $pp_sum / $bl_sum;
+
+          # Set the score.
+          $self->set_score($pep_aln, $seq->id, $i+1, $sitewise_score);
+
           $sitewise_score = 0 if ($sitewise_score < 0);
           $sitewise_score = 9 if ($sitewise_score > 9);
           $score_string .= sprintf("%1d",$sitewise_score);
@@ -1075,7 +1053,7 @@ sub _get_prank_filter_matrices {
       $leaf_scores->{$leaf->name} = $score_string;
     }
 
-  } elsif ($params->{'prank_filtering_scheme'} =~ m/prank_minimum/i) {
+  } elsif ($params->{'prank_filtering_scheme'} =~ m/prank_min/i) {
     foreach my $leaf ($tree->leaves) {
       my $score_string = "";
       my $seq = Bio::EnsEMBL::Compara::AlignUtils->get_seq_with_id($pep_aln, $leaf->name);
@@ -1085,6 +1063,9 @@ sub _get_prank_filter_matrices {
       for (my $i=0; $i < $aln_len; $i++) {
         if ($aln_arr[$i] eq '-') {
           $score_string .= '-';
+
+          # Set the score.
+          $self->set_score($pep_aln, $seq->id, $i+1, '-');
         } else {
           
           my $min_pp = 100;
@@ -1099,6 +1080,10 @@ sub _get_prank_filter_matrices {
             }
             $node = $parent;
           }
+
+          # Set the score.
+          $self->set_score($pep_aln, $seq->id, $i+1, $min_pp);
+
           my $sitewise_score = $min_pp / 10;
           $sitewise_score = 0 if ($sitewise_score < 0);
           $sitewise_score = 9 if ($sitewise_score > 9);

@@ -557,16 +557,16 @@ sub load_all_params {
   my $parameter_set_id = $self->param('parameter_set_id');
 
   my $tree_tag_params = {};
-  if ( defined $node_id ) {
-    $tree_tag_params = $self->get_params_from_tree_tags( $self->compara_dba, $node_id );
-    $self->set_params($tree_tag_params) if ($tree_tag_params);
-  }
+#  if ( defined $node_id ) {
+#    $tree_tag_params = $self->get_params_from_tree_tags( $self->compara_dba, $node_id );
+#    $self->set_params($tree_tag_params) if ($tree_tag_params);
+#  }
 
   my $param_set_params = {};
-  if ( defined $parameter_set_id ) {
-    $param_set_params = $self->get_params_from_param_set($parameter_set_id);
-    $self->set_params($param_set_params) if ($param_set_params);
-  }
+#  if ( defined $parameter_set_id ) {
+#    $param_set_params = $self->get_params_from_param_set($parameter_set_id);
+#    $self->set_params($param_set_params) if ($param_set_params);
+#  }
 
   if ( !defined $self->param('data_id') ) {
     $self->param( 'data_id', $node_id );

@@ -65,16 +65,13 @@ my $h = new Bio::Greg::Hive::ComparaHiveLoaderUtils;
 $h->init($url);
 
 print "  cleaning tables...\n";
-$h->init_compara_tables;
 
 $h->clean_hive_tables;
-$h->clean_compara_analysis_tables;
-$h->clean_compara_tree_tables;
-my @truncate_tables = qw^
-      aln aln_scores omega
-      sites genes merged slrsim_results
+my @drop_tables = qw^
+      genes sites
+      slrsim_results slrsim_results_alt
   ^;
-$h->truncate_tables(\@truncate_tables);
+$h->drop_tables(\@drop_tables);
 
 load_trees();
 load_tree();
@@ -94,13 +91,17 @@ sub load_trees {
   my $params      = { experiment_name => $experiment_name };
   $h->create_analysis( $logic_name, $module, $params, 1, 1 );
 
-  $h->add_job_to_analysis( "LoadTrees", {} );    # Add a dummy job to run and load the trees.
+  $h->add_job_to_analysis( "LoadTrees", {
+    scratch_dir => 'scratch101'
+                           } );    # Add a dummy job to run and load the trees.
 }
 
 sub load_tree {
   my $logic_name  = "LoadTree";
   my $module      = "Bio::Greg::Slrsim::LoadTree";
-  my $params      = {};
+  my $params      = {
+    scratch_dir => 'scratch101'
+  };
   $h->create_analysis( $logic_name, $module, $params, 50, 1 );
 }
 

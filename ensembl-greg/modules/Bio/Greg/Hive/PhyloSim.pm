@@ -283,15 +283,18 @@ $models_trees_partitions
       # Important -- we removed gaps from the resulting alignment, so we need to map the original
       # Indelible output position (which is what we just read from the file) to that column's new
       # position in the gap-removed alignment!!
-      $site = $old_to_new->{$site};
+      my $new_site = $old_to_new->{$site};
 
-      my $nongaps = Bio::EnsEMBL::Compara::AlignUtils->get_nongaps_at_column( $pep_aln, $site );
+      # the mapping will return -1 if the old column doesn't exist in the shortened alignment.
+      next if ($new_site == -1);
+
+      my $nongaps = Bio::EnsEMBL::Compara::AlignUtils->get_nongaps_at_column( $pep_aln, $new_site );
       my $omg = $class_to_omega->{$2};
       my $type = 'negative1';
       $type = 'positive1' if ($omg > 1);
 
-      $sitewise_hash->{$site} = {
-        aln_position => $site,
+      $sitewise_hash->{$new_site} = {
+        aln_position => $new_site,
         omega_lower  => $omg,
         omega_upper  => $omg,
         omega        => $omg,

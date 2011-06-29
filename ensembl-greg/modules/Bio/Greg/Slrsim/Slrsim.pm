@@ -48,6 +48,8 @@ sub fetch_input {
 
   foreach my $key (keys %$params) {
     if ($params->{$key} ne $self->param($key)) {
+      next if ($key eq 'data_id');
+      next if ($key eq 'slrsim_rep');
       print "  Loading param $key from file\n";
       $self->param($key, $params->{$key});
     }
@@ -68,9 +70,6 @@ sub fetch_input {
 
 sub run {
   my $self = shift;
-
-  $self->param('node_id', $self->param('data_id'));
-  $self->param('scratch_dir', 'scratch101');
 
 #  $self->param('force_recalc', 1);
 #  $self->param('filter', 'none');
@@ -228,13 +227,15 @@ sub _mask_alignment {
     return $aln;
   }
 
+  my $mmf = $self->param('maximum_mask_fraction');
+  print "Max mask f: $mmf\n";
+
   my $scores_f = $self->_save_file('aln_scores', 'perlobj');
   my $scores_file = $scores_f->{full_file};
   $self->param('aln_scores_file', $scores_f->{rel_file});
   if (!-e $scores_file || $self->param('force_recalc')) {
     print "  calculating alignment scores\n";
     my $scores_hash = $self->_get_alignment_scores($tree, $aln, $pep_aln);
-    $self->hash_print($scores_hash);
     open(OUT,">$scores_file");
     print OUT freeze($scores_hash);
     close(OUT);
@@ -266,7 +267,7 @@ sub _mask_alignment {
 
   print "Masked:\n";
   my $tx_masked = Bio::EnsEMBL::Compara::AlignUtils->translate($masked_aln);
-  $self->pretty_print($tx_masked, {full => 1});
+  $self->pretty_print($tx_masked);
 
   return $masked_aln;
 }
