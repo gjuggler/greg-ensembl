@@ -124,7 +124,7 @@ sub has_any_data {
 
   my $has_data = 0;
   foreach my $seq ($aln->each_seq) {
-    $has_data = 1 if ($seq->seq =~ m/[^NX]/gi);
+    $has_data = 1 if ($seq->seq =~ m/[^-NX]/gi);
   }
   return $has_data;
 }

@@ -278,11 +278,9 @@ sub align_with_prank {
 
   # Run the command.
   if ($self->within_hive) {
-    $self->dbc->disconnect_when_inactive(1);
   }
   my $rc = system($cmd);
   if ($self->within_hive) {
-    $self->dbc->disconnect_when_inactive(0);
   }
 
   unless ( $rc == 0 ) {
@@ -341,9 +339,7 @@ sub align_with_pagan {
 
   print "CMD: [$cmd]\n";
   # Run the command.
-  $self->dbc->disconnect_when_inactive(1);
   my $rc = system($cmd);
-  $self->dbc->disconnect_when_inactive(0);
 
   unless ( $rc == 0 ) {
     print "Pagan error!\n";
@@ -384,10 +380,8 @@ sub align_with_muscle {
   my $cmd = qq^$executable $extra_params -in $aln_file -out $output_file^;
 
   # Run the command.
-  $self->dbc->disconnect_when_inactive(1);
   print "$cmd\n";
   my @stdout = `$cmd 2>&1 1>/dev/null`;
-  $self->dbc->disconnect_when_inactive(0);
 
   print "OUTPUT!!!\n";
   print join( '\n', @stdout );
@@ -431,9 +425,7 @@ sub align_with_probcons {
   my $cmd          = qq^$executable $extra_params $aln_file > "$output_file"^;
 
   # Run the command.
-  $self->dbc->disconnect_when_inactive(1);
   my $rc = system($cmd);
-  $self->dbc->disconnect_when_inactive(0);
 
   unless ( $rc == 0 ) {
     $self->throw("Alignment error!");
@@ -476,9 +468,7 @@ sub align_with_mafft {
   print $cmd."\n";
 
   # Run the command.
-#  $self->dbc->disconnect_when_inactive(1);
   my $rc = system($cmd);
-#  $self->dbc->disconnect_when_inactive(0);
 
   unless ( $rc == 0 ) {
     $self->throw("Alignment error!");
@@ -524,9 +514,7 @@ sub align_with_fsa {
   print $cmd."\n";
 
   # Run the command.
-#  $self->dbc->disconnect_when_inactive(1);
   my $rc = system($cmd);
-#  $self->dbc->disconnect_when_inactive(0);
 
   unless ( $rc == 0 ) {
     $self->throw("Alignment error!");
@@ -568,9 +556,7 @@ sub align_with_clustalw {
     qq^$executable $extra_params -INFILE=$aln_file -USETREE=$tree_file -OUTFILE=$output_file -OUTPUT=GCG -align^;
 
   # Run the command.
-  $self->dbc->disconnect_when_inactive(1);
   my $rc = system($cmd);
-  $self->dbc->disconnect_when_inactive(0);
 
   unless ( $rc == 0 ) {
     print "Clustalw error!\n";
@@ -704,9 +690,7 @@ sub align_with_mcoffee {
 
 
   # Run the command.
-  $self->dbc->disconnect_when_inactive(0);
   my $rc = system( $prefix. $cmd );
-  $self->dbc->disconnect_when_inactive(0);
 
   unless ( $rc == 0 ) {
 

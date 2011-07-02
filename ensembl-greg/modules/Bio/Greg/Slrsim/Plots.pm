@@ -32,7 +32,7 @@ sub dump_sql {
   my $filename = $self->param('output_folder') . '/slrsim.sqldata';
   my $gzip     = $self->param('output_folder') . '/slrsim.sqldata.gz';
 
-  my $dbc  = $self->compara_dba->dbc;
+  my $dbc  = $self->dbc;
   my $u    = $dbc->username;
   my $p    = $dbc->password;
   my $h    = $dbc->host;
@@ -114,14 +114,6 @@ if (!file.exists("${sites_f}")) {
   rm(sites)
 }
 
-
-if (!file.exists("${merged_f}")) {
-  merged <- dbGetQuery(con, 
-    "select label, tree, analysis, tree_length, ins_rate, aligner, filter, slrsim_rep, seq_position, lrt_stat, aln_dnds, true_dnds, true_type from merged;"
-  )
-  save(merged, file="${merged_f}")
-  rm(merged)
-}
 ^;
   Bio::Greg::EslrUtils->run_r( $rcmd);
 

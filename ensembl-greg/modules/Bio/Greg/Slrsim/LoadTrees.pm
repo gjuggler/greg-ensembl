@@ -785,14 +785,28 @@ sub fig_two {
 sub fig_three_a {
   my $self = shift;  
   my @sets;
-  push @sets, @{$self->fig_three('prank_codon', $self->scheme_b)};
+  push @sets, @{$self->fig_three('clustalw', $self->scheme_b)};
   return \@sets;
 }
 
 sub fig_three_b {
   my $self = shift;  
   my @sets;
-  push @sets, @{$self->fig_three('clustalw', $self->scheme_b)};
+  push @sets, @{$self->fig_three('prank_codon', $self->scheme_b)};
+  return \@sets;
+}
+
+sub fig_three_c {
+  my $self = shift;  
+  my @sets;
+  push @sets, @{$self->fig_three('clustalw', $self->scheme_b, {no_max_filter => 1})};
+  return \@sets;
+}
+
+sub fig_three_d {
+  my $self = shift;  
+  my @sets;
+  push @sets, @{$self->fig_three('prank_codon', $self->scheme_b, {no_max_filter => 1})};
   return \@sets;
 }
 
@@ -800,13 +814,16 @@ sub fig_three {
   my $self = shift;
   my $aln = shift;
   my $scheme = shift;
+  my $extra_params = shift;
+
+  $extra_params = {} unless (defined $extra_params);
 
   my @sets;
   my @subsets_array;
 
   my $params;
   my @lengths = map { $_ * 1 / 2.5 } 1 .. 5;
-  my @ins_rates  = map { $_ / 50 } 0 .. 5;
+  my @ins_rates  = map { $_ / 50 } 1 .. 5;
 
   my @pairs;
   foreach my $length (@lengths) {
@@ -837,15 +854,12 @@ sub fig_three {
       phylosim_deleterate => $subset->{ins_rate}
     };
 
-    foreach my $filter ( 'true', 'none', 'gblocks', 'optimal_a', 'optimal_b', 'optimal_c', 'tcoffee', 'guidance', 'branchlength' ) {
-#    foreach my $filter ( 'true', 'none', 'gblocks', 'branchlength_lo', 'optimal_lo', 'tcoffee_lo') {
+    foreach my $filter ( 'true', 'none', 'optimal', 'tcoffee', 'guidance', 'gblocks', 'branchlength') {
       my $tree = $scheme->{tree_name};
       my $len_indel_s = $subset->{length} . '_'. $subset->{ins_rate};
       
-      my $max_mask = 0.2;
-      $max_mask = 0.05 if ($filter eq 'optimal_a');
-      $max_mask = 0.1 if ($filter eq 'optimal_b');
-      $max_mask = 0.2 if ($filter eq 'optimal_c');
+      my $max_mask = 0.5;
+      $max_mask = 1 if ($extra_params->{no_max_filter} == 1);
       
       my $params;
       $params = $self->replace(
@@ -1239,10 +1253,6 @@ sub verify_params {
 
   # Check that we have proper filter and alignment tables.
   $p->{alignment_score_table} = $p->{alignment_table} . '_scores';
-  $self->create_filter_table( $p->{alignment_score_table} );
-
-  $self->create_aln_table( $p->{alignment_table} );
-  $self->create_omega_table( $p->{omega_table} );
 }
 
 sub create_aln_table {
