@@ -1,8 +1,8 @@
-\begin{table*}[t]
+\begin{table}[p]
 \caption{Parameter Values Used in Simulations}
-\begin{center}
 \begin{threeparttable}
-{\footnotesize \raggedright
+\centering \footnotesize \tabcolsep 3pt
+%\footnotesize \raggedright
 \begin{tabular}{
  b{2.5cm} b{1.4cm} b{2cm} b{1.4cm} b{1.4cm} b{2cm} b{1cm} b{1.25cm}
 }
@@ -32,7 +32,5 @@
 \begin{tablenotes}
 \item [] N{\sc ote}.---{\hskip -.1pt}Tree length is defined as the mean path length of the tree in units of substitutions per synonymous site. Indel lengths are measured in units of codons, and the indel rate is defined as the number of insertion \& deletion events per substitution.
 \end{tablenotes}
-}
 \end{threeparttable}
-\end{center}
-\end{table*}
+\end{table}

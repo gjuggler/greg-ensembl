@@ -1,6 +1,12 @@
-\documentclass{mbe}
+\documentclass{article}
 \usepackage{natbib,graphicx,dblfloatfix,multirow,array,threeparttable}
-\usepackage{xspace}
+\usepackage{xspace,bm,amsmath,amssymb}
+\usepackage[nolists,tablesfirst,nomarkers]{endfloat}
+
+\usepackage[a4paper]{geometry}
+
+\linespread{1.5}
+
 \setlength{\bibsep}{0.0pt}
 
 \begin{document}
@@ -17,10 +23,11 @@
 
 \author{{Gregory Jordan and Nick Goldman}\\
 \affiliation{European Bioinformatics Institute, Wellcome Trust Genome Campus, Hinxton, Cambridgeshire, CB10 1SD, United Kingdom}}
-\authorlist{Jordan and Goldman}
-\shorttitle{Effect of Alignment Error on Detecting Sitewise Selection}
+%\authorlist{Jordan and Goldman}
+%\shorttitle{Effect of Alignment Error on Detecting Sitewise Selection}
 
-\mbeabstract{% 
+%\mbeabstract{% 
+\section*{Abstract}
 
 The effects of alignment error on many types of evolutionary inference
 are not well understood. Alignment filters are commonly applied to try
@@ -47,37 +54,31 @@ divergence levels and indel rates. We conclude that for the sitewise
 evolutionary analysis of most vertebrate, insect and fungal
 phylogenies, the use of unfiltered PRANK alignments is recommended.
 
-}
+%}
 
-\keywords{Alignment, positive selection, alignment filtering, indels}
+%\keywords{Alignment, positive selection, alignment filtering, indels}
 
-\email{greg@ebi.ac.uk}
+%\email{greg@ebi.ac.uk}
 
-\mbestyle
+%\mbestyle
 
 \section*{Introduction}
 
-Large-scale comparative genomics has been widely employed to identify
-shared and unique biological features between organisms of interest to
-the biomedical sciences, with applications ranging from evolutionary
-annotation transfer \citep{Bork1998Predicting} to phylogenetics
-\citep{Murphy2007Using,Prasad2008Confirming} and population genetic
-inference \citep{Hurst2009Genetics}. The decreasing cost of DNA
-sequencing has triggered a striking increase in the number of model
-and non-model organisms with planned genome sequencing projects,
-suggesting that the range and scale of comparative genomics
-applications will continue to expand
-\citep{Green20072x,2007Identification}.
+The decreasing cost of DNA sequencing has triggered a striking
+increase in the number of model and non-model organisms with planned
+genome sequencing projects, suggesting that the range and scale of
+comparative genomics applications will continue to expand
+\citep{Green20072x,2007Identification}. These clusters of
+closely-related genome sequences across a wide taxonomic range have
+led to a better understanding of which aspects of molecular evolution
+are variable and which are constant \citep{Wolf2009Nonlinear} and an
+increased sampling of species should continue to boost the power and
+accuracy of individual analyses within a given clade.
 
 The study of protein evolutionary rates and selective pressures in
 particular has flourished as a result of the growth in comparative
-genomics datasets. Clusters of closely-related genome sequences across
-a wide taxonomic range have led to a better understanding of which
-aspects of molecular evolution are variable and which are constant
-\citep{Wolf2009Nonlinear}, and an increased sampling of species should
-continue to boost the power and accuracy of individual analyses within
-a given clade. This is especially beneficial for the calculation of
-spatially precise evolutionary estimates, as additional species
+genomics datasets. This is especially beneficial for the calculation
+of spatially precise evolutionary estimates, as additional species
 sampling has been shown to be an effective means of boosting the
 accuracy and power of \sw detection of positive selection and
 evolutionary constraint
@@ -85,26 +86,26 @@ evolutionary constraint
 evolutionary estimates have proved especially valuable when analyzed
 in conjunction with other protein-based datasets such as protein
 structural features \citep{Lin2007Proportion,Ramsey2011Relationship},
-human population diversity \citep{2010Map}, and human disease
+human population diversity \citep{2010Map} and human disease
 mutations \citep{Arbiza2006Selective}.
 
-A major concern in the \sw detection of protein positive
-selection is that the effect of alignment error is not well
-characterized. Intuitively, one might expect alignment error to result
-mainly in an increased number of false positives, as the spurious
-alignment of nonhomologous codons on average would result in a high
-number of apparent non-synonymous substitutions and a low number of
-synonymous substitutions (since a randomly chosen pair of codons are
-more likely to be nonsynonymous than synonymous). However, false
-negatives may also be introduced, either through over-alignment of
-synonymous codons (increasing the synonymous substitution rate) or
-non-alignment of homologous codons (causing reduced power due to less
-evolutionary information). Since different aligners employ a variety
-of algorithms, evolutionary models, and heuristic optimizations
-\citep{Notredame2007Recent}, each program may be more or less prone to different
-types of alignment error, causing potentially large variations in the
-nature and magnitude of its impact on the detection of positive
-selection.
+A major concern in the detection of protein positive selection is that
+the effect of alignment error is not well characterized. Intuitively,
+one might expect alignment error to result mainly in an increased
+number of false positives, as the spurious alignment of nonhomologous
+codons on average would result in a high number of apparent
+non-synonymous substitutions and a low number of synonymous
+substitutions (since a randomly chosen pair of codons are more likely
+to be nonsynonymous than synonymous). However, false negatives may
+also be introduced, either through over-alignment of synonymous codons
+(increasing the synonymous substitution rate) or non-alignment of
+homologous codons (causing reduced power due to less evolutionary
+information). Since different aligners employ a variety of algorithms,
+evolutionary models, and heuristic optimizations
+\citep{Notredame2007Recent}, each program may be more or less prone to
+different types of alignment error, causing potentially large
+variations in the nature and magnitude of its impact on the detection
+of positive selection.
 
 \input{table1.txt}
 
@@ -116,26 +117,29 @@ proteins than in highly folded enzymes and housekeeping genes
 \citep{delaChaux2007DNA} . This suggests that well-folded protein
 regions will experience fewer biological indels---and will therefore
 be less susceptible to alignment error---than less structured
-regions. Furthermore, the evolutionary divergence of a dataset affects
-the power of \sw inference and the prevalence of indels in different
-ways. Because maximum-likelihood methods for detecting positive
-selection require data in the form of observed substitution events,
-they show little power at low divergence and their highest power at
-intermediate to high divergence levels
-\citep{Anisimova2001Accuracy}. On the other hand, the number of indels
-in a dataset should increase with divergence. These two trends suggest
-that the overall power will be low at both extremes of divergence,
-with little inference power at low divergence (due to the scarcity of
-data in the form of observed substitutions) and an overwhelming amount
-of alignment error at high divergence (due to the large number of
-indel events). It is important to note, however, that the majority of
-genes in many biological clades of interest (such as mammals,
-vertebrates, fruit flies, and yeast) fall within the middle range of
-divergences where \sw methods are at their most powerful and where
-multiple alignment is a difficult---but not hopeless---problem. As
-such, it is important to seek an understanding of the impact of
-alignment error on overall error rates within this important range of
-divergence levels.
+regions.
+
+Furthermore, the evolutionary divergence of a dataset affects the
+power of \sw inference and the prevalence of indels in different
+ways. As maximum-likelihood methods for detecting positive selection
+require data in the form of observed substitution events, they show
+little power at low divergence and their highest power at intermediate
+to high divergence levels \citep{Anisimova2001Accuracy}. However,
+alignment error should be greatest at high divergences, which may have
+the effect of reducing power. These two trends suggest that the
+overall power will be low at both extremes of divergence, with little
+inference power at low divergence (due to the scarcity of data in the
+form of observed substitutions) and an overwhelming amount of
+alignment error at high divergence (due to the large number of indel
+events).
+
+Luckily the majority of genes in many biological clades of interest
+(such as mammals, vertebrates, fruit flies, and yeast) fall within the
+middle range of divergences where \sw methods are at their most
+powerful and where multiple alignment is a difficult---but not
+hopeless---problem. As such, it is important to seek an understanding
+of the impact of alignment error on overall error rates within this
+important range of divergence levels.
 
 A number of empirical analyses have established that errors in gene
 sequencing, annotation and alignment can contribute to errors in
@@ -153,61 +157,61 @@ alignments contained a sizable proportion of apparent false positives.
 A limitation to the analysis of error in empirical datasets is the
 lack of a benchmark set of true alignments and positively-selected
 sites. Markova-Raina and Petrov \citeyearpar{Markova-Raina2011High}
-used the expected general effect of alignment error (an increase in
+used their expected general effect of alignment error (an increase in
 false positives due to misalignment of non-homologous codons) as a
 proxy by which to compare different methods, allowing for the
 conclusion that PRANK was the least error-prone aligner in their
 analysis. However, the absolute number of false positives remained
-uncertain due to the possible conflation of multiple sources of error:
-in addition to alignment error, the authors noted that gene
+uncertain and there was the possibility of conflating multiple sources
+of error: in addition to alignment error, the authors noted that gene
 mis-annotation was responsible for many apparent false positives, and
 there is also an expected error rate from the likelihood inference
 method itself. This limitation leaves important and interesting
 questions regarding the nature of alignment error and its quantitative
-impact on the detection of positive selection left unanswered.
+impact on the detection of positive selection left unanswered by
+empirical studies.
 
 Controlled simulation experiments provide a natural framework for
 investigating error rates in detail, allowing one to pinpoint the
-source of errors in multi-step analyses such as alignment followed by
-evolutionary inference. This approach has widely been employed in
-assessing the robustness of phylogenetic inference methods to
-misalignment
+sources of error in multi-step analyses such as alignment followed by
+evolutionary inference. This approach has been employed in assessing
+the robustness of phylogenetic inference methods to misalignment
 \citep{Dwivedi2009Phylogenetic,Ogden2006Multiple,Loytynoja2008PhylogenyAware}
 but those results cannot be easily extrapolated to the analysis of \sw
 selective pressures. More recently, Fletcher and Yang
 \citeyearpar{Fletcher2010Effect} performed a series of simulation
-experiments investigating alignment error in the use of branch-site
-models to detect positive selection in genes. Their results showed
-that most aligners caused false positives by over-aligning codons and
-that datasets from mammalian and vertebrate gene families contain
-enough evolutionary divergence to make false positive errors resulting
-from misalignment a legitimate concern.
+experiments investigating alignment error in the use of the
+branch-site test to detect positive selection in genes. Their results
+showed that most aligners caused false positives by over-aligning
+codons and that datasets from mammalian and vertebrate gene families
+contain enough evolutionary divergence to make false positive errors
+resulting from misalignment a legitimate concern.
 
 Reflecting a widespread awareness of the problem of misalignment,
 methods for identifying and removing uncertain or unreliable alignment
 regions have been commonly used in phylogenetic and molecular
-evolutionary analyses. The popular Gblocks applies a set of heuristic
-criteria to identify conserved blocks deemed suitable for phylogenetic
-or evolutionary analysis \citep{Castresana2000Selection} while a
-number of aligners such as T-Coffee \citep{Notredame2000TCoffee} and
-PRANK \citep{Loytynoja2005From} produce estimates of alignment
-confidence or reliability. Alignment confidence scores based on the
-robustness of alignments to guide tree perturbations
-\citep{Penn2010Alignment} or the sampling of suboptimal alignments
-\citep{Kim2011PSAR} have also been proposed. Unfortunately, despite
-their widespread use, the impact of the many available filtering
-methods on phylogenetic and evolutionary analyses has not been well
-studied. Even for a single filtering program, Gblocks, results have
-been contradictory: one simulation-based study found that it improved
-the phylogenetic signal \citep{Talavera2007Improvement} while an
-empirical study across a wide range of taxa found that
+evolutionary analyses. The popular Gblocks program applies a set of
+heuristic criteria to identify conserved blocks deemed suitable for
+phylogenetic or evolutionary analysis \citep{Castresana2000Selection}
+while a number of aligners such as T-Coffee
+\citep{Notredame2000TCoffee} and PRANK \citep{Loytynoja2005From}
+produce estimates of alignment confidence or reliability. Alignment
+confidence scores based on the robustness of alignments to guide tree
+perturbations \citep{Penn2010Alignment} or the sampling of suboptimal
+alignments \citep{Kim2011PSAR} have also been proposed. Unfortunately,
+despite their widespread use, the impact of the many available
+filtering methods on phylogenetic and evolutionary analyses has not
+been well studied. Even for a single filtering program, Gblocks,
+results have been contradictory: one simulation-based study found that
+it improved the phylogenetic signal \citep{Talavera2007Improvement}
+while an empirical study across a wide range of taxa found that
 Gblocks-filtered alignments produced worse phylogenetic trees than
 unfiltered alignments \citep{Dessimoz2010Phylogenetic}. With the
 application of published filtering methods to alignments before
 testing for positive selection becoming standard practice
 \citep{Studer2008Pervasive,Aguileta2009Rapidly}, an analysis of the
-benefit---if any---of alignment filtering to the detection of positive
-selection would seem well-warranted.
+benefits of alignment filtering to the detection of positive selection
+would seem well-warranted.
 
 This paper aims to use a simulation framework to incorporate alignment
 error and alignment filtering into estimates of the error rate and
@@ -259,7 +263,8 @@ clades of organisms with fully-sequenced genomes (Table
 \ref{table_2}).
 \begin{figure}[t]
 \begin{center}
-\includegraphics[scale=0.5]{fig1.pdf}
+%\includegraphics[scale=0.5]{fig1.pdf}
+\includegraphics[scale=0.8]{fig1.pdf}
 \end{center}
 \caption{Phylogenetic trees used for simulation and analysis. The
   original scale for each tree is indicated by a scale bar, but trees
@@ -477,7 +482,8 @@ of simulation conditions.
 
 \begin{figure}[t]
 \begin{center}
-\includegraphics[scale=0.75]{fig2.pdf}
+%\includegraphics[scale=0.75]{fig2.pdf}
+\includegraphics[scale=1.25]{fig2.pdf}
 \end{center}
 \caption{Alignments were simulated without indels for three tree
   shapes and analyzed with SLR, PAML M8, or PAML M2. Fifty replicate
@@ -578,7 +584,8 @@ true alignment. For the indel simulations, the indel rate was held
 constant at 0.1 indel event per substitution.
 \begin{figure}[t]
 \begin{center}
-\includegraphics[scale=0.75]{fig3.pdf}
+%\includegraphics[scale=0.75]{fig3.pdf}
+\includegraphics[scale=1.25]{fig3.pdf}
 \end{center}
 \caption{Sequences were simulated without indels (gray lines) or with
   indels (black lines) using one of three tree shapes, aligned with
@@ -690,6 +697,7 @@ best-performing aligner.
 
 \begin{figure*}[t]
 \begin{center}
+%\includegraphics[scale=0.8]{fig4.pdf}
 \includegraphics[scale=0.8]{fig4.pdf}
 \end{center}
 \caption{Sequences were simulated with indels using one of three tree
@@ -778,6 +786,7 @@ insight into the nature of \prankc alignments and their application to
 
 \begin{figure*}[t]
 \begin{center}
+%\includegraphics[scale=0.65]{fig5.pdf}
 \includegraphics[scale=0.65]{fig5.pdf}
 \end{center}
 \caption{Sequences were simulated using the 17-taxon tree and a range
@@ -1064,4 +1073,3 @@ to a wide variety of evolutionary analyses.
 
 \bibliography{slrsim}
 \end{document}
-

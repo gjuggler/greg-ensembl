@@ -1,4 +1,4 @@
-\begin{table}[b]
+\begin{table}[p]
 \caption{Genome-wide Divergence Estimates for Commonly Analyzed Eukaryotes}
 \begin{center}
 \begin{threeparttable}
