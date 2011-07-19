@@ -1,27 +1,29 @@
 \begin{table}[p]
 \caption{Parameter Values Used in Simulations}
 \begin{threeparttable}
-\centering \footnotesize \tabcolsep 3pt
-%\footnotesize \raggedright
+%\centering \footnotesize \tabcolsep 2pt \raggedright
+\footnotesize \raggedright \tabcolsep 3pt
 \begin{tabular}{
- b{2.5cm} b{1.4cm} b{2cm} b{1.4cm} b{1.4cm} b{2cm} b{1cm} b{1.25cm}
+ b{0.6cm} b{1.8cm} b{1.1cm} b{2cm} b{2.6cm} b{1.4cm} b{2.2cm} b{0.8cm} b{1.2cm}
 }
 \hline
-   Trees 
- & Tree Length
- & Indel Length \newline Distribution 
- & Mean Indel Length
+   Taxa
+ & Tree
+ & MPL
+ & Indel Size \newline Distribution 
+ & Mean~Indel~Length \newline (Std. Dev.)
  & Indel Rate
  & $\omg{}$ Distribution
  & Mean $\omg{}$
  & $p (\omg{}>1)$
 \\
   \hline
-   6-taxon Artificial \newline 17-taxon Bglobin \newline 44-taxon Vertebrates
- & 0.05 - 2.0 \newline
+   6 \newline 17 \newline 44
+ & Artificial \newline $\beta$-globin \newline Vertebrates
+ & 0.05--2.0 \newline
  & power law \newline decay: 1.8 \newline max length: 40
- & 0.33 \newline
- & 0 - 0.2 \newline
+ & 3.33 (5.51) \newline
+ & 0--0.2 \newline
  & lognormal \newline log mean: -1.864 \newline log SD: 1.201
  & 0.277 \newline
  & 0.06 \newline
@@ -30,7 +32,7 @@
 \label{table_1}
 \end{tabular}
 \begin{tablenotes}
-\item [] N{\sc ote}.---{\hskip -.1pt}Tree length is defined as the mean path length of the tree in units of substitutions per synonymous site. Indel lengths are measured in units of codons, and the indel rate is defined as the number of insertion \& deletion events per substitution.
+\item [] N{\sc ote}.---{\hskip -.1pt}MPL is the mean path length of the tree in units of substitutions per synonymous site. Indel lengths are measured in units of codons, and the indel rate is defined as the number of insertion \& deletion events per substitution.
 \end{tablenotes}
 \end{threeparttable}
 \end{table}

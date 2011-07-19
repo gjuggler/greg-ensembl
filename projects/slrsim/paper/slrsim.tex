@@ -2,8 +2,10 @@
 \usepackage{natbib,graphicx,dblfloatfix,multirow,array,threeparttable}
 \usepackage{xspace,bm,amsmath,amssymb}
 \usepackage[nolists,tablesfirst,nomarkers]{endfloat}
-
 \usepackage[a4paper]{geometry}
+\usepackage{color}
+
+\definecolor{red}{rgb}{1,0,0}
 
 \linespread{1.5}
 
@@ -11,6 +13,8 @@
 
 \begin{document}
 
+\newcommand{\mtwo}{PAML M2a\xspace}
+\newcommand{\meight}{PAML M8\xspace}
 \newcommand{\pranka}{PRANK$_{\textrm{AA}}$\xspace}
 \newcommand{\prankc}{PRANK$_{\textrm{C}}$\xspace}
 \newcommand{\omg}{\bm{\omega}\xspace}
@@ -37,8 +41,8 @@ has been systematically studied. Focusing on the sitewise detection of
 positive selection, we performed simulation experiments to quantify
 the false positives and false negatives introduced by alignment error
 and the ability of alignment filters to improve performance. We found
-that some aligners produced many false positive results across a wide
-range of divergence levels, while others produced very few. False
+that some aligners led to many false positive results across a wide
+range of divergence levels, while others resulted in very few. False
 negatives were a problem for all aligners, increasing with
 divergence. Of the aligners tested, PRANK consistently performed the
 best and ClustalW performed the worst. The best alignment filters
@@ -50,9 +54,11 @@ even the error-prone ClustalW alignments. The performance of the true
 alignment and an optimal filtering method suggested that performance
 improvements could be gained by improving aligners or filters to
 reduce the prevalence of false negatives, especially at higher
-divergence levels and indel rates. We conclude that for the sitewise
-evolutionary analysis of most vertebrate, insect and fungal
-phylogenies, the use of unfiltered PRANK alignments is recommended.
+divergence levels and indel rates. \textcolor{red}{As no combination
+  of aligner plus filter significantly outperformed the best aligner
+  alone,} we conclude that for the sitewise evolutionary analysis of
+most vertebrate, insect and fungal phylogenies, the use of unfiltered
+PRANK alignments is recommended.
 
 %}
 
@@ -120,7 +126,7 @@ be less susceptible to alignment error---than less structured
 regions.
 
 Furthermore, the evolutionary divergence of a dataset affects the
-power of \sw inference and the prevalence of indels in different
+power of \sw inference and the prevalence of indels in multiple
 ways. As maximum-likelihood methods for detecting positive selection
 require data in the form of observed substitution events, they show
 little power at low divergence and their highest power at intermediate
@@ -144,17 +150,18 @@ important range of divergence levels.
 A number of empirical analyses have established that errors in gene
 sequencing, annotation and alignment can contribute to errors in
 downstream evolutionary analyses such as phylogeny inference
-\citep{Wong2008Alignment} et and estimates of positive selection
-\citep{Schneider2009Estimates,Markova-Raina2011High} . Most recently,
+\citep{Wong2008Alignment} and estimates of positive selection
+\citep{Schneider2009Estimates,Markova-Raina2011High}. Most recently,
 Markova-Raina and Petrov \citeyearpar{Markova-Raina2011High} showed
 that the detection of positively-selected sites and genes in \Dr
 genomes is highly sensitive to aligner choice, with PRANK's codon
-model consistently producing alignments with the lowest amount of
-positive selection. Still, according to the authors' manual inspection
-of alignments, even positively-selected sites identified with PRANK
-alignments contained a sizable proportion of apparent false positives.
+model \citep{Loytynoja2008PhylogenyAware} consistently producing
+alignments with the lowest amount of positive selection. Still,
+according to the authors' manual inspection of alignments, even
+positively-selected sites identified with PRANK alignments contained a
+sizable proportion of apparent false positives.
 
-A limitation to the analysis of error in empirical datasets is the
+A limitation of the analysis of error in empirical datasets is the
 lack of a benchmark set of true alignments and positively-selected
 sites. Markova-Raina and Petrov \citeyearpar{Markova-Raina2011High}
 used their expected general effect of alignment error (an increase in
@@ -167,9 +174,9 @@ of error: in addition to alignment error, the authors noted that gene
 mis-annotation was responsible for many apparent false positives, and
 there is also an expected error rate from the likelihood inference
 method itself. This limitation leaves important and interesting
-questions regarding the nature of alignment error and its quantitative
-impact on the detection of positive selection left unanswered by
-empirical studies.
+questions, regarding the nature of alignment error and its
+quantitative impact on the detection of positive selection unanswered
+by empirical studies.
 
 Controlled simulation experiments provide a natural framework for
 investigating error rates in detail, allowing one to pinpoint the
@@ -194,48 +201,51 @@ evolutionary analyses. The popular Gblocks program applies a set of
 heuristic criteria to identify conserved blocks deemed suitable for
 phylogenetic or evolutionary analysis \citep{Castresana2000Selection}
 while a number of aligners such as T-Coffee
-\citep{Notredame2000TCoffee} and PRANK \citep{Loytynoja2005From}
-produce estimates of alignment confidence or reliability. Alignment
-confidence scores based on the robustness of alignments to guide tree
-perturbations \citep{Penn2010Alignment} or the sampling of suboptimal
-alignments \citep{Kim2011PSAR} have also been proposed. Unfortunately,
-despite their widespread use, the impact of the many available
-filtering methods on phylogenetic and evolutionary analyses has not
-been well studied. Even for a single filtering program, Gblocks,
-results have been contradictory: one simulation-based study found that
-it improved the phylogenetic signal \citep{Talavera2007Improvement}
-while an empirical study across a wide range of taxa found that
-Gblocks-filtered alignments produced worse phylogenetic trees than
-unfiltered alignments \citep{Dessimoz2010Phylogenetic}. With the
-application of published filtering methods to alignments before
-testing for positive selection becoming standard practice
+\citep{Notredame2000TCoffee} and PRANK
+\citep{Loytynoja2008PhylogenyAware} produce estimates of alignment
+confidence or reliability. \textcolor{red}{GUIDANCE, which measures
+  the robustness of alignment regions to perturbations in the guide
+  tree used for progressive alignment, has also been proposed as an
+  alignment confidence score
+  \citep{Penn2010Alignment}}. Unfortunately, despite their widespread
+use, the impact of the many available \textcolor{red}{alignment
+  scoring and filtering} methods on phylogenetic and evolutionary
+analyses has not been well studied. Even for a single filtering
+program, Gblocks, results have been contradictory: one
+simulation-based study found that it improved the phylogenetic signal
+\citep{Talavera2007Improvement} while an empirical study across a wide
+range of taxa found that Gblocks-filtered alignments produced worse
+phylogenetic trees than unfiltered alignments
+\citep{Dessimoz2010Phylogenetic}. With the application of published
+filtering methods to alignments before testing for positive selection
+becoming standard practice
 \citep{Studer2008Pervasive,Aguileta2009Rapidly}, an analysis of the
 benefits of alignment filtering to the detection of positive selection
 would seem well-warranted.
 
 This paper aims to use a simulation framework to incorporate alignment
 error and alignment filtering into estimates of the error rate and
-power of \sw evolutionary estimates. Our approach is similar to that
-of Anisimova and Yang \citeyearpar{Anisimova2002Accuracy} in that we
-use simulated protein alignments to evaluate methods for detecting \sw
-positive selection, considering each site to be an independent
-hypothesis test producing a positive or negative result. Our
-experimental design also shares some features with Fletcher and Yang's
-\citeyearpar{Fletcher2010Effect} investigation of the performance of
-branch-site method for detecting genewise positive selection under
-alignment error. Like Fletcher and Yang
-\citeyearpar{Fletcher2010Effect}, we simulate codon alignments with
-indels and calculate inferred alignments using a small but diverse
-sample of aligners. Unlike their study, here we focus on \sw detection
-of positive selection occurring throughout a phylogeny (as opposed to
-genewise detection of selection acting at specific branches), we
-explore a wider range of plausible tree sizes, indel rates and
-divergence levels, and we evaluate the impact of a number of alignment
-filtering methods on the \sw analysis. Given the recent proliferation
-of completed and planned vertebrate genomes, we pay special attention
-to choosing simulation parameters and analysis methods similar to
-those commonly encountered in the \sw analysis of vertebrate gene
-families.
+power of \sw evolutionary inference of positive selection. Our
+approach is similar to that of Anisimova et al.
+\citeyearpar{Anisimova2002Accuracy} in that we use simulated protein
+alignments to evaluate methods for detecting \sw positive selection,
+considering each site to be an independent hypothesis test producing a
+positive or negative result. Our experimental design also shares some
+features with Fletcher and Yang's \citeyearpar{Fletcher2010Effect}
+investigation of the performance of branch-site method for detecting
+genewise positive selection under alignment error. Like Fletcher and
+Yang \citeyearpar{Fletcher2010Effect}, we simulate codon alignments
+with indels and calculate inferred alignments using a small but
+diverse sample of aligners. Unlike their study, here we focus on \sw
+detection of positive selection occurring throughout a phylogeny (as
+opposed to genewise detection of selection acting at specific
+branches), we explore a wider range of plausible tree sizes, indel
+rates and divergence levels, and we evaluate the impact of a number of
+alignment filtering methods on the \sw analysis. Given the recent
+proliferation of completed and planned vertebrate genomes, we pay
+special attention to choosing simulation parameters and analysis
+methods similar to those commonly encountered in the \sw analysis of
+vertebrate gene families.
 
 \section*{Methods}
 
@@ -246,11 +256,11 @@ families.
 An overview of the simulation parameters used in this study can be
 found in Table \ref{table_1}. Three rooted trees were used to guide
 the simulation of protein-coding DNA alignments: the artificial
-6-taxon tree used by Anisimova and Yang
+6-taxon tree used by Anisimova et al.
 \citeyearpar{Anisimova2001Accuracy} and Massingham and Goldman
 \citeyearpar{Massingham2005Detecting} rooted at its midpoint, the
-17-taxon vertebrate B-globin tree from Yang et
-al. \citeyearpar{Yang2000CodonSubstitution}, and the 44-taxon
+17-taxon vertebrate $\beta$-globin tree from Yang et
+al. \citeyearpar{Yang2000CodonSubstitution} and the 44-taxon
 vertebrate tree used by the ENCODE project
 \citep{2007Identification,Nikolaev2007Early}. Trees, shown with their
 original branch lengths in Figure \ref{fig_1}, were scaled to
@@ -284,10 +294,9 @@ clades of organisms with fully-sequenced genomes (Table
 
 The Indelible program \citep{Fletcher2009INDELible} was used to
 simulate codon sequences with indels along each phylogenetic tree. The
-length of the root sequence was set to 500 codons, $\bm{\kappa}$ (the
-ratio of transition to transversion substitutions) was fixed at 4, and
-100 replicate alignments were simulated for each set of conditions
-unless otherwise noted. Indel lengths were drawn from a discretized
+length of the root sequence was set to 500 codons and $\bm{\kappa}$ (the
+ratio of transition to transversion substitutions) was fixed at 4.
+Indel lengths were drawn from a discretized
 power-law distribution with an exponential decay parameter of 1.8 and
 a maximum value of 40, yielding a mean indel length of 3.33 codons and
 standard deviation of 5.51 codons. This power-law model of indel
@@ -297,7 +306,7 @@ inspection of alignments from a range of parameter values identified
 the chosen model parameters as resulting in alignments most closely
 resembling those encountered in vertebrate alignments. The ratio of
 insertion to deletion events was set to 1, and the rate of indel
-formation was scaled between 0 to 0.2 indel events per substitution
+formation was varied between 0 and 0.2 indel events per substitution
 per site.
 
 The distribution of \sw selective pressures (embodied by the parameter
@@ -305,29 +314,29 @@ $\omg$, the ratio of the rate of non-synonymous substitution to the
 rate of synonymous substitution) was modeled with a log-normal
 distribution derived from a maximum-likelihood fit to a large dataset
 of \sw selective pressures estimated from mammalian gene trees
-(unpublished data; log-normal parameters shown in Table
+(\citeyearpar{LindbladToh2011High}; log-normal parameters shown in Table
 \ref{table_1}). This distribution, with mean $\omg$ of 0.28 and 6\% of
 sites having $\omg>1$, is consistent with the structure-based
 expectation of many protein sites under purifying selection and few
 under neutral selection or positive selection
 \citep{Smith1970Natural,Kimura1974SomePrinciples}. Indelible's general
 discrete model of \sw $\omg$ variation was used to approximate the
-lognormal distribution by splitting the probability density into 50
+log-normal distribution by splitting the probability density into 50
 equally-spaced bins between $\omg$ values of 0 and 3, with the highest
 bin containing the probability density for all values $\omg>3$.
 
-Branch lengths for each of the simulation trees were multiplied by a
-correction factor before simulation to correct for the difference
-between our definition of branch lengths as the number of synonymous
-substitutions per synonymous site ($dS$) and Indelible's
-interpretation of branch length as the average number of substitutions
-per codon ($t$) \citep{Fletcher2010Effect}. They are related
-approximately by $t=3(NdN+SdS) = 3dS(\bar{\omg{}}N+S)$, where $N$ and
-$S$ are the proportion of nonsynonymous and synonymous sites and
-$\bar{\omg}$ is the mean $\omg$ across all sites. $S$ is approximately 0.3
-when $\bm{\kappa}=4$ \citep{Yang1998Synonymous} and the mean $\omg$ ratio for our chosen
-distribution is 0.277, yielding a $dS$-to-$t$ conversion factor of
-1.48 for all simulations performed.
+Branch lengths for each of the simulation trees were scaled before
+simulation to correct for the difference between our definition of
+branch lengths as the number of synonymous substitutions per
+synonymous site ($dS$) and Indelible's interpretation of branch length
+as the average number of substitutions per codon ($t$)
+\citep{Fletcher2010Effect}. They are related approximately by
+$t=3(NdN+SdS) = 3dS(\bar{\omg{}}N+S)$, where $N$ and $S$ are the
+proportion of nonsynonymous and synonymous sites and $\bar{\omg}$ is
+the mean $\omg$ across all sites. $S$ is approximately 0.3 when
+$\bm{\kappa}=4$ \citep{Yang1998Synonymous} and the mean $\omg$ ratio
+for our chosen distribution is 0.277, yielding a $dS$-to-$t$
+conversion factor of 1.48 for all simulations performed.
 
 \subsection*{Sequence Alignment and Filtering}
 
@@ -352,24 +361,39 @@ run using an increased gap tolerance and a reduced minimum block
 length in order to reduce the amount of each alignment removed
 (command-line parameters {\em b5=a} and {\em b4=3}), and all residues
 from any columns not within an identified conserved block were masked
-with $N$s. GUIDANCE and T-Coffee, which produce individual scores for
-each residue, were handled differently. A cutoff threshold was chosen
-for each method (0.5 for GUIDANCE and 5 for T-Coffee) and residues
-equal to or below that threshold were masked. If the cutoff threshold
-caused greater than 50\% of an alignment's residues to be masked, the
-threshold was relaxed to the highest value for which at least 50\% of
-residues remained unmasked. This cap on the severity of each filter
-was necessary because the scores from both methods were strongly
-affected by the simulation conditions, with much lower average scores
-at higher indel rates and divergences. GUIDANCE was run with 100
-bootstrap replicates and MAFFT as the bootstrap aligner (except when
-\pranka{} or \prankc{} was the original aligner, in which case 30
-bootstrap replicates were generated with \pranka{}) and T-Coffee was
-run using default settings and the {\em evaluate\_mode
-  -output=score\_ascii} command-line parameters to output alignment
-scores.
+with $N$s.
 
-Two unrealistic datasets were produced to serve as controls. First,
+\textcolor{red}{In contrast to Gblocks, GUIDANCE and T-Coffee produce
+  individual scores for each residue,} \textcolor{red}{ allowing for
+  individual residues to be masked instead of entire columns. GUIDANCE
+  generates many replicate alignments, each using a slightly perturbed
+  guide tree, and assigns to each residue a score from 0 to 1 based on
+  how consistently it was placed in the replicate alignments. We ran
+  GUIDANCE with 100 replicates using MAFFT as the aligner, except when
+  \prankc was the original aligner, in which case 30 replicate
+  alignments were produced using \pranka. T-Coffee calculates the
+  consistency between an input multiple alignment and independently
+  calculated pairwise alignments \citep{Notredame2003Using}, rounding
+  and normalizing residue scores into integers between 0 and
+  9. T-Coffee was run using its default settings and the {\em
+    evaluate\_mode --output=score\_ascii} command-line parameters to
+  output alignment scores.}
+
+\textcolor{red}{To filter alignments based on these residue-wise
+  scores, a cutoff threshold was chosen for each method (0.5 for
+  GUIDANCE and 5 for T-Coffee) and residues equal to or below that
+  threshold were masked. On a per-alignment basis, if the default
+  threshold caused greater than 50\% of residues to be masked, then
+  the threshold was relaxed to the highest value for which at least
+  50\% of residues remained unmasked. We found this adjustment
+  necessary because the scores from GUIDANCE and T-Coffee were
+  strongly affected by the simulation conditions, with much lower
+  average scores at higher indel rates and divergences. Requiring at
+  least 50\% of residues to remain unmasked ensured that enough data
+  were available for meaningful evolutionary analysis, mimicking
+  typical treatment of real data sets.}
+
+Two unrealistic but informative datasets were produced to serve as controls. First,
 the true simulated alignment was included in order to evaluate the \sw
 performance without any alignment error. Second, an additional
 filtering method was constructed to represent an unattainable
@@ -384,16 +408,16 @@ connecting all sequences with non-gap residues at the current
 alignment column). This residue-wise score ranges from 0 to 1 and
 reflects the expectation that correctly-aligned evolutionary branch
 length is the main source of information from which \sw inference
-methods derive their power. We refer to this method as the optimal
-method. Scores were handled in a manner similar to GUIDANCE and
+methods derive their power. We refer to this method as the 'optimal'
+filtering method. Scores were handled in a manner similar to GUIDANCE and
 T-Coffee, using a score threshold of 0.5.
 
 \subsection*{\Sw Evolutionary Analysis}
 
 \Sw estimates of selective pressures were calculated using
 maximum-likelihood methods implemented in the Phylogenetic Analysis by
-Maximum Likelihood (PAML, \citealt{Yang2007PAML}) and Sitewise Likelihood Ratio
-(SLR, \citealt{Massingham2005Detecting}) software packages.
+Maximum Likelihood (PAML; \citealt{Yang2007PAML}) and Sitewise Likelihood Ratio
+(SLR; \citealt{Massingham2005Detecting}) software packages.
 
 The $codeml$ program from PAML implements a number of likelihood ratio
 tests (LRTs) for detecting the presence of positive selection in a
@@ -414,7 +438,7 @@ has been shown in simulations to perform as well as or better than
 PAML's \sw random sites models \citep{Massingham2005Detecting}. SLR
 models codon evolution as a continuous-time Markov process where
 substitutions at one site are independent of substitutions at all
-other sites. Importantly, no assumptions are made regarding the
+other sites. No assumptions are made regarding the
 distribution of $\omg$ ratios within the alignment. The value of
 $\omg$ is considered to be an independent parameter at each site:
 after first optimizing shared parameters using the whole alignment,
@@ -424,7 +448,7 @@ based on a likelihood-ratio test where the null model is neutral
 evolution ($\omg=1$) and the alternative model is either purifying or
 positive selection ($\omg<1$ or $\omg>1$, respectively). The raw
 statistic measures the strength of evidence for non-neutral evolution
-at each site; following Massingham
+at each site; following Massingham and Goldman
 \citeyearpar{Massingham2005Detecting} we use a signed version of the
 SLR statistic (created by negating the statistic for sites with
 $\omg<1$) as the test statistic for positive selection.
@@ -441,10 +465,11 @@ further analysis and integration with other genome-referenced data (as
 is often done, for example, using mammalian alignments and a human
 reference). As a result of this reference sequence based mapping,
 sites which were deleted in the reference sequence or inserted in a
-lineage not ancestral to the reference were dropped from the analysis.
+lineage not ancestral to the reference were \textcolor{red}{not
+  included in the final performance analysis.}
 
 To evaluate the power and error rates that might be achieved in
-real-world data analysis, the recommended cutoff thresholds for PAML’s
+real-world data analysis, the recommended cutoff thresholds for PAML's
 Bayesian posterior probabilities and the SLR statistic were used to
 identify positively selected sites. A posterior probability threshold
 of 0.95 was used for PAML \citep{Yang2005Bayes} and a threshold of 3.84,
@@ -486,7 +511,7 @@ of simulation conditions.
 \includegraphics[scale=1.25]{fig2.pdf}
 \end{center}
 \caption{Alignments were simulated without indels for three tree
-  shapes and analyzed with SLR, PAML M8, or PAML M2. Fifty replicate
+  shapes and analyzed with SLR, \meight, or \mtwo. Fifty replicate
   alignments were simulated for each data point. The performance of
   each analysis method, as measured by four summary statistics, is
   plotted as a function of the mean path length (MPL) divergence. From
@@ -500,8 +525,8 @@ of simulation conditions.
 
 \section*{Results and Discussion}
 \subsection*{The Performance of Three Methods for Detecting \Sw Positive Selection}
-We first evaluated the ability of three \sw methods, PAML M2,
-PAML M8 and SLR, to accurately estimate \sw $\omg$ values and to
+We first evaluated the ability of three \sw methods, \mtwo,
+\meight and SLR, to accurately estimate \sw $\omg$ values and to
 detect positive selection under a range of tree lengths in the absence
 of alignment error. Figure \ref{fig_2} shows the TPR, FPR, \tpr{} and \sw $\omg$
 correlation over a range of MPLs for each of the three simulation
@@ -518,20 +543,20 @@ performance at moderate divergence levels (MPL 0.5--1.0) and began
 decreasing at higher values. The downward trend in the 6-taxon tree
 was likely due to the impact of saturation of synonymous sites in the
 very long branches present in such a sparse tree at high divergence
-levels. With lower average branch lengths at equivalent divergence
-levels, the two larger trees showed no signs of decreased performance
-even at a MPL of 2 substitutions per site, which is greater than any
-of the divergence levels found in groups of commonly analyzed
-vertebrate, insect and fungal species (Table \ref{table_2}).
+levels. With lower average branch lengths at equivalent MPLs, the two
+larger trees showed no signs of decreased performance even at a MPL of
+2 substitutions per site, which is greater than any of the divergence
+levels found in groups of commonly analyzed vertebrate, insect and
+fungal species (Table \ref{table_2}).
 
-Comparing between the three \sw methods, we found that at the
+Comparing the three methods for detecting positively selected sites, we found that at the
 recommended cutoff threshold (Figure \ref{fig_2}, top row) SLR showed
 the highest power to detect positive selection in all trees, followed
-by PAML M8 and PAML M2. In the smallest tree, the power of the two
-PAML methods was virtually zero while SLR reached a maximum TPR of ~18\%,
-at MPL=0.5. At the same divergence, SLR yielded TPRs of 25\% and 45\%
-in the 17-taxon and 44-taxon trees, respectively, with PAML M2 ranging
-between 50--75\% of SLR’s power and PAML M8 falling in between the two
+by \meight and \mtwo. In the smallest tree, the power of the two
+PAML methods was virtually zero while SLR reached a maximum TPR of ~18\%
+(at MPL=0.5). At the same divergence, SLR yielded TPRs of 25\% and 45\%
+in the 17-taxon and 44-taxon trees, respectively, with \mtwo ranging
+between 50--75\% of SLR's power and \meight falling between the two
 other methods.
 
 The TPR measurements represent the power that might be achieved in
@@ -552,7 +577,7 @@ three methods' \sw statistics were nearly equally sensitive to
 positive selection under our chosen simulation conditions.
 
 The conservative nature of the default thresholds for PAML and SLR
-have been previously noted
+has been previously noted
 \citep{Anisimova2002Accuracy,Yang2005Bayes,Massingham2005Detecting},
 but the extremely low false positive rates in our simulations showed
 that in the absence of alignment error all three methods would yield
@@ -561,12 +586,12 @@ mammalian-like distribution of $\omg$ values. The low FPRs were likely
 due to the large proportion of sites under moderately strong purifying
 selection in our $\omg$ distribution used for simulation. Such sites
 are less likely to yield false positives than sites under neutral
-evolution, which the null model against which tests for positive
+evolution ($\omg$=1), the null model against which tests for positive
 selection are traditionally controlled.
 
 For the purposes of our indel experiments, the observed similarity in
-error-controlled power levels indicated that the behavior of PAML M2,
-PAML M8, and SLR was similar enough not to warrant separately
+error-controlled power levels indicated that the behavior of \mtwo,
+\meight, and SLR was similar enough not to warrant separately
 evaluating all three methods in the subsequent indel simulation
 experiments. As the runtime for SLR was significantly lower than that
 of either PAML model, all subsequent results are presented only based
@@ -578,9 +603,9 @@ When the indel rate was greater than zero, performance levels varied
 significantly for different tree sizes, alignment algorithms, and
 evolutionary divergences. Figure \ref{fig_3} shows the same
 performance measurements as Figure \ref{fig_2} for simulations without
-indels (gray lines, Figure \ref{fig_2}) and with indels (black lines,
-Figure \ref{fig_2}) analyzed using three different aligners and the
-true alignment. For the indel simulations, the indel rate was held
+indels (gray lines, Figure \ref{fig_3}) and with indels (black lines,
+Figure \ref{fig_3}) analyzed using three different aligners and the
+true alignment. For the indel simulations, the indel rate here was held
 constant at 0.1 indel event per substitution.
 \begin{figure}[t]
 \begin{center}
@@ -606,7 +631,7 @@ true alignment we found a slight decrease in power and $\omg$
 correlation and no noticeable increase in FPR. The decreased power was
 expected, since even in the absence of alignment error alignment
 columns containing gaps harbor less evolutionary information than
-columns flush with sequence data. The lack of increased FPR showed
+columns with complete sequence data. The lack of increased FPR showed
 that SLR retained its conservative statistical performance even when
 analyzing gapped alignments. Surprisingly, at higher divergences (MPL
 $>$ 1.0) under the six-taxon tree, the FPR with indels was lower than
@@ -638,8 +663,7 @@ ClustalW performing worst. The same ranking of aligners with respect
 to detecting positive selection was found by Fletcher and Yang
 \citeyearpar{Fletcher2010Effect}; our results corroborate their
 finding and provide evidence that this ranking may be applicable to a
-wider array of evolutionary analyses than the branch-site tests
-evaluated in their analysis.
+wider array of evolutionary analyses.
 
 Looking at the TPR results for inferred alignments, we observed that
 in the 6-taxon tree the three aligners formed a cluster of lines well
@@ -650,11 +674,13 @@ TPR values, but even \prankc{} showed a 5--10\% reduction compared to
 the true alignment at MPL$=$1.0. These results show that the
 introduction of false negatives is a significant and seemingly
 unavoidable result of alignment error at medium to high divergence
-levels (MPL $>$ 0.5), with even the most powerful aligner producing a
-marked reduction in TPR compared to the true alignment. The \tpr and
-$\omg$ results were qualitatively similar to the TPR results, with the
-\tpr values slightly more spread out between the different aligners
-than the TPRs, and the $\omg$ correlations slightly less so.
+levels (MPL $>$ 0.5), with even the most successful aligner producing
+a marked reduction in TPR compared to the true
+alignment. \textcolor{red}{The \tpr and $\omg$ results in the larger
+  two trees were qualitatively similar to the TPR results, showing
+  that the aligners tested led to different levels of sitewise
+  performance even when controlling for actual error rates or
+  assessing the sitewise $\omg$ correlation.}
 
 The FPRs for infered alignments exhibited a very different trend from
 the other performance measures, with generally higher FPRs than the
@@ -669,7 +695,7 @@ conditions. In the two larger trees, FPRs from inferred alignments
 were less elevated compared to the true alignment, less variable
 between aligners, and relatively constant across the range of
 divergences. ClustalW's FPR ranged between 0.001 to 0.005, while
-\prankc{}'s FPR was virtually identical to the true alignment in the
+\prankc{}'s FPR was virtually identical to that of the true alignment in the
 17-taxon and 44-taxon trees.
 
 We found it useful to combine divergence estimates from Table
@@ -683,17 +709,20 @@ correspondingly lower for ClustalW in all three trees. Thus, at low
 divergences we found that false positives were the main source of
 error from misalignment, and different aligners had highly variable
 tendencies to produce false positive results. At higher vertebrate and
-\Dr divergence levels (MPL$=$0.8--1.0) false negatives became
-much more prevalent. The TPR for all inferred alignments was virtually
-zero in the 6-taxon tree, underscoring the necessity of including many
+\Dr divergence levels (MPL$=$0.8--1.0) false negatives became much
+more prevalent. The TPR for all inferred alignments was virtually zero
+in the 6-taxon tree, underscoring the necessity of including many
 species in the analysis of highly diverged sequences. In the two
-larger trees, \prankc resulted in very few additional false
-positives, but it suffered a 5--10\% reduction in TPR relative to the
-true alignment. Meanwhile, ClustalW showed a 50\% TPR reduction and
+larger trees, \prankc resulted in very few additional false positives,
+but it suffered a 5--10\% reduction in TPR relative to the true
+alignment. Meanwhile, ClustalW showed a 50\% TPR reduction and
 maintained a strongly elevated FPR. At higher divergences and in
 larger trees, false negatives were thus the most persistent effect of
 alignment error, causing a marked reduction in \sw power even with the
-best-performing aligner.
+best-performing aligner. \textcolor{red}{Overall, the ranking of
+  aligners was clear, with \prankc performing better than MAFFT, and
+  MAFFT performing better than ClustalW, across all performance
+  measures and MPL divergence levels.}
 
 \begin{figure*}[t]
 \begin{center}
@@ -717,7 +746,7 @@ best-performing aligner.
 \subsection*{\Sw Power Under a Range of Indel Rates and Divergences}
 
 To explore the effects of alignment error across a wider range of
-simulation conditions, we extended the simulations from Figure
+simulation conditions, we extended the simulations of Figure
 \ref{fig_3} across multiple indel rates. Figure \ref{fig_4} shows
 heatmaps of the TPR and FPR for ClustalW, \prankc and the true
 alignment (Figure \ref{fig_4}A,B) and a heatmap of the
@@ -725,11 +754,14 @@ error-controlled \tpr for all aligners tested (Figure
 \ref{fig_4}C). The results from Figure \ref{fig_3}, which were
 simulated with an indel rate of 0.1, correspond to the middle row of
 each panel in Figure \ref{fig_4}; rows above and below the middle row
-represent higher and lower indel rates, respectively.
+represent higher and lower indel rates, respectively. \textcolor{red}{Similarly, the
+bottom row of each panel in Figure \ref{fig_4} was simulated with an
+indel rate of 0 and corresponds to the 'No Indels' data in Figure
+\ref{fig_3}.}
 
-The TPR values (Figure \ref{fig_4}A) showed a consistent pattern
+The TPR values (Figure \ref{fig_4}A) show a consistent pattern
 across the range of indel rates, with power decreasing as either the
-indel rate or the divergence level increased (except at the lowest
+indel rate or the divergence level increases (except at the lowest
 divergence levels, where the lack of evolutionary information yielded
 slightly lower TPRs in the larger two trees). \prankc{} showed a
 greater ability than ClustalW to maintain a high TPR at higher indel
@@ -757,15 +789,16 @@ divergence---exactly opposite to the trend we expected. \prankc{}'s
 FPR in the 44-taxon tree was equal to or below that of the true
 alignment under almost all conditions.
 
-The error-controlled \tpr results (Figure \ref{fig_4}C) provided a
-comprehensive map of the effect of alignment error on the detection of
+The error-controlled \tpr results (Figure \ref{fig_4}C) provide a
+comprehensive picture of the effect of alignment error on the detection of
 \sw positive selection. The two aligners not shown in the two other
 panels, MAFFT and \pranka, exhibited \tpr values intermediate to those
-from ClustalW and \prankc across the range of parameters tested. As
+from ClustalW and \prankc across the range of parameters tested, with \pranka performing
+better than MAFFT. As
 expected, performance was very similar between aligners at very low
 indel rates. At higher indel rates, most aligners yielded similar
 patterns of low \tpr in the 6-taxon tree, but in the larger two trees
-only ClustalW and MAFFT alignments were unable to achieve high \tpr
+ClustalW and MAFFT alignments were unable to achieve high \tpr
 values, presumably due largely to their elevated FPR in those trees.
 
 It is worth noting the exceptional ability of \prankc to maintain a
@@ -775,7 +808,7 @@ at high indel rates in the 17-taxon tree, FPRs were nearly identical
 to the true alignment across all simulated conditions in the 44-taxon
 tree. This impressive performance suggests that, given a large enough
 number of taxa, \prankc alignments would yield very few erroneous
-false positives in scans for positive selection in sequences with very
+false positives in scans for positive selection in sequences with even very
 high divergence levels. Furthermore, these results showed that false
 negatives contributed more than false positives to \prankc{}'s
 reduction in \sw performance---a novel observation which provides
@@ -793,24 +826,25 @@ insight into the nature of \prankc alignments and their application to
   of indel rates and mean path length (MPL) divergence
   levels. Alignments were inferred using (a) ClustalW or (b) \prankc,
   either left unfiltered or filtered with one of four alignment
-  filters, and analyzed with SLR; true alignments were left unfiltered
-  and separately analyzed with SLR. One hundred fifty replicates were
-  simulated for each set of conditions. Squares are colored according
-  to the ratio of the performance of the indicated filter to the
-  performance of the unfiltered ClustalW or \prankc alignment as
-  measured by one of four summary statistics. In columns from left to
-  right: the number of unfiltered (i.e., non-N) residues remaining
-  in the alignment; the false positive rate (FPR) at the recommended
-  cutoff threshold; the true positive rate (TPR) at the recommended
-  cutoff threshold; the TPR at a 1\% FPR threshold (\tpr). Note that the
-  maximum percentage of filtered residues was capped at 50\% for all
-  methods except Gblocks.}
+  filters (Optimal, T-Coffee, GUIDANCE, Gblocks), and analyzed with
+  SLR; true alignments were left unfiltered and separately analyzed
+  with SLR. One hundred and fifty replicates were simulated for each
+  set of conditions. Squares are colored according to the ratio of the
+  performance of the indicated filter to the performance of the
+  unfiltered ClustalW or \prankc alignment as measured by one of four
+  summary statistics. In columns from left to right: the number of
+  unfiltered (i.e., non-N) residues remaining in the alignment; the
+  false positive rate (FPR) at the recommended cutoff threshold; the
+  true positive rate (TPR) at the recommended cutoff threshold; the
+  TPR at a 1\% FPR threshold (\tpr). Note that the maximum percentage
+  of residues removed by filtering was capped at 50\% for all methods
+  except Gblocks.}
 \label{fig_5}
 \end{figure*}
 
 Having established that alignment error can lead to reduced \sw
 performance through the introduction of false negatives and false
-positives, we tested whether a number of alignment filtering methods
+positives, we tested whether alignment filtering methods
 could reduce error rates and improve the power of \sw detection of
 positive selection. Using sequences simulated from the 17-taxon tree
 and a range of indel rates and divergence levels, we calculated
@@ -841,19 +875,22 @@ increased TPR, further complicating the assessment of filtering
 results based on FPR or TPR alone. As a result, we focused on the
 change in error-controlled \tpr{} as the best single measure of
 whether a filter had successfully improved the \sw power of a dataset
-since this value is sensitive to changes in both the FPR and TPR.
+since this value is sensitive to changes in both the FPR and TPR
+\textcolor{red}{(note that the \tpr{} controls the FPR post-filtering,
+  accounting for the tendency of filtering to reduce the FPR at a
+  given cutoff threshold).}
 
 We first examined the two controls, the unfiltered true alignment and
 the inferred alignments filtered with the optimal filter (top two
 rows, Figure \ref{fig_5}). The true alignment nearly always showed
-reduced FPR and increased TPR and \tpr compared to the inferred
+smaller FPR and greater TPR and \tpr compared to the inferred
 alignments, with a greater magnitude of change relative to the
 ClustalW alignments than to the \prankc alignments. These scores
 represented the direction and an upper limit on the magnitude of
 change that might be achieved by a perfect alignment filter. One
-exception to the general trend was the observation of two data points
-with slightly elevated FPR compared to \prankc alignments at the
-lowest indel rate. This small incosistency may be explained by
+exception to the general trend was the observation of two simulation conditions
+with slightly elevated FPRs in the true alignment compared to \prankc alignments at the
+lowest indel rate. This small inconsistency may be explained by
 stochastic variation in false positive counts, as the absolute value
 of the FPR was very low in both datasets under those conditions (on
 the order of $5\times10^{-4}$, Figure \ref{fig_4}B). A similar slight FPR
@@ -919,9 +956,9 @@ unfiltered alignments. This poor performance was likely due to
 overly-aggressive removal of alignment columns. We could not limit the
 amount of sequence masked by Gblocks, so many alignments saw more than
 70\% of residues removed, resulting in the loss of a large number of
-correctly-aligned true positive sites. Dessimoz et
-al. \citeyearpar{Dessimoz2010Phylogenetic} found Gblocks filtering to
-have a negative effetc on the accuracy of phylogenetic inference; our
+correctly-aligned true positive sites. Dessimoz and Gil
+\citeyearpar{Dessimoz2010Phylogenetic} found Gblocks filtering to have
+a negative effetc on the accuracy of phylogenetic inference; our
 results provide additional evidence in support of their finding,
 suggesting that Gblocks filtering tends to reduce, rather than
 increase, the power and accuracy of alignments when applied to a
@@ -950,7 +987,7 @@ range of divergence levels and indel rates. Filtering was less
 beneficial when applied to \prankc alignments, with T-Coffee reducing
 performance and GUIDANCE yielding only mild \tpr
 improvements. Importantly, GUIDANCE only showed improved performance
-at high divergence levels (e.g., MPL$>$1.6) well above those found in
+at high divergence levels (e.g., MPL$>$1.6), well above those found in
 commonly-analyzed groups of species. Thus, the use of unfiltered
 \prankc alignments would yield the best performance for detecting \sw
 positive selection when analyzing protein-coding sequences across a
@@ -962,11 +999,12 @@ levels.
 In this paper, we investigated the performance of sitewise detection
 of positive selection under a range of tree sizes, indel rates, and
 divergence levels, using simulation parameters designed to approximate
-mammalian protein-coding genes. We evaluated the ability of four
-alignment methods and three alignment filtering methods to accurately
-reconstruct the codon-level homology for sitewise inference, using the
-FPR, TPR, and error-controlled \tpr of the sitewise detection of
-positive selection as our main measures of performance.
+the analysis of mammalian and other typical protein-coding genes. We
+evaluated the ability of four alignment methods and three alignment
+filtering methods to produce alignments for detecting positively
+selected sites, using the FPR, TPR, and error-controlled \tpr of the
+sitewise detection of positive selection as our main measures of
+performance.
 
 The simulation results showed that alignment error can have a
 measurable impact on the error rates and power of the sitewise
@@ -981,7 +1019,7 @@ low divergence levels, suggesting that its use should be avoided even
 when analyzing closely-related sequences. \prankc, on the other hand,
 resulted in very low FPRs even at very high divergences. In
 particular, when the number of sequences was large, its sitewise FPRs
-were virtually indistinguishable from the true alignment.
+were virtually indistinguishable from the true alignment's.
 
 The very low FPRs observed for \prankc alignments conflicted somewhat
 with the results of Fletcher and Yang
@@ -990,7 +1028,7 @@ branch-site test were not under control even with \prankc
 alignments. This apparent discrepancy can be explained by different
 sensitivities to alignment error: the branch-site test would yield
 false positives when misalignment causes apparent positive selection
-along only the foreground branch, while the SLR test would produce
+along only the foreground branch, while the SLR sitewise test would produce
 false positives only when misalignment causes a signal of positive
 selection strong enough to overpower the non-positive signal
 throughout the tree. This effect stems from the different biological
@@ -1024,7 +1062,7 @@ particularly with an eye towards recovering false negatives as
 identified in this study, will be an interesting area for future
 research.
 
-Our simulations did not include biologically realistic models of
+Our simulations did not include fully biologically realistic models of
 spatial or temporal variability in the rate of indel formation or in
 the distribution of selective pressures \citep{Whelan2008Spatial}, but
 we do not expect that such heterogeneity would affect our main
@@ -1060,7 +1098,13 @@ development of more realistic simulations for protein
 evolution---perhaps incorporating structurally-motivated and
 empirically validated models of mutation, indel formation and
 constraint---to further increase the applicability and accuracy of
-such experiments. As genomes rapidly accumulate in the databases and
+such experiments, \textcolor{red}{and we believe that flexible and
+  accessible simulation programs such as INDELible
+  \citep{Fletcher2009INDELible} and PhyloSim \citep{Sipos2011PhyloSim}
+  will play an important role in the quantitative assessment of
+  alignment algorithms and alignment-dependent comaprative analyses.}
+
+As genomes rapidly accumulate in the databases and
 large-scale analyses become the norm, we hope that the development and
 application of alignment methods, which are arguably the most
 important step in any evolutionary analysis, will be based on a
@@ -1068,6 +1112,9 @@ rigorous understanding of their behavior and performance when applied
 to a wide variety of evolutionary analyses.
 
 \section*{Acknowledgments}
+
+GJ was funded by a Gates Cambridge Trust Scholarship and is a member
+of Darwin College, University of Cambridge.
 
 \bibliographystyle{mbe3} \fontsize{9}{10}\selectfont% \itemsep 0pt
 
