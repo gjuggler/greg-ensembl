@@ -2,6 +2,10 @@
 \caption{Genome-wide Divergence Estimates for Commonly Analyzed Eukaryotes}
 \begin{center}
 \begin{threeparttable}
+
+\defcitealias{Hillier2004Sequence}{}
+\defcitealias{Siepel2005Evolutionarily}{}
+
 \footnotesize \tabcolsep 3pt
 \begin{tabular}{
 l r r l
@@ -13,15 +17,15 @@ l r r l
  & Reference
 \\
   \hline
-   Human-Chimp. & 0.01 & (0.005) & \citealp{Nei2010Neutral}
+   Human-Chimp & 0.01 & (0.005) & \citealp{Nei2010Neutral}
 \\ Human-Mouse & 0.43 & (0.215) & \citealp{Nei2010Neutral}
 \\ Human-Mouse & 0.5 - 0.8 & (0.25 - 0.4) & \citealp{Ogurtsov2004Indel}
 \\ Human-Chicken & 0.9 & (0.45) & \citealp{Nei2010Neutral}
-\\ Human-Chicken & 1.66 & (0.83) & \citealp{Hillier2004Sequence}
+\\ Human-Chicken & 1.66 & (0.83) & Hillier et al., 2004 \citetalias{Hillier2004Sequence}
 \\ Human-Zebrafish & 1.38 & (0.69) & \citealp{Nei2010Neutral}
-\\ Vertebrates & -- & 0.75 & \citealp{Siepel2005Evolutionarily}
-\\ Drosophila & -- & 1.0 & \citealp{Siepel2005Evolutionarily}
-\\ Yeasts & -- & 1.25 & \citealp{Siepel2005Evolutionarily}
+\\ Vertebrates & -- & 0.75 & Siepel et al., 2005 \citetalias{Siepel2005Evolutionarily} 
+\\ Drosophila & -- & 1.0 & Siepel et al., 2005
+\\ Yeasts & -- & 1.25 & Siepel et al., 2005
 \\
    \hline
 \label{table_2}
