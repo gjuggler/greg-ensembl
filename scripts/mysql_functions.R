@@ -34,7 +34,8 @@ connect <- function(dbname=NULL) {
   return(con)
 }
 
-dbUpdateVars <- function(conn, dbtable, dataframe=NULL, primary, vars=names(dataframe)) { 
+dbUpdateVars <- function(conn, dbtable, dataframe=NULL, primary, vars=colnames(dataframe)) { 
+  print(paste("dbupdateVars for table", dbtable))
   if (!dbExistsTable(conn, dbtable)) { 
     stop("The target table \"", dbtable, "\" doesn't exist in the database \"", dbGetInfo(conn)$dbname, "\"\n\n", call. = FALSE)
   }
@@ -47,14 +48,23 @@ dbUpdateVars <- function(conn, dbtable, dataframe=NULL, primary, vars=names(data
   if (!all(toupper(vars) %in% toupper(names(dataframe)))) { 
     stop("One or more variables don't exist in the source dataframe\n\n", call. = FALSE) 
   } 
-  if (!(toupper(primary) %in% toupper(dbListFields(con, dbtable)))) { 
+  if (!(toupper(primary) %in% toupper(dbListFields(conn, dbtable)))) { 
     stop("The primary key variable doesn't exist in the target table\n\n", call. = FALSE) 
   } 
-  if (!all(toupper(vars) %in% toupper(dbListFields(con, dbtable)))) { 
+  if (!all(toupper(vars) %in% toupper(dbListFields(conn, dbtable)))) { 
+    print(toupper(vars))
+    print(toupper(dbListFields(conn, dbtable)))
     stop("One or more variables don't exist in the target table\n\n", call. = FALSE) 
   } 
 
   all.vars <- unique(c(primary,vars))
+
+  for (i in 1:length(all.vars)) {
+    cur.var <- all.vars[i]
+    if (is.character(dataframe[, cur.var])) {
+      dataframe[, cur.var] <- gsub("'", '', dataframe[, cur.var])
+    }
+  }
 
   if(length(all.vars) > 1) { 
     pastedvars <- paste("'", apply(dataframe[, all.vars], 1, paste, collapse="', '"), "'", sep="") 

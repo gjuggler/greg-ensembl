@@ -133,6 +133,8 @@ sub _get_alignment_scores {
     $self->run_branchlength($tree, $aln, $pep_aln, $params);
   } elsif ($action =~ m/guidance/i) {
     $self->run_guidance($tree, $aln, $pep_aln, $params);
+  } elsif ($action =~ m/psar/i) {
+    $self->run_psar($tree, $aln, $pep_aln, $params);
   } else {
     $self->throw("Alignment score action not recognized: [$action]!");
   }
@@ -160,13 +162,14 @@ sub get_score_hash {
 
   # Do a hard threshold based on the different filters.
   my $t = 0.9;
-  $t = 7 if ($filter eq 'tcoffee');
+  $t = 5 if ($filter eq 'tcoffee');
   $t = 5 if ($filter eq 'gblocks');
   $t = 0.5 if ($filter eq 'guidance');
   $t = 0.5 if ($filter eq 'optimal');
   $t = 0.5 if ($filter eq 'branchlength');
   $t = 50 if ($filter eq 'prank');
   $t = 50 if ($filter eq 'prank_mean');
+  $t = 0.9 if ($filter eq 'psar');
   
   # Reduce the threshold to the max_mask_t if the default threshold will
   # mask out *more* than [mask_mask_fraction] sites
@@ -840,6 +843,124 @@ sub run_guidance {
   chdir $cwd;
 
 #  return $scores_hash;
+}
+
+sub run_psar {
+  my $self   = shift;
+  my $tree   = shift;
+  my $aln    = shift;
+  my $pep_aln    = shift;
+  my $params = shift;
+
+  $params->{temp_dir} = $self->worker_temp_directory;
+
+  my $dir = $self->worker_temp_directory;
+
+  print join(" ", map {$_->id} $aln->each_seq)."\n";
+
+  my $aln_f = $dir."aln.fasta";
+  Bio::EnsEMBL::Compara::AlignUtils->to_file($aln,$aln_f);
+
+  my $params_f = $dir."params.txt";
+  my $samples_dir = $dir."samples";
+  my $params_s = qq^# [REQUIRED] Parameter for the nucleotide substitutions
+SUBSTPAR=0.6
+# [REQUIRED] Nucleotide background probabilities
+PA=0.3
+PC=0.2
+PG=0.2
+PT=0.3
+# [OPTIONAL]State transition probabilities for states, M, IS, and IA
+#MtoIS=0.02
+#MtoIA=0.02
+#IStoIS=0.8
+#IAtoIA=0.8
+#IAtoIS=0.00001
+#IStoIA=0.00001^;
+  open(OUT, ">$params_f");
+  print OUT $params_s."\n";
+  close(OUT);
+
+  my $cwd = cwd();
+  chdir $dir;
+  
+  my $cmd = qq^psar ${aln_f} ${params_f} ${samples_dir}^;
+  my $rc = system($cmd);
+  ($rc == 0) or die("PSAR failed: $? ($!)");
+
+  chdir $cwd;
+
+  # Parse the PSAR output into residue scores -- we need to take an average pair-score
+  # for each residue.
+  my $pair_scores_f = $dir."PSAR_pair.txt";
+  die unless (-e $pair_scores_f);
+  open(IN, $pair_scores_f);
+  my @lines = <IN>;
+  close(IN);
+
+  my $pairs_hash;
+  shift @lines; # Remove the header line.
+  foreach my $line (@lines) {
+    chomp $line;
+    my @toks = split("\\s+", $line);
+    my ($seq1, $seq2, $pos1, $pos2, $score) = @toks;
+    my $pair_key = join('_',$seq1,$seq2,$pos1,$pos2);
+    $pairs_hash->{$pair_key} = $score;
+    $pair_key = join('_',$seq2,$seq1,$pos2,$pos1);
+    $pairs_hash->{$pair_key} = $score;
+    #print $pair_key . " $score\n";
+  }
+
+  my @seqs = $aln->each_seq;
+  my @pep_seqs = $pep_aln->each_seq;
+  my $seq_x;
+  my $seq_y;
+  foreach my $i (1 .. $pep_aln->length) {
+    foreach my $x (0 .. scalar(@seqs)-1) {
+      $seq_x = $seqs[$x];
+      my $pep_seq = $pep_seqs[$x];
+      my $pep_location = $pep_seq->location_from_column($i);
+      my $score_sum = 0;
+      my $score_denominator = 0;
+      if (defined $pep_location && $pep_location->location_type() eq 'EXACT') {
+        my $start_j = ($i - 1) * 3 + 1;
+        foreach my $j ( $start_j,  $start_j + 1, $start_j + 2 ) {
+          my $location = $seq_x->location_from_column($j);
+          foreach my $y (0 .. scalar(@seqs)-1) {
+            next if ($y == $x);
+            $seq_y = $seqs[$y];
+            my $location_b = $seq_y->location_from_column($j);
+            if (defined $location && $location->location_type() eq 'EXACT' &&
+                defined $location_b && $location_b->location_type() eq 'EXACT') {
+              my $loc_x = $location->start;
+              my $loc_y = $location_b->start;
+
+              my $pair_id = join('_', $x+1, $y+1, $loc_x, $loc_y);
+              my $pair_score = $pairs_hash->{$pair_id};
+              #print $pair_id."\n";
+              #print "$i $j $x $y $pair_score\n";
+              die unless (defined $pair_score);
+
+              $score_sum += $pair_score;
+              $score_denominator += 1;
+            } else {
+              # Nothing - gap in other sequence!
+            }
+          }
+        }
+      } else {
+        $self->set_score($pep_aln, $seq_x->id, $i, '-');
+      }
+      
+      # Take the mean pairwise score across all codon positions.
+      my $mean_score = 1;
+      if ($score_denominator > 0) {
+        $mean_score = $score_sum / $score_denominator;
+      }
+      #print $seq_x->id." ".$i." ".$mean_score."\n";
+      $self->set_score($pep_aln, $seq_x->id, $i, $mean_score);
+    }
+  }
 }
 
 sub run_prank {
