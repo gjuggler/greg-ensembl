@@ -4,6 +4,7 @@
 \usepackage[nolists,tablesfirst,nomarkers]{endfloat}
 \usepackage[a4paper,hmargin=2.5cm,vmargin=2.5cm]{geometry}
 \usepackage{color}
+%\usepackage{ulem}
 
 \definecolor{red}{rgb}{1,0,0}
 
@@ -23,9 +24,11 @@
 \newcommand{\tpr}{TPR$_{1\%}$\xspace}
 \newcommand{\sw}{sitewise\xspace}
 \newcommand{\Sw}{Sitewise\xspace}
-\newcommand{\Dr}{{\em Drosophila}\xspace}
+\newcommand{\Dr}{{\emph{Drosophila}}\xspace}
 
 \title{The effects of alignment error and alignment filtering on the \sw detection of positive selection}
+%%\title{The effects of alignment error and alignment filtering on the \sw detection of positive selection in mammals}
+%\title{The effects of alignment error and alignment filtering on the \sw detection of positive selection in vertebrate genomics}
 \author{{Gregory Jordan and Nick Goldman}}
 %\affiliation{European Bioinformatics Institute, Wellcome Trust Genome Campus, Hinxton, Cambridgeshire, CB10 1SD, United Kingdom}}
 \maketitle
@@ -34,36 +37,36 @@
 
 %\mbeabstract{% 
 \section*{Abstract}
-
-The effects of alignment error on many types of evolutionary inference
-are not well understood. Alignment filters are commonly applied to try
-to reduce errors resulting from misalignment, but neither the
-prevalence of such errors nor the ability of filters to reduce them
-has been systematically studied. Focusing on the sitewise detection of
-positive selection, we performed simulation experiments to quantify
-the false positives and false negatives introduced by alignment error
-and the ability of alignment filters to improve performance. We found
-that some aligners led to many false positive results across a wide
-range of divergence levels, while others resulted in very few. False
-negatives were a problem for all aligners, increasing with
-divergence. Of the aligners tested, PRANK consistently performed the
-best and ClustalW performed the worst. The best alignment filters
-showed good ability to reduce the error rates from ClustalW
-alignments, but they failed to improve the performance of PRANK
-alignments under most circumstances. Of the filters tested, GUIDANCE
-performed the best and Gblocks performed the worst, failing to improve
-even the error-prone ClustalW alignments. Controls using the true
-alignment and an optimal filtering method suggested that performance
-improvements could be gained by improving aligners or filters to
-reduce the prevalence of false negatives, especially at higher
-divergence levels and indel rates. As no combination of aligner plus
-filter significantly outperformed the best aligner alone, we conclude
-that for the sitewise evolutionary analysis of most vertebrate, insect
-and fungal phylogenies, the use of unfiltered PRANK alignments is
-recommended.
-
-%}
-
+\textcolor{red}{
+Alignment filters are commonly applied to try to reduce errors
+resulting from misalignment, but the prevalence of such errors and the
+ability of filters to reduce them is not well understood.
+% 
+Focusing on the sitewise detection of positive selection across a wide
+range of divergence levels and indel rates, we performed simulation
+experiments to quantify the false positives and false negatives
+introduced by alignment error and the ability of alignment filters to
+improve performance.
+%
+We found that some aligners led to many false positives while others
+resulted in very few.  False negatives were a problem for all
+aligners, increasing with divergence. Of the aligners tested, PRANK's
+codon-based alignments consistently performed the best and ClustalW
+performed the worst.
+%
+Of the filters tested, GUIDANCE performed the best and Gblocks
+performed the worst. Although some filters showed good ability to
+reduce the error rates from ClustalW and MAFFT alignments, none were
+found to substantially improve the performance of PRANK alignments
+under most \textcolor{red}{conditions}.
+% 
+Our results revealed distinct trends in error rates and power levels
+for aligners and filters within a biologically plausible parameter
+space. Controls using the true alignment and an optimal filtering
+method suggested that performance improvements could be gained by
+improving aligners or filters to reduce the prevalence of false
+negatives, especially at higher divergence levels and indel rates.
+}
 %\keywords{Alignment, positive selection, alignment filtering, indels}
 
 %\email{greg@ebi.ac.uk}
@@ -227,26 +230,51 @@ would seem well-warranted.
 This paper aims to use a simulation framework to incorporate alignment
 error and alignment filtering into estimates of the error rate and
 power of \sw evolutionary inference of positive selection. Our
-approach is similar to that of Anisimova et al.
+approach builds from that of Anisimova et al.
 \citeyearpar{Anisimova2002Accuracy} in that we use simulated protein
 alignments to evaluate methods for detecting \sw positive selection,
 considering each site to be an independent hypothesis test producing a
-positive or negative result. Our experimental design also shares some
-features with Fletcher and Yang's \citeyearpar{Fletcher2010Effect}
-investigation of the performance of branch-site method for detecting
-genewise positive selection under alignment error. Like Fletcher and
-Yang \citeyearpar{Fletcher2010Effect}, we simulate codon alignments
-with indels and calculate inferred alignments using a small but
-diverse sample of aligners. Unlike their study, here we focus on \sw
-detection of positive selection occurring throughout a phylogeny (as
-opposed to genewise detection of selection acting at specific
-branches), we explore a wider range of plausible tree sizes, indel
-rates and divergence levels, and we evaluate the impact of a number of
-alignment filtering methods on the \sw analysis. Given the recent
-proliferation of completed and planned vertebrate genomes, we pay
-special attention to choosing simulation parameters and analysis
-methods similar to those commonly encountered in the \sw analysis of
-vertebrate gene families.
+positive or negative result. \textcolor{red}{As we simulate codon
+  alignments with indels and calculate inferred alignments using a
+  small but diverse sample of aligners and alignment filters, the
+  experimental design also shares some features with Fletcher and
+  Yang's \citeyearpar{Fletcher2010Effect} investigation of the
+  performance of the branch-site method for detecting positive
+  selection under alignment error and Privman et al.'s
+  \citeyearpar{Privman2011Improving} study of the effect of alignment
+  filtering on detecting positive selection in HIV-1 genes. However,
+  the present work differs from previous studies in a number of
+  important ways.}
+
+\textcolor{red}{Unlike Fletcher and Yang, here we focus on \sw
+  detection of sitewise positive selection occurring throughout a
+  phylogeny (as opposed to genewise detection of selection acting at
+  specific branches) and we evaluate the impact of a number of
+  alignment filtering methods on the \sw analysis.}
+
+\textcolor{red}{Privman et al., whose simulations centered on the
+  evolutionary chracteristics of three HIV-1 genes, concluded that
+  alignment filtering improves the performance of positive selection
+  inference by removing false positives. While this may be true for
+  the three genes (and perhaps for HIV-1 in general), HIV-1 is known
+  to evolve with widespread positive selection in the human host
+  \citep{Yang2003Widespread}. Results valid for these three HIV-1
+  genes may not be widely applicable to large-scale vertebrate and
+  mammalian comparative datasets, which exhibit less adaptive
+  evolution \citep{Kosiol2008Patterns} and which comprise a larger
+  diversity of protein structures and a wider range of species
+  divergence levels.}
+
+\textcolor{red}{We hypothesize that these factors may strongly affect
+  the the performance of methods for alignment and detection of
+  selection. Accordingly, our simulations employ parameters similar to
+  those commonly encountered in the \sw analysis of vertebrate gene
+  families and encompass a wide range of biologically plausible indel
+  rates and divergence levels. Although our main purpose is to
+  understand the behaviour of various aligners and filters within our
+  range of simulations, we will make use of the above-noted
+  methodological similarities by pointing out those aspects of our
+  study which agree with or contradict the literature where possible.}
 
 \section*{Methods}
 
@@ -366,7 +394,10 @@ with $N$s.
 
 GUIDANCE and T-Coffee produce individual scores for each residue,
 allowing individual residues to be masked instead of entire
-columns. GUIDANCE generates many replicate alignments, each using a
+columns. \textcolor{red}{Privman et al. \citeyearpar{Privman2011Improving} found a
+residue-based filter to be more effective than its column-based
+equivalent, so we filtered residues instead of alignment columns where
+possible}. GUIDANCE generates many replicate alignments, each using a
 slightly perturbed guide tree, with either MAFFT or \pranka as the
 bootstrap aligner. The program then assigns to each residue from the
 input alignment a score from 0 to 1 based on how consistently it was
@@ -735,7 +766,7 @@ levels.
 \includegraphics[scale=0.8]{fig4.pdf}
 \end{center}
 \caption{Sequences were simulated with indels using one of three tree
-  shapes (t-, 17- or 44-taxon) and a range of indel rates and mean
+  shapes (6-, 17- or 44-taxon) and a range of indel rates and mean
   path length (MPL) divergence levels. Alignments were inferred with
   one of four aligners (ClustalW, MAFFT, \pranka{}, \prankc) and
   analyzed with SLR; true alignments were separately analyzed with
