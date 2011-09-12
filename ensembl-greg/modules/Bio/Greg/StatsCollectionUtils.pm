@@ -110,21 +110,40 @@ sub mean_copy_count {
   return $mean;
 }
 
+sub species_with_dups {
+  my $class = shift;
+  my $tree  = shift;
+
+  my @leaves = $tree->leaves;
+  my $taxid_hash;
+  map {$taxid_hash->{$_->taxon_id} = 1} @leaves;
+
+  my @dup_list;
+  foreach my $taxid (keys %$taxid_hash) {
+    my $count = scalar(grep {$_->taxon_id == $taxid} @leaves);
+    if ($count > 1) {
+      push @dup_list, $taxid;
+    }
+  }
+  return join(' ', @dup_list);
+}
+
 sub duplication_count {
   my $class = shift;
   my $tree  = shift;
 
-  my $dup_sum  = 0;
-  my $node_sum = 0;
-  foreach my $node ( $tree->nodes ) {
-    my $is_duplication = $node->get_tagvalue("Duplication") || 0;
-    my $is_dubious     = $node->get_tagvalue("dubious_dup") || 0;
-    if ( $is_duplication && !$is_dubious ) {
-      $dup_sum++;
+  my @leaves = $tree->leaves;
+  my $taxid_hash;
+  map {$taxid_hash->{$_->taxon_id} = 1} @leaves;
+
+  my $dup_count = 0;
+  foreach my $taxid (keys %$taxid_hash) {
+    my $count = scalar(grep {$_->taxon_id == $taxid} @leaves);
+    if ($count > 1) {
+      $dup_count++;
     }
-    $node_sum++;
   }
-  return $dup_sum;
+  return $dup_count;
 }
 
 sub duplication_fraction {
@@ -397,15 +416,25 @@ sub add_ungapped_branch_lengths {
 
   print "  calculating ungapped branch length...\n";
 
-  my $tmp = $self->worker_temp_directory;
-  my $tree_f = "${tmp}/tree.nh";
-  my $aln_f = "${tmp}/aln.fasta";
+  my $new_hash;
+  foreach my $i (1 .. $pep_aln->length) {
+    $new_hash->{$i} = $psc_hash->{$i} if (defined $psc_hash->{$i});
+  }
 
-  Bio::EnsEMBL::Compara::TreeUtils->to_file($tree, $tree_f);
-  Bio::EnsEMBL::Compara::AlignUtils->to_file($pep_aln, $aln_f);
+  my @values;
+#  my @values = Bio::EnsEMBL::Compara::AlignUtils->nongap_branch_lengths($tree, $pep_aln);
 
-  my $csr = Bio::Greg::EslrUtils->baseDirectory . "/scripts/collect_sitewise.R";
-  my $cmd = qq^
+  my $use_r = 1;
+  if ($use_r) {
+    my $tmp = $self->worker_temp_directory;
+    my $tree_f = "${tmp}/tree.nh";
+    my $aln_f = "${tmp}/aln.fasta";
+
+    Bio::EnsEMBL::Compara::TreeUtils->to_file($tree, $tree_f);
+    Bio::EnsEMBL::Compara::AlignUtils->to_file($pep_aln, $aln_f);
+
+    my $csr = Bio::Greg::EslrUtils->baseDirectory . "/scripts/collect_sitewise.R";
+    my $cmd = qq^
 source("${csr}")
 library(phylosim)
 
@@ -421,15 +450,18 @@ for (i in 1:nrow(sites)) {
   print(sites[i,'nongap.bl'])
 }
 ^;
-  my @values = $self->_run_r_with_sites($psc_hash,$cmd);
+    @values = $self->_run_r_with_sites($new_hash,$cmd);
+  }
 
   for (my $i=0; $i < scalar(@values); $i++) {
     my $pos = $values[$i];
     $i++;
     my $nongap_bl = $values[$i];
 
+    #print "$pos $nongap_bl\n";
     $psc_hash->{$pos}->{nongap_bl} = $nongap_bl;
   }
+  print "Done!\n";
 }
 
 sub calculate_fractions {

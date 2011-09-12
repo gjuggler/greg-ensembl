@@ -142,6 +142,12 @@ my $taxid_counter = 999999;
   return $nhx;
 };
 
+*Bio::SimpleAlign::tx = sub {
+  my $self = shift;
+  return Bio::EnsEMBL::Compara::AlignUtils->translate($self, {});
+};
+
+
 sub load_registry {
   my $class = shift;
   if ( $ENV{'USER'} =~ /gj1/ ) {
@@ -1138,7 +1144,7 @@ sub restrict_aln_to_tree {
   foreach my $leaf ( $tree->leaves ) {
     $ok_id_hash->{ $leaf->name } = 1;
     if ($leaf->isa("Bio::EnsEMBL::Compara::Member")) {
-      print "MEMBER\n";
+      #print "MEMBER\n";
       $ok_id_hash->{ $leaf->stable_id } = 1;
       my $taxon = $leaf->taxon;
       $ok_id_hash->{ $leaf->genome_db->name }    = 1;
@@ -2398,7 +2404,7 @@ sub get_compara_or_genomic_aln {
   }
 
   # Flatten and filter genomic aligns.
-  if ( $aln_type =~ m/(genomic|compara)/i ) {
+  if ( $aln_type =~ m/(genomic)/i || $aln_type =~ m/(compara)/i && $params->{flatten_aln}) {
     print "Before flattening: " . $aln->length . "\n";
     print $ref_member->stable_id."\n";
     print $ref_member->name."\n";

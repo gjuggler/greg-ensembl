@@ -127,6 +127,8 @@ sub _get_alignment_scores {
     $score_hash = $self->run_columns($tree,$aln,$pep_aln, $params);
   } elsif ($action =~ m/none/i) {
     $self->run_none($tree, $aln, $pep_aln, $params);
+  } elsif ($action =~ m/nofps/i) {
+    $self->run_none($tree, $aln, $pep_aln, $params);
   } elsif ($action =~ m/true/i) {
     $self->run_none($tree, $aln, $pep_aln, $params);
   } elsif ($action =~ m/branchlength/i) {    
