@@ -4,6 +4,7 @@ use strict;
 use Bio::Greg::Codeml;
 use Bio::Greg::Hive::PhyloAnalysis;
 use File::Path;
+use List::Util;
 
 use Bio::Align::DNAStatistics;
 
@@ -20,7 +21,7 @@ sub param_defaults {
   return {
     aln_type                    => 'compara',
     output_table => 'stats_windows',
-    window_sizes => '30,9999'
+    window_sizes => '9999'
   };
 }
 
@@ -35,6 +36,10 @@ sub fetch_input {
   # Create tables if necessary.
   $self->create_table_from_params( $self->compara_dba, 'windows',
                                    $self->windows_table );
+
+  $self->create_table_from_params( $self->compara_dba, 'vars',
+                                   $self->vars_table );
+
 }
 
 sub write_output {
@@ -51,6 +56,8 @@ sub data_label {
 
 sub run {
   my $self = shift;
+
+  #$self->param('force_recalc', 1);
 
   my $gene_id = $self->param('gene_id');
   my $mba = $self->compara_dba->get_MemberAdaptor;
@@ -118,6 +125,8 @@ sub run {
     $self->param('icode', 0);
   }
 
+  $self->_collect_vars($ref_member);
+
   my $c_dba = $self->compara_dba;
   my $params = $self->params;
 
@@ -154,6 +163,10 @@ sub run {
   if (scalar($aln->each_seq) < 3) {
     $self->fail_and_die("seq_count", "Not enough sequences for PAML analysis!");
   }
+
+  $self->_dnds($aln, 9606, 9598, 'chimp');
+  $self->_dnds($aln, 9606, 9600, 'orang');
+  $self->_dnds($aln, 9606, 9544, 'rhesus');
 
   $self->_run_paml($tree, $aln, $ref_member);
 
@@ -234,6 +247,142 @@ sub _mask_aln {
     Bio::EnsEMBL::Compara::AlignUtils->to_file($aln, $masked_f);
   }
   return $aln;
+}
+
+sub _collect_vars {
+  my $self = shift;
+  my $ref_member = shift;
+
+  my $ref_tx = $ref_member->get_Transcript;
+  my $ref_tx_id = $ref_tx->stable_id;
+
+  my $registry = 'Bio::EnsEMBL::Registry';
+  my $var_a = $registry->get_adaptor('Human','variation','variationfeature');
+
+  my $gene = $ref_member->get_Gene;
+  my $slice = $gene->feature_Slice;
+  
+  my $var_features = $var_a->fetch_all_by_Slice($slice);
+  my $all_pn = 0;
+  my $all_ps = 0;
+  my $filt_pn = 0;
+  my $filt_ps = 0;
+  my $allkg_pn = 0;
+  my $allkg_ps = 0;
+  foreach my $var_f (@$var_features) {
+    my $sets = $var_f->get_all_VariationSets;
+    my $is_kg = 0;
+    my $set_name = '';
+    foreach my $set (@$sets) {
+      if ($set->name =~ m/^1000 genomes/i) {
+        $is_kg = 1;
+      }
+      $set_name = $set->name;
+    }
+
+    my $ts_vs = $var_f->get_all_TranscriptVariations;
+    foreach my $ts_v (@$ts_vs) {
+      next unless ($ts_v->transcript_stable_id eq $ref_tx_id);
+
+      my $consequences = $ts_v->consequence_type;
+      my $consequence = @{$consequences}[0];
+
+      my $allele_freq = 0;
+      # Keep only synonymous or non-synonymous consequences.
+      if ($consequence =~ m/synonymous/gi) {
+        $allele_freq = allele_freq($var_f);
+        printf "  %s %s %s %.2f\n", $var_f->variation_name, $var_f->allele_string, $consequence, $allele_freq;
+
+        if ($consequence =~ m/NON_SYNONYMOUS/i) {
+          $all_pn++;
+          $allkg_pn++ if ($is_kg);
+          $filt_pn++ if ($is_kg && $allele_freq > 0.15);
+        } else {
+          $all_ps++;
+          $allkg_ps++ if ($is_kg);
+          $filt_ps++ if ($is_kg && $allele_freq > 0.15);
+        }
+
+        my $var_p = $self->replace($self->params, {
+          consequence => $consequence,
+          set_name => $set_name,
+          allele_freq => $allele_freq,
+          allele_string => $var_f->allele_string,
+          seq_region_start => $var_f->seq_region_start,
+          var_name => $var_f->variation_name
+                                   });
+        $self->store_params_in_table($self->dbc, 'vars', $var_p);
+      }
+    }
+  }
+  
+  $self->param('all_pn', $all_pn);
+  $self->param('all_ps', $all_ps);
+  $self->param('filt_pn', $filt_pn);
+  $self->param('filt_ps', $filt_ps);
+  $self->param('allkg_pn', $allkg_pn);
+  $self->param('allkg_ps', $allkg_ps);
+}
+
+sub _dnds {
+  my $self = shift;
+  my $aln = shift;
+  my $tax_a = shift;
+  my $tax_b = shift;
+  my $lbl = shift;
+
+  sub _get_seq {
+    my $aln = shift;
+    my $tax_id = shift;
+
+    my $ptrn;
+    $ptrn = "ENSP0" if ($tax_id == 9606);
+    $ptrn = "ENSMMUP0" if ($tax_id == 9544);
+    $ptrn = "ENSPPYP0" if ($tax_id == 9600);
+
+    my @seqs = $aln->each_seq;
+    my ($seq) = grep {$_->id =~ m/$ptrn/i} @seqs;
+    return $seq;
+  };
+
+  my $seq_a = _get_seq($aln, $tax_a);
+  my $seq_b = _get_seq($aln, $tax_b);
+
+  return unless (defined $seq_a);
+  return unless (defined $seq_b);
+
+  my $dn = 0;
+  my $ds = 0;
+
+  for (my $i=1; $i < $seq_a->length / 3; $i++) {
+    my $lo = ($i - 1) * 3 + 1;
+    my $hi = $lo + 2;
+    my $codon_a = $seq_a->subseq($lo, $hi);
+    my $codon_b = $seq_b->subseq($lo, $hi);
+
+    next if ($codon_a =~ m/-/ || $codon_b =~ m/-/);
+    next if ($codon_a =~ m/n/i || $codon_b =~ m/n/i);
+
+    my $diff = 0;
+    $diff = 1 if ($codon_a ne $codon_b);
+
+    my $codontable_id = $self->param('bioperl_codontable_id');
+    $codontable_id = 1 unless (defined $codontable_id);
+    my $aa_a = new Bio::PrimarySeq(-seq => $codon_a)->translate( -codontable_id => $codontable_id)->seq;
+    my $aa_b = new Bio::PrimarySeq(-seq => $codon_b)->translate( -codontable_id => $codontable_id)->seq;
+
+    my $nsyn = 0;
+    $nsyn = 1 if ($aa_a ne $aa_b);
+
+    #print "$aa_a $aa_b $codon_a $codon_b  non-synonymous\n" if ($nsyn);
+    #print "$aa_a $aa_b $codon_a $codon_b  synon\n" if ($diff && !$nsyn);
+    
+    $dn++ if ($nsyn);
+    $ds++ if ($diff && !$nsyn);
+  }
+
+  $self->param($lbl."_dn", $dn);
+  $self->param($lbl."_ds", $ds);
 }
 
 sub _run_paml {
@@ -501,7 +650,7 @@ sim <- PhyloSim(); sim\$.alignment <- pep.aln
 plotAlignment(sim, axis.text.size=12, aln.plot.chars=T, aln.char.text.size=3, num.pages=n.pages)
 dev.off()
 ^;
-  Bio::Greg::EslrUtils->run_r($cmd);
+  #Bio::Greg::EslrUtils->run_r($cmd);
   }
 }
 
@@ -599,13 +748,17 @@ sub _remove_paralogs {
         printf "%s %.3f\n", $other_id, $dist;
         my ($other_seq) = grep {$_->id eq $other_id} $aln->each_seq;
 
-        $min_id = $other_id if ($dist < $min_dist && $dist > 0);
-        $min_dist = $dist if ($dist < $min_dist && $dist > 0);
+        $min_id = $other_id if ($dist <= $min_dist && $dist > 0);
+        $min_dist = $dist if ($dist <= $min_dist && $dist > 0);
       }
+
+      print "Min ID for $taxon_id: $min_id $min_dist\n";
 
       foreach my $entry (@entries) {
           # Remove all but the closest paralog from the alignment.
         if ($entry->stable_id ne $min_id) {
+          my $cur_id = $entry->stable_id;
+          print "Removing $cur_id\n";
           $aln = Bio::EnsEMBL::Compara::AlignUtils->remove_seq_from_aln($aln, $entry->stable_id);
         }
       }
@@ -818,6 +971,20 @@ sub genes_table {
     m7_lnl => 'float',
     m8_lnl => 'float',
 
+    all_ps => 'int',
+    all_pn => 'int',
+    filt_ps => 'int',
+    filt_pn => 'int',
+    allkg_pn => 'int',
+    allkg_ps => 'int',
+    
+    chimp_ds => 'int',
+    chimp_dn => 'int',
+    orang_ds => 'int',
+    orang_dn => 'int',
+    rhesus_ds => 'int',
+    rhesus_dn => 'int',
+
     masked_nucs => 'int',
     masked_ids => 'string',
     missing_species => 'string',
@@ -825,6 +992,27 @@ sub genes_table {
 
     unique_keys => 'data_id',    
   };
+}
+
+sub vars_table {
+  my $self = shift;
+
+  my $structure = {
+    job_id => 'int',
+    data_id => 'int',
+    gene_name => 'char32',
+    seq_region_start => 'int',
+    var_name => 'char32',
+
+    set_name => 'char32',
+    allele_string => 'char32',
+    allele_freq => 'float',
+    consequence => 'char32',
+
+    unique_keys => 'data_id,var_name'
+  };
+  
+  return $structure;
 }
 
 sub windows_table {
@@ -867,6 +1055,56 @@ sub windows_table {
   };
 
   return $structure;
+}
+
+sub allele_freq {
+	my $vf = shift;
+
+	my $ref_allele = $vf->ref_allele_string;
+
+	my %freqs;
+
+	for my $allele (@{$vf->get_all_Alleles}) {
+		
+		if(!defined $allele->population){ 
+			#print "fail: pop\n";
+			next;
+		}
+
+		my $pop_name = $allele->population->name;
+
+		if($pop_name !~ /^1000GENOMES/){ 
+			#print "fail: not 1000G $pop_name\n";
+			next 
+		};
+
+		if($allele->allele eq $ref_allele){
+			#print "fail: ref_allele " . $allele->allele . "\n";
+			next;
+		}
+
+		if(defined $allele->frequency){ 
+			$freqs{$pop_name} += $allele->frequency;
+		} else {
+			#print "fail: not freq\n";
+		}
+
+	}
+
+	my @tmp = values %freqs;
+
+	my $nr_freqs = scalar @tmp;
+	
+	if($nr_freqs == 0){
+		return 'NA';
+	}
+
+	my $average_freq = ( List::Util::sum(@tmp)/$nr_freqs);
+
+	#print Dumper \%freqs;
+
+	return $average_freq;
+
 }
 
 
