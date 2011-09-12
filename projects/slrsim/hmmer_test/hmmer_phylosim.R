@@ -1,8 +1,10 @@
+library(R.oo)
+library(ape)
+library(ggplot2)
 source("~/src/greg-ensembl/projects/phylosim/PhyloSimSource.R")
-source("~/src/greg-ensembl/projects/phylosim/Plots.R")
+source("~/src/greg-ensembl/projects/phylosim/PhyloSimPlots.R")
 
 read.hmmer <- function(file) {
-
   lines <- readLines(file)
   lines.toks <- strsplit(lines, "\\s+")
 
@@ -69,7 +71,7 @@ conv.probs <- function(x) {
 
 profile.to.phylosim.seq <- function(profile) {
   n.sites <- length(profile)
-  #n.sites <- 20
+  #n.sites <- 10  # Shorten the profile for quicker testing...
 
   seq <- CodonSequence(length=n.sites)
   gy <- GY94(kappa = 2)
@@ -90,10 +92,12 @@ profile.to.phylosim.seq <- function(profile) {
   sites.list <- list()
   process.list <- list()
   for (i in 1:n.sites) {
-    print(i)
+    print(paste(i, '/',n.sites))
     cur.site <- profile[[i]]
     
     # Create a separate GY94 process
+    # Is it faster to clone or to create a new process?
+    #cur.gy <- GY94(kappa = 2)
     cur.gy <- clone(gy)
 
     # Create sitewise insertors and deletors.
@@ -151,8 +155,6 @@ profile.to.phylosim.seq <- function(profile) {
   #print(getDeletionTolerance(seq, del))
 
   sampleStates(seq)
-  print(seq)
-  print(Translate(seq, as.character(seq)))
   return(seq)
 }
 
@@ -172,38 +174,132 @@ aa.probs.to.codon.freqs <- function(aa.probs, codons, aas) {
   return(codon.freqs)
 }
 
-do.stuff <- function(pfam.id, phylo=NA, n.leaves=NA) {
-  PSIM_FAST <- TRUE
-
-  if (!is.na(phylo)) {
+load.or.make.tree <- function(tree.file=NA, phylo=NA, n.leaves=NA) {
+  if (!is.na(tree.file)) {
+    tree <- read.tree(tree.file)
+  } else if (!is.na(phylo)) {
     tree <- phylo
   } else {
     tree <- rcoal(n.leaves, br=runif)
     tree.len <- max.length.to.root(tree)
     tree <- scale.tree.by(tree, 2 / tree.len )  
   }
-
   print(write.tree(tree))
 
+  tree
+}
+
+sim.pfam <- function(pfam.id, ...) {
+  tree <- load.or.make.tree(...)
+
   if (!file.exists(pfam.id)) {
+    print("  downloading PFam HMM...")
     system(paste("wget ","http://pfam.sanger.ac.uk/family/hmm/", pfam.id, sep=''))
   }
 
+  orig.aln.f <- paste(pfam.id, '_seed.fasta', sep='')
+  if (!file.exists(orig.aln.f)) {
+    print("  downloading PFam seed aln...")
+    cmd <- sprintf('wget "http://pfam.sanger.ac.uk/family/alignment/download/format?format=fasta&gaps=dashes&acc=%s" -O "%s"', pfam.id, orig.aln.f)
+    system(cmd)
+  }
+  print("  plotting seed aln...")
+  seed.sim <- PhyloSim()
+  seed.aln <- read.aln(orig.aln.f)
+  seed.sim$.alignment <- seed.aln
+  pdf(file=paste(pfam.id, "_seed.pdf", sep=''), width=20, height=10)
+  plotAlignment(seed.sim, aln.plot.chars=T, plot.ancestors=F)
+  dev.off()
+
+  print("  reading HMMER file...")
   profile <- read.hmmer(pfam.id)
-  seq <- profile.to.phylosim.seq(profile)
-  sim <- PhyloSim()
-  
-  setPhylo(sim, tree)
-  print(max.length.to.root(sim$phylo))
-  setRootSeq(sim, seq)
 
-  assign("sim", sim, envir=.GlobalEnv)
+  do.sim(pfam.id, profile, tree)
+}
 
-  Simulate(sim)
-  rm(PSIM_FAST)
+sim.hmm <- function(id, aln.file=NA, ...) {
+  tree <- load.or.make.tree(...)
 
-  pdf(file=paste(pfam.id, ".pdf", sep=''))
+  print("  converting aln...")
+  stockholm.f <- paste(id, '.aln', sep='')
+  cmd <- sprintf("perl fasta2stockholm.pl %s > %s", aln.file, stockholm.f)
+  system(cmd)
+
+  hmm.f <- paste(id, '.hmm', sep='')
+  if (!file.exists(hmm.f)) {
+    print("  calculating HMM...")
+    cmd <- sprintf("hmmbuild %s %s", hmm.f, stockholm.f)
+    system(cmd)
+  }
+  print("  reading HMMER file...")
+  profile <- read.hmmer(hmm.f)
+
+  print("  plotting orig aln...")
+  orig.sim <- PhyloSim()
+  orig.aln <- read.aln(aln.file)
+  orig.aln <- remove.blank.columns(orig.aln)
+  orig.sim$.alignment <- orig.aln
+  pdf(file=paste(id, "_orig.pdf", sep=''), width=20, height=10)
+  plotAlignment(orig.sim, aln.plot.chars=T, plot.ancestors=F)
+  dev.off()
+
+  do.sim(id, profile, tree)  
+}
+
+do.sim <- function(id, profile, tree) {
+  PSIM_FAST <<- TRUE
+
+  seq.f <- paste(id, '_phylosim_seq.Rdata', sep='')
+  if (!file.exists(seq.f)) {
+    print("  converting profile to phylosim seq...")
+    root.seq <- profile.to.phylosim.seq(profile)
+    base::save(root.seq, file=seq.f)
+  }
+  print("  loading phylosim seq from file...")
+  base::load(seq.f)
+
+  sim.f <- paste(id, '_phylosim_sim.Rdata', sep='')
+  if (!file.exists(sim.f)) {
+    print("  simulating...")
+    sim <- PhyloSim()
+    setPhylo(sim, tree)
+
+    sampleStates(root.seq)
+    print(sprintf("root DNA: %.20s ...", root.seq))
+    print(sprintf("root AA : %.20s ...", Translate(root.seq, as.character(root.seq))))
+
+    setRootSeq(sim, root.seq)
+    Simulate(sim)
+    base::save(sim, file=sim.f)
+  }
+  print("  loading sim from file...")
+  base::load(sim.f)
+
+
+  rm(PSIM_FAST, envir=.GlobalEnv)
+
+  print("  outputting alns & plots")
+
+  # Save DNA alignment
+  aln.f <- paste(id, '_dna.fasta', sep='')
+  saveAlignment(sim, file=aln.f, skip.internal=T)
+
+  # Read DNA alignment, tx to pep.
+  dna.aln <- read.aln(aln.f)
+  pep.aln <- aln.tx(dna.aln)
+
+  # Create a Pep sim to hold the peptide alignment.
+  pep.sim <- PhyloSim()
+  pep.sim$.alignment <- pep.aln
+  pep.aln.f <- paste(id, '_pep.fasta', sep='')
+  saveAlignment(pep.sim, file=pep.aln.f, skip.internal=T)
+
+  pdf(file=paste(id, "_dna.pdf", sep=''), width=20, height=10)
   plotAlignment(sim, aln.plot.chars=T, plot.ancestors=F)
+  dev.off()
+
+  pdf(file=paste(id, "_pep.pdf", sep=''), width=20, height=10)
+  plotAlignment(pep.sim, aln.plot.chars=T, plot.ancestors=F)
   dev.off()
 }
 
@@ -257,8 +353,9 @@ dzipf = function(x, N, s, log = FALSE)
     ans
 }
 
-is.Numeric <- function(x, allowable.length=Inf, integer.valued=FALSE, positive=FALSE)
+is.Numeric <- function(x, allowable.length=Inf, integer.valued=FALSE, positive=FALSE) {
     if (all(is.numeric(x)) && all(is.finite(x)) &&
     (if(is.finite(allowable.length)) length(x)==allowable.length else TRUE) &&
     (if(integer.valued) all(x==round(x)) else TRUE) &&
     (if(positive) all(x>0) else TRUE)) TRUE else FALSE
+}
