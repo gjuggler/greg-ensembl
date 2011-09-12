@@ -171,11 +171,23 @@ multi.trees <- function() {
 }
 
 multi.filters <- function() {
+
+  _multi.filters(include.mafft=FALSE)
+  _multi.filters(include.mafft=TRUE, file='filt_fig_multi_supp.pdf')
+}
+
+_multi.filters <- function(include.mafft=FALSE, file='filt_fig_multi.pdf') {
   tbl.a <<- read.csv('~/scratch/gj1_fig_three_a/current/table.csv')
   tbl.b <<- read.csv('~/scratch/gj1_fig_three_b/current/table.csv')
 
   tbl.a$aligner <- 'prankc'
   tbl.b$aligner <- 'clustalw'
+
+  if (include.mafft) {
+    tbl.c <<- read.csv('~/scratch101/gj1_fig_three_e/current/table.csv')
+    tbl.c$aligner <- 'mafft'
+  }
+
 
   reorder.f <- function(tbl) {
     print(levels(tbl$filter))
@@ -188,11 +200,17 @@ multi.filters <- function() {
   }
   tbl.a <- reorder.f(tbl.a)
   tbl.b <- reorder.f(tbl.b)
+  if (include.mafft) {
+    tbl.c <- reorder.f(tbl.c)
+    tbl.c$aln.filt <- factor(tbl.c$filter, labels=paste(tbl.c[1,]$aligner, levels(tbl.c$filter), sep=' '))
+  }
 
   tbl.a$aln.filt <- factor(tbl.a$filter, labels=paste(tbl.a[1,]$aligner, levels(tbl.a$filter), sep=' '))
   tbl.b$aln.filt <- factor(tbl.b$filter, labels=paste(tbl.b[1,]$aligner, levels(tbl.b$filter), sep=' '))
   #tbl.b$aln.filt <- paste(tbl.b$aligner, tbl.b$filter, sep=' ')
+  
   tbl.a <- rbind(tbl.a, tbl.b)
+  
   #print(head(tbl.a))
 
   tbl.a$tdr_at_thresh <- 1 - tbl.a$fdr_at_thresh
