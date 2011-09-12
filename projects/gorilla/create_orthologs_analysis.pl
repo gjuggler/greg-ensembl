@@ -9,10 +9,10 @@ use Bio::Greg::Hive::HiveLoaderUtils;
 use Bio::Greg::Hive::ComparaHiveLoaderUtils;
 
 # First create a database for the experiment.
-my $url = 'mysql://ensadmin:ensembl@ens-research/gj1_orthologs';
+my $url = 'mysql://ensadmin:ensembl@ens-research/gj1_subtrees_61';
 my $dba = Bio::EnsEMBL::Compara::DBSQL::DBAdaptor->new( -url => $url );
 
-$url = 'mysql://ensadmin:ensembl@ens-research/' . "gj1_orthologs";
+$url = 'mysql://ensadmin:ensembl@ens-research/' . "gj1_subtrees_61";
 my $h = new Bio::Greg::Hive::ComparaHiveLoaderUtils;
 $h->init($url);
 
