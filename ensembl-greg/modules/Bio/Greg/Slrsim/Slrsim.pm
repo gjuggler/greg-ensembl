@@ -71,7 +71,7 @@ sub fetch_input {
 sub run {
   my $self = shift;
 
-#  $self->param('force_recalc', 1);
+  $self->param('force_recalc', 1);
 #  $self->param('filter', 'none');
 #  $self->param('maximum_mask_fraction', 0.6);
 #  $self->param('alignment_score_filtering', 1);
@@ -197,6 +197,8 @@ sub _align {
     mkpath(dirname($cached_aln));
     copy($out_file, $cached_aln) or die("Error copying cached alignment!");
   }
+
+  sleep(10); # Sleep for 10 secs after aligning.
 
   my $inferred_aln = Bio::EnsEMBL::Compara::AlignUtils->from_file($out_file);
   return $inferred_aln;

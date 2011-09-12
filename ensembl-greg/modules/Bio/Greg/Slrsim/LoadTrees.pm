@@ -913,7 +913,8 @@ sub fig_three {
       phylosim_insertrate => $subset->{ins_rate},
       phylosim_deleterate => $subset->{ins_rate}
     };
-    
+
+#    foreach my $filter ('nofps') {
     foreach my $filter ( 'true', 'none', 'optimal', 'tcoffee', 'guidance', 'gblocks') {
       my $tree = $scheme->{tree_name};
       my $len_indel_s = $subset->{length} . '_'. $subset->{ins_rate};
