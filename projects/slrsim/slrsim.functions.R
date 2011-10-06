@@ -60,14 +60,33 @@ paper.table <- function(df, adjust.pvals=F) {
   return(ret.df)
 }
 
-
-slr.roc = function(df, na.value=-9999) {
-  df$score = df$lrt_stat
+filter.hook <- function(df, na.value=-9999) {
+  df[, 'score'] <- df$lrt_stat
 
   # Fix NA rows to a very low score.
-  df[is.na(df$lrt_stat), 'score'] <- na.value
+  df[is.na(df$score), 'score'] <- na.value
 
+  # Handle the NoFPs filter -- turn all scores at FP-like rows to zero.  
   df$truth = as.integer( df$true_dnds > 1 )
+  fltr <- df[1, 'filter']
+  if (fltr == 'nofps') {
+    false.pos <- df$score > 0 & df$true_dnds < 1
+    if (sum(false.pos) > 0) {
+      print("False positives!!")
+      print(head(df[false.pos, ]))
+      print(sum(false.pos))
+      df[false.pos, 'score'] <- 0
+    }
+  }
+  df
+}
+
+slr.roc = function(df, na.value=-9999) {
+  df <- filter.hook(df, na.value=na.value)
+  
+  #df$score = df$lrt_stat
+  #df[is.na(df$lrt_stat), 'score'] <- na.value
+
   df <- df[order(-df$score), ]
 
   df$tp = cumsum(df$truth)
@@ -248,6 +267,10 @@ df.stats = function(df,
     df <- adjust.pvals(df)
   }
 
+  df <- filter.hook(df)
+  na.stat <- is.na(df$lrt_stat)
+  df$lrt_stat <- df$score
+  df[na.stat, 'lrt_stat'] <- NA
 
   pos_pos = nrow(subset(df,true_type=="positive1" & lrt_stat>thresh))
   neg_pos = nrow(subset(df,true_type!="positive1" & lrt_stat>thresh))

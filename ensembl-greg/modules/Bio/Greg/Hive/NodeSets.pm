@@ -22,7 +22,8 @@ sub param_defaults {
     flow_parent_and_children => 0,
     debug                    => 0,
     keep_at_least_root       => 0,
-    merge_by_gene_names      => 0
+    merge_by_gene_names      => 0,
+    create_orthologs_table => 1
   };
   return $params;
 }
@@ -30,6 +31,10 @@ sub param_defaults {
 sub fetch_input {
   my ($self) = @_;
   $self->load_all_params();
+
+  $self->create_table_from_params( $self->compara_dba, 'trees',
+                                   $self->trees_table );
+
 }
 
 sub run {
@@ -38,28 +43,49 @@ sub run {
   $self->get_output_folder;
 
   my $tree = $self->get_tree;
+
+  $self->param('orig_leaf_count', scalar($tree->leaves));
+  $self->param('tree', $tree);
+  
   my $genome_tree = Bio::EnsEMBL::Compara::ComparaUtils->get_genome_tree_subset($self->compara_dba,$self->params);
 
   my $human_gene_count = scalar(grep {$_->taxon_id==9606} $tree->leaves);
   $self->param('orig_human_gene_count',$human_gene_count);
   $self->param('genome_species_count',scalar($genome_tree->leaves));
 
-  $self->tag_root_nodes( $tree, "Primates" );
-  $self->tag_root_nodes( $tree, "Glires" );
-  $self->tag_root_nodes( $tree, "Laurasiatheria" );
-  $self->tag_root_nodes( $tree, "Mammals" );
-  $self->tag_root_nodes( $tree, "MammalPlusOutgroup" );
-  $self->tag_root_nodes( $tree, "MammalPlusTwoOutgroups" );
+  print "Tagging root nodes...\n";
+  my @sets = $self->set_names;
+  foreach my $set (@sets) {
+    $self->tag_root_nodes($tree, $set);
+  }
 
-  $self->tag_root_nodes( $tree, "Fish" );
-  $self->tag_root_nodes( $tree, "Sauria" );
+  $self->_mark_ortholog_trees($tree, 9606, 'Human Orthologs');
+  $self->_mark_ortholog_trees($tree, 10090, 'Mouse Orthologs');
+  $self->_mark_ortholog_trees($tree, 7955, 'Zebrafish Orthologs');
+  $self->_mark_ortholog_trees($tree, 7227, 'Drosophila Orthologs');
+}
 
+sub set_names {
+  my $self = shift;
+
+  return (
+    'Primates', 'Glires', 'Laurasiatheria',
+    'Fungi/Metazoa group', 'Vertebrata', 'Amniotes', 'Eutheria', 'Fish', 'Sauria',
+    'MammalSubgroups',
+    'MammalSubgroupsPlusOutgroup',
+    'Ensembl Roots'
+    );
 }
 
 sub write_output {
   my $self = shift;
 
-  my $tree = $self->get_tree;
+  if ($self->param('create_orthologs_table')) {
+    $self->_store_in_table($self->param('tree'));
+    return;
+  }
+
+  my $tree = $self->param('tree');
 
   my $flowed_human_gene_count = 0;
 
@@ -135,6 +161,118 @@ sub write_output {
   $self->param('flowed_human_gene_count',$flowed_human_gene_count);
 }
 
+sub _mark_ortholog_trees {
+  my $self = shift;
+  my $tree = shift;
+  my $ref_taxon_id = shift;
+  my $set_name = shift;
+
+  my @ref_members = grep {$_->taxon_id == $ref_taxon_id} $tree->leaves;
+
+#  print $tree->ascii."\n";
+
+  foreach my $ref (@ref_members) {
+    print "Getting ortholog tree for ".$ref->stable_id."\n";
+    my $ortholog_tree = Bio::EnsEMBL::Compara::ComparaUtils->get_one_to_one_ortholog_tree($self->compara_dba, $ref, 'ortholog.*');
+    next if (!defined $ortholog_tree);
+
+    #print $ortholog_tree->ascii."\n";
+    print $ortholog_tree . "  ". $ortholog_tree->node_id." " . $ref->stable_id."\n";
+    $self->param('cc_root_'.$set_name.'_'.$ortholog_tree->node_id, 1);
+    $self->_store_tree_in_table($ortholog_tree, $set_name, $ref);
+  }
+}
+
+sub _store_in_table {
+  my $self = shift;
+  my $tree = shift;
+
+  my @set_names = $self->set_names;
+
+  foreach my $node ( $tree->nodes ) {
+    next if ( $node->is_leaf );
+    foreach my $set (@set_names) {
+      my $key = 'cc_root_'.$set.'_'.$node->node_id;
+      if ($self->param('cc_root_'.$set.'_'.$node->node_id)) {
+        print "$key\n";
+        $self->_store_tree_in_table($node, $set, undef);
+      }
+    }
+  }
+  
+}
+
+sub _store_tree_in_table {
+  my $self = shift;
+  my $subtree = shift;
+  my $set_name = shift;
+  my $ref_member = shift;
+
+  my $p = $self->params;
+
+  $p->{method_id} = $set_name;
+
+  if (defined $ref_member) {
+    $p->{tree_id} = $ref_member->stable_id;
+  } else {
+    $p->{tree_id} = $subtree->node_id;
+  }
+
+  my $taxids;
+  map {$taxids->{$_->taxon_id} = 1} $subtree->leaves;
+  $p->{species_count} = scalar(keys %$taxids);
+  $p->{leaf_count} = scalar($subtree->leaves);
+  
+  # Don't allow branches with length > 2.
+  my $max_bl = 2;
+  map {$_->branch_length($max_bl) if ($_->branch_length > $max_bl)} $subtree->nodes;
+  my $treei = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($subtree);
+  $p->{tree_length} = $treei->total_branch_length;
+  $p->{tree_mpl} = $treei->root->mean_path_length;
+
+  # Gene names
+  my @good_genes = grep {$_->taxon_id == 9606 || $_->taxon_id == 10090 || $_->taxon_id == 7227} $subtree->leaves;
+  my @gene_names = map {$_->get_Gene->external_name} @good_genes;
+  my $gene_hash;
+  map {$gene_hash->{lc($_)} = 1} @gene_names;
+  delete $gene_hash->{''};
+  my $name_str = join(', ', sort keys %$gene_hash);
+  $p->{gene_names} = $name_str;
+
+  my $species_taxid = {
+    human => 9606,
+    chimp => 9598,
+    gorilla => 9593,
+    orang => 9601,
+    rhesus => 9544,
+    marmoset => 9483,
+    bushbaby => 30611,
+    mouse => 10090,
+    cow => 9913,
+    elephant => 9785,
+    opossum => 13616,
+    platypus => 9258,
+    lizard => 28377,
+    zebrafinch => 59729,
+    xenopus => 8364,
+    zebrafish => 7955,
+    fugu => 31033,
+    ciona => 7719,
+    drosophila => 7227,
+    c_elegans => 6239,
+    yeast => 4932
+  };
+  
+  foreach my $species (keys %$species_taxid) {
+    my $taxid = $species_taxid->{$species};
+
+    my $count = scalar(grep {$_->taxon_id == $taxid} $subtree->leaves);
+    $p->{$species.'_count'} = $count;
+  }
+
+  $self->store_params_in_table($self->dbc, 'trees', $p);
+}
+
 sub tree_contains_a_gene_with_name {
   my $self = shift;
   my $tree = shift;
@@ -169,25 +307,29 @@ sub tag_root_nodes {
   my $base_p = {
     tree             => $tree,
     subtree_function => \&does_parent_have_clade_children,
-    min_size      => 4
+    min_size      => 2,
+    max_size => ($self->param('genome_species_count') * 3)
   };
 
-  my $params;
+  my $params = $base_p;
 
-  if ( $method_name eq 'Primates' ) {
-    $params = $self->replace_params( $base_p, { cc_Primates => 0.3, } );
-  } elsif ( $method_name eq 'Glires' ) {
-    $params = $self->replace_params( $base_p, { cc_Glires => 0.3, } );
-  } elsif ( $method_name eq 'Laurasiatheria' ) {
-    $params = $self->replace_params( $base_p, { cc_Laurasiatheria => 0.3, } );
-  } elsif ( $method_name eq 'Mammals' ) {
+  if ( $method_name eq 'asdf') {
+
+  } elsif ($method_name eq 'MammalSubgroups') {
+    $params = $self->replace_params(
+      $base_p, {
+        cc_Laurasiatheria => 0.1,
+        cc_Glires => 0.1,
+        cc_Primates => 0.1
+      }
+    );
+  } elsif ( $method_name eq 'MammalSubgroupsPlusOutgroup' ) {
     $params = $self->replace_params(
       $base_p, {
         cc_Primates       => 0.1,
         cc_Glires         => 0.1,
         cc_Laurasiatheria => 0.1,
-        any      => [ 'Sauria', 'Clupeocephala', 'Ciona', 'Marsupialia' ],
-        max_size => ( $self->param('genome_species_count') * 2 )
+        any      => [ 'Sauria', 'Clupeocephala', 'Ciona', 'Marsupialia' ]
       }
     );
   } elsif ( $method_name eq 'MammalPlusOutgroup' ) {
@@ -197,24 +339,35 @@ sub tag_root_nodes {
         any      => [ 'Sauria', 'Clupeocephala', 'Ciona', 'Marsupialia' ]
       }
     );
-  } elsif ( $method_name eq 'MammalPlusTwoOutgroups' ) {
-    $params = $self->replace_params(
-      $base_p, {
-        cc_Eutheria      => 0.1,
-        cc_Sauria        => 0.01,
-        cc_Clupeocephala => 0.01
-      }
-    );
+
+  } elsif ( $method_name eq 'Primates' ) {
+    $params = $self->replace_params( $base_p, { cc_Primates => 0.6, min_size => 2, max_size => 500 } );
+  } elsif ( $method_name eq 'Glires' ) {
+    $params = $self->replace_params( $base_p, { cc_Glires => 0.6, min_size => 2, max_size => 500 } );
+  } elsif ( $method_name eq 'Laurasiatheria' ) {
+    $params = $self->replace_params( $base_p, { cc_Laurasiatheria => 0.6, min_size => 2, max_size => 500 } );
   } elsif ( $method_name eq 'Fish' ) {
-    $params = $self->replace_params( $base_p, { cc_Clupeocephala => 0.2 } );
+    $params = $self->replace_params( $base_p, { cc_Clupeocephala => 0.6, min_size => 2, max_size => 500 } );
   } elsif ( $method_name eq 'Sauria' ) {
-    $params = $self->replace_params( $base_p, { cc_Sauria => 0.2 } );
+    $params = $self->replace_params( $base_p, { cc_Sauria => 0.6, min_size => 2, max_size => 500 } );
+  } elsif ( $method_name eq 'Amniotes' ) {
+    $params = $self->replace_params( $base_p, { cc_Amniota => 0.6, min_size => 2, max_size => 500 } );
+  } elsif ( $method_name eq 'Eutheria' ) {
+    $params = $self->replace_params( $base_p, { cc_Eutheria => 0.6, min_size => 2, max_size => 500 } );
+  } elsif ( $method_name eq 'Vertebrata' ) {
+    $params = $self->replace_params( $base_p, { cc_Vertebrata => 0.6, min_size => 2, max_size => 500 } );
+  } elsif ( $method_name eq 'Fungi/Metazoa group' ) {
+    $params = $self->replace_params( $base_p, { 'cc_Fungi/Metazoa group' => 0.6, min_size => 2, max_size => 500 } );
   }
 
-  my $tree = $params->{tree};
-
   #my $subtree_function = $params->{subtree_function};
-  my @root_nodes = $self->get_smallest_subtrees_from_node( $tree, $params );
+  my @root_nodes;
+  if ($method_name eq 'Ensembl Roots') {
+    @root_nodes = ($tree);
+    delete $params->{max_size};
+  } else {
+    @root_nodes = $self->get_smallest_subtrees_from_node( $tree, $params );
+  }
 
   # Limit the max size of trees.
   if (defined $params->{max_size}) {
@@ -222,6 +375,7 @@ sub tag_root_nodes {
   }
 
   foreach my $node (@root_nodes) {
+    print "$node\n";
     printf " -> %s %d %d\n", $method_name, scalar $node->leaves, $node->node_id;
     $self->param('cc_root_'.$method_name.'_'.$node->node_id,1);
     #$node->store_tag( "cc_root_" . $method_name, 1 );
@@ -326,7 +480,7 @@ sub does_tree_have_clade_coverage {
     } elsif ($key =~ m/cc_/) {
       $key =~ s/cc_//;
       my $coverage = $self->clade_coverage_for_node( $tree, $key, $params );
-      #print "$key $coverage $value\n";
+      #print "$key $coverage $value\n" if ($coverage > 0);
       return 0 unless ( $coverage >= $value );
     }
   }
@@ -475,7 +629,7 @@ sub get_genomes_within_clade {
   my $clade = shift || 1;
 
   my @gdbs = $self->get_all_genomes($dba);
-  my $species_tree = $self->get_genome_taxonomy_below_level( $dba, $clade );
+  my $species_tree = Bio::EnsEMBL::Compara::ComparaUtils->get_genome_taxonomy_below_level( $dba, $clade );
 
   my @genomes;
   foreach my $gdb (@gdbs) {
@@ -512,6 +666,47 @@ sub has_ancestor_node_id {
     $node = $node->parent;
   }
   return 0;
+}
+
+sub trees_table {
+  my $p = {
+    data_id => 'int',
+    tree_id => 'char32',
+    method_id => 'char32',
+
+    tree_length => 'float',
+    tree_mpl => 'float',
+    
+    human_count => 'int',
+    chimp_count => 'int',
+    gorilla_count => 'int',
+    orang_count => 'int',
+    rhesus_count => 'int',
+    marmoset_count => 'int',
+    bushbaby_count => 'int',
+    mouse_count => 'int',
+    cow_count => 'int',
+    elephant_count => 'int',
+    opossum_count => 'int',
+    platypus_count => 'int',
+    lizard_count => 'int',
+    zebrafinch_count => 'int',
+    xenopus_count => 'int',
+    zebrafish_count => 'int',
+    fugu_count => 'int',
+    ciona_count => 'int',
+    drosophila_count => 'int',
+    c_elegans_count => 'int',
+    yeast_count => 'int',
+
+    species_count => 'int',
+    leaf_count => 'int',
+
+    gene_names => 'string',
+
+    unique_keys => 'data_id,method_id,tree_id'
+  };
+  return $p;
 }
 
 1;

@@ -573,24 +573,70 @@ sub fig_one_c {
   return \@sets;
 }
 
+sub fig_one_d {
+  my $self = shift;
+
+  my @sets;
+
+  push @sets, @{$self->_fig_one($self->scheme_a, 'clustalw_guidance')};
+  push @sets, @{$self->_fig_one($self->scheme_b, 'clustalw_guidance')};
+  push @sets, @{$self->_fig_one($self->scheme_c, 'clustalw_guidance')};
+
+  push @sets, @{$self->_fig_one($self->scheme_a, 'mafft_guidance')};
+  push @sets, @{$self->_fig_one($self->scheme_b, 'mafft_guidance')};
+  push @sets, @{$self->_fig_one($self->scheme_c, 'mafft_guidance')};
+  return \@sets;
+}
+
+sub fig_one_e {
+  my $self = shift;
+
+  my @sets;
+
+  push @sets, @{$self->_fig_one($self->scheme_a, 'prank_codon_guidance')};
+  push @sets, @{$self->_fig_one($self->scheme_b, 'prank_codon_guidance')};
+  push @sets, @{$self->_fig_one($self->scheme_c, 'prank_codon_guidance')};
+  return \@sets;
+}
+
 sub _fig_one {
   my $self = shift;
   my $scheme = shift;
   my $analysis_type = shift;
 
+  my @aln_types = ('true', 'clustalw', 'mafft', 'prank', 'prank_codon');
+
+  if ($analysis_type eq 'prank_codon_guidance') {
+    $analysis_type = 'slr';
+    @aln_types = ('prank_codon_guidance');
+  }
+  if ($analysis_type eq 'clustalw_guidance') {
+    $analysis_type = 'slr';
+    @aln_types = ('clustalw_guidance');
+  }
+  if ($analysis_type eq 'mafft_guidance') {
+    $analysis_type = 'slr';
+    @aln_types = ('mafft_guidance');
+  }
+
   my @array;
-  foreach my $aln ('true', 'clustalw', 'mafft', 'prank', 'prank_codon') {
+  foreach my $aln (@aln_types) {
     my $p = {};
-    if ( $aln eq 'mafft_filter' ) {
-      my $aln_p         = $self->aln_param('mafft');
-      my $filter_p      = $self->filter_param('tcoffee', 0.6);
+    if ( $aln eq 'clustalw_guidance' ) {
+      my $aln_p         = $self->aln_param('clustalw');
+      my $filter_p = $self->filter_param('guidance', 0.5);
       $p = $self->replace( $scheme, $aln_p, $filter_p);
-      $p->{alignment_name} = 'mafft_filter';
-    } elsif ( $aln eq 'mafft_optimal' ) {
-      my $aln_p         = $self->aln_param('mafft');
-      my $filter_p      = $self->filter_param('oracle', 0.6);
+      $p->{alignment_name} = 'clustalw_guidance';
+    } elsif ( $aln eq 'prank_codon_guidance' ) {
+      my $aln_p         = $self->aln_param('prank_codon');
+      my $filter_p = $self->filter_param('guidance', 0.5);
       $p = $self->replace( $scheme, $aln_p, $filter_p);
-      $p->{alignment_name} = 'mafft_optimal';
+      $p->{alignment_name} = 'prank_codon_guidance';
+    } elsif ($aln eq 'mafft_guidance') { 
+      my $aln_p         = $self->aln_param('mafft');
+      my $filter_p = $self->filter_param('guidance', 0.5);
+      $p = $self->replace( $scheme, $aln_p, $filter_p);
+      $p->{alignment_name} = 'mafft_guidance';
     } else {
       my $aln_p = $self->aln_param($aln);
       $p = $self->replace( $scheme, $aln_p );
@@ -799,14 +845,28 @@ sub fig_three_b {
 sub fig_three_c {
   my $self = shift;  
   my @sets;
-  push @sets, @{$self->fig_three('clustalw', $self->scheme_b, {no_max_filter => 1})};
+  push @sets, @{$self->fig_three('clustalw', $self->scheme_a)};
   return \@sets;
 }
 
 sub fig_three_d {
   my $self = shift;  
   my @sets;
-  push @sets, @{$self->fig_three('prank_codon', $self->scheme_b, {no_max_filter => 1})};
+  push @sets, @{$self->fig_three('prank_codon', $self->scheme_a)};
+  return \@sets;
+}
+
+sub fig_three_e {
+  my $self = shift;  
+  my @sets;
+  push @sets, @{$self->fig_three('mafft', $self->scheme_b)};
+  return \@sets;
+}
+
+sub fig_three_f {
+  my $self = shift;  
+  my @sets;
+  push @sets, @{$self->fig_three('mafft', $self->scheme_a)};
   return \@sets;
 }
 
@@ -854,7 +914,8 @@ sub fig_three {
       phylosim_deleterate => $subset->{ins_rate}
     };
 
-    foreach my $filter ( 'true', 'none', 'optimal', 'tcoffee', 'guidance', 'gblocks', 'branchlength') {
+#    foreach my $filter ('nofps') {
+    foreach my $filter ( 'true', 'none', 'optimal', 'tcoffee', 'guidance', 'gblocks') {
       my $tree = $scheme->{tree_name};
       my $len_indel_s = $subset->{length} . '_'. $subset->{ins_rate};
       
@@ -875,7 +936,7 @@ sub fig_three {
       $params =
         $self->replace(
           $params,
-          $self->reps_param(100),
+          $self->reps_param(150),
           $indel,
           $length,
           { experiment_name => 'fig_three' } );

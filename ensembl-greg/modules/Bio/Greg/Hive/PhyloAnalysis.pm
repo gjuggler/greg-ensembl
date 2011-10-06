@@ -796,6 +796,7 @@ sub parse_slr_output {
     $next_line_is_it = 1 if ( $outline =~ /lnL =/ );
   }
   $results->{'slr_tree'} = $new_pt;
+  $results->{'slr_tree_string'} = $new_pt->newick_format;
 
   my $skipsitewise = $params->{slr_skipsitewise};
   my $tmpdir     = $self->worker_temp_directory;

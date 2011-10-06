@@ -243,33 +243,47 @@ multi.trees <- function() {
 }
 
 multi.filters <- function() {
-  tbl.a <<- read.csv('~/scratch/gj1_fig_three_a/current/table.csv', stringsAsFactors=F)
-  tbl.b <<- read.csv('~/scratch/gj1_fig_three_b/current/table.csv', stringsAsFactors=F)
-  tbl.c <<- read.csv('~/scratch/gj1_fig_three_e/current/table.csv', stringsAsFactors=F)
+
+  _multi.filters(include.mafft=FALSE)
+  _multi.filters(include.mafft=TRUE, file='filt_fig_multi_supp.pdf')
+}
+
+_multi.filters <- function(include.mafft=FALSE, file='filt_fig_multi.pdf') {
+  tbl.a <<- read.csv('~/scratch/gj1_fig_three_a/current/table.csv')
+  tbl.b <<- read.csv('~/scratch/gj1_fig_three_b/current/table.csv')
 
   tbl.tca <<- read.csv('~/scratch/gj1_fig_three_a/new_tcoffee/table.csv', stringsAsFactors=F)
   tbl.tcb <<- read.csv('~/scratch/gj1_fig_three_b/new_tcoffee/table.csv', stringsAsFactors=F)
 
-  tbl.nofps.a <<- read.csv('~/scratch/gj1_fig_three_a/nofps/table.csv', stringsAsFactors=F)
-  tbl.nofps.b <<- read.csv('~/scratch/gj1_fig_three_b/nofps/table.csv', stringsAsFactors=F)
+  if (include.mafft) {
+    tbl.c <<- read.csv('~/scratch101/gj1_fig_three_e/current/table.csv')
+    tbl.c$aligner <- 'mafft'
+  }
 
 
-  tbl.a <- subset(tbl.a, filter != 'tcoffee')
-  tbl.tca <- subset(tbl.tca, filter == 'tcoffee')
-  tbl.a <- rbind(tbl.a, tbl.tca)
-  tbl.a <- rbind(tbl.a, tbl.nofps.a)
+  reorder.f <- function(tbl) {
+    print(levels(tbl$filter))
+    unq <- unique(c('gblocks', 'guidance', 'tcoffee', 'optimal_c', 'true', as.character(tbl$filter)))
+    
+    tbl$filter <- factor(as.character(tbl$filter), levels=unq, labels=unq, ordered=T)
+    tbl <- tbl[order(tbl$filter),]
+    print(levels(tbl$filter))
+    return(tbl)
+  }
+  tbl.a <- reorder.f(tbl.a)
+  tbl.b <- reorder.f(tbl.b)
+  if (include.mafft) {
+    tbl.c <- reorder.f(tbl.c)
+    tbl.c$aln.filt <- factor(tbl.c$filter, labels=paste(tbl.c[1,]$aligner, levels(tbl.c$filter), sep=' '))
+  }
 
-  tbl.b <- subset(tbl.b, filter != 'tcoffee')
-  tbl.tcb <- subset(tbl.tcb, filter == 'tcoffee')
-  tbl.b <- rbind(tbl.b, tbl.tcb)
-  tbl.b <- rbind(tbl.b, tbl.nofps.b)
-
-  tbl.a <- subset(tbl.a, filter != 'nofps')
-  tbl.b <- subset(tbl.b, filter != 'nofps')
-  tbl.c <- subset(tbl.c, filter != 'nofps')
-
-  width <- 4 * 2
-  height <- length(unique(tbl.a$filter))
+  tbl.a$aln.filt <- factor(tbl.a$filter, labels=paste(tbl.a[1,]$aligner, levels(tbl.a$filter), sep=' '))
+  tbl.b$aln.filt <- factor(tbl.b$filter, labels=paste(tbl.b[1,]$aligner, levels(tbl.b$filter), sep=' '))
+  #tbl.b$aln.filt <- paste(tbl.b$aligner, tbl.b$filter, sep=' ')
+  
+  tbl.a <- rbind(tbl.a, tbl.b)
+  
+  #print(head(tbl.a))
 
 #  pdf(file="filt_fig_multi.pdf", width=width+3, height=height)
 #  vplayout(2, 1)

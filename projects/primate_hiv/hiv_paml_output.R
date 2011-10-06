@@ -29,30 +29,153 @@ bsub.candidates <- function() {
 }
 
 new.genes <- function() {
+  source("~/src/greg-ensembl/scripts/mysql_functions.R")
+  source("~/src/greg-ensembl/scripts/g.test.r")
+
   dbname <- 'gj1_hiv_62'
   con <- connect(dbname)
-  genes <- get.vector(con, "select * from genes;")
+  genes <- dbGetQuery(con, "select * from genes;")
 
-  genes$lrt <- 2* (genes$m8_lnl - genes$m7_lnl)
-  genes$pval <- pchisq(genes$lrt, df=2, lower.tail=F)
-  genes$pval.bh <- p.adjust(genes$pval, method='BH')
+  genes$lrt <- 2 * (genes$m8_lnl - genes$m7_lnl)
+  genes$paml.pval <- pchisq(genes$lrt, df=2, lower.tail=F)
+  genes$paml.bh <- p.adjust(genes$paml.pval, method='BH')
 
-  rows <- read.table(wd.f("candidates_final_ids.txt"))  
-  rows$gene_id <- rows[, 1]
-  genes <- merge(rows, genes, all.x=T)
+  print("  running mkt...")
+  mkt <- function(pn, ps, dn, ds) {
+    if (is.na(dn) || is.na(ds) || is.na(pn) || is.na(ps)) {
+      return(NA)
+    }
+    if (pn == 0 && ps == 0) {
+      return(NA)
+    }
+    if (dn == 0 && ds == 0) {
+      return(NA)
+    }
+    mtrx <- matrix(c(dn, ds, pn, ps), nrow=2, ncol=2)
+    fis.res <- fisher.test(mtrx, alternative='g')
+    p.val <- fis.res$p.value
+    est <- fis.res$estimate
+    
+    if (is.na(p.val)) {
+      return(NA)
+    }
+    p.val
+  }
+
+  restrict.to.candidates <- FALSE
+  if (restrict.to.candidates) {
+    rows <- read.table(wd.f("candidates_final_ids.txt"))  
+    rows$gene_id <- rows[, 1]
+    genes <- merge(rows, genes, all.x=T)
+  }
+
+  print(nrow(genes))
+
+  mkt.all.chimp <- c()
+  mkt.filt.chimp <- c()
+  mkt.kg.chimp <- c()
+  mkt.all.orang <- c()
+  mkt.filt.orang <- c()
+  mkt.kg.orang <- c()
+  mkt.all.rhesus <- c()
+  mkt.filt.rhesus <- c()
+  mkt.kg.rhesus <- c()
+  for (i in 1:nrow(genes)) {
+    if (i %% 100 == 0) {
+      print(paste("row",i))
+    }
+    cur.gene <- genes[i, ]
+    mkt.all.chimp[i] <- mkt(cur.gene$all_pn, cur.gene$all_ps, cur.gene$chimp_dn, cur.gene$chimp_ds)
+    mkt.filt.chimp[i] <- mkt(cur.gene$filt_pn, cur.gene$filt_ps, cur.gene$chimp_dn, cur.gene$chimp_ds)
+    mkt.kg.chimp[i] <- mkt(cur.gene$allkg_pn, cur.gene$allkg_ps, cur.gene$chimp_dn, cur.gene$chimp_ds)
+    mkt.all.orang[i] <- mkt(cur.gene$all_pn, cur.gene$all_ps, cur.gene$orang_dn, cur.gene$orang_ds)
+    mkt.filt.orang[i] <- mkt(cur.gene$filt_pn, cur.gene$filt_ps, cur.gene$orang_dn, cur.gene$orang_ds)
+    mkt.kg.orang[i] <- mkt(cur.gene$allkg_pn, cur.gene$allkg_ps, cur.gene$orang_dn, cur.gene$orang_ds)
+    mkt.all.rhesus[i] <- mkt(cur.gene$all_pn, cur.gene$all_ps, cur.gene$rhesus_dn, cur.gene$rhesus_ds)
+    mkt.filt.rhesus[i] <- mkt(cur.gene$filt_pn, cur.gene$filt_ps, cur.gene$rhesus_dn, cur.gene$rhesus_ds)
+    mkt.kg.rhesus[i] <- mkt(cur.gene$allkg_pn, cur.gene$allkg_ps, cur.gene$rhesus_dn, cur.gene$rhesus_ds)
+  }
+
+  genes$mkt.all.chimp <- mkt.all.chimp
+  genes$mkt.filt.chimp <- mkt.filt.chimp
+  genes$mkt.kg.chimp <- mkt.kg.chimp
+  genes$mkt.all.orang <- mkt.all.orang
+  genes$mkt.filt.orang <- mkt.filt.orang
+  genes$mkt.kg.orang <- mkt.kg.orang
+  genes$mkt.all.rhesus <- mkt.all.rhesus
+  genes$mkt.filt.rhesus <- mkt.filt.rhesus
+  genes$mkt.kg.rhesus <- mkt.kg.rhesus
+
+  assign('genes', genes, envir=.GlobalEnv)
 
   genes <- format.numeric.df(genes, digits=4)
-  
 #  genes[genes$paml_dnds > 3, 'paml_dnds'] <- 3
 
   save(genes, file=wd.f("genes.e62.Rdata"))
   write.csv(genes[, manuscript.fields()], file=wd.f("genes.e62.csv"), row.names=F, quote=F)
-  new.genes <<- genes[, manuscript.fields()]
+}
+
+corrs <- function() {
+  x <- genes
+  cor.f <- function(a, b) {
+    cor(as.numeric(a), as.numeric(b), method='spearman', use='complete.obs')
+  }
+  cor.t <- function(a, b) {
+    cor.res <- cor.test(as.numeric(a), as.numeric(b), method='spearman', use='complete.obs')
+    cor.res$p.value
+  }
+
+  x[, 'PAML M7-M8'] <- x$paml.pval
+  x[, 'gene dN/dS'] <- x$slr_dnds
+
+  cor.fields <- c('PAML M7-M8', 'gene dN/dS', 
+    'mkt.all.chimp', 'mkt.kg.chimp', 'mkt.filt.chimp',
+    'mkt.all.rhesus', 'mkt.kg.rhesus', 'mkt.filt.rhesus'
+  )
+  n <- length(cor.fields)
+  cor.mtrx <- matrix(nrow=length(cor.fields), ncol=length(cor.fields))
+  cor.pval.mtrx <- matrix(nrow=length(cor.fields), ncol=length(cor.fields))
+  for (i in 1:n) {
+    for (j in 1:n) {
+      fld.i <- cor.fields[i]
+      fld.j <- cor.fields[j]
+      cor.mtrx[i, j] <- cor.f(x[, fld.i], x[, fld.j])
+      cor.pval.mtrx[i, j] <- cor.t(x[, fld.i], x[, fld.j])
+    }
+  }
+
+  colnames(cor.mtrx) <- cor.fields
+  rownames(cor.mtrx) <- cor.fields 
+  colnames(cor.pval.mtrx) <- cor.fields
+  rownames(cor.pval.mtrx) <- cor.fields
+  print(cor.mtrx)
+  print(cor.pval.mtrx)
+  write.csv(cor.mtrx, file='corr.matrix.csv', row.names=T, quote=F)
+  write.csv(cor.mtrx, file='corr.pval.matrix.csv', row.names=T, quote=F)
+}
+
+var.distributions <- function() {
+  dbname <- 'gj1_hiv_62'
+  con <- connect(dbname)
+  vars <- dbGetQuery(con, "select * from vars;")
+
+  kg.vars <- subset(vars, set_name == '1000 genomes - Low coverage')
+  ns.vars <- subset(kg.vars, consequence == 'NON_SYNONYMOUS_CODING')
+  s.vars <- subset(kg.vars, consequence == 'SYNONYMOUS_CODING')
+
+  t.res <- t.test(ns.vars$allele_freq, s.vars$allele_freq)
+  print(t.res)
+
 }
 
 manuscript.fields <- function() {
   c(
-    'gene_id', 'gene_name', 'aln_length', 'n_seqs', 'masked_nucs', 'paml_dnds', 'slr_dnds', 'pval', 'pval.bh'
+    'gene_id', 'job_id', 'gene_name', 'aln_length', 'n_seqs', 'masked_nucs', 'paml_dnds', 'slr_dnds', 'paml.pval', 'paml.bh', 
+    'mkt.all.chimp', 'mkt.filt.chimp', 'mkt.kg.chimp',
+    'mkt.all.orang', 'mkt.filt.orang', 'mkt.kg.orang',
+    'mkt.all.rhesus', 'mkt.filt.rhesus', 'mkt.kg.rhesus',
+    'all_pn', 'all_ps', 'filt_pn', 'filt_ps', 'allkg_pn', 'allkg_ps',
+    'chimp_dn', 'chimp_ds', 'orang_dn', 'orang_ds', 'rhesus_dn', 'rhesus_ds'
   )
 }
 

@@ -46,6 +46,11 @@ sub run {
   #  - Load & rescale tree
   my $tree_file = $self->param('tree');
   my $mpl = $self->param('mpl');
+  my $indel = $self->param('indel');
+
+  $self->param('phylosim_insertrate', $indel/2);
+  $self->param('phylosim_deleterate', $indel/2);
+
   $tree_file = Bio::Greg::EslrUtils->baseDirectory."/projects/alnscore/".$tree_file;
   print "$tree_file\n";
   my $tree = Bio::EnsEMBL::Compara::TreeUtils->from_file($tree_file);
@@ -70,10 +75,12 @@ sub run {
   my $sim_obj = $self->_simulate_alignment($treeI);
   my $true_aln = $sim_obj->{aln};
   my $true_pep_aln = Bio::EnsEMBL::Compara::AlignUtils->translate($true_aln);
+
+  $self->pretty_print($true_pep_aln, {full => 1});
   
   # Choose sizes at which to align / subset / score the subsets.
   #my @sizes = (2, 4, 6, 10, 16, 24, 32);
-  my @sizes = (2, 6, 16, 24);
+  my @sizes = (2, 6, 16, 24, 32);
 
   my $whole_aln = $self->_align($treeI, $true_aln, $true_pep_aln, 'all');
 
@@ -219,23 +226,25 @@ sub _score_aln {
   $pep_aln = Bio::EnsEMBL::Compara::AlignUtils->sort_by_tree($pep_aln, $treeI);
   $self->pretty_print($pep_aln);
 
-#  print "  tcs\n";
-#  my $tcs = Bio::EnsEMBL::Compara::AlignUtils->total_column_score($true_pep_aln, $pep_aln);
+  print "  tcs\n";
+  my $tcs = Bio::EnsEMBL::Compara::AlignUtils->total_column_score($true_pep_aln, $pep_aln);
   print "  sps\n";
   my $sps = Bio::EnsEMBL::Compara::AlignUtils->sum_of_pairs_score($true_pep_aln, $pep_aln);
 
-#  print "  other\n";
-#  my $aln_scores_calc = Bio::EnsEMBL::Compara::AlignUtils->_correct_subtree_calc($treeI, $true_pep_aln, $pep_aln);
-#  my $mmbl = $aln_scores_calc->{mismatch_bl} / $aln_scores_calc->{aligned_bl};
-#  my $cbl = $aln_scores_calc->{complete_match_bl} / $aln_scores_calc->{aligned_bl};
-#  my $pbl = $aln_scores_calc->{partial_bl} / $aln_scores_calc->{aligned_bl};
+  print "  other\n";
+  my $aln_scores_calc = Bio::EnsEMBL::Compara::AlignUtils->_correct_subtree_calc($treeI, $true_pep_aln, $pep_aln);
+  my $cbl = $aln_scores_calc->{complete_match_bl} / $aln_scores_calc->{aligned_bl};
+  my $pbl = $aln_scores_calc->{partial_bl} / $aln_scores_calc->{aligned_bl};
 
   my $total_bl = $treeI->root->total_branch_length;
   my $mpl = $treeI->root->mean_path_length;
   my $mean_bl = $treeI->root->mean_branch_length;
 
   my $params = {
+    $prefix.'_tcs' => $tcs,
     $prefix.'_sps' => $sps,
+    $prefix.'_cbl' => $cbl,
+    $prefix.'_pbl' => $pbl,
     n_seqs => scalar($treeI->leaves),
     mpl => sprintf("%.3f", $mpl),
     mean_bl => $mean_bl,
@@ -285,6 +294,12 @@ sub _aln_table_structure {
     
     sub_sps => 'float',
     aln_sps => 'float',
+    sub_tcs => 'float',
+    aln_tcs => 'float',
+    sub_pbl => 'float',
+    aln_pbl => 'float',
+    sub_cbl => 'float',
+    aln_cbl => 'float',
 
     unique_keys => 'data_id,replicate,n_seqs'
 

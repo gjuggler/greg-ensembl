@@ -113,6 +113,8 @@ get.go.table = function(scores,symbols.to.go,ontology,nodeSize=8,description='',
     description = description
   )
 
+  print(paste("  # of genes", length(scores)))
+
   n.terms <- length(usedGO(GOdata))
 
   if (scoresAreBinary) {
@@ -245,6 +247,19 @@ enrich.dir <- function(dir) {
   setwd(old.wd)
 }
 
+load.go.csv <- function() {
+  print("Loading GO data...")
+  # Download link:
+  # http://www.ensembl.org/biomart/martview/11303929625047b175098c75bacc9456/11303929625047b175098c75bacc9456/11303929625047b175098c75bacc9456?VIRTUALSCHEMANAME=default&ATTRIBUTES=hsapiens_gene_ensembl.default.feature_page.ensembl_gene_id|hsapiens_gene_ensembl.default.feature_page.ensembl_peptide_id|hsapiens_gene_ensembl.default.feature_page.ensembl_transcript_id|hsapiens_gene_ensembl.default.feature_page.go_biological__id|hsapiens_gene_ensembl.default.feature_page.go_biological_process_linkage_type&FILTERS=hsapiens_gene_ensembl.default.filters.biol_process_evidence_code."IC,IDA,IEA,IEP,IGI,IMP,IPI,ISS,NAS,ND,TAS,EXP"&VISIBLEPANEL=filterpanel
+  go.csv = read.csv("ens_go_60.csv", header=T, stringsAsFactors=F)
+  go.ens = by(go.csv,go.csv$Ensembl.Protein.ID,function(df){df$GO.Term.Accession..bp.})
+  go.csv.excl.iea = subset(go.csv,GO.Term.Evidence.Code..bp. != 'IEA')
+  go.ens.excl.iea = by(go.csv.excl.iea,go.csv.excl.iea$Ensembl.Protein.ID,function(df){df$GO.Term.Accession..bp.})
+  assign('go.ens',go.ens,envir=.GlobalEnv)
+  assign('go.ens.excl.iea',go.ens.excl.iea,envir=.GlobalEnv)
+  save(go.ens, go.ens.excl.iea, file="go_60.Rdata")
+}
+
 enrich.file <- function(cur.file,dir) {
   if (!exists("go.ens")) {
     if (file.exists("go_60.Rdata")) {
@@ -253,7 +268,7 @@ enrich.file <- function(cur.file,dir) {
     } else {
       print("Loading GO data...")
       # Download link:
-      # http://www.ensembl.org/biomart/martview/11303929625047b175098c75bacc9456/11303929625047b175098c75bacc9456/11303929625047b175098c75bacc9456?VIRTUALSCHEMANAME=default&ATTRIBUTES=hsapiens_gene_ensembl.default.feature_page.ensembl_gene_id|hsapiens_gene_ensembl.default.feature_page.ensembl_peptide_id|hsapiens_gene_ensembl.default.feature_page.ensembl_transcript_id|hsapiens_gene_ensembl.default.feature_page.go_biological_process_id|hsapiens_gene_ensembl.default.feature_page.go_biological_process_linkage_type&FILTERS=hsapiens_gene_ensembl.default.filters.biol_process_evidence_code."IC,IDA,IEA,IEP,IGI,IMP,IPI,ISS,NAS,ND,TAS,EXP"&VISIBLEPANEL=filterpanel
+      # http://www.ensembl.org/biomart/martview/11303929625047b175098c75bacc9456/11303929625047b175098c75bacc9456/11303929625047b175098c75bacc9456?VIRTUALSCHEMANAME=default&ATTRIBUTES=hsapiens_gene_ensembl.default.feature_page.ensembl_gene_id|hsapiens_gene_ensembl.default.feature_page.ensembl_peptide_id|hsapiens_gene_ensembl.default.feature_page.ensembl_transcript_id|hsapiens_gene_ensembl.default.feature_page.go_biological__id|hsapiens_gene_ensembl.default.feature_page.go_biological_process_linkage_type&FILTERS=hsapiens_gene_ensembl.default.filters.biol_process_evidence_code."IC,IDA,IEA,IEP,IGI,IMP,IPI,ISS,NAS,ND,TAS,EXP"&VISIBLEPANEL=filterpanel
       go.csv = read.csv("ens_go_60.csv",header=T,stringsAsFactors=F)
       go.ens = by(go.csv,go.csv$Ensembl.Protein.ID,function(df){df$GO.Term.Accession..bp.})
       go.csv.excl.iea = subset(go.csv,GO.Term.Evidence.Code..bp. != 'IEA')

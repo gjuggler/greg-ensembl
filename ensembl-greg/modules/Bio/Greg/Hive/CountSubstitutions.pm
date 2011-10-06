@@ -183,26 +183,29 @@ sub mask_substitution_runs {
   my $aln = shift;
   my $cache_file = shift;
 
-  if (!defined $cache_file) {
-    die("No cache file!");
-  }
-
-  print $tree->ascii."\n";
+  print $tree->ascii(0,0,1)."\n";
 
   $aln = Bio::EnsEMBL::Compara::AlignUtils->copy_aln($aln);
   my $tree_copy = Bio::EnsEMBL::Compara::TreeUtils->copy_tree($tree);
   my $aln_copy = Bio::EnsEMBL::Compara::AlignUtils->copy_aln($aln);
 
-  if (!-e $cache_file) {
-
-    print "  calculating mask subs results...\n";
-    my $lines = $self->run_m0($tree_copy, $aln_copy);
-    my @lines = @{$lines};
-    $self->frz($cache_file, $lines);
+  my $lines;
+  if (defined $self->param('mask_subs_lines')) {
+    print "  loading mask subs results from array\n";
+    $lines = $self->param('mask_subs_lines');
+  } elsif (-e $cache_file) {
+    print "  loading mask subs results from file\n";
+    $lines = $self->thw($cache_file);
+  } else {
+    print "  running m0...\n";
+    $lines = $self->run_m0($tree_copy, $aln_copy);
+    if (defined $cache_file) {
+      $self->frz($cache_file, $lines);
+    } else {
+      $self->param('mask_subs_lines', $lines);
+    }
   }
   
-  print "  loading mask subs results from file\n";
-  my $lines = $self->thw($cache_file);
   my $m0_tree = Bio::Greg::Codeml->parse_codeml_results($lines);
   
   # Store substitutions.
@@ -374,14 +377,15 @@ sub extract_substitution_info {
   # Store the genomic position in the reference member.
   if (defined $ref_member) {
     my $ref_seq = $aln->get_seq_by_id($ref_member->name);
-    $self->throw("No seq for ref member!") unless ($ref_seq);
-    my $location = $ref_seq->location_from_column($aln_pos);
-    if ($location && $location->location_type ne 'IN-BETWEEN') {
-      eval {
-        my $seq_pos = $location->start;
-        my $coords_obj = $self->get_coords_from_pep_position($ref_member, $seq_pos);
-        $final_params = $self->replace($final_params, $coords_obj);
-      };
+    if ($ref_seq) {
+      my $location = $ref_seq->location_from_column($aln_pos);
+      if ($location && $location->location_type ne 'IN-BETWEEN') {
+        eval {
+          my $seq_pos = $location->start;
+          my $coords_obj = $self->get_coords_from_pep_position($ref_member, $seq_pos);
+          $final_params = $self->replace($final_params, $coords_obj);
+        };
+      }
     }
   }
   

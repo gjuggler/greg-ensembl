@@ -9,7 +9,6 @@ connect.db = function(dbname) {
   con <- dbConnect(drv, host='ens-research', port=3306, user='ensadmin', password='ensembl', dbname=dbname)
   return(con)
 }
-con = connect.db(dbname)
 
 get.vector = function(con,query,columns='all') {
   res = dbSendQuery(con,query)

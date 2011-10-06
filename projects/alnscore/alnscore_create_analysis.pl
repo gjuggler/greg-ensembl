@@ -44,13 +44,16 @@ sub aln_score {
   my $params      = {};
   $h->create_analysis( $logic_name, $module, $params, 400, 1 );
 
-  my @aligners = ('clustalw', 'mafft', 'muscle', 'probcons', 'fsa', 'prank', 'prank_codon');
+  my @aligners = ('clustalw', 'mafft', 'muscle', 'probcons', 'fsa', 'prank', 'prank_codon', 'pagan');
   #my @aligners = ('mafft');
-  my @mpls = (0.1, 0.2, 0.5, 1.0, 1.5, 2.0, 3.0);
+  my @mpls = (0.1, 0.2, 0.5, 1.0, 1.5, 2.0, 3.0, 6.0, 12.0);
   #my @mpls = (0.5);
-  my @trees = ('balanced.nh', 'ladder.nh');
+  #my @trees = ('balanced.nh', 'ladder.nh');
+  my @trees = ('balanced.nh');
   my $n_reps = 40;
   #my $n_reps = 1;
+
+  my $indel_rate = 0.1;
 
   my $i=0;
   foreach my $tree (@trees) {
@@ -58,11 +61,14 @@ sub aln_score {
       foreach my $aligner (@aligners) {
         $i++;
         foreach my $rep (1 .. $n_reps) {
+          my $cur_indel = $indel_rate;
+          $cur_indel = $indel_rate / $mpl / 2 if ($mpl >= 3);
           my $p = {
             data_id => $i,
             aligner => $aligner,
             mpl => $mpl,
             tree => $tree,
+            indel => $cur_indel,
             replicate => $rep,
             label => "${tree}_${mpl}_${aligner}_${rep}"
           };
