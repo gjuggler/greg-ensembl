@@ -128,31 +128,6 @@ sub data_for_gene {
   return $cur_params;
 }
 
-sub get_sites_data {
-  my $self = shift;
-
-#  return;   # Temporary 2xmammals speed-up. Don't store sites for now, this worked OK the last time.
-
-  my $tree = $self->get_tree;
-  my $aln  = $tree->get_SimpleAlign;
-
-  my $dba = $self->compara_dba;
-  $dba->dbc->disconnect_when_inactive(0);
-  my $dbh = $dba->dbc->db_handle;
-  $dbh->{AutoCommit} = 0;
-
-  foreach my $aln_position ( 1 .. $aln->length ) {
-    my $site_data = $self->data_for_site($aln_position);
-    if ( defined $site_data ) {
-      $self->store_params_in_table( $dbh, $self->param('sites_table'), $site_data );
-    }
-  }
-
-  $dbh->commit();
-  $dbh->{AutoCommit} = 1;
-
-}
-
 sub data_for_site {
   my $self         = shift;
   my $aln_position = shift;

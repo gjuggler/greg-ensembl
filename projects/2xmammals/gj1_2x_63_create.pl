@@ -4,7 +4,7 @@ use warnings;
 use strict;
 use Bio::Greg::Hive::ComparaHiveLoaderUtils;
 
-my $url = 'mysql://ensadmin:ensembl@ens-research/gj1_2x_63';
+my $url = 'mysql://ensadmin:ensembl@ens-research/gj1_2x_63_alt';
 my $h = new Bio::Greg::Hive::ComparaHiveLoaderUtils;
 $h->init($url);
 

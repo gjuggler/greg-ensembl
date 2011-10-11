@@ -210,8 +210,6 @@ sub run_with_params {
   Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $input_cdna, { length => 100,full=>1 } );
   my $action = $self->param('analysis_action');
 
-  $self->compara_dba->dbc->disconnect_when_inactive(1);
-
   if ( $action =~ m/slr/i ) {
     $self->run_sitewise_dNdS( $tree, $input_cdna, $self->params );
     sleep(2);
@@ -234,7 +232,6 @@ sub run_with_params {
     $self->run_indelign( $tree, $input_cdna, $self->params );
   }
 
-  $self->compara_dba->dbc->disconnect_when_inactive(0);
 }
 
 sub run_hyphy {
@@ -705,7 +702,9 @@ sub run_sitewise_dNdS {
 
   my $exited_well = close($run);
   if ( !$exited_well ) {
-    throw("Slr didn't exit well!");
+    chdir($cwd);
+    return undef;
+    #throw("Slr didn't exit well!");
   }
 
   if ( ( grep { /\berr(or)?: /io } @output ) ) {

@@ -30,9 +30,40 @@ connect <- function(dbname=NULL) {
   con <- dbConnect(MySQL(), host=host, port=port, user=user, password=password, dbname=dbname)
   dbURL = paste("mysql://",userpass,"@",host,":",port,"/",dbname,sep="")
   print(paste("Connected to:",user,"@",host,":",port,"/",dbname))
+#  print(paste("[",dbURL,"]"))
+  return(con)
+}
+
+disconnect <- function(con) {
+  info <- mysqlConnectionInfo(con)
+
+  userpass <- info$user
+  host <- info$host
+  port <- 'port'
+  dbname <- info$dbname  
+
+  dbDisconnect(con)
+  print(paste("Disconnected from:",userpass,"@",host,":",port,"/",dbname))
+}
+
+connect.livemirror <- function(dbname=NULL) {
+  if(is.null(dbname)) {
+    stop("Must give dbname to connect to mysql!")
+  }
+
+  host = 'ens-livemirror'
+    port=3306
+    user='ensadmin'
+    password='ensembl'
+    userpass='ensadmin:ensembl'
+
+  con <- dbConnect(MySQL(), host=host, port=port, user=user, password=password, dbname=dbname)
+  dbURL = paste("mysql://",userpass,"@",host,":",port,"/",dbname,sep="")
+  print(paste("Connected to:",user,"@",host,":",port,"/",dbname))
   print(paste("[",dbURL,"]"))
   return(con)
 }
+
 
 dbUpdateVars <- function(conn, dbtable, dataframe=NULL, primary, vars=colnames(dataframe)) { 
   print(paste("dbupdateVars for table", dbtable))
@@ -43,16 +74,23 @@ dbUpdateVars <- function(conn, dbtable, dataframe=NULL, primary, vars=colnames(d
     stop("The source dataframe is missing, with no default\n\n", call. = FALSE) 
   } 
   if (!(toupper(primary) %in% toupper(names(dataframe)))) {
-    stop("The primary key variable doesn't exist in the source dataframe\n\n", call. = FALSE) 
+    #stop("The primary key variable doesn't exist in the source dataframe\n\n", call. = FALSE) 
   } 
   if (!all(toupper(vars) %in% toupper(names(dataframe)))) { 
     stop("One or more variables don't exist in the source dataframe\n\n", call. = FALSE) 
   } 
   if (!(toupper(primary) %in% toupper(dbListFields(conn, dbtable)))) { 
-    stop("The primary key variable doesn't exist in the target table\n\n", call. = FALSE) 
+    #stop("The primary key variable doesn't exist in the target table\n\n", call. = FALSE) 
   } 
+
+  # Make the variable names OK.
+  subst.vars <- gsub('[\\. ]', '_', vars)
+  colnames(dataframe) <- subst.vars
+  vars <- subst.vars
+
   if (!all(toupper(vars) %in% toupper(dbListFields(conn, dbtable)))) { 
     print(toupper(vars))
+    print(toupper(subst.vars))
     print(toupper(dbListFields(conn, dbtable)))
     stop("One or more variables don't exist in the target table\n\n", call. = FALSE) 
   } 
@@ -77,4 +115,19 @@ dbUpdateVars <- function(conn, dbtable, dataframe=NULL, primary, vars=colnames(d
   toupdate <- paste(paste(vars, "=VALUES(", vars, ")", sep=""), collapse=", ")
   sqlstring <- paste("INSERT INTO", varlist, "VALUES", datastring, "ON DUPLICATE KEY UPDATE", toupdate)
   dbSendQuery(conn, sqlstring) 
-} 
+}
+
+write.or.update <- function(df, tbl, con, primary) {
+  if (dbExistsTable(con, tbl)) {
+    #print(head(df))
+    dbUpdateVars(con, tbl, df, primary)
+  } else {
+    dbWriteTable(con, tbl, df, row.names=F)
+    primary.str <- primary
+    if (is.character(df[1, primary]) || is.factor(df[1, primary])) {
+      primary.str <- paste(primary, '(64)', sep='')
+    }
+    db.str <- paste('ALTER TABLE ', tbl, ' ADD UNIQUE (', primary.str, ')', sep='')
+    dbSendQuery(con, db.str)
+  }
+}

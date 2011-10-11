@@ -36,7 +36,7 @@ sub fetch_input {
 sub run {
   my $self = shift;
 
-#  $self->param('force_recalc', 1);
+  $self->param('store_stuff', 0);
 
   my $tree = $self->get_tree;
   my $member = $self->_get_ref_member($tree);
@@ -45,11 +45,11 @@ sub run {
   $self->param('data_id', $self->param('node_id'));
   print "Gene : ".$member->display_label."\n";
 
-  # Handle the mitochondrial genetic code.
   $self->param('member', $member);
   my $gene_name = $member->get_Gene->external_name || $member->get_Gene->stable_id;
   $self->param('gene_name',$gene_name);
 
+  # Handle the mitochondrial genetic code.
   $self->param('chr_name', ''.$member->get_Transcript->slice->seq_region_name);
   if ($self->param('chr_name') =~ m/MT/gi) {
     $self->param('bioperl_codontable_id', 2);
@@ -64,15 +64,24 @@ sub run {
     my $leaf_count = scalar($tree->leaves);
     $self->fail_and_die("small_tree", "Tree w/ $leaf_count leaves!");
   }
-  if (scalar($tree->leaves) > 80) {
-    print $tree->ascii;
-    my $leaf_count = scalar($tree->leaves);
-    $self->fail_and_die("big_tree", "Tree w/ $leaf_count leaves!");
+#  if (scalar($tree->leaves) > 80) {
+#    print $tree->ascii;
+#    my $leaf_count = scalar($tree->leaves);
+#    $self->fail_and_die("big_tree", "Tree w/ $leaf_count leaves!");
+#  }
+
+  my $seq_length = $member->seq_length;
+  if ($seq_length > 3000) {
+    $self->param('aln_type', 'pagan');
+  } else {
+    $self->param('aln_type', 'prank_codon');
   }
 
   $self->dbc->disconnect_when_inactive(1);
+  $self->compara_dba->disconnect_when_inactive(1);
 
-  my ($aln) = $self->_get_aln($tree, $member);
+  # Get the seq quality filtered alignments.
+  my ($aln) = $self->_get_aln($tree, $member, 1);
   $self->save_hash;
 
   my $tree_cpy = Bio::EnsEMBL::Compara::TreeUtils->copy_tree($tree);
@@ -83,17 +92,41 @@ sub run {
     $self->fail_and_die("small tree", "Mammal sub-tree w/ $leaf_count leaves!");    
   }
 
-  ($tree, $aln) = $self->_remove_paralogs($tree, $aln);
+  $self->param('dup_species_list',$self->species_with_dups($tree));
+  $self->param('dup_species_count',$self->duplication_count($tree));
+
+  ($tree, $aln) = $self->_remove_paralogs($tree, $aln, 1);
+  # Get the ref member again now that paralogs are removed.
+  $member = $self->_get_ref_member($tree);
+  $self->param('member', $member);
   $self->save_hash;
+
+  $self->dbc->disconnect_when_inactive(1);
+
+  # Realign with prank.
+  $self->pretty_print($self->_tx_aln($aln));
   $aln = $self->_align($tree, $aln);
+  $self->pretty_print($self->_tx_aln($aln));
   $self->save_hash;
+
+  # Store realigned seqs in a table.
+  $self->_store_seqs($tree, $aln);
+
+  # Store / mask out substitution clusters
+  $self->dbc->disconnect_when_inactive(1);
   $aln = $self->_mask_subs($tree, $aln);
   $self->save_hash;
+
+  # Output alignment to a file.
+  $self->output_alignment($tree, $aln);
   
-  my $m0_lines = $self->_run_paml($tree, $aln);
+  # Save m0-inferred substitutions.
+  my $m0_lines = $self->_save_subs($tree, $aln);
+
+  # Run SLR.
+  $self->_run_slr($tree, $aln, 'sites');
   $self->save_hash;
-  $self->_run_slr($tree, $aln);
-  $self->save_hash;
+
   $self->_collect_gene_data($tree, $aln, $m0_lines);
   $self->save_hash;
 }
@@ -102,17 +135,33 @@ sub _get_aln {
   my $self = shift;
   my $tree = shift;
   my $member = shift;
+  my $get_filtered = shift;
 
-  my $existing_aln = $self->get('orig_aln');
-  return $existing_aln if (defined $existing_aln && $self->param('force_recalc') != 1);
+
+  if ($get_filtered) {
+    my $existing_aln = $self->get('orig_aln');
+    return $existing_aln if (defined $existing_aln && $self->param('force_recalc') != 1);
+  }
 
   $self->param('aln_type', 'compara');
-  $self->param('quality_threshold', 0);
+  if ($get_filtered) {
+    $self->param('quality_threshold', 25);
+    $self->param('store_filtered_codons', 1);
+  } else {
+    $self->param('quality_threshold', 0);
+    $self->param('store_filtered_codons', 0);
+  }
+  $self->param('hive_dbc', $self->dbc);
+  $self->param('process', $self);
   my $tree_aln_obj =
     Bio::EnsEMBL::Compara::ComparaUtils->get_compara_or_genomic_aln( $self->compara_dba, $tree, $member,
                                                                      $self->params );
+
   my $aln = $tree_aln_obj->{aln};
-  $self->put('orig_aln', $aln);
+  if ($get_filtered) {
+    $self->put('orig_aln', $aln);
+  }
+
   return $aln;
 }
 
@@ -120,8 +169,9 @@ sub _remove_paralogs {
   my $self = shift;
   my $tree = shift;
   my $aln = shift;
+  my $store_in_table = shift;
 
-  return $self->remove_paralogs($tree, $aln);
+  return $self->remove_paralogs($tree, $aln, $store_in_table);
 }
 
 sub _align {
@@ -132,7 +182,12 @@ sub _align {
   my $existing_aln = $self->get('prank_aln');
   return $existing_aln if (defined $existing_aln && $self->param('force_recalc') != 1);
 
-  $self->param('aligner', 'prank_codon');
+  if ($self->param('aln_type') eq 'pagan') {
+    $self->param('aligner', 'pagan');
+  } else {
+    $self->param('aligner', 'prank_codon');
+  }
+
   my $pep_aln = $self->_tx_aln($aln);
   $aln = $self->align($tree, $aln, $pep_aln);
 
@@ -145,20 +200,45 @@ sub _mask_subs {
   my $tree = shift;
   my $aln = shift;
 
-  my $existing_aln = $self->get('masked_aln');
-  return $existing_aln if (defined $existing_aln && $self->param('force_recalc') != 1);
-
+  print "  masking subs...\n";
   my $lines_s = 'mask_subs_lines';
 
   my $mask_subs_lines = $self->get($lines_s);
   if (defined $mask_subs_lines && !$self->param('force_recalc')) {
     $self->param($lines_s, $mask_subs_lines);
   }
-  my $masked_aln = $self->filter_substitution_runs($tree, $aln);
+  my $do_filtering = 0;
+  my $masked_aln = $self->filter_substitution_runs($tree, $aln, $do_filtering);
 
   $self->put($lines_s, $self->param($lines_s));
-  $self->put('masked_aln', $masked_aln);
+#  $self->put('masked_aln', $masked_aln);
   return $masked_aln;
+}
+
+sub output_alignment {
+  my $self = shift;
+  my $tree = shift;
+  my $aln = shift;
+
+  my $id = $self->param('gene_name');
+  my $fldr = $self->get_output_folder . '/alns';
+  my $file = $self->save_file({
+    folder => $fldr,
+    filename => "$id",
+    id => "$id",
+    extension => "fasta"
+                              });
+  my $filename = $file->{full_file};
+  Bio::EnsEMBL::Compara::AlignUtils->to_file($aln, $filename);
+
+  $file = $self->save_file({
+    folder => $fldr,
+    filename => "$id",
+    id => "$id",
+    extension => "nh"
+                              });
+  $filename = $file->{full_file};
+  Bio::EnsEMBL::Compara::TreeUtils->to_file($tree, $filename);
 }
 
 sub _get_clade {
@@ -170,8 +250,12 @@ sub _get_clade {
   my @primates = (9478, 9483, 9544, 9593, 9598, 9601, 9606, 30608,
   30611, 61853);
   my @glires = (9978, 9986, 10020, 10090, 10116, 10141, 43179);
+
   my @laur = (9365, 9615, 9646, 9685, 9739, 9796, 9823, 9913, 30538,
   42254, 59463, 132908);
+  my @atlanto = (9358, 9361, 9371, 9785, 9813);
+
+  #my @sauria = (28377, 59729, 9031, 9103);
   my @euth = (9358, 9361, 9365, 9371, 9478, 9483, 9544, 9593, 9598,
   9601, 9606, 9615, 9646, 9685, 9739, 9785, 9796, 9813, 9823, 9913,
   9978, 9986, 10020, 10090, 10116, 10141, 30538, 30608, 30611, 37347,
@@ -180,13 +264,26 @@ sub _get_clade {
   9593, 9598, 9601, 9606, 9615, 9646, 9685, 9739, 9785, 9796, 9813,
   9823, 9913, 9978, 9986, 10020, 10090, 10116, 10141, 13616, 30538,
   30608, 30611, 37347, 42254, 43179, 59463, 61853, 132908);
+
+  my @sparse_glires = (10090, 10116, 10020, 43179, 10141);
+
+  my @sparse_mamm = (9258, 9315, 9361, 9785, 9606, 10090, 9615);
+
+  my @hmrd = (9606, 10090, 10116, 9615);
+
+  my @hiq_only = (9606, 9598, 9544, 10090, 10116, 9615, 9913, 9823, 9796);
   
   my $map = {
     primates => \@primates,
     glires => \@glires,
     laurasiatheria => \@laur,
+    atlantogenata => \@atlanto,
     eutheria => \@euth,
-    mammals => \@mamm
+    mammals => \@mamm,
+    sparse_glires => \@sparse_glires,
+    sparse_mammals => \@sparse_mamm,
+    hmrd => \@hmrd,
+    hiq_only => \@hiq_only
   };
   my $arrayref = $map->{$clade};
   my @taxids = @$arrayref;
@@ -194,7 +291,10 @@ sub _get_clade {
   my @keepers;
   foreach my $leaf ($tree->leaves) {
     my $found = grep {$leaf->taxon_id == $_} @taxids;
-    push @keepers, $leaf if ($found);
+    if ($found) {
+      push @keepers, $leaf;
+      print "  keeping leaf ".$leaf->name."\n";
+    }
   }
 
   if (scalar(@keepers) == 0) {
@@ -202,30 +302,42 @@ sub _get_clade {
   }
 
   my $subtree = Bio::EnsEMBL::Compara::TreeUtils->extract_subtree_from_leaf_objects($tree, \@keepers);
+  if (!$subtree) {
+    return (undef, undef);
+  }
   my $subaln = Bio::EnsEMBL::Compara::ComparaUtils->restrict_aln_to_tree($aln, $subtree);
 
   return ($subtree, $subaln);
 }
 
-sub _run_paml {
+sub _save_subs {
   my $self = shift;
   my $tree = shift;
   my $aln = shift;
 
-  my $m0 = $self->get('m0_lines');
-  return $m0 if (defined $m0 && !$self->param('force_recalc'));
-
-  my $lines = $self->run_m0($tree, $aln);
-  $self->store_subs($tree, $aln, $lines, $self->param('member'), 'subs');
-
-  $self->put('m0_lines', $lines);
+  my $lines = $self->get('mask_subs_lines');
+  if ($self->param('store_stuff') != 0) {
+    $self->store_subs($tree, $aln, $lines, $self->param('member'), 'subs');
+  }
   return $lines;  
+}
+
+sub _store_seqs {
+  my $self = shift;
+  my $tree = shift;
+  my $aln = shift;
+
+  return if ($self->param('store_stuff') == 0);
+
+  $self->store_seqs($tree, $aln);
 }
 
 sub _run_slr {
   my $self = shift;
   my $tree = shift;
   my $aln = shift;
+
+  $self->pretty_print($self->_tx_aln($aln), {full => 1});
 
   $self->param('analysis_action', 'slr');
 
@@ -246,8 +358,13 @@ sub _run_slr {
     primates => 1,
     glires => 2,
     laurasiatheria => 3,
-    eutheria => 4,
-    mammals => 5
+    atlantogenata => 4,
+    eutheria => 5,
+    mammals => 6,
+    sparse_glires => 7,
+    sparse_mammals => 8,
+    hiq_only => 9,
+    hmrd => 10
   };
 
   my @clades = keys %$clade_map;
@@ -260,7 +377,10 @@ sub _run_slr {
       push @skipped_clades, $clade;
       next;
     }
-    print $subtree->ascii."\n";
+
+    $self->pretty_print($self->_tx_aln($subaln), {full => 1});
+
+    #print $subtree->ascii."\n";
     my $lines_key = $clade.'_slr';
     my $lines = $self->get($lines_key);
 
@@ -269,19 +389,48 @@ sub _run_slr {
     if (!defined $lines || $self->param('force_recalc')) {
       $self->pretty_print($pep_aln);
       $lines = $self->run_sitewise_analysis($subtree, $subaln, $pep_aln);
-      $self->put($lines_key, $lines);
+      if (defined $lines) {
+        $self->put($lines_key, $lines);
+      }
     }
 
-    my $results = $self->parse_sitewise_output_lines($subtree, $subaln, $pep_aln, $lines);
-    #$self->hash_print($results);
+    if (defined $lines) {
+      my $results = $self->parse_sitewise_output_lines($subtree, $subaln, $pep_aln, $lines);
+      #$self->hash_print($results);
 
-    my $param_set_id = $clade_map->{$clade};
-    $self->_store_sitewise($subtree, $subaln, $pep_aln, $results, $clade, $param_set_id, $pep_data);
-    $self->save_hash;
+      #if ($clade eq 'primates') {
+      #  print join("\n", @$lines)."\n";
+      #}
+
+      my $param_set_id = $clade_map->{$clade};
+      if ($self->param('store_stuff') != 0) {
+        $self->_store_sitewise($subtree, $subaln, $pep_aln, $results, $clade, $param_set_id, $pep_data);
+      }
+      $self->save_hash;
+    } else {
+      push @skipped_clades, $clade;
+    }
   }
 
   $self->param('skipped_clades', join(', ',@skipped_clades));
   $self->param('skipped_clade_count', scalar(@skipped_clades));
+}
+
+sub clade_string_map {
+  my $self = shift;
+  my $clade_string_map = {
+    primates => 'p',
+    glires => 'g',
+    laurasiatheria => 'l',
+    atlantogenata => 'a',
+    eutheria => 'e',
+    mammals => 'm',
+    sparse_glires => 'sg',
+    sparse_mammals => 'sm',
+    hiq_only => 'h',
+    hmrd => 'f'
+  };
+  return $clade_string_map;
 }
 
 sub _store_sitewise {
@@ -299,26 +448,27 @@ sub _store_sitewise {
   my $slr_tree = $slr_hash->{slr_tree};
   my $slr_treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($slr_tree);
 
-  my $clade_string_map = {
-    primates => 'p',
-    glires => 'g',
-    laurasiatheria => 'l',
-    eutheria => 'e',
-    mammals => 'm'
-  };
+  my $clade_string_map = $self->clade_string_map;
   my $str = $clade_string_map->{$clade};
   $self->param($str.'_slr_mean_path', $slr_treeI->root->mean_path_length);
   $self->param($str.'_slr_total_length', $slr_treeI->root->total_branch_length);
   $self->param($str.'_slr_dnds', $slr_hash->{omega});
+  $self->param($str.'_slr_kappa', $slr_hash->{kappa});
   $self->param($str.'_leaf_count', scalar($slr_treeI->leaves));
 
   # Add ungapped branch lengths to the slr hash.
   $self->add_ungapped_branch_lengths($slr_tree, $pep_aln, $slr_hash);
 
+  $self->dbc->db_handle->{AutoCommit} = 0;
+
+  my $n_sites = 0;
   foreach my $key (1 .. $pep_aln->length) {
     my $site_obj = $slr_hash->{$key};
     next unless (defined $site_obj);
     my $aln_position = $site_obj->{aln_position};
+    my $note = $site_obj->{note};
+    next if ($note eq 'single_char' || $note eq 'all_gaps');
+    $n_sites++;
     my $cur_params = $self->params;
 
     $cur_params = $self->replace($cur_params,$site_obj);
@@ -344,6 +494,9 @@ sub _store_sitewise {
     
     $self->store_params_in_table($self->dbc, 'sites', $cur_params);
   }
+
+  $self->dbc->db_handle->{AutoCommit} = 1;
+  $self->param($str.'_slr_sites', $n_sites);
 
 }
 
@@ -393,8 +546,6 @@ sub _collect_gene_data {
   $self->param('paml_dnds', $omegas[0]);
 
   $self->param('leaf_count',scalar($tree->leaves));
-  $self->param('dup_species_list',$self->species_with_dups($tree));
-  $self->param('dup_species_count',$self->duplication_count($tree));
 
   $self->store_params_in_table($self->dbc, 'genes', $self->params);
 }
@@ -448,6 +599,10 @@ sub put {
 
 sub save_hash {
   my $self = shift;
+
+  if ($self->param('store_stuff') == 0) {
+    return;
+  }
 
   $self->load_hash;
   my $hash = $self->param('hash');
@@ -527,8 +682,7 @@ sub _sites_table_structure {
     note => 'char16',
     random => 'char16',
 
-    unique_keys => 'data_id,parameter_set_id,aln_position',
-    extra_keys => 'parameter_set_id'
+    unique_keys => 'data_id,parameter_set_id,aln_position'
   };
 
   return $structure;
@@ -550,9 +704,9 @@ sub _genes_table_structure {
     gene_name => 'char32',
     ref_gene_description => 'string',
     ref_taxon_id => 'int',
-    ref_transcript_id => 'char16',
-    ref_gene_id => 'char16',
-    ref_protein_id => 'char16',
+    ref_transcript_id => 'char32',
+    ref_gene_id => 'char32',
+    ref_protein_id => 'char32',
 
     # Alignment properties.
     aln_length => 'int',
@@ -582,13 +736,15 @@ sub _genes_table_structure {
     unique_keys => 'data_id'
   };
 
-  foreach my $clade ('p', 'g', 'l', 'e', 'm') {
-    $structure->{$clade.'_sites'} = 'int';
+  my $map = $self->clade_string_map;
+  foreach my $key (keys %$map) {
+    my $clade = $map->{$key};
     $structure->{$clade.'_leaf_count'} = 'int';
+    $structure->{$clade.'_slr_sites'} = 'int';
     $structure->{$clade.'_slr_dnds'} = 'float';
+    $structure->{$clade.'_slr_kappa'} = 'float';
     $structure->{$clade.'_slr_mean_path'} = 'float';
-    $structure->{$clade.'_slr_total_length'} = 'float';
-    
+    $structure->{$clade.'_slr_total_length'} = 'float';    
   }
 
   return $structure;
