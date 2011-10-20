@@ -245,7 +245,7 @@ sub compara_dba {
 
       if ($compara_dba) {
         printf " >> Using Compara DB at [%s/%s]\n",$compara_dba->dbc->host,$compara_dba->dbc->dbname;
-        #      $compara_dba->disconnect_when_inactive(1);
+        $compara_dba->disconnect_when_inactive(1);
       }
       };
     $self->{_compara_dba} = $compara_dba if (defined $compara_dba);
@@ -810,9 +810,8 @@ sub create_table_from_params {
   my $table_name = shift;
   my $params     = shift;
 
-  $self->dbc->disconnect_when_inactive(0);
-
   my $dbc = $self->dbc;
+  $dbc->disconnect_when_inactive(0);
 
   # First, create the table with data_id and parameter_set columns.
   my $sth;
@@ -858,6 +857,14 @@ sub create_table_from_params {
       $type =~ s/\s*not null\s*//gi;
       $not_null = 1;
     }
+
+    my $dflt;
+    if ( $type =~ m/(default .*)/gi ) {
+      $dflt = $1;
+      $type =~ s/\s*default .*\s*//gi;
+    }
+    print "$dflt\n";
+    print "$type\n";
     
     my $type_map = {
       'uuid'      => 'BINARY(16)',
@@ -877,8 +884,10 @@ sub create_table_from_params {
     };
     $type = $type_map->{$type};
     
-    $type = $type . 'NOT NULL ' if ( $not_null == 1 );
+    $type = $type . ' NOT NULL' if ( $not_null == 1 );
     
+    $type = $type . ' ' . $dflt if ( $dflt );
+
     my $create_cmd = qq^ALTER TABLE $table_name ADD COLUMN `$key` $type^;
     $dbc->do($create_cmd);
   }
@@ -940,6 +949,8 @@ sub create_table_from_params {
       }
     }  
   }
+
+  $self->dbc->disconnect_when_inactive(1);
 }
 
 sub output_rows_to_file {
@@ -975,6 +986,14 @@ sub store_params_in_table {
   my $table_name = shift;
   my $params     = shift;
 
+  if ($self->param('store_stuff') == 0) {
+#    if (!defined $self->{'warn_'.$table_name}) {
+      print "*** Not storing into table $table_name ***\n";
+#      $self->{'warn_'.$table_name} = 1;
+#    }
+    return;
+  }
+
   my @fields;
   my $cache_key = '_fields_arrayref_' . $table_name;
   if ( !defined $self->{$cache_key} ) {
@@ -1005,6 +1024,7 @@ sub store_params_in_table {
     }
   } @fields;
   $sth2->execute(@values);
+  $sth2->finish;
 }
 
 sub store_tag {
@@ -1104,6 +1124,7 @@ sub save_file {
   $subfolder = $params->{subfolder} if ( defined $params->{subfolder} );
 
   my $output_base = $self->get_output_folder;
+  $output_base = $params->{folder} if ( defined $params->{folder} );
 
   my $extension = $params->{extension} || 'txt';
 

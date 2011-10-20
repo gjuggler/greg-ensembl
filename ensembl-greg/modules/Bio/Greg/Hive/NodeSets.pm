@@ -46,6 +46,8 @@ sub run {
 
   $self->param('orig_leaf_count', scalar($tree->leaves));
   $self->param('tree', $tree);
+
+  return if (scalar($tree->leaves) < 2);
   
   my $genome_tree = Bio::EnsEMBL::Compara::ComparaUtils->get_genome_tree_subset($self->compara_dba,$self->params);
 
@@ -70,7 +72,8 @@ sub set_names {
 
   return (
     'Primates', 'Glires', 'Laurasiatheria',
-    'Fungi/Metazoa group', 'Vertebrata', 'Amniotes', 'Eutheria', 'Fish', 'Sauria',
+    'Eukaryota', 'Euteleostomi', 'Amniota', 'Eutheria',
+    'Clupeocephala', 'Sauria',
     'MammalSubgroups',
     'MammalSubgroupsPlusOutgroup',
     'Ensembl Roots'
@@ -202,6 +205,78 @@ sub _store_in_table {
   
 }
 
+sub species_taxid {
+  my $self = shift;
+  
+  return {
+    human => 9606,
+    chimp => 9598,
+    gorilla => 9593,
+    orang => 9601,
+    rhesus => 9544,
+    gibbon => 61853,
+    marmoset => 9483,
+    tarsier => 9478,
+    bushbaby => 30611,
+    mouse_lemur => 30608,
+    tree_shrew => 37347,
+
+    mouse => 10090,
+    rat => 10116,
+    kangaroo_rat => 10020,
+    squirrel => 43179,
+    guinea_pig => 10141,
+    pika => 9978,
+    rabbit => 9986,
+    
+    hedgehog => 9365,
+    shrew => 42254,
+    microbat => 59463,
+    megabat => 132908,
+    dog => 9615,
+    panda => 9646,
+    cat => 9685,
+    pig => 9823,
+    alpaca => 30538,
+    dolphin => 9739,
+    cow => 9913,
+    horse => 9796,
+
+    tenrec => 9371,
+    elephant => 9785,
+    hyrax => 9813,
+
+    sloth => 9358,
+    armadillo => 9361,
+
+    opossum => 13616,
+    wallaby => 9315,
+
+    platypus => 9258,
+
+    chicken => 9031,
+    turkey => 9103,
+    zebrafinch => 59729,
+
+    lizard => 28377,
+
+    xenopus => 8364,
+
+    stickleback => 69293,
+    medaka => 8090,
+    fugu => 31033,
+    tetraodon => 99883,
+    zebrafish => 7955,
+
+    c_intestinalis => 7719,
+    c_savignyi => 51511,
+
+    drosophila => 7227,
+    c_elegans => 6239,
+    yeast => 4932
+  };
+}
+
 sub _store_tree_in_table {
   my $self = shift;
   my $subtree = shift;
@@ -239,34 +314,12 @@ sub _store_tree_in_table {
   my $name_str = join(', ', sort keys %$gene_hash);
   $p->{gene_names} = $name_str;
 
-  my $species_taxid = {
-    human => 9606,
-    chimp => 9598,
-    gorilla => 9593,
-    orang => 9601,
-    rhesus => 9544,
-    marmoset => 9483,
-    bushbaby => 30611,
-    mouse => 10090,
-    cow => 9913,
-    elephant => 9785,
-    opossum => 13616,
-    platypus => 9258,
-    lizard => 28377,
-    zebrafinch => 59729,
-    xenopus => 8364,
-    zebrafish => 7955,
-    fugu => 31033,
-    ciona => 7719,
-    drosophila => 7227,
-    c_elegans => 6239,
-    yeast => 4932
-  };
+  my $species_taxid = $self->species_taxid;
   
+  my @leaves = $subtree->leaves;
   foreach my $species (keys %$species_taxid) {
     my $taxid = $species_taxid->{$species};
-
-    my $count = scalar(grep {$_->taxon_id == $taxid} $subtree->leaves);
+    my $count = scalar(grep {$_->taxon_id == $taxid} @leaves);
     $p->{$species.'_count'} = $count;
   }
 
@@ -313,9 +366,7 @@ sub tag_root_nodes {
 
   my $params = $base_p;
 
-  if ( $method_name eq 'asdf') {
-
-  } elsif ($method_name eq 'MammalSubgroups') {
+  if ($method_name eq 'MammalSubgroups') {
     $params = $self->replace_params(
       $base_p, {
         cc_Laurasiatheria => 0.1,
@@ -340,24 +391,12 @@ sub tag_root_nodes {
       }
     );
 
-  } elsif ( $method_name eq 'Primates' ) {
-    $params = $self->replace_params( $base_p, { cc_Primates => 0.6, min_size => 2, max_size => 500 } );
-  } elsif ( $method_name eq 'Glires' ) {
-    $params = $self->replace_params( $base_p, { cc_Glires => 0.6, min_size => 2, max_size => 500 } );
-  } elsif ( $method_name eq 'Laurasiatheria' ) {
-    $params = $self->replace_params( $base_p, { cc_Laurasiatheria => 0.6, min_size => 2, max_size => 500 } );
-  } elsif ( $method_name eq 'Fish' ) {
-    $params = $self->replace_params( $base_p, { cc_Clupeocephala => 0.6, min_size => 2, max_size => 500 } );
-  } elsif ( $method_name eq 'Sauria' ) {
-    $params = $self->replace_params( $base_p, { cc_Sauria => 0.6, min_size => 2, max_size => 500 } );
-  } elsif ( $method_name eq 'Amniotes' ) {
-    $params = $self->replace_params( $base_p, { cc_Amniota => 0.6, min_size => 2, max_size => 500 } );
-  } elsif ( $method_name eq 'Eutheria' ) {
-    $params = $self->replace_params( $base_p, { cc_Eutheria => 0.6, min_size => 2, max_size => 500 } );
-  } elsif ( $method_name eq 'Vertebrata' ) {
-    $params = $self->replace_params( $base_p, { cc_Vertebrata => 0.6, min_size => 2, max_size => 500 } );
-  } elsif ( $method_name eq 'Fungi/Metazoa group' ) {
-    $params = $self->replace_params( $base_p, { 'cc_Fungi/Metazoa group' => 0.6, min_size => 2, max_size => 500 } );
+  } else {
+    $params = $self->replace_params( $base_p, {
+      'cc_'.$method_name => 0.6,
+      min_size => 2,
+      max_size => 500
+                                     });
   }
 
   #my $subtree_function = $params->{subtree_function};
@@ -572,7 +611,7 @@ sub DESTROY {
 sub get_genome_taxonomy_below_level {
   my $self          = shift;
   my $dba           = shift;
-  my $root_taxon_id = shift || 'Fungi/Metazoa group';
+  my $root_taxon_id = shift || 33154;
   my $verbose       = shift || 0;
 
   my @gdbs = $self->get_all_genomes($dba);
@@ -669,6 +708,8 @@ sub has_ancestor_node_id {
 }
 
 sub trees_table {
+  my $self = shift;
+
   my $p = {
     data_id => 'int',
     tree_id => 'char32',
@@ -677,28 +718,6 @@ sub trees_table {
     tree_length => 'float',
     tree_mpl => 'float',
     
-    human_count => 'int',
-    chimp_count => 'int',
-    gorilla_count => 'int',
-    orang_count => 'int',
-    rhesus_count => 'int',
-    marmoset_count => 'int',
-    bushbaby_count => 'int',
-    mouse_count => 'int',
-    cow_count => 'int',
-    elephant_count => 'int',
-    opossum_count => 'int',
-    platypus_count => 'int',
-    lizard_count => 'int',
-    zebrafinch_count => 'int',
-    xenopus_count => 'int',
-    zebrafish_count => 'int',
-    fugu_count => 'int',
-    ciona_count => 'int',
-    drosophila_count => 'int',
-    c_elegans_count => 'int',
-    yeast_count => 'int',
-
     species_count => 'int',
     leaf_count => 'int',
 
@@ -706,6 +725,12 @@ sub trees_table {
 
     unique_keys => 'data_id,method_id,tree_id'
   };
+
+  my $species_taxid = $self->species_taxid;
+  foreach my $species (sort keys %$species_taxid) {
+    $p->{$species.'_count'} = 'int';
+  }
+
   return $p;
 }
 

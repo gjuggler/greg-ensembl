@@ -1,3 +1,5 @@
+library(xtable)
+
 # color.column - color the columns of a table for LaTeX output.
 #
 # Takes an xtable object and a column name as input, and returns the
@@ -19,37 +21,81 @@
 #
 # \usepackage[table]{xcolor}
 #
-color.column <- function(xt, column, limits=range(xt[, column], na.rm=T), low='white', high=rgb(0.3, 0.3, 1)) {
+color.column <- function(xt, column, 
+  limits=range(xt[, column], na.rm=T), 
+  low='white', 
+  high=rgb(0.3, 0.3, 1),
+  skip.coloring=F,
+  log = F,
+  ...
+) {
   ## Make sure the colorspace library is loaded to convert rgb to hex.
   library(colorspace)
   color.f <- colorRamp(c(low, high))
   vals <- xt[, column]
-  ## Rescale the values from (limits[1], limits[2]) to (0, 1)
-  vals <- (vals - limits[1])/diff(limits) * diff(c(0,1)) + 0
-  ## Clip values outside the desired range.
-  vals <- ifelse(!is.finite(vals) | vals %inside% c(0,1), vals, NA)
+  if (log) {
+    min.val <- min(vals)
+    if (min.val <= 0) {
+      vals <- vals - min.val + 0.01
+    }
+    vals <- log(vals)
+    limits <- range(vals, na.rm=T)
+  }
+  if (diff(limits) > 0) {
+    ## Rescale the values from (limits[1], limits[2]) to (0, 1)
+    vals <- (vals - limits[1])/diff(limits) * diff(c(0,1)) + 0
+    ## Clip values outside the desired range.
+    vals <- ifelse(!is.finite(vals) | vals < 1, vals, 1)
+    vals <- ifelse(!is.finite(vals) | vals > 0, vals, 0)
+  } else {
+    # All values are the same -- put them all at zero.
+    vals <- 0
+  }
 
   clrs <- color.f(vals)
+  clrs[is.na(clrs)] <- color.f(0)
   clr.string <- hex(RGB(clrs/255))
   clr.string <- substring(clr.string, 2) # Remove the hash prefix.
 
-  clr.command <- paste('\\cellcolor[HTML]{', clr.string, '} ', sep='')
-  xt <- xt.surround(xt, column, prefix=clr.command)
+  clr.command <- paste('\\cellcolor[HTML]{', clr.string, '}', sep='')
+
+  if (skip.coloring) {
+    clr.command <- ''
+  }
+
+  xt <- xt.surround(xt, column=column, prefix=clr.command, ...)
   xt
 }
 
-xt.surround <- function(xt, column, prefix='', suffix='') {
-  vals <- xt[, column]
+xt.surround <- function(xt, column, rows=c(1:nrow(xt)), prefix='', suffix='') {
+  vals <- xt[rows, column]
   indx <- which(colnames(xt) == column)
   # Grab the digits and display values set by xtable
   digt <- attr(xt, 'digits')[indx+1]
   disply <- attr(xt, 'display')[indx+1]
-  print(digt)
-  print(disply)
-  formatted.vals <- formatC(xt[, column], digits=digt, format=disply)
-  formatted.column <- paste(prefix, trim(formatted.vals), suffix, sep='')
-  print(formatted.column)
+  formatted.vals <- formatC(xt[rows, column], digits=digt, format=disply)
+  formatted.column <- paste(prefix, R.oo::trim(formatted.vals), suffix, sep='')
   xt[, column] <- formatted.column
+  xt
+}
+
+color.columns <- function(xt, columns,  ...) {
+  for (i in 1:length(columns)) {
+    #print(columns[i])
+    xt <- color.column(xt, columns[i], ...)
+  }
+  xt
+}
+
+color.rows <- function(xt, rows=c(1:nrow(xt)), color=gray(0.5), ...) {
+  all.cols <- colnames(xt)
+
+  clr.string <- substring(color, 2) # Remove the hash prefix.
+  clr.command <- paste('\\cellcolor[HTML]{', clr.string, '} ', sep='')
+
+  for (cl in all.cols) {
+    xt <- xt.surround(xt, column=cl, prefix=clr.command, rows=rows, ...)
+  }
   xt
 }
 
@@ -58,4 +104,16 @@ xt.tiny <- function(xt, column) {
 }
 xt.small <- function(xt, column) {
   xt.surround(xt, column, prefix='\\small{', suffix='}')
+}
+
+print.latex <- function(xt, filename, ...) {
+  print(xt, 
+    file=filename,
+    only.contents=T,
+    include.colnames=F,
+    include.rownames=F,
+    sanitize.text.function=function(x){x},
+    hline.after=NULL,
+    ...
+  )
 }
