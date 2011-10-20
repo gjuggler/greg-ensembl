@@ -2051,7 +2051,22 @@ cumulative.calc <- function(
   }
 }
 
-cumulative.plot <- function(pset=pset, filter='recomb_100k', sort.f='lrt_stat', direction='pos') {
+download.table <- function(tbl) {
+  filename <- scratch.f(sprintf("%s.Rdata", tbl))
+  con <- connect(db())
+  cmd <- sprintf("select * from %s", tbl)
+  df <- dbGetQuery(con, cmd)
+  disconnect(con)
+  assign(tbl, df)
+  save(tbl, file=filename)
+}
+
+cumulative.plot <- function(pset=pset, 
+  filter='recomb_100k', 
+  sort.f='lrt_stat', 
+  direction='window',
+  fields = ''
+) {
   con <- connect(db())
   cmd <- sprintf("select * from top_sites_cum where pset=%d and
   filter='%s' and direction='%s' and sort_f='%s'", pset, filter, direction, sort.f)
@@ -2059,22 +2074,37 @@ cumulative.plot <- function(pset=pset, filter='recomb_100k', sort.f='lrt_stat', 
   disconnect(con)
 
   df$logmean_lrt <- log(pmax(0.1, abs(df$mean_lrt)))
+  df$nsyn_f_subs <- df$p_f_subs - df$syn_f_subs
+  df$f_nsyn <- 1 - (df$f_const + df$f_syn)
+  df$f_sub <- 1 - (df$f_const)
+  df$f_pos_01 <- df$pos_01 / df$n_sites
+  df$log_recombM <- log(df$mean_recombM)
+  df$log_gc <- log(df$mean_gc)
 
   possible.fields <- list(
     mean_recombM = 'Male Recombination',
     mean_recombF = 'Female Recombination',
+    log_recombM = 'Male Recombination (log)',
     mean_gc = 'GC Content',
+    log_gc = 'GC Content (log)',
     mean_bl = 'Mean Nongap Branch Length',
     p_f_subs = 'Primate Substitution Rate',
-    syn_f_subs = 'Synonymous Substitution Rate',
+    syn_f_subs = 'Primate Synonymous Substitutions Per Codon',
+    nsyn_f_subs = 'Primate Nonsynonymous Substitutions Per Codon',
     f_const = 'Proportion of Constant Sites',
+    f_syn = 'Proportion of Synonymous Sites',
+    f_nsyn = 'Proportion of Nonsynonymous Sites',
+    f_sub = 'Proportion of Non-Constant Sites',
     p_f_ws = 'Primate W-S Substitution Rate',
     p_f_sw = 'Primate S-W Substitution Rate',
     syn_f_ws = 'Synonymous W-S Substitution Rate',
     syn_f_sw = 'Synonymous S-W Substitution Rate',
     neg_f10 = '% NSCs (10% FPR)',
     pos_f10 = '% PSCs (10% FPR)',
+    f_pos_01 = '% PSCs (1% FPR)',
     f_gt_1 = '% Sites w>1',
+    f_gt_1_5 = '% Sites w>1.5',
+    f_less_0_5 = '% Sites w<0.5',
     mean_lrt = 'Mean LRT Statistic',
     logmean_lrt = 'Log-Mean LRT Statistic',
     p_gc_star = 'Primate GC*',
@@ -2084,27 +2114,50 @@ cumulative.plot <- function(pset=pset, filter='recomb_100k', sort.f='lrt_stat', 
     p_f_nsyn = 'Primate Nsyn %'
   )
 
-#  plot.flds <- unique(c('mean_recombF', 'mean_gc', 'syn_f_subs'))
-  if (sort.f == 'lrt_stat') {
-    plot.flds <- unique(c('mean_recombM', 'mean_recombF', 'mean_gc', 'syn_f_subs', 'f_const', 'syn_gc_star'))
-  } else if (sort.f == 'gc') {
-#    plot.flds <- unique(c('mean_recombM', 'mean_gc', 'syn_f_subs', 'f_const', 'p_f_nsyn'))
+  if (fields == 'subs') {
+    if ( pset == 1) {
+      plot.flds <- c('f_const', 'f_syn', 'f_nsyn', 'syn_f_subs', 'nsyn_f_subs')
+    } else {
+      plot.flds <- c('f_const', 'f_syn', 'f_nsyn')
+    }
+  } else if (fields == 'recomb_gc') {
     plot.flds <- c('mean_recombM', 'mean_recombF', 'mean_gc')
-  } else if (sort.f == 'recombM') {
-    plot.flds <- unique(c('mean_gc', 'syn_f_subs', 'f_const', 'pos_f10', 'neg_f10' ))
-  } else if (sort.f == 'nongap_bl') {
-    plot.flds <- unique(c('mean_recombM', 'mean_gc', 'syn_f_subs', 'f_const', 'pos_f10', 'neg_f10' ))
+  } else if (fields == 'slr') {
+    plot.flds <- c('neg_f10', 'pos_f10', 'f_gt_1_5', 'f_less_0_5')
+  } else {
+    if (sort.f == 'lrt_stat') {
+      plot.flds <- unique(c('mean_recombM', 'mean_recombF', 'mean_gc', 'syn_f_subs', 'f_const', 'syn_gc_star'))
+    } else if (sort.f == 'gc') {
+      plot.flds <- c('f_const', 'p_f_subs', 'syn_f_subs', 'nsyn_f_subs')
+    } else if (sort.f == 'recombM') {
+      plot.flds <- unique(c('mean_gc', 'syn_f_subs', 'f_const', 'pos_f10', 'neg_f10' ))
+    } else if (sort.f == 'nongap_bl') {
+      plot.flds <- unique(c('mean_recombM', 'mean_gc', 'syn_f_subs', 'f_const', 'pos_f10', 'neg_f10' ))
+    }
+  }
+
+  if (fields == 'subs' && sort.f != 'gc') {
+    y.str <- 'Value'
+  } else {
+    y.str <- 'Normalized Value'
   }
 
   plot.lbls <- possible.fields[plot.flds]
+  
   add.fld <- function(src, dest, fld) {
     df <- src
     df$fld <- fld
     df$val <- df[, fld]
+    df$orig.val <- df$val
     if (direction %in% c('neg', 'pos')) {
       df$val <- df$val / df[nrow(df), 'val']
     } else {
-      df$val <- df$val / mean(df[, 'val'])
+      if (fields == 'subs' && sort.f != 'gc') {
+
+      } else {
+#        df$val <- df$val / mean(df[, 'val'])
+         df$val <- (df$val - min(df$val)) / diff(range(df$val))
+      }
     }
     dest <- rbind.fill(dest, df)
   }
@@ -2113,31 +2166,76 @@ cumulative.plot <- function(pset=pset, filter='recomb_100k', sort.f='lrt_stat', 
     plot.df <- add.fld(df, plot.df, fld)
   }
 
-  plot.df$val <- pmin(3, plot.df$val)
-  plot.df$val <- pmax(0.5, plot.df$val)
+
+  if (sort.f == 'lrt_stat' && fields == 'subs') {
+    plot.df$val <- pmin(2, plot.df$val)
+    plot.df$val <- pmax(0, plot.df$val)
+  } else if (sort.f == 'recombM' && fields == 'slr') {
+    plot.df$val <- pmin(1.5, plot.df$val)
+    plot.df$val <- pmax(0.5, plot.df$val)    
+  } else {
+#    plot.df$val <- pmin(2, plot.df$val)
+#    plot.df$val <- pmax(0.5, plot.df$val)
+  }
 
   plot.df$fld <- factor(plot.df$fld, levels=plot.flds, labels=plot.lbls)
 
-  print(unique(plot.df$fld))
   plot.df$fld <- factor(plot.df$fld)
+
+  x.df <- plot.df[!duplicated(plot.df$i),]
+  x.val <- switch(sort.f,
+    gc = 'mean_gc',
+    recombM = 'mean_recombM',
+    recombF = 'mean_recombF',
+    lrt_stat = 'mean_lrt',
+    nongap_bl = 'mean_bl'
+  )
+  cuts <- floor(seq(from=1, to=nrow(x.df), length.out=5))
+  cuts <- 1:nrow(x.df) %in% cuts
+  x.vals <- x.df[cuts, 'hi']
+  cut.vals <- x.df[cuts, x.val]
+  cut.vals <- sprintf("%.3f", cut.vals)
+
+  sort.lbls <- list(
+    gc = 'GC',
+    recombM = 'Male Recombination Rate',
+    recombF = 'Female Recombination Rate',
+    lrt_stat = 'LRT Statistic',
+    nongap_bl = 'Non-gap Branch Length'
+  )
+  sort.f.lbl <- sort.lbls[sort.f]
+
   p <- ggplot(plot.df, aes(x=hi, y=val, colour=fld, linetype=fld))
   p <- p + geom_hline(yintercept=1, colour=gray(0.9), size=2)
-  p <- p + geom_line()
-  
-  sort.f.lo <- min(df$min_sort_f)
-  sort.f.hi <- max(df$max_sort_f)
+  if (sort.f == 'gc' || sort.f == 'recombM' || sort.f == 'nongap_bl') {
+    p <- p + geom_line(alpha=0.3, size=0.5)
+#    p <- p + geom_line(alpha=1, stat='smooth')
+    p <- p + stat_smooth(aes(fill=fld), alpha=0.1, size=1.2)
+#    p <- p + stat_smooth(size=1.5)
+    p <- p + scale_fill_discrete("Measurement")
+  } else {
+    p <- p + geom_line(alpha=1, size=1.5)
+  }
 
-  x.str <- sprintf("Number of Sites Summarized (%s range: %.3f to %.3f)", sort.f, sort.f.lo, sort.f.hi)
- p <- p + scale_x_continuous(x.str)
-  p <- p + scale_y_continuous("Normalized Value")
+  if (sort.f == 'lrt_stat') {
+    neutral.index <- max(which(x.df$mean_lrt < 0))
+    neutral.xval <- x.df[neutral.index, 'hi']
+    p <- p + geom_vline(xintercept=neutral.xval, colour=gray(0.5), linetype='dashed')
+  }
+
+  x.str <- sprintf("Mean %s in Bin", sort.f.lbl)
+  print(y.str)
+  p <- p + scale_x_continuous(x.str, breaks=x.vals, labels=cut.vals)
+  p <- p + scale_y_continuous(y.str)
   p <- p + scale_colour_discrete("Measurement")
   p <- p + scale_linetype_discrete("Measurement")
   p <- generic.opts(p)
   p <- p + opts(
-    axis.text.x = theme_text(angle=90, hjust=1)
+    axis.text.x = theme_text(angle=90, hjust=1),
+    legend.position = c(0.5, 0.5)
   )
-  out.f <- scratch.f(sprintf("top_cum_%s_%s_%s_%s.pdf", pset, filter, sort.f, direction))
-  pdf(file=out.f, width=10, height=5)
+  out.f <- sprintf("top_cum_%s_%s_%s_%s_%s.pdf", pset, filter, sort.f, direction, fields)
+  pdf(file=out.f, width=6, height=4)
   print.ggplot(p)
   dev.off()
 }
