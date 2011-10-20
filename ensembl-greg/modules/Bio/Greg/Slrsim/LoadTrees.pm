@@ -599,6 +599,18 @@ sub fig_one_e {
   return \@sets;
 }
 
+sub fig_one_r {
+  my $self = shift;
+
+  my @sets;
+
+  push @sets, @{$self->_fig_one($self->scheme_a, 'extra_aligners')};
+  push @sets, @{$self->_fig_one($self->scheme_b, 'extra_aligners')};
+  push @sets, @{$self->_fig_one($self->scheme_c, 'extra_aligners')};
+  return \@sets;
+
+}
+
 sub _fig_one {
   my $self = shift;
   my $scheme = shift;
@@ -617,6 +629,10 @@ sub _fig_one {
   if ($analysis_type eq 'mafft_guidance') {
     $analysis_type = 'slr';
     @aln_types = ('mafft_guidance');
+  }
+  if ($analysis_type eq 'extra_aligners') {
+    $analysis_type = 'slr';
+    @aln_types = ('probcons', 'tcoffee')
   }
 
   my @array;

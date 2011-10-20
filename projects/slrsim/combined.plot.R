@@ -244,11 +244,11 @@ multi.trees <- function() {
 
 multi.filters <- function() {
 
-  _multi.filters(include.mafft=FALSE)
-  _multi.filters(include.mafft=TRUE, file='filt_fig_multi_supp.pdf')
+  .multi.filters(include.mafft=FALSE)
+  .multi.filters(include.mafft=TRUE, file='filt_fig_multi_supp.pdf')
 }
 
-_multi.filters <- function(include.mafft=FALSE, file='filt_fig_multi.pdf') {
+.multi.filters <- function(include.mafft=FALSE, file='filt_fig_multi.pdf') {
   tbl.a <<- read.csv('~/scratch/gj1_fig_three_a/current/table.csv')
   tbl.b <<- read.csv('~/scratch/gj1_fig_three_b/current/table.csv')
 
@@ -353,6 +353,8 @@ multi.plots <- function() {
   tbl.c <<- read.csv('~/scratch/gj1_fig_one_c/current/table.csv', stringsAsFactors=F)
 
   tbl.d <<- read.csv('~/scratch/gj1_fig_one_d/current/table.csv', stringsAsFactors=F)
+  tbl.r <<- read.csv('~/scratch/gj1_fig_one_r/current/table.csv', stringsAsFactors=F)
+  tbl.d <- rbind(tbl.d, tbl.r)
 
   tbl.d[tbl.d$tree == 'artificial.nh', 'tree'] <- 'artificial'
   tbl.d[tbl.d$tree == 'bglobin.nh', 'tree'] <- 'bglobin'
@@ -374,14 +376,13 @@ multi.plots <- function() {
 
   keepers.short <- c('clustalw', 'prank_codon', 'none')
   keepers <- c('clustalw', 'mafft', 'prank', 'prank_codon', 'none')
-  keepers.supp <- c('clustalw', 'clustalw_guidance', 'mafft', 'mafft_guidance', 'prank', 'prank_codon', 'none')
+  keepers.supp <- c('clustalw', 'clustalw_guidance', 'mafft', 'mafft_guidance', 'prank', 'prank_codon', 'none', 'tcoffee', 'probcons')
   
-
+  
   multi.plot(plots, color.by='tpr_at_fpr', keep=keepers.supp)
   multi.plot(plots, color.by='tpr_at_fpr2', keep=keepers.supp)
   multi.plot(plots, color.by='tpr_at_thresh', keep=keepers.supp)
   multi.plot(plots, color.by='fpr_at_thresh', keep=keepers.supp, rev.color=T)
-
 }
 
 #
@@ -1619,7 +1620,7 @@ aln.factors <- function(data) {
   aligners <- unique(data$aligner)
   filters <- unique(data$filter)
 
-  ordered.f <- rev(c('clustalw', 'clustalw_guidance', 'mafft', 'mafft_guidance', 'probcons', 'fsa', 'fsa_careful', 'prank', 'pagan', 'prank_codon', 'prank_codon_guidance', 'true', 'none', 'no_indels'))
+  ordered.f <- rev(c('clustalw', 'clustalw_guidance', 'mafft', 'mafft_guidance', 'tcoffee', 'probcons', 'fsa', 'fsa_careful', 'prank', 'pagan', 'prank_codon', 'prank_codon_guidance', 'true', 'none', 'no_indels'))
   aligners <- unique(c(ordered.f[ordered.f %in% aligners], as.character(aligners)))
 
   levels <- c()
@@ -1635,6 +1636,7 @@ aln.factors <- function(data) {
         fsa = 'FSA',
         fsa_careful = 'FSA (high specificity)',
         probcons = 'Probcons',
+        tcoffee = 'T-Coffee',
         prank = 'PRANK_A',
         prank_codon = 'PRANK_C',
         prank_codon_guidance = 'PRANK_C (GUIDANCE)',
