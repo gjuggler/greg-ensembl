@@ -1,8 +1,13 @@
 library(plyr)
 library(ggplot2)
 library(xtable)
-source("~/src/greg-ensembl/scripts/mysql_functions.R")
-source("~/src/greg-ensembl/scripts/xtable_utils.R")
+if (uname == 'gj1') {
+  source("~/src/greg-ensembl/scripts/mysql_functions.R")
+  source("~/src/greg-ensembl/scripts/xtable_utils.R")
+} else {
+  source("~/lib/greg-ensembl/scripts/mysql_functions.R")
+  source("~/lib/greg-ensembl/scripts/xtable_utils.R")
+}
 
 do.all <- function() {
   plot.hist()

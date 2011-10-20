@@ -1,7 +1,13 @@
 library(plyr)
 library(ggplot2)
-source("~/src/greg-ensembl/scripts/mysql_functions.R")
-source("~/src/greg-ensembl/scripts/xtable_utils.R")
+uname  <- Sys.getenv("USER")
+if (uname == 'gj1') {
+  source("~/src/greg-ensembl/scripts/mysql_functions.R")
+  source("~/src/greg-ensembl/scripts/xtable_utils.R")
+} else {
+  source("~/lib/greg-ensembl/scripts/mysql_functions.R")
+  source("~/lib/greg-ensembl/scripts/xtable_utils.R")
+}
 
 dbname <- function() {
    'gj1_2x_63_alt'

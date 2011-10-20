@@ -1,10 +1,18 @@
 library(R.oo)
 library(ape)
 library(plyr)
-source("~/src/greg-ensembl/scripts/mysql_functions.R")
-source("~/src/greg-ensembl/projects/2xmammals/analyze_filters.R")
-source("~/src/greg-ensembl/projects/orthologs/analyze_orthologs.R")
-source("~/src/greg-ensembl/scripts/xtable_utils.R")
+uname  <- Sys.getenv("USER")
+if (uname == 'gj1') {
+  source("~/src/greg-ensembl/scripts/mysql_functions.R")
+  source("~/src/greg-ensembl/projects/2xmammals/analyze_filters.R")
+  source("~/src/greg-ensembl/projects/orthologs/analyze_orthologs.R")
+  source("~/src/greg-ensembl/scripts/xtable_utils.R")
+} else {
+  source("~/lib/greg-ensembl/scripts/mysql_functions.R")
+  source("~/lib/greg-ensembl/projects/2xmammals/analyze_filters.R")
+  source("~/lib/greg-ensembl/projects/orthologs/analyze_orthologs.R")
+  source("~/lib/greg-ensembl/scripts/xtable_utils.R")
+}
 library(ggplot2)
 library(boot)
 library(ppcor)
@@ -14,12 +22,19 @@ db <- function() {
    'gj1_2x_63_alt'
 }
 
+ifebi <- function(a, b) {
+  ifelse(Sys.getenv("USER") == 'greg', a, b)
+}
+
 scratch.f <- function(f) {
   paste(scratch(), f, sep='')
 }
 
 project.f <- function(f) {
-  paste("~/src/greg-ensembl/projects/2xmammals/", f, sep='')
+  ifebi(
+    paste("~/src/greg-ensembl/projects/2xmammals/", f, sep=''),
+    paste("~/lib/greg-ensembl/projects/2xmammals/", f, sep='')
+  )
 }
 
 scratch <- function() {
@@ -2037,7 +2052,7 @@ cumulative.calc <- function(
     indices <- seq(from=seq.by, to=n, by=seq.by)
   } else {
     n <- nrow(sites) / 10
-    seq.len <- ifelse(test, 20, 100)
+    seq.len <- ifelse(test, 20, 20)
     indices <- floor(exp(seq(from=floor(log(n/100)), to=log(n), length.out=seq.len)))
     print(indices)
   }
@@ -2497,6 +2512,7 @@ get.primate.subs <- function(test=T) {
   test.str <- ifelse(test, '_test', '')
   subs.f <- scratch.f(sprintf("primate_subs%s.Rdata", test.str))
   if (!file.exists(subs.f)) {
+    print("Collecting subs from table...")
     # Get primate substitution events.
     prim.tx <- all.primates()
     prim.str <- paste('(', paste(prim.tx, collapse=', '), ')', collapse='')
