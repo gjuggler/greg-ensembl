@@ -53,6 +53,7 @@ color.column <- function(xt, column,
   }
 
   clrs <- color.f(vals)
+  clrs[is.na(clrs)] <- color.f(0)
   clr.string <- hex(RGB(clrs/255))
   clr.string <- substring(clr.string, 2) # Remove the hash prefix.
 
@@ -73,7 +74,7 @@ xt.surround <- function(xt, column, rows=c(1:nrow(xt)), prefix='', suffix='') {
   digt <- attr(xt, 'digits')[indx+1]
   disply <- attr(xt, 'display')[indx+1]
   formatted.vals <- formatC(xt[rows, column], digits=digt, format=disply)
-  formatted.column <- paste(prefix, trim(formatted.vals), suffix, sep='')
+  formatted.column <- paste(prefix, R.oo::trim(formatted.vals), suffix, sep='')
   xt[, column] <- formatted.column
   xt
 }

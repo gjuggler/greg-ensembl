@@ -14,6 +14,8 @@ for (e in commandArgs(trailingOnly=T)) {
 library(topGO)
 library(doBy)
 library(plyr)
+library(Hmisc)
+library(goseq)
 
 getScoresForGenes <- function(GOdata, whichGenes) {
   all.scores <- geneScore(GOdata)
@@ -247,17 +249,20 @@ enrich.dir <- function(dir) {
   setwd(old.wd)
 }
 
-load.go.csv <- function() {
+load.go.csv <- function(csv.f, out.f) {
   print("Loading GO data...")
   # Download link:
   # http://www.ensembl.org/biomart/martview/11303929625047b175098c75bacc9456/11303929625047b175098c75bacc9456/11303929625047b175098c75bacc9456?VIRTUALSCHEMANAME=default&ATTRIBUTES=hsapiens_gene_ensembl.default.feature_page.ensembl_gene_id|hsapiens_gene_ensembl.default.feature_page.ensembl_peptide_id|hsapiens_gene_ensembl.default.feature_page.ensembl_transcript_id|hsapiens_gene_ensembl.default.feature_page.go_biological__id|hsapiens_gene_ensembl.default.feature_page.go_biological_process_linkage_type&FILTERS=hsapiens_gene_ensembl.default.filters.biol_process_evidence_code."IC,IDA,IEA,IEP,IGI,IMP,IPI,ISS,NAS,ND,TAS,EXP"&VISIBLEPANEL=filterpanel
-  go.csv = read.csv("ens_go_60.csv", header=T, stringsAsFactors=F)
-  go.ens = by(go.csv,go.csv$Ensembl.Protein.ID,function(df){df$GO.Term.Accession..bp.})
-  go.csv.excl.iea = subset(go.csv,GO.Term.Evidence.Code..bp. != 'IEA')
-  go.ens.excl.iea = by(go.csv.excl.iea,go.csv.excl.iea$Ensembl.Protein.ID,function(df){df$GO.Term.Accession..bp.})
-  assign('go.ens',go.ens,envir=.GlobalEnv)
-  assign('go.ens.excl.iea',go.ens.excl.iea,envir=.GlobalEnv)
-  save(go.ens, go.ens.excl.iea, file="go_60.Rdata")
+  go.csv = read.csv(csv.f, header=T, stringsAsFactors=F)
+  print(head(go.csv))
+  go.ens = by(go.csv,go.csv$Ensembl.Protein.ID, function(df) {
+    df$GO.Term.Accession
+  })
+  go.csv.excl.iea = subset(go.csv, GO.Term.Evidence.Code != 'IEA')
+  go.ens.excl.iea = by(go.csv.excl.iea, go.csv.excl.iea$Ensembl.Protein.ID, function(df) {
+      df$GO.Term.Accession
+  })
+  save(go.ens, go.ens.excl.iea, file=out.f)
 }
 
 enrich.file <- function(cur.file,dir) {
@@ -806,7 +811,200 @@ compare.all.tests <- function() {
 #  write.csv(res.matrix,file='enrichment_correlation_matrix.csv',quote=F,row.names=F) 
 }
 
+do.enrichments <- function(x, lbl, go.ens) {
+  # x must have the following:
+  #  binary.score = a binarized score.
+  #  score = the actual score
+  #  length = the "gene length"
+  #  id = the ID of some sort
+  #  name = a more meaningful name (e.g., id=ENSP000xyz, name=BRCA2)
 
-#if (exists('filename') && !is.na(filename)) {
-#  enrich.file(filename,direction)
-#}
+  geneSelFn <- function(score){return(score == 1)}
+  godata.f <- scratch.f(sprintf("godata_%s.Rdata", lbl))
+  if (!file.exists(godata.f)) {
+    print("Godata file doesn't exist -- calculating stuff...")
+    scores <- x$binary.score
+    names(scores) <- x$id
+    root.godata <- new("topGOdata",
+      ontology = "BP",
+      allGenes = scores,
+      annot = annFUN.gene2GO,
+      gene2GO = go.ens,
+      geneSelectionFun = geneSelFn,
+      nodeSize = 8,
+      description = ''
+    )
+    go.terms <- usedGO(root.godata)
+    go.pairs <- ldply(go.terms, function(x) {
+      cur.term <- x
+      cur.genes <- as.character(unlist(genesInTerm(root.godata, cur.term)))
+      data.frame(
+        gene.id = cur.genes,
+        go.id = cur.term
+      )
+    })
+    print(head(go.pairs))
+    save(root.godata, go.pairs, file=godata.f)
+  }
+  load(godata.f)
+
+  #go.terms <- data.frame(go_id=c('GO:0000003', 'GO:0000018', 'GO:0000070', 'GO:0006458'), stringsAsFactors=F)
+  go.terms <- data.frame(go_id=usedGO(root.godata), stringsAsFactors=F)
+
+  scores <- x$binary.score
+  names(scores) <- x$id
+  geneSelFn <- function(score){return(score == 1)}
+
+  print(paste("N sig:", sum(geneSelFn(scores))))
+
+  go.data <- root.godata
+  total.genes <- length(genes(go.data))
+  sub.x <- x[x$id %in% genes(go.data), ]
+
+  pwf.scores <- as.integer(x$binary.score)
+  names(pwf.scores) <- x$id
+  pwf <- nullp(pwf.scores, bias.data=x$length)
+
+  print(head(pwf))
+
+  print("Thinning go.pairs...")
+  print(nrow(go.pairs))
+  go.pairs <- subset(go.pairs, gene.id %in% genes(go.data))
+  go.pairs <- subset(go.pairs, go.id %in% usedGO(go.data))
+  print(nrow(go.pairs))
+
+  print(head(pwf))
+  go.corr <- goseq(pwf, gene2cat=go.pairs)
+  print(head(go.corr))
+  go.uncorr <- goseq(pwf, gene2cat=go.pairs, method='Hypergeometric')
+  print(head(go.uncorr))
+
+  topgo.res <- runTest(go.data, algorithm="weight01", statistic="Fisher")
+  topgo.pvals <- score(topgo.res)
+  topgo.ids <- names(topgo.pvals)
+  topgo.df <- data.frame(id=topgo.ids, pval=as.numeric(topgo.pvals), stringsAsFactors=F)
+
+  topgo.fis.res <- runTest(go.data, algorithm="classic", statistic="Fisher")
+  topgo.fis.pvals <- score(topgo.fis.res)
+  topgo.fis.ids <- names(topgo.fis.pvals)
+  topgo.fis.df <- data.frame(id=topgo.fis.ids, pval=as.numeric(topgo.fis.pvals), stringsAsFactors=F)
+
+  sig.indices <- geneSelFn(sub.x$binary.score)
+
+  go.res <- ddply(go.terms, 'go_id', function(y) {
+    cur.id <- y[1, 'go_id']
+    cur.id <- as.character(cur.id)
+    cur.genes <- unlist(genesInTerm(go.data, cur.id))
+    n.genes <- length(cur.genes)
+
+    row.indices <- sub.x$id %in% cur.genes
+    cur.rows <- sub.x[row.indices, ]
+    sig.rows <- cur.rows[geneSelFn(cur.rows$binary.score), ]
+    sig.rows <- sig.rows[order(sig.rows$score, decreasing=T),]
+
+    f.in.term <- sum(row.indices) / total.genes
+    f.sig <- sum(sig.indices) / total.genes
+    total.n.sig <- sum(sig.indices)      
+    n.expected <- f.in.term * f.sig * total.genes
+    n.sig <- sum(geneSelFn(cur.rows$binary.score))
+
+    min.n <- 1
+
+    fisher.pval <- 1
+    # Only run FET for terms with > N significant genes.
+    if (n.sig >= min.n) {
+      a.factor <- factor(row.indices)
+      b.factor <- factor(sig.indices)
+      if (length(levels(a.factor)) < 2 || length(levels(b.factor)) < 2) {
+        fisher.pval <- 1
+      } else {
+        fisher.res <- fisher.test(a.factor, b.factor, alternative='g')
+        fisher.pval <- fisher.res$p.value
+      }
+    }
+
+    hyper.pval <- 1
+    if (n.sig >= min.n) {
+      n.white <- sum(row.indices)
+      n.black <- length(row.indices) - sum(row.indices)
+      n.balls.drawn <- sum(sig.indices)
+      n.white.drawn <- sum(sig.indices & row.indices)
+      hyper.pval <- phyper(n.white.drawn, n.white, n.black, n.balls.drawn, lower.tail=F)
+    }
+
+    mwu.pval <- 1
+    ks.pval <- 1
+    contains.all <- all(row.indices, TRUE)
+    if (!contains.all) {
+      cur.scores <- sub.x[row.indices, 'score']
+      other.scores <- sub.x[!(row.indices), 'score']
+      if (length(cur.scores) > 0) {
+        ks.res <- ks.test(cur.scores, other.scores, alternative='l')
+        ks.pval <- ks.res$p.value
+      }
+      if (length(cur.scores) > 0) {
+        mwu.res <- wilcox.test(cur.scores, other.scores, alternative='g')
+        mwu.pval <- mwu.res$p.value
+      }
+    }
+
+    t.pval <- 1
+    t.dir <- NA
+    has.t.values <- any(!is.na(cur.rows$t_test_a))
+    if (has.t.values) {
+      t.res <- t.test(cur.rows$t_test_a, cur.rows$t_test_b, paired=T)
+      t.pval <- t.res$p.value
+      t.dir <- t.res$estimate
+    }
+
+    mean.length <- mean(cur.rows$length)
+    goseq.corr.pval <- go.corr[go.corr$category == cur.id, ]$over
+    goseq.uncorr.pval <- go.uncorr[go.uncorr$category == cur.id, ]$over
+    topgo.pval <- topgo.df[topgo.df$id == cur.id, ]$pval
+    topgo.fis.pval <- topgo.fis.df[topgo.fis.df$id == cur.id, ]$pval
+    descr <- getTermsDefinition(cur.id, 'BP', numChar=40)
+    genes.str <- paste(sig.rows$name, collapse=' ')
+
+    cur.df <- data.frame(
+      'go_id'=cur.id,
+      'mean_length' = mean.length,
+      'total_sig' = total.n.sig,
+      'n' = sum(row.indices),
+      'n_sig' = n.sig,
+      'n_exp' = n.expected,
+      'fis_pval' = fisher.pval,
+      'hyper_pval' = hyper.pval,
+      'ks_pval' = ks.pval,
+      'mwu_pval' = mwu.pval,
+      'goseq_wall' = goseq.corr.pval,
+      'goseq_fis' = goseq.uncorr.pval,
+      'topgo_pval' = topgo.pval,
+      'topgo_fis' = topgo.fis.pval,
+      t_pval = t.pval,
+      t_dir = t.dir,
+      descr=descr,
+      genes=genes.str,
+      stringsAsFactors=F
+    )
+    print(sprintf("%s", cur.df$descr))
+    cur.df
+  })
+
+  adj.f <- function(x, fld) {
+    adj.s <- paste(fld, '_adj', sep='')
+    large.terms <- x[, 'n'] >= 20
+    x[, adj.s] <- 1
+    x[, adj.s] <- p.adjust(x[, fld], method='BH')
+    x
+  }
+
+  go.res <- adj.f(go.res, 'fis_pval')
+  go.res <- adj.f(go.res, 'hyper_pval')
+  go.res <- adj.f(go.res, 'ks_pval')
+  go.res <- adj.f(go.res, 'mwu_pval')
+  go.res <- adj.f(go.res, 'goseq_wall')
+  go.res <- adj.f(go.res, 'topgo_fis')
+
+  go.res$label <- lbl
+  go.res
+}

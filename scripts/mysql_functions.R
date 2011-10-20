@@ -89,9 +89,7 @@ dbUpdateVars <- function(conn, dbtable, dataframe=NULL, primary, vars=colnames(d
   vars <- subst.vars
 
   if (!all(toupper(vars) %in% toupper(dbListFields(conn, dbtable)))) { 
-    print(toupper(vars))
-    print(toupper(subst.vars))
-    print(toupper(dbListFields(conn, dbtable)))
+    print(setdiff(tolower(subst.vars), tolower(dbListFields(conn, dbtable))))
     stop("One or more variables don't exist in the target table\n\n", call. = FALSE) 
   } 
 

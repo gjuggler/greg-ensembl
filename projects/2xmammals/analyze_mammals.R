@@ -6,6 +6,9 @@ source("~/src/greg-ensembl/projects/2xmammals/analyze_filters.R")
 source("~/src/greg-ensembl/projects/orthologs/analyze_orthologs.R")
 source("~/src/greg-ensembl/scripts/xtable_utils.R")
 library(ggplot2)
+library(boot)
+library(ppcor)
+library(GenomicRanges)
 
 db <- function() {
    'gj1_2x_63_alt'
@@ -35,7 +38,8 @@ get.genes <- function() {
 }
 
 get.genes.split <- function() {
-  if (!exists('genes.split.df', envir=.GlobalEnv)) {
+  split.genes.f <- scratch.f("genes.split.Rdata")
+  if (!file.exists(split.genes.f)) {
     genes <- get.genes()
 
     pset.df <- pset.df()
@@ -64,10 +68,12 @@ get.genes.split <- function() {
       cur.genes$cum_dnds <- cum
       out.df <- rbind(out.df, cur.genes)
     }
-    assign('genes.split.df', out.df, envir=.GlobalEnv)
+    #assign('genes.split.df', out.df, envir=.GlobalEnv)
+    genes.split.df <- out.df
+    save(genes.split.df, file=split.genes.f)
   }
-  df <- get('genes.split.df', envir=.GlobalEnv)
-  df
+  load(split.genes.f)
+  genes.split.df
 }
 
 get.pset.sites <- function(pset, filter='default', test=F) {
@@ -75,6 +81,9 @@ get.pset.sites <- function(pset, filter='default', test=F) {
   if (file.exists(sites.f)) {
     load(sites.f)
   } else {
+    print(pset)
+    print(filter)
+    print(sites.f)
     stop("Sites file does not exist!")
   }
   sites
@@ -116,17 +125,54 @@ bsub.function <- function(fn_name, queue='normal', mem=4, extra.args='', jobarra
 }
 
 bsub.collect.sites <- function(...) {
-  bsub.pset.function('collect_sites', queue='normal', mem=18, ...)
+#  bsub.pset.function('collect_sites', queue='normal', mem=18, ...)
+   bsub.function('collect_sites', queue='normal', mem=12, extra.args='2 default')
 }
 
 bsub.collect.sites.filtered <- function(...) {
-  for (filter in c('none', 'default', 'stringent', 'pfam', 'pfam_stringent', 'clusters', 'clusters_inverse')) {
-    bsub.pset.function('collect_sites', extra.args=filter, queue='normal', mem=18, ...)
+  for (filter in c('default')) {
+#  for (filter in c('none', 'default', 'stringent', 'pfam', 'pfam_stringent', 'clusters', 'clusters_inverse')) {
+    bsub.pset.function('collect_sites', extra.args=filter, queue='hugemem', mem=18, ...)
+  }
+}
+
+bsub.collect.sites.recomb <- function(...) {
+  bsub.pset.function('collect_sites', extra.args='recomb_10k', queue='hugemem', mem=24, ...)
+  bsub.pset.function('collect_sites', extra.args='recomb_100k', queue='hugemem', mem=24, ...)
+  #bsub.pset.function('collect_sites', extra.args='recomb_1mb', queue='hugemem', mem=24, ...)
+}
+
+bsub.collect.gc <- function(...) {
+  fn <- 'collect_gc'
+  bsub.function(fn, mem=18, extra.args='10000', queue='normal')
+  bsub.function(fn, mem=18, extra.args='100000', queue='normal')
+  bsub.function(fn, mem=18, extra.args='1000000', queue='normal')
+}
+
+bsub.recomb.calc <- function(...) {
+  fn <- 'recomb_calc'
+  mem <- 18
+  queue <- 'hugemem'
+  for (filter in c('recomb_10k', 'recomb_100k', 'recomb_1mb')) {
+    bsub.function(fn, mem=mem, extra.args=sprintf("1 %s F",filter), queue=queue)
+    bsub.function(fn, mem=mem, extra.args=sprintf("2 %s F",filter), queue=queue)
+    bsub.function(fn, mem=mem, extra.args=sprintf("3 %s F",filter), queue=queue)
+    bsub.function(fn, mem=mem, extra.args=sprintf("6 %s F",filter), queue=queue)
   }
 }
 
 bsub.collect.genes <- function(...) {
-  bsub.pset.function('collect_genes', queue='normal', mem=18, ...)
+  df <- pset.df()
+  psets <- df$pset_id
+  for (pset in c(1)) {
+#  for (pset in 1:length(psets)) {
+    for (filter in c('default', 'stringent', 'pfam')) {
+      jobarray_id <- paste('genes', pset, filter, sep='_')
+      bsub.function('collect_genes', mem=4,
+        extra.args=paste(pset, filter, sep=' '), jobarray=20, jobarray_id=jobarray_id
+      )
+    }
+  }
 }
 
 bsub.summaries <- function(...) {
@@ -157,15 +203,72 @@ bsub.plots <- function() {
 bsub.fits <- function() {
   df <- pset.df()
   psets <- df$pset_id
+#  for (i in c(1)) {
+#    for (j in c('default')) {
+#      for (k in c('lnorm')) {
+#        for (l in c('ci')) {
 
-  for (i in 1:length(psets)) {
-    for (j in c('lnorm', 'gamma', 'beta', 'exp', 'weibull')) {
-      for (k in c('ci', 'omega')) {
-        jobarray_id <- paste(i, j, k, sep='_')
-        bsub.function('fit_distr', mem=8, extra.args=paste(i, j, k, 'F', sep=' '), jobarray=100, jobarray_id=jobarray_id)
+  con <- connect(db())
+  for (pset in 1:length(psets)) {
+    for (filter in c('default', 'stringent', 'pfam')) {
+      for (dist in c('lnorm', 'gamma', 'beta', 'exp', 'weibull')) {
+        for (use_type in c('ci', 'omega')) {
+          df <- dbGetQuery(con, sprintf("select * from fitdistr where 
+            pset=%s and filter='%s' and dist='%s' and use_type='%s' and i=50", pset, filter, dist, use_type
+          ))
+          if (nrow(df) == 0) {
+            bsub.function('fit_distr', mem=5, extra.args=paste(pset, filter, dist, use_type, sep=' '))
+          }
+        }
       }
     }
   }
+  dbDisconnect(con)
+}
+
+bsub.corrs <- function() {
+  df <- pset.df()
+  psets <- df$pset_id
+
+  con <- connect(db())
+  for (filter in c('default', 'stringent')) {
+    for (i in 1:length(psets)) {
+      for (j in 1:length(psets)) {
+        if (i == j) {
+          next()  
+        }
+
+        df <- dbGetQuery(con, sprintf("select * from correlations where filter='%s' and pset_a=%s and pset_b=%s", filter, i, j))
+        if (nrow(df) == 0) {
+          print(paste(filter, i, j, nrow(df)))
+          bsub.function('pset_correlation', extra.args=paste(filter, i, j, 'F', sep=' '), mem=18)
+        }
+
+      }
+    }
+  }
+  dbDisconnect(con)
+}
+
+bsub.parallel <- function() {
+  df <- pset.df()
+  psets <- df$pset_id
+
+  con <- connect(db())
+  for (filter in c('default', 'stringent')) {
+    for (i in 1:length(psets)) {
+      for (j in 1:length(psets)) {
+        if (i == j) {
+          next()  
+        }
+        df <- dbGetQuery(con, sprintf("select * from parallel_sites where filter='%s' and pset_a=%s and pset_b=%s", filter, i, j))
+        if (nrow(df) == 0) {
+          bsub.function('parallel_sites', extra.args=paste(filter, i, j, 'F', sep=' '), mem=12)
+        }                                         
+      }
+    }
+  }
+  dbDisconnect(con)
 }
 
 write.fits.table <- function() {
@@ -309,59 +412,14 @@ write.fits.table <- function() {
     dev.off()
 }
 
-bsub.corrs <- function() {
-  df <- pset.df()
-  psets <- df$pset_id
-
-  for (i in 1:length(psets)) {
-    for (j in 1:length(psets)) {
-      if (i == j) {
-        next()  
-      }
-      bsub.function('pset_correlation', extra.args=paste(i, j, 'F', sep=' '), mem=11)
-    }
-  }
-}
-
-bsub.parallel <- function() {
-  df <- pset.df()
-  psets <- df$pset_id
-
-  for (i in 1:length(psets)) {
-    for (j in 1:length(psets)) {
-      if (i == j) {
-        next()  
-      }
-      bsub.function('parallel_sites', extra.args=paste(i, j, 'F', sep=' '), mem=11)
-    }
-  }
-}
-
 process.genes <- function(genes, pset, filter='default', subset.index=NULL, test=F) {
-  gc(T)
+  gc(F)
 
   # Get the sites corresponding to this pset.
-  sites <- get.pset.sites(pset, test=test)
+  print("Getting sites...")
+  sites <- get.pset.sites(pset, filter=filter, test=test)
 
-  abv.one <- sites$lrt_stat > 0
-  sites[, 'pos.pval'] <- 1
-  if (any(abv.one)) {
-    sites[abv.one, 'pos.pval'] <- sites[abv.one, 'pval'] / 2
-  }
-  if (any(!abv.one)) {
-    sites[!abv.one, 'pos.pval'] <- 0.5 + (1 - sites[!abv.one, 'pval']) / 2
-  }
-  sites[, 'pos.bh'] <- p.adjust(sites[, 'pos.pval'], method='BH')
-  print(summary(sites$pos.pval))
-
-  gc(T)
-
-  # Filter sites.
-  if (filter == 'stringent') {
-    sites <- filter.stringent(sites)
-  } else {
-    sites <- filter.default(sites)
-  }
+  gc(F)
 
   cum.z <- function(x) {
     ecdf.f <- ecdf(x)
@@ -375,9 +433,21 @@ process.genes <- function(genes, pset, filter='default', subset.index=NULL, test
   dnds.s <- paste(pset.char, '_slr_dnds', sep='')
   mpl.s <- paste(pset.char, '_slr_mean_path', sep='')
   leaves.s <- paste(pset.char, '_leaf_count', sep='')
-  # Calculate z-scores for dnds and branch length values.
-  dnds.z <- cum.z(genes[, dnds.s])
-  bl.z <- cum.z(genes[, bl.s])
+
+  # Calculate quantiles and z-scores for dnds and branch length values.
+  dnds.q <- cum.z(genes[, dnds.s])
+  bl.q <- cum.z(genes[, bl.s])
+  # Try a log-transformed dN/dS z-score
+  log.dnds <- log(pmax(genes[, dnds.s], 0.001))
+  log.mean <- mean(log.dnds, na.rm=T)
+  log.sd <- sd(log.dnds, na.rm=T)
+  dnds.z <- (log.dnds - log.mean) / log.sd
+
+  log.bl <- log(pmax(genes[, bl.s], 0.001))
+  log.mean <- mean(log.bl, na.rm=T)
+  log.sd <- sd(log.bl, na.rm=T)
+  bl.z <- (log.bl - log.mean) / log.sd
+
   gene.cols <- subset(genes, select=c(
     'data_id', 'aln_length', 'chr_end', 'chr_start', 'chr_name', 'chr_strand',
     'data_prefix', 'dup_species_count', 'dup_species_list', 'gc_3', 'gc_cds', 'gc_genomic',
@@ -389,9 +459,21 @@ process.genes <- function(genes, pset, filter='default', subset.index=NULL, test
   gene.cols$slr_mpl <- genes[, mpl.s]
   gene.cols$slr_sites <- genes[, sites.s]
   gene.cols$slr_dnds <- genes[, dnds.s]
+  gene.cols$slr_dnds_q <- dnds.q
+  gene.cols$slr_bl_q <- bl.q
   gene.cols$slr_dnds_z <- dnds.z
   gene.cols$slr_bl_z <- bl.z
   genes <- gene.cols
+
+#  print("Adding recomb GC...")  
+#  genes.1mb <- add.recomb.gc.to.genes(genes, width=1e6)
+#  genes.100k <- add.recomb.gc.to.genes(genes, width=1e5)
+#  genes.10k <- add.recomb.gc.to.genes(genes, width=1e4)
+#  genes <- merge(genes, genes.1mb)
+#  genes <- merge(genes, genes.100k)
+#  genes <- merge(genes, genes.10k)
+#
+#  print(head(subset(genes, select=c('gene_name', 'chr_name', 'ref_protein_id', 'chr_start', 'recombM_1mb', 'recombM_100k', 'recombM_10k'))))
 
   genes$parameter_set_id <- pset
   genes$pset_char <- pset.char
@@ -400,7 +482,7 @@ process.genes <- function(genes, pset, filter='default', subset.index=NULL, test
 
   # Take a subset of data_ids to process gene-wise
   if (!is.null(subset.index)) {
-    n.indices <- 100
+    n.indices <- 50
 
     all.ids <- sort(unique(sites$data_id))
     genes.per.index <- floor(length(all.ids) / n.indices)
@@ -420,7 +502,6 @@ process.genes <- function(genes, pset, filter='default', subset.index=NULL, test
   print(sprintf("%d genes to process", length(unique(sites$data_id))))
 
   # ddply each gene, extract the pset SLR values and analyze the sites.
-  con <- connect(db())
   d_ply(sites, .(data_id), function(x) {
     cur.gene <- subset(genes, data_id == x[1, 'data_id'])
     if (nrow(cur.gene) == 0) {
@@ -434,19 +515,77 @@ process.genes <- function(genes, pset, filter='default', subset.index=NULL, test
     cur.df$filter <- filter
     cur.df$label <- paste(cur.df$filter, cur.df$parameter_set_id, cur.df$data_id, collapse=' ')
   
+    con <- connect(db())
     write.or.update(cur.df, 'genes_sites', con, 'label')
+    dbDisconnect(con)
   })
 
-  dbDisconnect(con)
 }
 
 # Given a row corresponding to a gene, summarize the sitewise data w.r.t. pos and neg selection.
 process.gene.sites <- function(gene, sites) {
   print(sprintf("%d sites for gene %s", nrow(sites), gene$gene_name))
 
+  # Get GC and recombination rate at various resolutions.
+  chr_name <- gene$chr_name
+  chr_start <- gene$chr_start 
+  chr_end <- gene$chr_end
+  recombM_10k <- NA_real_
+  recombM_100k <- NA_real_
+  recombM_1mb <- NA_real_
+  recombF_10k <- NA_real_
+  recombF_100k <- NA_real_
+  recombF_1mb <- NA_real_
+  gc_10k <- NA_real_
+  gc_100k <- NA_real_
+  gc_1mb <- NA_real_
+  if (!is.na(chr_start) && length(grep("ENSP0.*", gene$ref_protein_id)) > 0) {
+    cur.range <- GRanges(
+      seqnames = chr_name,
+      ranges = IRanges(chr_start, chr_end),
+      strand = '*'
+    )
+    for (width in c(1e4, 1e5, 1e6)) {
+      recomb.ranges <- get.recomb.ranges(width=width)
+      recomb.sub <- subsetByOverlaps(recomb.ranges, cur.range)
+      gc.ranges <- get.gc.ranges(width=width)
+      gc.sub <- subsetByOverlaps(gc.ranges, cur.range)
+      mean.m <- NA_real_
+      mean.f <- NA_real_
+      mean.gc <- NA_real_
+      elmeta <- elementMetadata(recomb.sub)
+      if (length(recomb.sub) > 0) {
+        print(elementMetadata(recomb.sub)$recombM)
+        mean.m <- mean(elementMetadata(recomb.sub)$recombM)
+        mean.f <- mean(elementMetadata(recomb.sub)$recombF)
+      }
+      if (length(gc.sub) > 0) {
+        mean.gc <- mean(elementMetadata(gc.sub)$gc)
+      }
+      if (width == 1e4) {
+        recombM_10k <- mean.m
+        recombF_10k <- mean.f
+        gc_10k <- mean.gc
+      } else if (width == 1e5) {
+        recombM_100k <- mean.m
+        recombF_100k <- mean.f
+        gc_100k <- mean.gc
+      } else if (width == 1e6) {
+        recombM_1mb <- mean.m
+        recombF_1mb <- mean.f
+        gc_1mb <- mean.gc
+      }
+    }
+  }
+  print(gene)
+
   # omg_ml > 1 and < 1
   n.abv.1 <- nrow(subset(sites, omega > 1))
   n.blw.1 <- nrow(subset(sites, omega < 1))
+
+  n.pos.50 <- nrow(subset(sites, omega > 1 & pval < 0.5))
+  n.neg.50 <- nrow(subset(sites, omega < 1 & pval < 0.5))
+  n.ntr.50 <- nrow(subset(sites, pval > 0.5))
 
   n.pos.20 <- nrow(subset(sites, omega > 1 & pval < 0.2))
   n.neg.20 <- nrow(subset(sites, omega < 1 & pval < 0.2))
@@ -471,12 +610,12 @@ process.gene.sites <- function(gene, sites) {
   n.pos.gene.bh.10 <- nrow(subset(sites, bh.pval < 0.10))
   n.pos.gene.bh.05 <- nrow(subset(sites, bh.pval < 0.05))
 
-  print(sprintf("SLR: 05 %d hoch %d  ME: 05 %d hoch %d",
-    nrow(subset(sites, type %in% c('positive1', 'positive2', 'positive3', 'positive4'))),
-    nrow(subset(sites, type %in% c('positive3', 'positive4'))),
-    n.pos.05,
-    n.pos.fwer
-  ))
+#  print(sprintf("SLR: 05 %d hoch %d  ME: 05 %d hoch %d",
+#    nrow(subset(sites, type %in% c('positive1', 'positive2', 'positive3', 'positive4'))),
+#    nrow(subset(sites, type %in% c('positive3', 'positive4'))),
+#    n.pos.05,
+#    n.pos.fwer
+#  ))
 
   omgs <- pmin(sites$omega, 2)
   mean.omg <- mean(omgs)
@@ -490,6 +629,7 @@ process.gene.sites <- function(gene, sites) {
   rm(mid.omgs)
 
   # Get some estimate of the lrt_stat autocorrelation using a Mantel test
+  #print("  mantel test")
   library(ade4)
   aln.dists <- dist(sites$aln_position)
   lrt.dists <- dist(sites$lrt_stat)
@@ -503,6 +643,7 @@ process.gene.sites <- function(gene, sites) {
   mantel.p <- mantel.res$pvalue
 
   # Also calculate Moran's I
+  #print("  moran's I")
   aln.dists <- as.matrix(dist(sites$aln_position))
   aln.dists.inv <- 1/aln.dists
   diag(aln.dists.inv) <- 0
@@ -518,26 +659,62 @@ process.gene.sites <- function(gene, sites) {
   # Combine the top N, where N=ceiling(length/10), p-values using Fisher's method.
   #blw.50 <- subset(sites, pos.pval < 0.5)
   #blw.10 <- subset(sites, pos.pval < 0.1)
-  #top.fis.stat <- 2 * sum(-log(top.sites$pos.pval))
-  #top.fis.n <- 2 * nrow(top.sites)
-  #top.fis.p <- pchisq(top.fis.stat, df=top.fis.n, lower=F)
 
   # Use the weighted TPM method from
   # Zaykin et al. 2002
+  #print("  tpm p-value")
   source("~/src/greg-ensembl/projects/2xmammals/Tpmw.r")
   weights <- sites$ncod
   pvals <- sites$pos.pval
-  loops <- 1000
+  loops <- 5000
   tpm.05 <- Tpmw(pvals, weights, 0.05, loops=loops)
   tpm.10 <- Tpmw(pvals, weights, 0.1, loops=loops)
   tpm.20 <- Tpmw(pvals, weights, 0.2, loops=loops)
   tpm.50 <- Tpmw(pvals, weights, 0.5, loops=loops)
 
+  # Fit the distribution of sites.
+  #print("  fit distr")
+  lnorm.df <- fit.sites(sites, distr='lnorm', use='ci', i=0, write.to.table=F, boot.sample=F)
+  gamma.df <- fit.sites(sites, distr='gamma', use='ci', i=0, write.to.table=F, boot.sample=F)
+  exp.df <- fit.sites(sites, distr='exp', use='ci', i=0, write.to.table=F, boot.sample=F)
+
+  l.aic <- lnorm.df$aic
+  l.mean <- lnorm.df$mean
+  l.abv <- lnorm.df$f_above_1
+  g.aic <- gamma.df$aic
+  g.mean <- gamma.df$mean
+  g.abv <- gamma.df$f_above_1
+  e.aic <- exp.df$aic
+  e.mean <- exp.df$mean
+  e.abv <- exp.df$f_above_1
+
+  print("  output")
   n <- nrow(sites)
   out.df <- data.frame(
     n_sites = nrow(sites),
+
     f_sites = nrow(sites) / gene$aln_length,
     mean_ncod = mean(sites$ncod),
+
+    fit_l_aic = l.aic,
+    fit_l_mean = l.mean,
+    fit_l_abv = l.abv,
+    fit_g_aic = g.aic,
+    fit_g_mean = g.mean,
+    fit_g_abv = g.abv,    
+    fit_e_aic = e.aic,
+    fit_e_mean = e.mean,
+    fit_e_abv = e.abv,
+
+    recombM_10k = recombM_10k,
+    recombM_100k = recombM_100k,
+    recombM_1mb = recombM_1mb,
+    recombF_10k = recombF_10k,
+    recombF_100k = recombF_100k,
+    recombF_1mb = recombF_1mb,
+    gc_10k = gc_10k,
+    gc_100k = gc_100k,
+    gc_1mb = gc_1mb,
 
     mean_omega = mean.omg,
     mean_mid_omega = mean.mid.omega,
@@ -545,6 +722,9 @@ process.gene.sites <- function(gene, sites) {
     f_abv_1 = n.abv.1 / n,
     f_blw_1 = n.blw.1 / n,
     
+    f_pos_50 = n.pos.50 / n,
+    f_neg_50 = n.neg.50 / n,
+    f_ntr_50 = n.ntr.50 / n,
     f_pos_20 = n.pos.20 / n,
     f_neg_20 = n.neg.20 / n,
     f_ntr_20 = n.ntr.20 / n,
@@ -582,8 +762,330 @@ process.gene.sites <- function(gene, sites) {
   out.df
 }
 
+w.to.s <- function(ws) {
+  # Go from dnds to s
+  dnds.fn <- function(x) {
+    rt <- uniroot(function(y) y / (1 - exp(-y)) - x, lower=-1e50, upper=1e50)
+    rt$root
+  }
+
+  dnds.x <- seq(from=0, to=5, length.out=101)
+  dnds.x <- 1.1^(-100:10)
+  s.vals <- c()
+  for (i in 2:length(dnds.x)) {
+    mid.val <- (dnds.x[i-1] + dnds.x[i]) / 2
+    s.vals <- c(s.vals, dnds.fn(mid.val))
+  }
+
+  w.f <- cut(ws, dnds.x)
+  s.bins <- as.integer(table(w.f))
+  ss <- rep(s.vals, times=s.bins)
+  print(mean(abs(ss)))
+  ss <- ss + rnorm(n=length(ss), mean=0, sd=mean(abs(ss))/20)
+  ss
+}
+
+get.dfes <- function() {
+  get.dfe('nielsen03')
+  get.dfe('boyko08_normal')
+  get.dfe('boyko08_lnorm')
+  get.dfe('boyko08_gamma')
+  get.dfe('eyrewalker06')
+  get.dfe('me_mamms')
+  get.dfe('me_mamms_gamma')
+  get.dfe('me_primates')
+  get.dfe('me_rodents')
+}
+
+get.dfe <- function(ref='nielsen03') {
+  n <- 100000
+
+  ss <- switch(ref, 
+    nielsen03 = rnorm(n, -1.72*2, 0.72*2),
+    boyko08_normal = rnorm(n, -38.5, 28.6),
+    boyko08_lnorm = -rlnorm(n, 5.02, 5.94),
+    boyko08_gamma = -rgamma(n, shape=0.184, scale=8200),
+    boyko08_exp = -rexp(n, 0.0365),
+    eyrewalker06 = -rgamma(n, shape=0.23, scale=425/0.23),
+    me_mamms_gamma = w.to.s(rgamma(n, 0.75, 4.30)),
+    me_mamms = w.to.s(rlnorm(n, -2.51, 1.26)),
+    me_primates = w.to.s(rlnorm(n, -1.14, 0.65)),
+    me_rodents = w.to.s(rlnorm(n, -1.76, 0.59))
+  )
+
+  # Default primate pop. size
+  pop.size <- 20000
+  if (ref %in% c('me_mamms', 'me_mamms_gamma')) {
+    pop.size <- 100000
+  } else if (ref == 'me_rodents') {
+    pop.size <- 400000
+  }
+  if (ref %in% c('boyko08_exp', 'boyko08_gamma', 'boyko08_normal', 'boyko08_lnorm')) {
+    pop.size <- 25636
+    ss <- pmax(-25636, ss)
+    if (ref != 'boyko08_normal') {
+      ss <- pmin(-1e-6, ss)
+    } else {
+      ss <- pmin(25636, ss)
+    }
+  }
+
+  # Go from S to dnds
+  w.fn <- function(x) {
+    x / (-expm1(-x))
+  }
+  ws <- w.fn(ss)
+
+  cum.p <- function(xs, is.s=F, is.omega=F) {
+    if (is.omega) {
+      xs <- pmin(xs, 1.5)
+    }
+    bw <- diff(range(xs))/100
+    ct <- cut(xs, seq(from=range(xs)[1], to=range(xs)[2], by=bw), include.lowest=T)
+    maxval <- max(table(ct))
+
+    ecdf.f <- ecdf(xs)
+
+    if (is.s) {
+      small.vals <- c(
+        -1e-1, 
+        -5e-2, -2e-2, -1e-2,
+        -5e-3, -2e-3, -1e-3,
+        -5e-4, -2e-4, -1e-4,
+        -5e-5, -2e-5, -1e-5,
+        -5e-6, -2e-6, -1e-6,
+        0,
+        1e-6, 2e-6, 5e-6,
+        1e-5, 2e-5, 5e-5,
+        1e-4, 2e-4, 5e-4
+      )
+      cum.vals <- ecdf.f(small.vals * pop.size)
+      cum.df <- data.frame(xx=as.integer(factor(small.vals)), yy=cum.vals)
+      #print(cum.df)
+      p <- ggplot(cum.df, aes(x=xx, y=yy))
+      p <- p + theme_bw()
+      p <- p + geom_line()
+      lbl <- sprintf("%.0e", small.vals)
+      p <- p + scale_x_continuous("Selection Coefficient", breaks=1:length(small.vals), labels=sprintf("%.0e", small.vals))
+      p <- p + scale_y_continuous("", limits=c(0, 1))
+      p <- p + opts(
+        axis.text.x = theme_text(angle=90, hjust=1, size=7)
+      )
+      return(p)
+    } else {
+
+      unq.xs <- unique(round_any(xs, bw/5, f=floor))
+      cumx <- ecdf.f(unq.xs) * maxval
+      unq.df <- data.frame(xx=unq.xs, cum=cumx)
+      df.x <- data.frame(xx=xs, cum=0)
+
+      p <- ggplot(df.x, aes(x=xx))
+      p <- p + theme_bw()
+      p <- p + geom_histogram(binwidth=bw, colour=NA, fill='black')
+      p <- p + geom_line(data=unq.df, aes(x=xx, y=cum), colour=rgb(0.2, 0.2, 0.8))
+      p <- p + scale_y_continuous("")
+      if (ref %in% c('me_primates', 'me_mamms', 'me_mamms_gamma', 'me_rodents', 'nielsen03')) {
+        if (is.omega) {
+          p <- p + scale_x_continuous("dN/dS", limits=c(0, 1.5))
+        } else {
+          p <- p + scale_x_continuous("Scaled Selection Coefficient", limits=c(-10, 2))
+        }
+      } else {
+        if (is.omega) {
+          p <- p + scale_x_continuous("dN/dS", limits=c(-0.1, 1.1))
+        } else {
+          p <- p + scale_x_continuous("Scaled Selection Coefficient")
+        }
+      }
+      p <- p + opts(
+        axis.text.x = theme_text(angle=90, hjust=1)
+      )
+      p
+    }
+  }
+
+  out.f <- scratch.f(sprintf("dfe_%s.pdf", ref))
+  pdf(file=out.f, width=14, height=3)
+  vplayout(3, 1)
+  print.ggplot(cum.p(ws, is.omega=T), vp=subplot(1, 1))
+  print.ggplot(cum.p(ss), vp=subplot(2, 1))
+  print.ggplot(cum.p(ss, is.s=T), vp=subplot(3, 1))
+  dev.off()
+}
+
+
+fit.sites <- function(sites, distr, use, i=NA, boot.sample=T, write.to.table=T, filter='default') {
+  library(dfoptim)
+  lapply(dir("~/src/build_sandbox/fitdistrplus/R", full.name=T), source)
+  
+  pset <- sites[1, 'parameter_set_id']
+
+  #library(fitdistrplus)
+
+  small.value <- 0.001
+  big.value <- 5
+
+  sites <- sites[, c('data_id', 'omega_lower', 'omega_upper', 'omega')]
+  colnames(sites) <- c('data_id', 'left', 'right', 'omega')
+
+  # Make sure the upper values are within a reasonable range.
+  sites$left <- pmin(sites$left, big.value)
+  sites$right <- pmin(sites$right, big.value * 2)
+
+  sites$left <- pmax(sites$left, small.value)
+  sites$right <- pmax(sites$right, small.value * 2)
+
+  if (boot.sample) {
+    print(nrow(sites))
+    data.ids <- unique(sites$data_id)
+    use.n <- floor(length(data.ids) * 0.5)
+    ids <- data.ids[sample(1:length(data.ids), size=use.n, replace=T)]
+    sites <- sites[sites$data_id %in% ids,]
+    print(nrow(sites))
+  }
+
+  # Create a list of starting values depending on the distribution.
+  param.min = sqrt(.Machine$double.eps)
+  start <- NULL
+  lower <- -Inf
+  upper <- Inf
+  if (distr == 'beta') {
+    start <- list(1.7, 2.5)
+  }
+  if (distr == 'weibull') {
+    start <- list(0.5, 0.5)
+  }
+  if (distr == 'gamma') {
+    start <- list(1.5, 5)
+  }
+  if (distr == 'lnorm') {
+    start <- list(-5,4)
+  }
+  if (distr == 'exp') {
+    start <- list(3)
+  }
+
+  do.fit <- function() {
+    fit <- NA
+    if (use=='imputed' || use == 'omega') {
+      # For imputed values or \omgml estimates, use 'fitdist' to fit the distribution.
+      if (use == 'imputed') {
+        vals <- (sites$omega + sites$right + sites$left) / 3
+      } else if (use == 'omega') {
+        vals <- sites$omega
+      }
+
+      # Cap all omegas to the 'large value'
+      vals <- pmax(vals, small.value)
+      vals <- pmin(vals, big.value)
+
+      if (distr == 'beta') {
+        # Beta must be between 0 and 1, so cap values
+        vals <- pmin(vals, 1 - small.value)
+      }
+
+      fit <- fitdist(vals, distr, lower=lower, upper=upper, start=start)
+      if (!is.na(fit) && is.null(fit$aic)) {
+  	fit$aic = AIC(fit)
+      }
+    } else {
+      if (distr == 'beta') {
+        sites <- subset(sites, left < 1 - small.value)
+        sites$right <- pmin(sites$right, 1 - small.value)
+        sites <- subset(sites, right > 0 + small.value)
+        sites$left <- pmax(sites$left, 0 + small.value)
+      } else if (distr == 'exp') {
+      } else if (distr == 'gamma') {
+        #sites$left <- sites$left * 10
+        #sites$right <- sites$right * 10
+      }
+
+      sites <- subset(sites, select=c('left', 'right'))
+      if (length(start) > 1) {
+        fit <- fitdistcens(sites, distr, lower=lower, upper=upper, start=start, custom.optim=nmk)
+      } else {
+        fit <- fitdistcens(sites, distr, lower=lower, upper=upper, start=start)
+      }
+    }
+    fit
+  }
+
+  out.df <- data.frame(
+    label = paste(pset, distr, use, i),
+    pset = pset,
+    filter = filter,
+    dist = distr,
+    use_type = use,
+    i = i,
+    n_sites = nrow(sites),
+    
+    error = 1,
+    error_str = '',
+
+    aic = -1.00,
+    fit_str = '',
+    'est_1' = -1.00,
+    'est_2' = -1.00,
+    mean = -1,
+    sd = -1,
+    'f_above_1' = 0,
+    'f_above_1_5' = 0,
+    'f_below_0_5' = 0
+  )
+
+  error.f = function(e) {
+    print("### Error ###")
+    print(e)
+    out.df$error <- 1
+    out.df$error_str <- as.character(e)
+    if (write.to.table) {
+      con <- connect(db())
+      write.or.update(out.df, 'fitdistr', con, 'label')
+      dbDisconnect(con)  
+    }
+    return(NA)
+  }
+  #print("  doing fit...")
+  fit <- tryCatch(do.fit(), error=error.f)
+  
+  #print("  done!")
+  
+  if (any(!is.na(fit))) {
+    # Calculate the mean of the parameterized distribution.
+    fn.str <- paste('r', distr, sep='')
+
+    if (length(fit$estimate) > 1) {
+      sampled.values <- do.call(fn.str, list(10 * 1000 * 1000, fit$estimate[1], fit$estimate[2]))
+    } else {
+      sampled.values <- do.call(fn.str, list(10 * 1000 * 1000, fit$estimate[1]))    
+    }
+    
+    out.df$mean <- mean(sampled.values)
+    out.df$sd <- sd(sampled.values)
+    out.df$f_above_1 <- sum(sampled.values > 1) / length(sampled.values)
+    out.df$f_above_1_5 <- sum(sampled.values > 1.5) / length(sampled.values)
+    out.df$f_below_0_5 <- sum(sampled.values < 0.5) / length(sampled.values)
+
+    out.df$error <- 0
+    out.df$aic <- fit$aic
+    out.df$fit_str <- as.character(fit)[1]
+    out.df$est_1 <- fit$estimate[1]
+    if (length(fit$estimate) > 1) {
+      out.df$est_2 <- fit$estimate[2]
+    }
+    if (write.to.table) {
+      con <- connect(db())
+      write.or.update(out.df, 'fitdistr', con, 'label')
+      dbDisconnect(con)  
+    }
+  }
+  out.df
+}
+
+
 process.sites <- function(df, do.quantiles=T) {
   gc(F)
+  print("Processing sites...")
 
   # Two-tailed p-value.
   df[, 'pval'] <- 1 - pchisq(abs(df[, 'lrt_stat']), 1)
@@ -603,10 +1105,6 @@ process.sites <- function(df, do.quantiles=T) {
   df$neg.bh <- p.adjust(1 - df$pos.pval, method='BH')
   gc(F)
     
-  # Add p-set factor.
-  df$clade <- factor(pset.to.alias(df[1, 'parameter_set_id']))
-  gc(F)
-
   df$note <- factor(df$note)
   df$chr_name <- factor(df$chr_name)
   df$exon_position <- factor(df$exon_position)
@@ -628,7 +1126,7 @@ process.sites <- function(df, do.quantiles=T) {
     rm(ng.bl)
     gc(F)
 
-    # Add lrt_stat z-scores
+    # Add lrt_stat quantiles and z-scores
     fn <- ecdf(df$lrt_stat)
     df$lrt_q <- fn(df$lrt_stat)
     rm(fn)
@@ -659,7 +1157,7 @@ process.sites <- function(df, do.quantiles=T) {
     rm(blw.z)
     rm(fn.abv)
     rm(fn.blw)
-    gc(F)              
+    gc(F)
   }
   df
 }
@@ -670,7 +1168,18 @@ test.summary <- function() {
   summarize.sites(sites, filter='test')
 }
 
-summarize.sites <- function(sites, filter='') {
+summarize.sites <- function(sites, filter='', 
+  short.output=F, 
+  recomb.gc=F, 
+  primate.subs=F,
+  do.bootstrap=F
+) {
+  if (primate.subs) {
+    sub.sites <- subset(sites, !is.na(mut_ws))
+    #print(nrow(sites))
+    sites <- sites[!duplicated(sites[, c('data_id', 'aln_position')]),]
+    #print(nrow(sites))
+  }
     pset <- sites[1, 'parameter_set_id']
     pset.alias <- pset.to.alias(pset)
 
@@ -688,6 +1197,7 @@ summarize.sites <- function(sites, filter='') {
 
     n.pos.domains <- nrow(unique(pos.domains[,c('data_id','pfam_domain')]))
     n.pos.domain.types <- length(unique(pos.domains$pfam_domain))
+    rm(pos.domains)
     n.pos.genes <- length(unique(pos.sites$data_id))
 
     `f.less.0.5` <- nrow(subset(sites, omega < 0.5)) / nrow(sites)
@@ -696,9 +1206,13 @@ summarize.sites <- function(sites, filter='') {
     `f.gt.1.5` <- nrow(subset(sites, omega > 1.5)) / nrow(sites)
 
     n.pos.sites <- nrow(pos.sites)
+    rm(pos.sites)
     pos.1 <- nrow(subset(sub.above.one, pval < 0.01))
     pos.5 <- nrow(subset(sub.above.one, pval < 0.05))
     pos.10 <- nrow(subset(sub.above.one, pval < 0.1))
+    rm(sub.above.one)
+
+    gc(F)
 
     pos.bh.05 <- nrow(subset(sites, pos.bh < 0.05))
     pos.bh.10 <- nrow(subset(sites, pos.bh < 0.10))
@@ -710,6 +1224,7 @@ summarize.sites <- function(sites, filter='') {
     neg.f5 <- nrow(subset(sites, omega < 1 & pval < 0.05))
     neutral.f5 <- nrow(subset(sites, pval > 0.05))
 
+    #print(head(sites$pval))
     pos.f10 <- nrow(subset(sites, omega > 1 & pval < 0.1))
     neg.f10 <- nrow(subset(sites, omega < 1 & pval < 0.1))
     neutral.f10 <- nrow(subset(sites, pval > 0.1))
@@ -729,11 +1244,42 @@ summarize.sites <- function(sites, filter='') {
     sd.abv <- sd(capped.omegas[capped.omegas > 0])
     mean.blw <- mean(capped.omegas[capped.omegas < 1])
     sd.blw <- sd(capped.omegas[capped.omegas < 1])
+    rm(capped.omegas)
 
     sorted.omgs <- sort(sites$omega)
     n.quart <- nrow(sites) / 10
     mid.omgs <- sorted.omgs[c(floor(.5*n.quart):floor(9.5*n.quart))]
     mean.mid.omega <- mean(mid.omgs)
+    rm(sorted.omgs)
+
+    boot.mean.fn <- function(D, d) {
+      E <- D[d]
+      mean(E)
+    }
+    boot.fraction.fn <- function(D, d) {
+      E <- D[d]
+      sum(E) / length(E)
+    }
+    pos.ci.lo <- 0
+    pos.ci.hi <- 1
+    neg.ci.lo <- 0
+    neg.ci.hi <- 1
+    if (do.bootstrap) {
+      sites$tmp <- sites$omega > 1 & sites$pval < 0.1
+      pos.res <- boot(sites$tmp, boot.fraction.fn, R=100)
+      sites$tmp <- sites$omega < 1 & sites$pval < 0.1
+      neg.res <- boot(sites$tmp, boot.fraction.fn, R=100)
+      ci.res <- boot.ci(pos.res, type='basic', conf=0.95) 
+      if (!is.null(ci.res$basic)) {
+        pos.ci.lo <- ci.res$basic[1, 4]
+        pos.ci.hi <- ci.res$basic[1, 5]
+      }
+      ci.res <- boot.ci(neg.res, type='basic', conf=0.95) 
+      if (!is.null(ci.res$basic)) {
+        neg.ci.lo <- ci.res$basic[1, 4]
+        neg.ci.hi <- ci.res$basic[1, 5]
+      }
+    }
 
     df.out <- data.frame(
       pset = pset,
@@ -766,8 +1312,8 @@ summarize.sites <- function(sites, filter='') {
       pos.10 = pos.10,
       pos.05 = pos.5,
       pos.01 = pos.1,
-      pos.bh.05 = pos.bh.05,
       pos.bh.10 = pos.bh.10,
+      pos.bh.05 = pos.bh.05,
 
       pos.f05 = pos.f5 / n.sites,
       neg.f05 = neg.f5 / n.sites,
@@ -775,8 +1321,63 @@ summarize.sites <- function(sites, filter='') {
 
       pos.f10 = pos.f10 / n.sites,
       neg.f10 = neg.f10 / n.sites,
-      neutral.f10 = neutral.f10 / n.sites
+      neutral.f10 = neutral.f10 / n.sites,
+      
+      pos.f10.lo = pos.ci.lo,
+      pos.f10.hi = pos.ci.hi,
+      neg.f10.lo = neg.ci.lo,
+      neg.f10.hi = neg.ci.hi
     )
+
+    if (short.output) { 
+      out.flds <- c('label', 'n.sites', 'med.bl', 'f.const', 
+        'neg.f10', 'f.less.0.5', 'pos.f10', 'f.gt.1.5')
+      df.out <- subset(df.out,
+        select=out.flds
+      )
+    }
+
+    if (recomb.gc) {
+      mean.recombM <- mean(sites$recombM, na.rm=T)
+      mean.recombF <- mean(sites$recombF, na.rm=T)
+      mean.gc <- mean(sites$gc, na.rm=T)
+      df.out <- cbind(df.out, data.frame(
+        mean.recombM = mean.recombM,
+        mean.recombF = mean.recombF,
+        mean.gc = mean.gc
+      ))
+    }
+    
+    if (primate.subs) {
+      calc.subs <- function(x, prefix) {
+        mean.gc <- mean(x$gc, na.rm=T)
+        f.subs <- nrow(x) / nrow(sites)
+        f.ws <- sum(x$mut_ws) / nrow(sites) / (1 - mean.gc)
+        f.sw <- sum(x$mut_sw) / nrow(sites) / mean.gc
+        f.sw.nocpg <- sum(x$mut_sw_nocpg) / nrow(sites) / mean.gc
+        gc.star.nocpg <- f.ws / (f.sw.nocpg + f.ws)
+        gc.star <- f.ws / (f.sw + f.ws)
+        n.nsyn <- sum(x$mut_nsyn)
+        n.syn <- sum(1 - x$mut_nsyn)
+        f.nsyn <- n.nsyn / (n.nsyn + n.syn + 1)
+
+        out.x <- data.frame(
+          f.subs = f.subs,
+          f.ws = f.ws,
+          f.sw = f.sw.nocpg,
+          f.sw.nocpg = f.sw.nocpg,
+          f.nsyn = f.nsyn,
+          gc.star = gc.star
+        )
+        colnames(out.x) <- paste(prefix, colnames(out.x), sep='.')
+        out.x
+      }
+
+      df.out <- cbind(df.out, calc.subs(sub.sites, 'p'))
+      df.out <- cbind(df.out, calc.subs(subset(sub.sites, taxon_id==9606), 'h'))
+      df.out <- cbind(df.out, calc.subs(subset(sub.sites, mut_nsyn==0), 'syn'))
+    }
+
     df.out
 }
 
@@ -1184,23 +1785,733 @@ plot.subclade.corrs <- function() {
 
 }
 
-get.merged.sites <- function(pset.a, pset.b, xtra, test=F, filter.fn=filter.default) {
-  pset.a <- as.integer(pset.a)
-  pset.b <- as.integer(pset.b)
-  test <- as.logical(test)
-
+get.merged.sites <- function(pset.a, pset.b, xtra, test=F, filter='default') {
   print("  getting a...")
-  sites.a <- filter.fn(get.pset.sites(pset.a, test=test))
+  sites.a <- get.pset.sites(pset.a, filter=filter, test=test)
   print("  getting b...")
-  sites.b <- filter.fn(get.pset.sites(pset.b, test=test))
+  sites.b <- get.pset.sites(pset.b, filter=filter, test=test)
 
-  sel.cols <- c(xtra, 'data_id', 'aln_position', 'clade')
+  sel.cols <- c(xtra, 'data_id', 'aln_position')
   sites.a <- subset(sites.a, select=sel.cols)
   sites.b <- subset(sites.b, select=sel.cols)
 
   print(paste("  merging ", pset.a, ' - ', pset.b, "...", sep=''))
   merged.s <- merge(sites.a, sites.b, by=c('data_id', 'aln_position'))
   merged.s
+}
+
+get.recomb.rates <- function() {
+  final.f <- scratch.f("recombRate.Rdata")
+  if (!file.exists(final.f)) {
+    url <- 'http://hgdownload.cse.ucsc.edu/goldenPath/hg19/database/recombRate.txt.gz'
+    out.f <- scratch.f("recombRate.txt.gz")
+    out.txt <- scratch.f("recombRate.txt")
+    if (!file.exists(out.f) && !file.exists(out.txt)) {
+      system(sprintf("wget %s -O %s", url, out.f))
+      system(sprintf("gunzip %s", out.f))
+    }
+
+    recomb.df <- read.table(out.txt, header=F)
+    colnames(recomb.df) <- c(
+      'chr', 'start', 'end',
+      'name',
+     'decodeAvg', 'decodeF', 'decodeM',
+       'marshfieldAvg', 'marshfieldF', 'marshfieldM',
+      'genethonAvg', 'genethonF', 'genethonM'
+    )
+    save(recomb.df, file=final.f)
+  }
+  load(final.f)
+  recomb.df
+}
+
+summarize.quantiles <- function(sites, field, quantiles=c(0, seq(from=0.05, to=0.95, length.out=5), 1), ...) {
+  # Remove NA values in the given field.
+  sites <- sites[!is.na(sites[, field]),]
+  
+  q.values <- quantile(sites[, field], probs=quantiles, names=F)
+  ecdf.f <- ecdf(sites[, field])
+  sites$cum <- ecdf.f(sites[, field])
+  sites$grps <- cut(sites$cum, quantiles)
+
+  out.df <- ddply(sites, .(grps), summarize.sites, short.output=T, recomb.gc=T, ...)
+  out.df <- cbind(data.frame(lb=out.df[1, 'label']), out.df)
+  out.df <- cbind(data.frame(fld=field), out.df)
+  out.df[duplicated(out.df$lb), 'lb'] <- ''
+  out.df[duplicated(out.df$fld), 'fld'] <- ''
+  out.df
+}
+
+summarize.matrix <- function(sites, a, b, quantiles=seq(from=0, to=1, by=0.2), filter='recomb', plot=T, store=T, test=F) {
+  # Remove NA values in the given fields.
+  sites <- sites[!is.na(sites[, a]),]
+  sites <- sites[!is.na(sites[, b]),]
+
+  q.values <- unique(quantile(sites[, a], probs=quantiles, names=F))
+  sites$grps_a <- cut(sites[, a], q.values, include.lowest=T)
+  q.values <- unique(quantile(sites[, b], probs=quantiles, names=F))
+  sites$grps_b <- cut(sites[, b], q.values, include.lowest=T)
+
+  out.df <- ddply(sites, .(grps_a, grps_b), summarize.sites, short.output=F, recomb.gc=T, primate.subs=T)
+  pset <- sites[1, 'parameter_set_id']
+  rm(sites)
+  gc(F)
+  out.df$field_a <- a
+  out.df$field_b <- b
+  out.df$lvl_a <- as.integer(out.df$grps_a)
+  out.df$lvl_b <- as.integer(out.df$grps_b)
+  out.df$label <- paste(a, b, out.df$grps_a, out.df$grps_b, pset, filter, test, sep='_')
+  out.df$test <- test
+
+  if (store) {
+    con <- connect(db())
+    write.or.update(out.df, 'matrix_summaries', con, 'label')
+    disconnect(con)
+  }
+
+}
+
+plot.matrices <- function() {
+  for (pset in c(1, 2, 3, 6)) {
+    for (filter in c('recomb_10k', 'recomb_100k', 'recomb_1mb')) {
+      plot.matrix(pset, filter, 'recombM', 'gc')
+      plot.matrix(pset, filter, 'recombF', 'gc')
+    }
+  }
+}
+
+plot.matrix <- function(pset, filter, field_a, field_b) {
+  con <- connect(db())
+  cmd <- sprintf("select * from matrix_summaries where label like '%%%s%%' and pset=%d and field_a='%s' and field_b='%s'", filter, pset, field_a, field_b)
+  out.df <- dbGetQuery(con, cmd)
+  disconnect(con)
+
+  out.df <- out.df[order(out.df$lvl_a, out.df$lvl_b),]
+  print(out.df$n_sites)
+  #print(out.df$lvl_a)
+  #print(out.df$lvl_b)
+
+  out.df$grps_a <- factor(out.df$lvl_a, levels=unique(out.df$lvl_a), labels=unique(out.df$grps_a))
+  out.df$grps_b <- factor(out.df$lvl_b, levels=unique(out.df$lvl_b), labels=unique(out.df$grps_b))
+  #print(out.df$grps_a)
+  #print(out.df$grps_b)
+
+  plot.flds <- c(
+    'p.f.subs', 'med.bl', 'f.const', 'pos.f10', 'f.gt.1.5', 'neg.f10', 'f.less.0.5', 'p.f.ws', 'p.f.sw.nocpg',
+    'p.f.nsyn', 'p.gc.star', 'h.f.ws', 'h.f.nsyn', 'syn.f.ws', 'syn.f.sw.nocpg'
+  )
+  plot.flds <- gsub('\\.', '_', plot.flds)
+  plot.lbls <- c()
+  plot.df <- data.frame()
+  for (i in 1:length(plot.flds)) {
+    fld <- plot.flds[i]
+    print(fld)
+    df1 <- out.df
+    df1$val <- rescale(df1[, fld])
+    plot.lbls[i] <- sprintf("%s (%.3f - %.3f)", fld, min(df1[, fld]), max(df1[, fld]))
+    df1$fld <- fld
+    plot.df <- rbind(plot.df, df1)
+  }
+
+  plot.df$fld <- factor(plot.df$fld, levels=plot.flds, labels=plot.lbls)
+
+  p <- ggplot(plot.df, aes(x=grps_a, y=grps_b, fill=val))
+  p <- p + theme_bw()
+  p <- p + geom_tile()
+  p <- p + scale_fill_gradientn("Value", colour=c('white', rgb(0.5, 0.5, 1), 'red'))
+  p <- p + scale_colour_gradientn("Value", colour=c('white', rgb(0.5, 0.5, 1), 'red'))
+#  p <- p + geom_point(aes(size=n_sites), colour='black', alpha=0.3)
+  p <- p + scale_size(to=c(0.5, 3))
+  p <- p + scale_x_discrete(field_a)
+  p <- p + scale_y_discrete(field_b)
+  p <- p + facet_wrap(~ fld, ncol=6)
+  p <- p + coord_equal()
+  p <- p + opts(
+    axis.text.x = theme_text(angle=90, hjust=1)
+  )
+
+  plot.f <- scratch.f(sprintf("matrix_%s_%s_%s_%s.pdf", pset, filter, field_a, field_b))
+  pdf(file=plot.f, height=10, width=18)
+  print.ggplot(p)
+  dev.off()
+}
+
+bsub.cumulative.calc <- function() {
+  con <- connect(db())
+  for (pset in c(1, 2, 6)) {
+    for (filter in c('recomb_10k', 'recomb_100k', 'recomb_1mb')) {
+      for (direction in c('pos', 'neg', 'window')) {
+        for (sort.f in c('lrt_stat', 'recombM', 'gc')) {
+          df <- dbGetQuery(con, sprintf("select * from top_sites_cum where 
+            pset=%s and filter='%s' and direction='%s' and sort_f='%s' and i=99", pset, filter, direction, sort.f
+          ))
+          if (nrow(df) == 0) {
+            xtra <- sprintf("%d %s %s %s %s", pset, filter, sort.f, direction, FALSE)
+            bsub.function('cumulative_calc', extra.args=xtra, mem=14, queue='hugemem')
+          }
+        }
+      }
+    }
+  }
+  dbDisconnect(con)
+}
+
+# One final recombination test -- look at most strongly positively-selected sites,
+# and do a cumulative plot of their M/F recombination, GC content, and WS rates.
+cumulative.calc <- function(
+  pset,
+  filter='recomb_100k',
+  sort.f = 'lrt_stat',
+  direction='pos',
+  test=T
+) {
+  sites <- get.pset.sites(pset, filter=filter, test=test)
+  sites <- add.primate.subs(sites, test=test)
+  decrease <- ifelse(direction == 'pos', T, F)
+  sites <- sites[order(sites[, sort.f], decreasing=decrease, na.last=NA),]
+  sites <- sites[!duplicated(sites[, c('data_id', 'aln_position')]),]
+  sites <- sites[!is.na(sites[, sort.f]),]
+
+  # Now, step through each few sites and re-calculate the cumulative summary.
+  summary.f <- function(lo, hi, i, x.value) {
+    print(paste(lo, hi))
+    x.sub <- sites[lo:hi,]
+    df.out <- summarize.sites(x.sub, filter=filter, short.output=F, recomb.gc=T, primate.subs=T)
+
+    do.boot <- F
+    if (do.boot) {
+      # Generate bootstraps and add 95% CIs.
+      boot.fn <- function(D, d) {
+        boot.sub <- D[d, ]
+        res <- summarize.sites(boot.sub, filter=filter, short.output=T, recomb.gc=T, primate.subs=T)
+        vals <- c(res$mean.recombM, res$mean.recombF, res$mean.gc, res$p.f.ws, res$p.f.sw)
+        vals
+      }
+      print("Bootstrapping...")
+      boot.res <- boot(x.sub, boot.fn, R=50)
+      rM.ci <- boot.ci(boot.res, type='basic', conf=0.95, index=1)$basic
+      print(rM.ci)
+      rF.ci <- boot.ci(boot.res, type='basic', conf=0.95, index=2)$basic
+      gc.ci <- boot.ci(boot.res, type='basic', conf=0.95, index=3)$basic
+      ws.ci <- boot.ci(boot.res, type='basic', conf=0.95, index=4)$basic
+      sw.ci <- boot.ci(boot.res, type='basic', conf=0.95, index=5)$basic
+      df.out$mean_recombM_lo <- rM.ci[4]
+      df.out$mean_recombM_hi <- rM.ci[5]
+      df.out$mean_recombF_lo <- rF.ci[4]
+      df.out$mean_recombF_hi <- rF.ci[5]
+      df.out$mean_gc_lo <- gc.ci[4]
+      df.out$mean_gc_hi <- gc.ci[5]
+      df.out$p_f_ws_lo <- ws.ci[4]
+      df.out$p_f_ws_hi <- ws.ci[5]
+      df.out$p_f_sw_lo <- sw.ci[4]
+      df.out$p_f_sw_hi <- sw.ci[5]
+    }
+
+    df.out$mean_lrt <- mean(x.sub$lrt_stat)
+    df.out$min_lrt <- min(x.sub$lrt_stat)
+    df.out$max_lrt <- max(x.sub$lrt_stat)
+
+    df.out$min_sort_f <- min(x.sub[, sort.f])
+    df.out$max_sort_f <- max(x.sub[, sort.f])
+    df.out$mean_sort_f <- mean(x.sub[, sort.f])
+
+    df.out$label <- paste(pset, df.out$label, direction, sort.f, lo, hi, sep=' ')
+
+    df.out$filter <- filter
+    df.out$pset <- pset
+    df.out$lo <- lo
+    df.out$hi <- hi
+    df.out$i <- i
+    df.out$x.value <- x.value
+    df.out$direction <- direction
+    df.out$sort.f <- sort.f
+
+    con <- connect(db())
+    write.or.update(df.out, 'top_sites_cum', con, 'label')
+    disconnect(con)
+  }
+
+  if (direction == 'window') {
+    n <- nrow(sites)
+    seq.by <- ifelse(test, floor(n/20), floor(n/100))
+    indices <- seq(from=seq.by, to=n, by=seq.by)
+  } else {
+    n <- nrow(sites) / 10
+    seq.len <- ifelse(test, 20, 100)
+    indices <- floor(exp(seq(from=floor(log(n/100)), to=log(n), length.out=seq.len)))
+    print(indices)
+  }
+
+  for (i in 1:length(indices)) {
+    if (direction == 'window') {
+      summary.f(indices[i] - seq.by, indices[i], i, indices[i] - seq.by/2)
+    } else {
+      summary.f(1, indices[i], i, indices[i])
+    }
+  }
+}
+
+cumulative.plot <- function(pset=pset, filter='recomb_100k', sort.f='lrt_stat', direction='pos') {
+  con <- connect(db())
+  cmd <- sprintf("select * from top_sites_cum where pset=%d and
+  filter='%s' and direction='%s' and sort_f='%s'", pset, filter, direction, sort.f)
+  df <- dbGetQuery(con, cmd)
+  disconnect(con)
+
+  df$logmean_lrt <- log(pmax(0.1, abs(df$mean_lrt)))
+
+  possible.fields <- list(
+    mean_recombM = 'Male Recombination',
+    mean_recombF = 'Female Recombination',
+    mean_gc = 'GC Content',
+    mean_bl = 'Mean Nongap Branch Length',
+    p_f_subs = 'Primate Substitution Rate',
+    syn_f_subs = 'Synonymous Substitution Rate',
+    f_const = 'Proportion of Constant Sites',
+    p_f_ws = 'Primate W-S Substitution Rate',
+    p_f_sw = 'Primate S-W Substitution Rate',
+    syn_f_ws = 'Synonymous W-S Substitution Rate',
+    syn_f_sw = 'Synonymous S-W Substitution Rate',
+    neg_f10 = '% NSCs (10% FPR)',
+    pos_f10 = '% PSCs (10% FPR)',
+    f_gt_1 = '% Sites w>1',
+    mean_lrt = 'Mean LRT Statistic',
+    logmean_lrt = 'Log-Mean LRT Statistic',
+    p_gc_star = 'Primate GC*',
+    syn_gc_star = 'Synonymous GC*',
+    h_gc_star = 'Human GC*',
+    mean_mid_omega = 'Mean Omega',
+    p_f_nsyn = 'Primate Nsyn %'
+  )
+
+#  plot.flds <- unique(c('mean_recombF', 'mean_gc', 'syn_f_subs'))
+  if (sort.f == 'lrt_stat') {
+    plot.flds <- unique(c('mean_recombM', 'mean_recombF', 'mean_gc', 'syn_f_subs', 'f_const', 'syn_gc_star'))
+  } else if (sort.f == 'gc') {
+#    plot.flds <- unique(c('mean_recombM', 'mean_gc', 'syn_f_subs', 'f_const', 'p_f_nsyn'))
+    plot.flds <- c('mean_recombM', 'mean_recombF', 'mean_gc')
+  } else if (sort.f == 'recombM') {
+    plot.flds <- unique(c('mean_gc', 'syn_f_subs', 'f_const', 'pos_f10', 'neg_f10' ))
+  } else if (sort.f == 'nongap_bl') {
+    plot.flds <- unique(c('mean_recombM', 'mean_gc', 'syn_f_subs', 'f_const', 'pos_f10', 'neg_f10' ))
+  }
+
+  plot.lbls <- possible.fields[plot.flds]
+  add.fld <- function(src, dest, fld) {
+    df <- src
+    df$fld <- fld
+    df$val <- df[, fld]
+    if (direction %in% c('neg', 'pos')) {
+      df$val <- df$val / df[nrow(df), 'val']
+    } else {
+      df$val <- df$val / mean(df[, 'val'])
+    }
+    dest <- rbind.fill(dest, df)
+  }
+  plot.df <- data.frame()
+  for (fld in plot.flds) {
+    plot.df <- add.fld(df, plot.df, fld)
+  }
+
+  plot.df$val <- pmin(3, plot.df$val)
+  plot.df$val <- pmax(0.5, plot.df$val)
+
+  plot.df$fld <- factor(plot.df$fld, levels=plot.flds, labels=plot.lbls)
+
+  print(unique(plot.df$fld))
+  plot.df$fld <- factor(plot.df$fld)
+  p <- ggplot(plot.df, aes(x=hi, y=val, colour=fld, linetype=fld))
+  p <- p + geom_hline(yintercept=1, colour=gray(0.9), size=2)
+  p <- p + geom_line()
+  
+  sort.f.lo <- min(df$min_sort_f)
+  sort.f.hi <- max(df$max_sort_f)
+
+  x.str <- sprintf("Number of Sites Summarized (%s range: %.3f to %.3f)", sort.f, sort.f.lo, sort.f.hi)
+ p <- p + scale_x_continuous(x.str)
+  p <- p + scale_y_continuous("Normalized Value")
+  p <- p + scale_colour_discrete("Measurement")
+  p <- p + scale_linetype_discrete("Measurement")
+  p <- generic.opts(p)
+  p <- p + opts(
+    axis.text.x = theme_text(angle=90, hjust=1)
+  )
+  out.f <- scratch.f(sprintf("top_cum_%s_%s_%s_%s.pdf", pset, filter, sort.f, direction))
+  pdf(file=out.f, width=10, height=5)
+  print.ggplot(p)
+  dev.off()
+}
+
+calc.recomb <- function(pset, filter='recomb', test=F) {
+  sites <- get.pset.sites(pset, filter=filter, test=test)
+  sites <- add.primate.subs(sites, test=test)
+
+  print("Partial correlations...")
+
+  # Compute partial correlations a la 
+  # http://mbe.oxfordjournals.org/content/23/5/1068/T2.expansion.html
+  cor.df <- subset(sites, select=c('lrt_stat', 'recombM', 'gc', 'nongap_bl'))
+  cor.df <- subset(cor.df, !is.na(recombM) & !is.na(gc))
+  p.res <- pcor(cor.df, method='spearman')
+  rm(cor.df)
+  gc(F)
+  est <- p.res$estimate
+  diag(est) <- 0
+  min.v <- min(est, na.rm=T)
+  max.v <- max(est, na.rm=T)
+
+  write.csv(est, file=scratch.f(sprintf("recomb_pcor_%s_%s.csv", pset, filter)))
+  xt <- xtable(est)
+  xt <- color.columns(xt, columns=colnames(xt), limits=c(min.v, max.v))
+  out.f <- scratch.f(sprintf("recomb_pcor_%s_%s.txt", pset, filter))
+  print.latex(xt, file=out.f)
+
+  quant.f <- function(x, fld) {
+    print(fld)
+    q.df <- summarize.quantiles(x, fld, primate.subs=T)
+    # Keep a subset of primate sub fields.
+    q.df <- remove.cols(q.df, c(
+      'p.f.cpg', 'h.f.cpg', 'syn.f.cpg',
+      'p.f.sw', 'h.f.sw', 'syn.f.sw',
+      'syn.f.nsyn',
+      'p.f.subs', 'h.f.subs'
+    ))
+    q.df <- remove.cols(q.df, c('pset', 'label', 'filter'))
+
+    pct.flds <- c('neg.f10', 'pos.f10', 'f.less.0.5', 'f.gt.1.5')
+    for (pct.fld in pct.flds) {
+      q.df[, pct.fld] <- q.df[, pct.fld] * 100
+    }
+
+    print(q.df)
+    write.csv(q.df, file=scratch.f(sprintf("recomb_quantiles_%s_%s_%s.csv", fld, pset, filter)), row.names=F)
+
+    xt <- xtable(q.df, digits=3)
+    xt <- color.columns(xt,   
+      columns=c('med.bl', 'neg.f10', 'pos.f10', 'f.less.0.5', 'f.gt.1.5', 'mean.recombM',
+        'mean.recombF', 'mean.gc')
+    )
+    xt
+  }
+  out.f <- scratch.f(sprintf("recomb_quantiles_%s_%s.txt", pset, filter))
+
+  print("Quantile summaries...")
+  xt <- quant.f(sites, 'gc')
+  print.latex(xt, file=out.f)
+  cat("\\midrule", file=out.f, append=T)
+  xt <- quant.f(sites, 'recombM')
+  print.latex(xt, file=out.f, append=T)
+  cat("\\midrule", file=out.f, append=T)
+  xt <- quant.f(sites, 'recombF')
+  print.latex(xt, file=out.f, append=T)
+
+  print("Matrices...")
+  summarize.matrix(sites, 'recombM', 'gc', filter=filter, plot=F, test=test)
+  gc(F)
+  summarize.matrix(sites, 'recombF', 'gc', filter=filter, plot=F, test=test)
+}
+
+get.gc.content <- function(width=10000) {
+  gc.f <- scratch.f(sprintf("gc_human_%d.Rdata", width))
+  if (!file.exists(gc.f)) {
+    library(BSgenome.Hsapiens.UCSC.hg19)
+
+    window.width <- width
+
+    chr.names <- seqnames(Hsapiens)[1:25]
+    df.list <- list()
+    gc.fn <- function(x) {
+      af <- alphabetFrequency(x)
+      sum(af[2:3]) / sum(af[1:4])
+    }
+    for (i in 1:length(chr.names)) {
+      chr.name <- chr.names[i]
+      cur.seq <- Hsapiens[[chr.name]]
+      print(chr.name)
+
+      roll.my.own <- T
+      if (roll.my.own) {
+        cur.len <- length(cur.seq)
+        if (cur.len < window.width) {
+          window.width <- cur.len / 2
+        }
+        n.by <- floor(window.width / 10)
+        window.starts <- seq(from=1, to=cur.len-window.width, by=n.by)
+        window.ends <- seq(from=window.width, to=cur.len, by=n.by)
+        window.mids <- window.starts + floor(window.width/2)
+        window.mids.l <- window.mids - n.by / 2
+        window.mids.h <- window.mids + n.by / 2
+        v <- Views(cur.seq, start=window.starts, end=window.ends)
+        gcs <- viewApply(v, gc.fn, simplify=T)
+        cur.gc.df <- data.frame(
+          chr=chr.name,
+          start = window.mids.l,
+          end = window.mids.h,
+          gc=gcs,
+          stringsAsFactors=F
+        )
+        cur.gc.df <- subset(cur.gc.df, !is.nan(gc))
+      } else {
+        cur.seq <- injectHardMask(cur.seq, '-')
+        gc.sum <- letterFrequencyInSlidingView(cur.seq, window.width, c('GC', 'AT'), as.prob=F)
+        print(head(gc.sum))
+        stop()
+        print(summary(gc.sum))
+        # gc.sum holds windows starting at i, going to i+window.width-1
+        colnames(gc.sum) <- NULL
+
+        half.win <- floor(window.width/2)
+        L <- nchar(cur.seq)
+        gc.L <- length(gc.sum)
+
+        # we want our GC to be in centered windows.
+        # SO, for 1 .. window.width/2 we will use the first value
+        # and for nchar(cur.seq) - window.width/2 .. nchar(cur.seq)
+        # we will use the last value
+        lo.start <- seq(from=1, to=half.win)
+        lo.end <- seq(from=2, to=half.win+1)
+        lo.gc <- rep(gc.sum[1], times=length(lo.start))
+        hi.start <- seq(from=L-half.win+1, to=L-1)
+        hi.end <- seq(from=L-half.win+2, to=L)
+        hi.gc <- rep(gc.sum[length(gc.sum)], times=length(hi.start))
+        mid.start <- seq(from=1 + half.win, to=gc.L + half.win)
+        mid.end <- seq(from = 2 + half.win, to=gc.L + half.win + 1)
+        mid.gc <- gc.sum
+
+        cur.gc.df <- data.frame(
+          chr = chr.name,
+          start = c(lo.start, mid.start, hi.start),
+          end = c(lo.end, mid.end, hi.end),
+          gc = c(lo.gc, mid.gc, hi.gc)
+        )
+
+        # Only keep values for every window.width/100 bases.
+        every.n <- floor(window.width / 100)
+        cur.gc.df <- subset(cur.gc.df, start %% every.n == 0)
+        print(nrow(cur.gc.df))
+        print(head(cur.gc.df, n=500))
+        stop()
+      }
+      df.list[[i]] <- cur.gc.df
+      print(nrow(cur.gc.df))
+    }
+    gc.df <- rbind.fill(df.list)
+    save(gc.df, file=gc.f)
+  }
+  load(gc.f)
+  gc.df
+}
+
+add.recomb.gc.to.genes <- function(genes, width=width) {
+
+  genes <- subset(genes, select=c('data_id', 'chr_name', 'chr_start',
+  'chr_end', 'chr_strand', 'ref_protein_id'))
+
+  print("Getting recombination rates...")
+  recomb.ranges <- get.recomb.ranges(width=width)
+
+  print("Getting GC content...")
+  gc.ranges <- get.gc.ranges(width=width)
+
+  print("Creating genes GRanges...")
+
+  # Remove genes w/out coordinates for now... but bring 'em back in after.
+  na.genes <- subset(genes, is.na(chr_start))
+  has.human <- grepl("ENSP0.*", as.character(genes$ref_protein_id))
+  no.human <- genes[!has.human, ]
+  genes <- genes[has.human, ]
+  genes <- subset(genes, !is.na(chr_start))
+
+  st <- genes$chr_start
+  ed <- genes$chr_end
+  chr <- genes$chr_name
+  strd <- genes$chr_strand
+
+  genes.ranges <- GRanges(
+    seqnames = chr,
+    ranges = IRanges(st, ed),
+    strand = strd,
+    as.list(genes)
+  )
+
+  print("Adding recomb. GRanges...")
+  with.recomb <- add.df(genes.ranges, recomb.ranges,
+    keep.fields=c('recombM', 'recombF')
+  )
+  print("Adding GC Granges...")
+  with.gc <- add.df(genes.ranges, gc.ranges,
+    keep.fields=c('gc')
+  )
+
+  with.gc <- subset(with.gc, select=c('data_id', 'gc'))
+  mrgd <- merge(with.recomb, with.gc)
+
+  mrgd <- rbind.fill(mrgd, na.genes, no.human)
+
+  mrgd <- subset(mrgd, select=c('data_id', 'recombM', 'recombF', 'gc'))
+  if (width == 1e4) {
+    colnames(mrgd) <- c('data_id', 'recombM_10k', 'recombF_10k', 'gc_10k')
+  } else if (width == 1e5) {
+    colnames(mrgd) <- c('data_id', 'recombM_100k', 'recombF_100k', 'gc_100k')
+  } else if (width == 1e6) {
+    colnames(mrgd) <- c('data_id', 'recombM_1mb', 'recombF_1mb', 'gc_1mb')
+  }
+  mrgd
+}
+
+add.recomb.gc <- function(sites, test=F, width=width) {
+  pset <- sites[1, 'parameter_set_id']
+
+  print("Getting recombination rates...")
+  recomb.ranges <- get.recomb.ranges(width=width)
+
+  print("Getting GC content...")
+  gc.ranges <- get.gc.ranges(width=width)
+
+  if (!(pset %in% c(1, 6))) {
+    print("Loading primate sites for chr coords...")
+    # If we're in a species group without human seqs, we have to bring in the human locations
+    # from the human sites. Keep fingers crossed that there's enough memory around...!
+    primate.sites <- get.pset.sites(1, filter='orig', test=test)
+    print(str(primate.sites))
+    print(str(sites))
+    primate.sites <- subset(primate.sites, !is.na(chr_start),
+      select=c('chr_start', 'chr_end', 'chr_name', 'data_id',
+      'aln_position')
+    )
+    print("Merging...")
+    sites$chr_start <- NULL
+    sites$chr_end <- NULL
+    sites$chr_name <- NULL
+    sites <- merge(sites, primate.sites, by=c('data_id', 'aln_position'))
+    print("Done!")
+    rm(primate.sites)
+    gc(T)
+  }
+
+  sites <- subset(sites, !is.na(chr_start))
+
+  print("Creating sites GRanges...")
+  st <- sites$chr_start
+  ed <- sites$chr_end
+  chr <- sites$chr_name
+  sites$chr_start <- NULL
+  sites$chr_end <- NULL
+  sites$chr_name <- NULL
+  sites.ranges <- GRanges(
+    seqnames = paste('chr', chr, sep=''),
+    ranges = IRanges(st, st+2),
+    strand = "*",
+    as.list(sites)
+  )
+  rm(sites)
+  
+  gc(F)
+
+  print("Adding recomb. GRanges...")
+  with.recomb <- add.df(sites.ranges, recomb.ranges,
+    keep.fields=c('recombM', 'recombF')
+  )
+  rm(recomb.ranges)
+  print("Adding GC Granges...")
+  with.gc <- add.df(sites.ranges, gc.ranges,
+    keep.fields=c('gc')
+  )
+  rm(gc.ranges)
+  rm(sites.ranges)
+
+  with.gc <- subset(with.gc, select=c('data_id', 'aln_position', 'gc'))
+  print("Merging data frames...")
+  mrgd <- merge(with.recomb, with.gc)
+  mrgd
+}
+
+get.recomb.ranges <- function(width) {
+  recomb <- collect.recomb.rates(width=width)
+  st <- recomb$start
+  ed <- recomb$end
+  chr <- recomb$chr
+  recomb$start <- NULL
+  recomb$end <- NULL
+  recomb$chr <- NULL
+  GRanges(
+    seqnames = chr,
+    ranges =
+      IRanges(st, ed),
+    strand = "*",
+    as.list(recomb)
+  )
+}
+
+get.gc.ranges <- function(width=width) {
+  gc.df <- get.gc.content(width=width)
+  st <- gc.df$start
+  ed <- gc.df$end
+  chr <- gc.df$chr
+  gc.df$start <- NULL
+  gc.df$end <- NULL
+  gc.df$chr <- NULL
+  GRanges(
+    seqnames = chr,
+    ranges = IRanges(st, ed),
+    gc = gc.df$gc
+  )
+}
+
+# Merge the GC and recombination data into the sites
+add.df <- function(orig.ranges, other.ranges, keep.fields) {
+  match.indices <- match(orig.ranges, other.ranges)
+  other.data <- as.data.frame(other.ranges)
+  rm(other.ranges)
+  other.data$mrg.id <- 1:nrow(other.data)
+  other.data <- subset(other.data, select=c('mrg.id', keep.fields))
+  orig.data <- as.data.frame(orig.ranges, stringsAsFactors=F)
+  rm(orig.ranges)
+  orig.data$mrg.id <- match.indices
+  mrgd <- merge(orig.data, other.data, by='mrg.id', all.x=T, all.y=F)
+  mrgd$mrg.id <- NULL
+  mrgd
+}
+
+add.primate.subs <- function(sites, test=T, keep.cols=c('mut_ws', 'mut_sw', 'mut_sw_nocpg', 'is_cpg', 'mut_nsyn', 'taxon_id')) {
+  print("Adding primate subs...")
+  p.df <- get.primate.subs(test=test)
+  p.df <- subset(p.df, mut_count=1)
+  p.df <- subset(p.df, confidence > 0.8)
+  p.df$aln_position <- p.df$aln_pos
+
+  p.df$cpg_fwd <- (p.df$nuc_from == 'C' & p.df$nuc_to == 'T') & p.df$mut_cpg == 1
+  p.df$cpg_rev <- (p.df$nuc_from == 'G' & p.df$nuc_to == 'A') & p.df$mut_rev_cpg == 1
+
+  p.df$is_cpg <- p.df$cpg_fwd | p.df$cpg_rev
+  p.df$mut_sw <- 1 - p.df$mut_ws
+  # Remove cpg muts from the ws and sw rates.
+  p.df$mut_sw_nocpg <- ifelse(p.df$is_cpg, 0, p.df$mut_sw)
+
+  p.df <- subset(p.df, select=c('data_id', 'aln_position', keep.cols))
+  sites <- merge(sites, p.df, by=c('data_id', 'aln_position'), all.x=T)
+  sites
+}
+
+get.primate.subs <- function(test=T) {
+  test.str <- ifelse(test, '_test', '')
+  subs.f <- scratch.f(sprintf("primate_subs%s.Rdata", test.str))
+  if (!file.exists(subs.f)) {
+    # Get primate substitution events.
+    prim.tx <- all.primates()
+    prim.str <- paste('(', paste(prim.tx, collapse=', '), ')', collapse='')
+    limit.str <- ifelse(test, 'LIMIT 500000', '')
+    cmd <- sprintf("select data_id, aln_pos, taxon_id, mut_nsyn, confidence, mut_cpg, mut_rev_cpg, codon_cpg, mut_ws, aa_from, aa_to, nuc_from, nuc_to from subs where
+      aln_pos IS NOT NULL and data_id IS NOT NULL and taxon_id IS NOT NULL
+    and taxon_id IN %s %s",
+      prim.str, limit.str)
+    con <- connect(db())
+    subs <- dbGetQuery(con, cmd)
+    disconnect(con)
+    save(subs, file=subs.f)
+  }
+  load(subs.f)
+  subs
 }
 
 filter.default <- function(sites) {
@@ -1473,7 +2784,7 @@ filter.pfam.stringent <- function(sites) {
   subset(sites, !is.na(pfam_domain))
 }
 
-pset.df <- function(factors=F) {
+pset.df <- function(factors=F, prefix='') {
   map.list <- list(
     '1' = 'Primates',
     '2' = 'Glires',
@@ -1501,7 +2812,7 @@ pset.df <- function(factors=F) {
   df <- data.frame(
     pset_id = as.numeric(names(map.list)),
     pset = names(map.list),
-    label = unlist(map.list),
+    label = paste(prefix, unlist(map.list), sep=''),
     char = unlist(char.list),
     stringsAsFactors=factors
   )
@@ -1535,8 +2846,8 @@ filter.to.alias <- function(filters, factors=F) {
   }
 }
 
-pset.to.alias <- function(psets, factors=F) {
-  map <- pset.df(factors=factors)
+pset.to.alias <- function(psets, factors=F, ...) {
+  map <- pset.df(factors=factors, ...)
   match.inds <- match(psets, map$pset)
   map$label[match.inds]
 }
@@ -1567,7 +2878,9 @@ write.subsets.table <- function() {
   9823, 9913, 9978, 9986, 10020, 10090, 10116, 10141, 13616, 30538,
   30608, 30611, 37347, 42254, 43179, 59463, 61853, 132908),
     '7' = c(10090, 10116, 10020, 43179, 10141),
-    '8' = c(9258, 9315, 9361, 9785, 9606, 10090, 9615)
+    '8' = c(9258, 9315, 9361, 9785, 9606, 10090, 9615),
+    '9' = c(9606, 9598, 9544, 10090, 10116, 9615, 9913, 9823, 9796),
+    '10' = c(9606, 10090, 10116, 9615)
   )
 
   aliases <- llply(taxids.list, function(x) {
@@ -1604,15 +2917,18 @@ write.subsets.table <- function() {
     median(x$bl, na.rm=T)
   })
 
+  # Use data roughly from Piganeau and Eyre-Walker 2009.
   pop.size <- as.integer(round(c(
-    20000, # Primates
+    40000, # Primates
     230000, # Glires
-    34410, # Laurasiatheria
+    100000, # Laurasiatheria
     30000, # Atlantogenata
     110000, # Eutheria
     120000, # Mammalia
     230000, # Sparse G
-    120000 # Sparse M
+    120000, # Sparse M
+    120000, # Hi-Q
+    120000  # HMRD
   )))
 
   out.df <- data.frame(
@@ -2219,4 +3535,16 @@ vplayout <- function(x, y) {
 
 pp <- function(...) {
   print(sprintf(...))
+}
+
+remove.cols <- function(x, cols) {
+  subset(x, select=setdiff(colnames(x), cols))
+}
+
+generic.opts <- function(p) {
+    p + opts(
+      axis.text.x = theme_text(angle=90, hjust=1, size=8),
+      strip.text.y = theme_text(angle=0, hjust=0, size=10),
+      strip.background = theme_blank()
+    ) + theme_bw()
 }

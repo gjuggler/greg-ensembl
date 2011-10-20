@@ -1,4 +1,6 @@
 source("~/src/greg-ensembl/projects/2xmammals/analyze_mammals.R")
+source("~/src/greg-ensembl/projects/2xmammals/analyze_genes.R")
+source("~/src/greg-ensembl/projects/2xmammals/calc_recomb.R")
 source("~/src/greg-ensembl/scripts/xtable_utils.R")
 args <- commandArgs(trailingOnly=T)
 
@@ -13,20 +15,37 @@ main <- function() {
       args <- c(args, as.integer(jobindex))
     }
     print(args)
-    
-    do.call(fn.name, as.list(args[2:length(args)]))
+
+    error.f <- function(e) {
+      print("###ERROR###")
+      out.df <- data.frame(
+        tstmp = paste(timestamp(), fn.name, collapse=' '),
+        fn_name = as.character(fn.name),
+        fn_args = paste(args, collapse=' '),
+        error = as.character(e)
+      )
+      con <- connect(db())
+      write.or.update(out.df, 'errors', con, 'tstmp')
+      disconnect(con)
+    }
+
+    tryCatch(
+      do.call(fn.name, as.list(args[2:length(args)])),
+      error = error.f
+    )
   }
 }
 
 collect_genes <- function(pset, filter='default', subset.index=NULL, test=F) {
   pset <- as.integer(pset)
   if (!is.null(subset.index)) {
-    subset.index <- as.numeric(subset.index)
+    subset.index <- as.integer(subset.index)
   }
   test <- as.logical(test)
 
   orig.genes.f <- paste(scratch(), "genes_orig.Rdata", sep='')
   if (file.exists(orig.genes.f)) {
+    print("Loading genes...")
     load(orig.genes.f)
   } else {
     con <- connect(db()); 
@@ -36,6 +55,7 @@ collect_genes <- function(pset, filter='default', subset.index=NULL, test=F) {
     save(genes, file=orig.genes.f)
   }
 
+  print("Processing...")
   process.genes(genes, pset, filter=filter, subset.index=subset.index, test=test)
   print("  done!")
 }
@@ -47,13 +67,12 @@ collect_clusters <- function(taxon_id, test=F) {
   process.cluster(taxon_id, win.size=15, test=test)
 }
 
-collect_sites <- function(pset, filter='orig', test=F) {
+collect_sites <- function(pset, filter='default', test=F) {
   pset <- as.integer(pset)
   test <- as.logical(test)
 
   limit.s <- ''
   if (test) {
-    print("  limiting sites count for testing")
     limit.s <- 'limit 500000'
   }
 
@@ -63,12 +82,19 @@ collect_sites <- function(pset, filter='orig', test=F) {
     return()
   }
 
+  recomb.filters <- c('recomb_10k', 'recomb_100k', 'recomb_1mb')
+
   orig.sites.f <- get.sites.filename(pset=pset, filter='orig', test=test)
   if (file.exists(orig.sites.f)) {
-    load(orig.sites.f)
+    if (!(filter %in% recomb.filters) ) {
+      load(orig.sites.f)
+    }
   } else {
     if (filter != 'orig') {
       stop("Original sites haven't been gathered yet!")
+    }
+    if (test) {
+      print("  limiting sites count for testing")
     }
     con <- connect(db()); 
     not.null.s <- 'and data_id is not null and aln_position is not null and parameter_set_id is not null'
@@ -83,7 +109,13 @@ collect_sites <- function(pset, filter='orig', test=F) {
   }
 
   if (!file.exists(sites.f)) {
-    sites <- process.sites(sites)
+    if (filter %in% recomb.filters) {
+      default.f <- get.sites.filename(pset=pset, filter='default', test=test)
+      load(default.f)
+    } else {
+      sites <- process.sites(sites)
+    }
+
     sites <- switch(filter,
       none = sites,
       default = filter.default(sites),
@@ -91,8 +123,12 @@ collect_sites <- function(pset, filter='orig', test=F) {
       pfam = filter.pfam(sites),
       pfam_stringent = filter.pfam.stringent(sites),
       clusters = filter.clusters(sites),
-      clusters_inverse = filter.clusters(sites, return.inverse=T)
+      clusters_inverse = filter.clusters(sites, return.inverse=T),
+      recomb_10k = add.recomb.gc(sites, width=1e4, test=test),
+      recomb_100k = add.recomb.gc(sites, width=1e5, test=test),
+      recomb_1mb = add.recomb.gc(sites, width=1e6, test=test)
     )
+    print("Saving file...")
     save(sites, file=sites.f)
   } else {
     print("  sites file already exists -- not processing again!")
@@ -110,10 +146,39 @@ summary_table <- function(pset, test=F, filter='default') {
   disconnect(con)
 }
 
+collect_gc <- function(window.width=10000) {
+  window.width <- as.integer(window.width)
+  get.gc.content(width=window.width)
+}
+
 poisson_sim <- function(dnds, neutral_thresh=1) {
   dnds <- as.numeric(dnds)
   neutral_thresh <- as.numeric(neutral_thresh)
   do.poisson.sim(dnds, neutral_thresh)
+}
+
+recomb_calc <- function(pset, filter='recomb', test=F) {
+  pset <- as.integer(pset)
+  test <- as.logical(test)
+  calc.recomb(pset, filter=filter, test=test)
+}
+
+recomb_rate_calc <- function(sex, width, chr) {
+  width <- as.integer(width)
+  calc.recomb.rate(sex, width, chr)
+}
+
+genes_enrichment <- function(pset, filter, method, excl.iea) {
+  pset <- as.integer(pset)
+  excl.iea <- as.logical(excl.iea)
+
+  calc.genes.enrichment(pset, filter, method, excl.iea)
+}
+
+cumulative_calc <- function(pset, filter, sort.f, direction, test=F) {
+  pset <- as.integer(pset)
+  test <- as.logical(test)
+  cumulative.calc(pset, filter, sort.f, direction, test)
 }
 
 bl_pos_sel_breakdown <- function(pset, test=F) {
@@ -167,177 +232,42 @@ bl_pos_sel_breakdown <- function(pset, test=F) {
   #print(df)
 }
 
-fit_distr <- function(pset, 
+fit_distr <- function(pset,
+  filter=c('default', 'stringent', 'pfam'),
   distr=c('lnorm', 'gamma', 'beta', 'exp'), 
   use=c('ci', 'imputed', 'omega'),
-  test=T,
-  i=0
+  test=F
 ) {
-  library(dfoptim)
-  lapply(dir("~/src/build_sandbox/fitdistrplus/R", full.name=T), source)
-  #library(fitdistrplus)
-
-  small.value <- 0.001
-  big.value <- 5
-
   pset <- as.numeric(pset)
   distr = distr[1]
   use = use[1]
   test <- as.logical(test)
-  i <- as.integer(i)
-  sites <- get.pset.sites(pset, test=test)
-  sites <- filter.default(sites)
-  sites <- sites[, c('omega_lower', 'omega_upper', 'omega')]
-  colnames(sites) <- c('left', 'right', 'omega')
+  sites <- get.pset.sites(pset, filter=filter, test=test)
+  sites <- subset(sites, select=c('data_id', 'omega_lower', 'omega_upper', 'omega', 'parameter_set_id'))
 
-  # Make sure the upper values are within a reasonable range.
-  sites$left <- pmin(sites$left, big.value)
-  sites$right <- pmin(sites$right, big.value * 2)
-
-  sites$left <- pmax(sites$left, small.value)
-  sites$right <- pmax(sites$right, small.value * 2)
-
-  if (!test) {
-    site.indices <- sample(1:nrow(sites), size=1000 * 1000, replace=T)
-    sites <- sites[site.indices,]
-  } else {
-#    sites <- sites[sample(1:nrow(sites), size=10000, replace=F),]
-  }
-
-  # Create a list of starting values depending on the distribution.
-  param.min = sqrt(.Machine$double.eps)
-  start <- NULL
-  lower <- -Inf
-  upper <- Inf
-  if (distr == 'beta') {
-    start <- list(1.7, 2.5)
-  }
-  if (distr == 'weibull') {
-    start <- list(0.5, 0.5)
-  }
-  if (distr == 'gamma') {
-    start <- list(1.5, 5)
-  }
-  if (distr == 'lnorm') {
-    start <- list(-5,4)
-  }
-  if (distr == 'exp') {
-    start <- list(3)
-  }
-
-  do.fit <- function() {
-    fit <- NA
-    if (use=='imputed' || use == 'omega') {
-      # For imputed values or \omgml estimates, use 'fitdist' to fit the distribution.
-      if (use == 'imputed') {
-        vals <- (sites$omega + sites$right + sites$left) / 3
-      } else if (use == 'omega') {
-        vals <- sites$omega
-      }
-
-      # Cap all omegas to the 'large value'
-      vals <- pmax(vals, small.value)
-      vals <- pmin(vals, big.value)
-
-      if (distr == 'beta') {
-        # Beta must be between 0 and 1, so cap values
-        vals <- pmin(vals, 1 - small.value)
-      }
-
-      fit <- fitdist(vals, distr, lower=lower, upper=upper, start=start)
-      if (!is.na(fit) && is.null(fit$aic)) {
-  	fit$aic = AIC(fit)
-      }
-    } else {
-      if (distr == 'beta') {
-        sites <- subset(sites, left < 1 - small.value)
-        sites$right <- pmin(sites$right, 1 - small.value)
-        sites <- subset(sites, right > 0 + small.value)
-        sites$left <- pmax(sites$left, 0 + small.value)
-      } else if (distr == 'exp') {
-      } else if (distr == 'gamma') {
-        #sites$left <- sites$left * 10
-        #sites$right <- sites$right * 10
-      }
-
-      sites <- subset(sites, select=c('left', 'right'))
-      if (length(start) > 1) {
-        fit <- fitdistcens(sites, distr, lower=lower, upper=upper, start=start, custom.optim=nmk)
-      } else {
-        fit <- fitdistcens(sites, distr, lower=lower, upper=upper, start=start)
-      }
+  print("Fitting...")
+  con <- connect(db())
+  for (i in 1:50) {
+    df <- dbGetQuery(con, sprintf("select * from fitdistr where 
+      pset=%s and filter='%s' and dist='%s' and use_type='%s' and i=%d", pset, filter, distr, use, i)
+    )
+    if (nrow(df) == 0) {
+      fit.sites(sites, distr=distr, filter=filter, use=use, i=i, write.to.table=T)
     }
-    fit
   }
-
-  out.df <- data.frame(
-    label = paste(pset, distr, use, i),
-    pset = pset,
-    dist = distr,
-    use_type = use,
-    i = i,
-    n_sites = nrow(sites),
-    
-    error = 1,
-    error_str = '',
-
-    aic = -1.00,
-    fit_str = '',
-    'est_1' = -1.00,
-    'est_2' = -1.00,
-    mean = -1,
-    sd = -1,
-    'f_above_1' = 0,
-    'f_above_1_5' = 0,
-    'f_below_0_5' = 0
-  )
-
-  error.f = function(e) {
-    print("### Error ###")
-    print(e)
-    out.df$error <- 1
-    out.df$error_str <- as.character(e)
-    con <- connect(db())
-    write.or.update(out.df, 'fitdistr', con, 'label')
-    dbDisconnect(con)  
-    return(NA)
-  }
-  print("  doing fit...")
-  fit <- tryCatch(do.fit(), error=error.f)
-  
-  print("  done!")
-  
-  if (any(!is.na(fit))) {
-    # Calculate the mean of the parameterized distribution.
-    fn.str <- paste('r', distr, sep='')
-
-    if (length(fit$estimate) > 1) {
-      sampled.values <- do.call(fn.str, list(10 * 1000 * 1000, fit$estimate[1], fit$estimate[2]))
-    } else {
-      sampled.values <- do.call(fn.str, list(10 * 1000 * 1000, fit$estimate[1]))    
-    }
-    out.df$mean <- mean(sampled.values)
-    out.df$sd <- sd(sampled.values)
-    out.df$f_above_1 <- sum(sampled.values > 1) / length(sampled.values)
-    out.df$f_above_1_5 <- sum(sampled.values > 1.5) / length(sampled.values)
-    out.df$f_below_0_5 <- sum(sampled.values < 0.5) / length(sampled.values)
-
-    out.df$error <- 0
-    out.df$aic <- fit$aic
-    out.df$fit_str <- as.character(fit)[1]
-    out.df$est_1 <- fit$estimate[1]
-    if (length(fit$estimate) > 1) {
-      out.df$est_2 <- fit$estimate[2]
-    }
-    con <- connect(db())
-    write.or.update(out.df, 'fitdistr', con, 'label')
-    dbDisconnect(con)  
-  }
+  dbDisconnect(con)
 }
 
-pset_correlation <- function(pset.a, pset.b, test=F) {
+pset_correlation <- function(filter, pset.a, pset.b, test=F) {
   test <- as.logical(test)
-  x <- get.merged.sites(pset.a, pset.b, xtra=c('omega', 'lrt_stat', 'lrt_zz', 'omega_lower', 'omega_upper'), test=test)
+  pset.a <- as.integer(pset.a)
+  pset.b <- as.integer(pset.b)
+
+  x <- get.merged.sites(pset.a, pset.b,
+    xtra=c('omega', 'lrt_stat', 'lrt_z', 'omega_lower', 'omega_upper'),
+    test=test,
+    filter=filter
+  )
   
   # Only use sites with \omg less than 1 and greater than 0 for the PCA calculations.
   lm.max <- 1
@@ -435,7 +365,7 @@ pset_correlation <- function(pset.a, pset.b, test=F) {
   y.blw.x <- x$omega_upper.y < x$omega_lower.x  
   blw.abv.ratio <- sum(x.blw.y) / (sum(y.blw.x) + 1)
 
-  # Calculate, for each site, the fraction of A's CI that is above B.
+  # Calculate, for each site, the fraction of A's CI that are above B.
   # In other words, calculate the length of x's by the length of y's
   #        yyyyyyyyyy
   #               xxx
@@ -465,11 +395,16 @@ pset_correlation <- function(pset.a, pset.b, test=F) {
   t.pval <- t.res$p.value
   t.est <- t.res$estimate
 
+  tz.res <- t.test(x$lrt_z.x, x$lrt_z.y, paired=T)
+  tz.pval <- tz.res$p.value
+  tz.est <- tz.res$estimate
+
   con <- connect(db())
   out.df <- data.frame(
-    label = paste(pset.a, pset.b),
+    label = paste(pset.a, pset.b, filter, test, sep=' '),
     pset_a = pset.a,
     pset_b = pset.b,
+    filter = filter,
 
     n_merged = nrow(x),
     n_pca = nrow(lm.sub),
@@ -497,7 +432,9 @@ pset_correlation <- function(pset.a, pset.b, test=F) {
     mean_f_below = mean.below,
 
     t_test_pval = t.pval,
-    t_test_est = t.est
+    t_test_est = t.est, 
+    z_t_test_pval = tz.pval,
+    z_t_test_est = tz.est
   )
 
   ## Store this in the 'correlations' table.
@@ -509,10 +446,14 @@ pset_correlation <- function(pset.a, pset.b, test=F) {
 
 }
 
-parallel_sites <- function(pset.a, pset.b, test=F) {
+parallel_sites <- function(filter, pset.a, pset.b, test=F) {
+  pset.a <- as.integer(pset.a)
+  pset.b <- as.integer(pset.b)
   test <- as.logical(test)
-  x <- get.merged.sites(pset.a, pset.b, 
-    xtra=c('omega', 'lrt_stat', 'lrt_z', 'lrt_zz', 'omega_lower', 'omega_upper'), test=test
+  x <- get.merged.sites(pset.a, pset.b,
+    xtra=c('omega', 'lrt_stat', 'lrt_z', 'lrt_q', 'lrt_qq'), 
+    filter=filter, 
+    test=test
   ) 
 
   con <- connect(db())
@@ -520,18 +461,20 @@ parallel_sites <- function(pset.a, pset.b, test=F) {
   # Here, we're looking at the excess overlap between positively and
   #  negatively selected sites at a variety of significance
   #  thresholds, and also comparing the use of LRT p-values and
-  #  percentile-based Z-values for detecting such overlap. The idea is
-  #  that z-values probably work better (esp. for identifying overlap
+  #  percentile-based q-values for detecting such overlap. The idea is
+  #  that q-values probably work better (esp. for identifying overlap
   #  in purifying sites) because of the different pop. sizes and
   #  efficacies of purifying selection. For positive selection... who knows?
   threshs <- c(0.01, 0.25, 0.5, 0.75, 0.8, 0.9, 0.95, 0.99)
   for (i in 1:length(threshs)) {
     thresh <- threshs[i]
-    for (type in c('z', 'p', 'z2')) {
+    for (type in c('p', 'z', 'q', 'qq')) {
       out.df <- data.frame(
-        label = paste(pset.a, pset.b, type, thresh, sep=' '),
+        label = paste(pset.a, pset.b, type, thresh, test, sep=' '),
         pset_a = pset.a,
         pset_b = pset.b,
+        filter = filter,
+        test = test,
         thresh = thresh,
         thresh_type = type,
         n_sites = nrow(x),
@@ -551,24 +494,30 @@ parallel_sites <- function(pset.a, pset.b, test=F) {
         neg_n_b = NA
       )
 
-      if (type == 'z') {
-        z_thresh <- threshs[i] / 2
-        neg.a <- factor(x$lrt_zz.x < 0.5 - z_thresh)
-        neg.b <- factor(x$lrt_zz.y < 0.5 - z_thresh)
-        pos.a <- factor(x$lrt_zz.x >= 0.5 + z_thresh)
-        pos.b <- factor(x$lrt_zz.y >= 0.5 + z_thresh)
-      } else if (type == 'p') {
+      if (type == 'p') {
         p_thresh <- threshs[i]
         neg.a <- factor(x$lrt_stat.x < -qchisq(p_thresh, df=1))
         neg.b <- factor(x$lrt_stat.y < -qchisq(p_thresh, df=1))
         pos.a <- factor(x$lrt_stat.x > qchisq(p_thresh, df=1))
         pos.b <- factor(x$lrt_stat.y > qchisq(p_thresh, df=1))
-      } else if (type == 'z2') {
+      } else if (type == 'z') {
         z_thresh <- threshs[i]
-        neg.a <- factor(x$lrt_z.x < z_thresh)
-        neg.b <- factor(x$lrt_z.y < z_thresh)
-        pos.a <- factor(x$lrt_z.x > z_thresh)
-        pos.b <- factor(x$lrt_z.y > z_thresh)
+        neg.a <- factor(x$lrt_z.x < -qnorm(z_thresh))
+        neg.b <- factor(x$lrt_z.y < -qnorm(z_thresh))
+        pos.a <- factor(x$lrt_z.x > qnorm(z_thresh))
+        pos.b <- factor(x$lrt_z.y > qnorm(z_thresh))
+      } else if (type == 'qq') {
+        q_thresh <- threshs[i] / 2
+        neg.a <- factor(x$lrt_qq.x < 0.5 - q_thresh)
+        neg.b <- factor(x$lrt_qq.y < 0.5 - q_thresh)
+        pos.a <- factor(x$lrt_qq.x >= 0.5 + q_thresh)
+        pos.b <- factor(x$lrt_qq.y >= 0.5 + q_thresh)
+      } else if (type == 'q') {
+        q_thresh <- threshs[i]
+        neg.a <- factor(x$lrt_q.x < q_thresh)
+        neg.b <- factor(x$lrt_q.y < q_thresh)
+        pos.a <- factor(x$lrt_q.x > q_thresh)
+        pos.b <- factor(x$lrt_q.y > q_thresh)
       }
 
       neg.n.a <- sum(neg.a == TRUE)
@@ -616,7 +565,7 @@ parallel_sites <- function(pset.a, pset.b, test=F) {
       }
     }
   }
-  dbDisconnect(con)
+  disconnect(con)
 
 }
 
@@ -647,7 +596,8 @@ plot_global_distribution <- function(pset, filter='default', test=F) {
 }
 
 plot_sites_scatters <- function(pset, test=F) {
-  sites <- get.pset.sites(6, test=T)
+  sites <- get.pset.sites(6, filter='orig', test=T)
+  sites <- process.sites(sites)
   sites <- filter.default(sites)
   sites$ci <- sites$omega_upper - sites$omega_lower
   x <- subset(sites, select=c('lrt_stat', 'omega', 'ci'))
@@ -660,48 +610,49 @@ plot_sites_scatters <- function(pset, test=F) {
   }
 
   print("  p")
-  x <- subset(sites, lrt_stat > -40 & lrt_stat < 5 & omega > 0 & omega < 2)
+  x <- subset(sites, lrt_stat > -50 & lrt_stat < 5 & omega < 2)
   x <- r.f(x, 0.4, 0.03, 0.06)
   p <- ggplot(x, aes(x=lrt_stat, y=omega))
   p <- add_fill_density(x, p)
-  p <- p + xlab("Signed LRT (w > 0)") + ylab("Omega")
+  p <- p + xlab("Signed LRT") + ylab("Omega")
 
   print("  q")
-  x <- subset(sites, lrt_stat > -40 & lrt_stat < 5 & ci > 0 & ci < 3)
+  x <- subset(sites, lrt_stat > -50 & lrt_stat < 5 & ci >= 0 & ci < 5)
   x <- r.f(x, 0.4, 0.03, 0.06)
   q <- ggplot(x, aes(x=lrt_stat, y=ci))
   q <- add_fill_density(x, q)
   q <- q + xlab("Signed LRT") + ylab("95% CI Width")
 
   print("  z")
-  x <- subset(sites, omega > 0 & omega < 1 & ci > 0 & ci < 3)
-  x <- r.f(x, 0.4, 0.01, 0.03)
+  x <- subset(sites, omega < 1.5 & ci < 5)
+  x <- r.f(x, 0.15, 0.015, 0.03)
   z <- ggplot(x, aes(x=omega, y=ci))
   z <- add_fill_density(x, z)
-  z <- z + xlab("Omega (0 > w > 1)") + ylab("95% CI Width")
+  z <- z + xlab("Omega") + ylab("95% CI Width")
 
-  sites <- get.pset.sites(1, test=T)
+  sites <- get.pset.sites(1, filter='orig', test=T)
+  sites <- process.sites(sites)
   sites <- filter.default(sites)
   sites$ci <- sites$omega_upper - sites$omega_lower
   sites <- subset(sites, select=c('lrt_stat', 'omega', 'ci'))
 
   print("  p")
-  x <- subset(sites, lrt_stat > -40 & lrt_stat < 5 & omega > 0 & omega < 2)
-  x <- r.f(x, 0.2, 0.03, 0.06)
+  x <- subset(sites, lrt_stat > -20 & lrt_stat < 5 & omega < 2)
+  x <- r.f(x, 0.15, 0.02, 0.06)
   p2 <- ggplot(x, aes(x=lrt_stat, y=omega))
   p2 <- add_fill_density(x, p2)
   p2 <- p2 + xlab("Signed LRT (w > 0)") + ylab("Omega")
 
   print("  q")
-  x <- subset(sites, lrt_stat > -40 & lrt_stat < 5 & ci > 0 & ci < 3)
-  x <- r.f(x, 0.3, 0.03, 0.06)
+  x <- subset(sites, lrt_stat > -20 & lrt_stat < 5 & ci >= 0 & ci < 5)
+  x <- r.f(x, 0.15, 0.02, 0.06)
   q2 <- ggplot(x, aes(x=lrt_stat, y=ci))
   q2 <- add_fill_density(x, q2)
   q2 <- q2 + xlab("Signed LRT") + ylab("95% CI Width")
 
   print("  z")
-  x <- subset(sites, omega > 0 & omega < 1 & ci > 0 & ci < 3)
-  x <- r.f(x, 0.4, 0.01, 0.03)
+  x <- subset(sites, omega < 1.5 & ci < 5)
+  x <- r.f(x, 0.15, 0.015, 0.03)
   z2 <- ggplot(x, aes(x=omega, y=ci))
   z2 <- add_fill_density(x, z2)
   z2 <- z2 + xlab("Omega (0 > w > 1)") + ylab("95% CI Width")
