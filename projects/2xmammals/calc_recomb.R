@@ -1,4 +1,9 @@
-source("~/src/greg-ensembl/projects/2xmammals/analyze_mammals.R")
+uname  <- Sys.getenv("USER")
+if (uname == 'gj1') {
+  source("~/src/greg-ensembl/projects/2xmammals/analyze_mammals.R")
+} else {
+  source("~/lib/greg-ensembl/projects/2xmammals/analyze_mammals.R")
+}
 
 get.chrs <- function() {
   male.r <- scratch.f("rec_male.txt")

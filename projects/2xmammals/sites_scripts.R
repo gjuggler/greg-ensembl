@@ -1,7 +1,16 @@
-source("~/src/greg-ensembl/projects/2xmammals/analyze_mammals.R")
-source("~/src/greg-ensembl/projects/2xmammals/analyze_genes.R")
-source("~/src/greg-ensembl/projects/2xmammals/calc_recomb.R")
-source("~/src/greg-ensembl/scripts/xtable_utils.R")
+uname  <- Sys.getenv("USER")
+if (uname == 'gj1') {
+  source("~/src/greg-ensembl/projects/2xmammals/analyze_mammals.R")
+  source("~/src/greg-ensembl/projects/2xmammals/analyze_genes.R")
+  source("~/src/greg-ensembl/projects/2xmammals/calc_recomb.R")
+  source("~/src/greg-ensembl/scripts/xtable_utils.R")
+} else {
+  source("~/lib/greg-ensembl/projects/2xmammals/analyze_mammals.R")
+  source("~/lib/greg-ensembl/projects/2xmammals/analyze_genes.R")
+  source("~/lib/greg-ensembl/projects/2xmammals/calc_recomb.R")
+  source("~/lib/greg-ensembl/scripts/xtable_utils.R")
+}
+
 args <- commandArgs(trailingOnly=T)
 
 main <- function() {
@@ -246,16 +255,16 @@ fit_distr <- function(pset,
   sites <- subset(sites, select=c('data_id', 'omega_lower', 'omega_upper', 'omega', 'parameter_set_id'))
 
   print("Fitting...")
-  con <- connect(db())
   for (i in 1:50) {
-    df <- dbGetQuery(con, sprintf("select * from fitdistr where 
-      pset=%s and filter='%s' and dist='%s' and use_type='%s' and i=%d", pset, filter, distr, use, i)
-    )
-    if (nrow(df) == 0) {
+#    con <- connect(db())
+#    df <- dbGetQuery(con, sprintf("select * from fitdistr where 
+#      pset=%s and filter='%s' and dist='%s' and use_type='%s' and i=%d", pset, filter, distr, use, i)
+#    )
+#    dbDisconnect(con)
+#    if (nrow(df) == 0) {
       fit.sites(sites, distr=distr, filter=filter, use=use, i=i, write.to.table=T)
-    }
+#    }
   }
-  dbDisconnect(con)
 }
 
 pset_correlation <- function(filter, pset.a, pset.b, test=F) {

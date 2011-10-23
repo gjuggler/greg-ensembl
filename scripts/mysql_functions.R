@@ -120,12 +120,16 @@ write.or.update <- function(df, tbl, con, primary) {
     #print(head(df))
     dbUpdateVars(con, tbl, df, primary)
   } else {
+    print("Table doesn't exist! Writing first row...")
     dbWriteTable(con, tbl, df, row.names=F)
+    print("Creating primary key...")
     primary.str <- primary
     if (is.character(df[1, primary]) || is.factor(df[1, primary])) {
       primary.str <- paste(primary, '(64)', sep='')
     }
     db.str <- paste('ALTER TABLE ', tbl, ' ADD UNIQUE (', primary.str, ')', sep='')
+    print(db.str)
     dbSendQuery(con, db.str)
+    print("Done!")
   }
 }

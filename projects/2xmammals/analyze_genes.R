@@ -1,5 +1,11 @@
-source("~/src/greg-ensembl/projects/2xmammals/analyze_mammals.R")
-source("~/src/greg-ensembl/scripts/go_enrichments.R")
+uname  <- Sys.getenv("USER")
+if (uname == 'gj1') {
+  source("~/src/greg-ensembl/projects/2xmammals/analyze_mammals.R")
+  source("~/src/greg-ensembl/scripts/go_enrichments.R")
+} else {
+  source("~/lib/greg-ensembl/projects/2xmammals/analyze_mammals.R")
+  source("~/lib/greg-ensembl/scripts/go_enrichments.R")
+}
 
 get.aln <- function(
   data_id, 
