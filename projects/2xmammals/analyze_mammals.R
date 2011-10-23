@@ -2072,8 +2072,7 @@ download.table <- function(tbl) {
   cmd <- sprintf("select * from %s", tbl)
   df <- dbGetQuery(con, cmd)
   disconnect(con)
-  assign(tbl, df)
-  save(tbl, file=filename)
+  save(df, file=filename)
 }
 
 cumulative.plot <- function(pset=pset, 
@@ -2846,6 +2845,7 @@ bsub.collect.clusters <- function() {
 
 filter.dups <- function(sites) {
   genes <- get.genes()
+
   bad.genes <- subset(genes, dup_species_count > 10)
   bad.ids <- bad.genes$data_id
   subset(sites, !(data_id %in% bad.ids))
@@ -2905,10 +2905,10 @@ pset.df <- function(factors=F, prefix='') {
     '3' = 'Laurasiatheria',
     '4' = 'Atlantogenata',
     '5' = 'Eutheria',
-    '6' = 'Mammalia',
+    '6' = 'Mammals',
     '7' = 'Sparse Glires',
-    '8' = 'Sparse Mammalia',
-    '9' = 'HQ Mammalia',
+    '8' = 'Sparse Mammals',
+    '9' = 'HQ Mammals',
     '10' = 'HMRD'
   )
   char.list <- list(
@@ -2979,10 +2979,14 @@ write.subsets.table <- function() {
   taxids.list <- list(
     '1' = c(9478, 9483, 9544, 9593, 9598, 9601, 9606, 30608,
   30611, 61853),
+    '4' = c(9358, 9361, 9371, 9785, 9813),
+    '10' = c(9606, 10090, 10116, 9615),
+    '7' = c(10090, 10116, 10020, 43179, 10141),
+    '9' = c(9606, 9598, 9544, 10090, 10116, 9615, 9913, 9823, 9796),
     '2' = c(9978, 9986, 10020, 10090, 10116, 10141, 43179),
     '3' = c(9365, 9615, 9646, 9685, 9739, 9796, 9823, 9913, 30538,
   42254, 59463, 132908),
-    '4' = c(9358, 9361, 9371, 9785, 9813),
+    '8' = c(9258, 9315, 9361, 9785, 9606, 10090, 9615),
     '5' = c(9358, 9361, 9365, 9371, 9478, 9483, 9544, 9593, 9598,
   9601, 9606, 9615, 9646, 9685, 9739, 9785, 9796, 9813, 9823, 9913,
   9978, 9986, 10020, 10090, 10116, 10141, 30538, 30608, 30611, 37347,
@@ -2990,11 +2994,7 @@ write.subsets.table <- function() {
     '6' = c(9258, 9315, 9358, 9361, 9365, 9371, 9478, 9483, 9544,
   9593, 9598, 9601, 9606, 9615, 9646, 9685, 9739, 9785, 9796, 9813,
   9823, 9913, 9978, 9986, 10020, 10090, 10116, 10141, 13616, 30538,
-  30608, 30611, 37347, 42254, 43179, 59463, 61853, 132908),
-    '7' = c(10090, 10116, 10020, 43179, 10141),
-    '8' = c(9258, 9315, 9361, 9785, 9606, 10090, 9615),
-    '9' = c(9606, 9598, 9544, 10090, 10116, 9615, 9913, 9823, 9796),
-    '10' = c(9606, 10090, 10116, 9615)
+  30608, 30611, 37347, 42254, 43179, 59463, 61853, 132908)
   )
 
   aliases <- llply(taxids.list, function(x) {
@@ -3004,25 +3004,6 @@ write.subsets.table <- function() {
     length(x)
   })
 
-  tree <- read.tree(file="~/src/greg-ensembl/ensembl-compara-63/scripts/pipeline/species_tree_blength.nh")
-  all.tips <- tree$tip.label
-
-  get.subset.length <- function(x, total.length=F) {
-    x <- taxid.to.alias(x, binomials=T)
-    x <- gsub(' ', '_', x)
-    remove.tips <- setdiff(all.tips, x)
-    remaining.tree <- drop.tip(tree, remove.tips)
-
-    if (total.length) {
-      ret.val <- sum(remaining.tree$edge.length)
-    } else {
-      ret.val <- mean.path.length(remaining.tree)
-    }
-    ret.val
-  }
-  mpls <- llply(taxids.list, get.subset.length)
-  sizes <- llply(taxids.list, get.subset.length, total.length=T)
-
   genes.df <- get.genes.split()
   pset.mpls <- dlply(genes.df, .(pset), function(x) {
     median(x$mpl, na.rm=T)
@@ -3031,27 +3012,10 @@ write.subsets.table <- function() {
     median(x$bl, na.rm=T)
   })
 
-  # Use data roughly from Piganeau and Eyre-Walker 2009.
-  pop.size <- as.integer(round(c(
-    40000, # Primates
-    230000, # Glires
-    100000, # Laurasiatheria
-    30000, # Atlantogenata
-    110000, # Eutheria
-    120000, # Mammalia
-    230000, # Sparse G
-    120000, # Sparse M
-    120000, # Hi-Q
-    120000  # HMRD
-  )))
-
   out.df <- data.frame(
-#    'Pset' = names(taxids.list),
     'Name' = pset.to.alias(names(taxids.list)),
-    'Species' = paste("\\tiny{", "(", unlist(counts), ") ", unlist(aliases), "}", sep=""),
-    'Ne' = as.integer(pop.size),
-    'MPL' = unlist(mpls),
-    'Total' = unlist(sizes),
+    'Count' = unlist(counts),
+    'Species' = paste("\\tiny{", unlist(aliases), "}", sep=""),
     'slrMPL' = 0,
     'slrTotal' = 0
   )
@@ -3059,12 +3023,9 @@ write.subsets.table <- function() {
   out.df[names(pset.bls), 'slrTotal'] <- unlist(pset.bls)
 
   xt <- xtable(out.df)
-  xt <- color.column(xt, 'Ne')
-  xt <- color.column(xt, 'MPL')
-  xt <- color.column(xt, 'Total')
   xt <- color.column(xt, 'slrMPL')
   xt <- color.column(xt, 'slrTotal')
-  print.latex(xt, "species_set_summary.txt")
+  print.latex(xt, scratch.f("table_species_set_summary.txt"))
 
   #print(out.df)
 }
