@@ -27,13 +27,15 @@ main <- function() {
 
     error.f <- function(e) {
       print("###ERROR###")
-      out.df <- data.frame(
-        tstmp = paste(timestamp(), fn.name, collapse=' '),
-        fn_name = as.character(fn.name),
-        fn_args = paste(args, collapse=' '),
-        error = as.character(e)
-      )
+      print(as.character(e))
       con <- connect(db())
+      out.df <- data.frame(
+        tstmp = mysqlEscapeStrings(con, paste(timestamp(), fn.name,
+          paste(args, collapse=' '), collapse=' ')),
+        fn_name = as.character(fn.name),
+        fn_args = mysqlEscapeStrings(con, paste(args, collapse=' ')),
+        error = mysqlEscapeStrings(con, as.character(e))
+      )
       write.or.update(out.df, 'errors', con, 'tstmp')
       disconnect(con)
     }
@@ -45,10 +47,11 @@ main <- function() {
   }
 }
 
-collect_genes <- function(pset, filter='default', subset.index=NULL, test=F) {
+collect_genes <- function(pset, filter='default', n.indices=0, test=F, subset.index=NULL) {
   pset <- as.integer(pset)
   if (!is.null(subset.index)) {
     subset.index <- as.integer(subset.index)
+    n.indices <- as.integer(n.indices)
   }
   test <- as.logical(test)
 
@@ -65,8 +68,14 @@ collect_genes <- function(pset, filter='default', subset.index=NULL, test=F) {
   }
 
   print("Processing...")
-  process.genes(genes, pset, filter=filter, subset.index=subset.index, test=test)
-  print("  done!")
+  process.genes(genes, pset, filter=filter, subset.index=subset.index,
+    n.indices=n.indices, test=test)
+  print(" done!")
+}
+
+plot_pvals <- function(pset) {
+  pset <- as.integer(pset)
+  plot.pval.example(pset, test=F)
 }
 
 collect_clusters <- function(taxon_id, test=F) {
@@ -92,25 +101,26 @@ collect_sites <- function(pset, filter='default', test=F) {
   }
 
   recomb.filters <- c('recomb_10k', 'recomb_100k', 'recomb_1mb')
+  inverse.filters <- c('clusters_inverse', 'dups_inverse')
 
   orig.sites.f <- get.sites.filename(pset=pset, filter='orig', test=test)
-  if (file.exists(orig.sites.f)) {
-    if (!(filter %in% recomb.filters) ) {
+  if (!(filter %in% recomb.filters || filter %in% inverse.filters) ) {
+    if (file.exists(orig.sites.f)) {
       load(orig.sites.f)
+    } else {
+      if (filter != 'orig') {
+        stop("Original sites have not been gathered yet!")
+      }
+      if (test) {
+        print("  limiting sites count for testing")
+      }
+      con <- connect(db()); 
+      not.null.s <- 'and data_id is not null and aln_position is not null and parameter_set_id is not null'
+      cmd <- sprintf("select * from sites where parameter_set_id=%d %s %s", pset, not.null.s, limit.s)
+      sites <- dbGetQuery(con, cmd)
+      disconnect(con)
+      save(sites, file=orig.sites.f)
     }
-  } else {
-    if (filter != 'orig') {
-      stop("Original sites haven't been gathered yet!")
-    }
-    if (test) {
-      print("  limiting sites count for testing")
-    }
-    con <- connect(db()); 
-    not.null.s <- 'and data_id is not null and aln_position is not null and parameter_set_id is not null'
-    cmd <- sprintf("select * from sites where parameter_set_id=%d %s %s", pset, not.null.s, limit.s)
-    sites <- dbGetQuery(con, cmd)
-    disconnect(con)
-    save(sites, file=orig.sites.f)
   }
 
   if (filter == 'orig') {
@@ -118,7 +128,7 @@ collect_sites <- function(pset, filter='default', test=F) {
   }
 
   if (!file.exists(sites.f)) {
-    if (filter %in% recomb.filters) {
+    if (filter %in% recomb.filters || filter %in% inverse.filters) {
       default.f <- get.sites.filename(pset=pset, filter='default', test=test)
       load(default.f)
     } else {
@@ -131,8 +141,8 @@ collect_sites <- function(pset, filter='default', test=F) {
       stringent = filter.stringent(sites),
       pfam = filter.pfam(sites),
       pfam_stringent = filter.pfam.stringent(sites),
-      clusters = filter.clusters(sites),
       clusters_inverse = filter.clusters(sites, return.inverse=T),
+      dups_inverse = filter.dups(sites, return.inverse=T),
       recomb_10k = add.recomb.gc(sites, width=1e4, test=test),
       recomb_100k = add.recomb.gc(sites, width=1e5, test=test),
       recomb_1mb = add.recomb.gc(sites, width=1e6, test=test)
@@ -145,7 +155,7 @@ collect_sites <- function(pset, filter='default', test=F) {
   print("  done!")
 }
 
-summary_table <- function(pset, test=F, filter='default') {
+summary_table <- function(pset, filter='default', test=F) {
   test <- as.logical(test)
   pset <- as.numeric(pset)
   sites <- get.pset.sites(pset, filter=filter, test=test)
@@ -242,28 +252,32 @@ bl_pos_sel_breakdown <- function(pset, test=F) {
 }
 
 fit_distr <- function(pset,
-  filter=c('default', 'stringent', 'pfam'),
-  distr=c('lnorm', 'gamma', 'beta', 'exp'), 
-  use=c('ci', 'imputed', 'omega'),
+  filter,
+  distr,
+  use,
   test=F
 ) {
-  pset <- as.numeric(pset)
-  distr = distr[1]
-  use = use[1]
+
+
+  pset <- as.integer(pset)
   test <- as.logical(test)
+  print("Loading sites...")
   sites <- get.pset.sites(pset, filter=filter, test=test)
-  sites <- subset(sites, select=c('data_id', 'omega_lower', 'omega_upper', 'omega', 'parameter_set_id'))
+  sites <- subset(sites, select=c('data_id', 'omega_lower', 'omega_upper', 'omega', 'parameter_set_id', 'note'))
 
   print("Fitting...")
   for (i in 1:50) {
-#    con <- connect(db())
-#    df <- dbGetQuery(con, sprintf("select * from fitdistr where 
-#      pset=%s and filter='%s' and dist='%s' and use_type='%s' and i=%d", pset, filter, distr, use, i)
-#    )
-#    dbDisconnect(con)
-#    if (nrow(df) == 0) {
-      fit.sites(sites, distr=distr, filter=filter, use=use, i=i, write.to.table=T)
-#    }
+    print(i)
+    con <- connect(db())
+    df <- dbGetQuery(con, sprintf("select * from fitdistr where 
+      pset=%s and filter='%s' and dist='%s' and use_type='%s' and i=%d", 
+      pset, filter, distr, use, i
+    ))
+    disconnect(con)
+    if (nrow(df) == 0) {
+      write.t <- ifelse(test, F, T)
+      fit.sites(sites, distr=distr, filter=filter, use=use, i=i, write.to.table=write.t)
+    }
   }
 }
 

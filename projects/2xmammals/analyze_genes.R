@@ -14,6 +14,7 @@ get.aln <- function(
   filename="test.pdf", 
   taxon_id=9606,
   include.psets = c(1, 2, 3, 6),
+  include.subs = F,
   keep.species = 'mammals',
   remove.blank.columns=F
 ) {
@@ -26,6 +27,14 @@ get.aln <- function(
     data_id, aln_lo, aln_hi)
   df <- dbGetQuery(con, cmd)
   disconnect(con)
+
+  if (include.subs) {
+    con <- connect(dbname())
+    cmd <- sprintf("select * from subs where data_id=%d and aln_position between %d and %d order by aln_position",
+      data_id, aln_lo, aln_hi)
+    subs.df <- dbGetQuery(con, cmd)
+    disconnect(con)
+  }
 
   con <- connect(dbname())
   cmd <- sprintf("select * from genes where data_id=%d", data_id)

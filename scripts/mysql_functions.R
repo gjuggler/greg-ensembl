@@ -68,19 +68,19 @@ connect.livemirror <- function(dbname=NULL) {
 dbUpdateVars <- function(conn, dbtable, dataframe=NULL, primary, vars=colnames(dataframe)) { 
   print(paste("dbupdateVars for table", dbtable))
   if (!dbExistsTable(conn, dbtable)) { 
-    stop("The target table \"", dbtable, "\" doesn't exist in the database \"", dbGetInfo(conn)$dbname, "\"\n\n", call. = FALSE)
+    stop("The target table \"", dbtable, "\" does not exist in the database \"", dbGetInfo(conn)$dbname, "\"\n\n", call. = FALSE)
   }
   if (is.null(dataframe)) { 
     stop("The source dataframe is missing, with no default\n\n", call. = FALSE) 
   } 
   if (!(toupper(primary) %in% toupper(names(dataframe)))) {
-    #stop("The primary key variable doesn't exist in the source dataframe\n\n", call. = FALSE) 
+    #stop("The primary key variable does not exist in the source dataframe\n\n", call. = FALSE) 
   } 
   if (!all(toupper(vars) %in% toupper(names(dataframe)))) { 
-    stop("One or more variables don't exist in the source dataframe\n\n", call. = FALSE) 
+    stop("One or more variables do not exist in the source dataframe\n\n", call. = FALSE) 
   } 
   if (!(toupper(primary) %in% toupper(dbListFields(conn, dbtable)))) { 
-    #stop("The primary key variable doesn't exist in the target table\n\n", call. = FALSE) 
+    #stop("The primary key variable does not exist in the target table\n\n", call. = FALSE) 
   } 
 
   # Make the variable names OK.

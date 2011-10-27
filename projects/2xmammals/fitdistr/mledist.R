@@ -196,12 +196,17 @@ mledist <- function (data, distr, start=NULL, fix.arg=NULL, optim.method="defaul
                 sum(log(do.call(pdistnam,c(list(q=icens$right),as.list(par),as.list(fix.arg))) - # without log=TRUE here
                 do.call(pdistnam,c(list(q=icens$left),as.list(par),as.list(fix.arg))) )) # without log=TRUE here
         else
-            fnobjcens <- function(par,fix.arg, rcens,lcens,icens,ncens,ddistnam,pdistnam)
-                -sum(log(do.call(ddistnam,c(list(x=ncens),as.list(par),as.list(fix.arg))))) -
+            fnobjcens <- function(par,fix.arg, rcens,lcens,icens,ncens,ddistnam,pdistnam) {
+                out.val <- -sum(log(do.call(ddistnam,c(list(x=ncens),as.list(par),as.list(fix.arg))))) -
                 sum(log(do.call(pdistnam,c(list(q=lcens),as.list(par),as.list(fix.arg))))) -
                 sum(log(1-do.call(pdistnam,c(list(q=rcens),as.list(par),as.list(fix.arg))))) -
-                sum(log(do.call(pdistnam,c(list(q=icens$right),as.list(par),as.list(fix.arg))) - 
-                do.call(pdistnam,c(list(q=icens$left),as.list(par),as.list(fix.arg))) ))
+                sum(log( 
+                  do.call(pdistnam,c(list(q=icens$right),as.list(par),as.list(fix.arg))) - 
+                  do.call(pdistnam,c(list(q=icens$left),as.list(par),as.list(fix.arg)))
+                ))
+                print(out.val)
+                out.val
+                }
     }
     # Choice of the optimization method    
     if (optim.method == "default")
@@ -220,6 +225,13 @@ mledist <- function (data, distr, start=NULL, fix.arg=NULL, optim.method="defaul
     # Try to minimize the minus (log-)likelihood using the base R optim function
     if(is.null(custom.optim))
     {
+
+    #print(lower)
+    #print(upper)
+    #print(meth)
+    #print(fix.arg)
+    #print(vstart)
+
         if (!cens) {
             opt <- optim(par=vstart, fn=fnobj, fix.arg=fix.arg, obs=data, ddistnam=ddistname,
             hessian=TRUE, method=meth, lower=lower, upper=upper, ...)
