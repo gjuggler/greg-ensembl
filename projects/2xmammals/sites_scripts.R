@@ -73,6 +73,20 @@ collect_genes <- function(pset, filter='default', n.indices=0, test=F, subset.in
   print(" done!")
 }
 
+collect_domains <- function(pset, fltr='default', n.indices=0, test=F, subset.index=NULL) {
+  pset <- as.integer(pset)
+  if (!is.null(subset.index)) {
+    subset.index <- as.integer(subset.index)
+    n.indices <- as.integer(n.indices)
+  }
+  test <- as.logical(test)
+
+  print("Processing...")
+  process.domains(pset, fltr=fltr, subset.index=subset.index,
+    n.indices=n.indices, test=test)
+  print(" done!")
+}
+
 plot_pvals <- function(pset) {
   pset <- as.integer(pset)
   plot.pval.example(pset, test=F)
@@ -160,9 +174,13 @@ summary_table <- function(pset, filter='default', test=F) {
   pset <- as.numeric(pset)
   sites <- get.pset.sites(pset, filter=filter, test=test)
   df <- summarize.sites(sites, filter=filter)
-  con <- connect(db())
-  write.or.update(df, 'summaries', con, 'label')
-  disconnect(con)
+  if (!test) {
+    con <- connect(db())
+    write.or.update(df, 'summaries', con, 'label')
+    disconnect(con)
+  } else {
+    print(df)
+  }
 }
 
 collect_gc <- function(window.width=10000) {
@@ -192,6 +210,11 @@ genes_enrichment <- function(pset, filter, method, excl.iea) {
   excl.iea <- as.logical(excl.iea)
 
   calc.genes.enrichment(pset, filter, method, excl.iea)
+}
+
+empirical_counts <- function(pset, filter, test=F) {
+  pset <- as.integer(pset)
+  calc.empirical.counts(pset, filter, test=test)
 }
 
 cumulative_calc <- function(pset, filter, sort.f, direction, test=F) {

@@ -13,8 +13,13 @@ get.data <- function() {
   dbname <- 'gj1_alnscore'
   con <- connect(dbname)
 
-  aln <- mysqlReadTable(con, 'aln')
-  save(aln, file=scratch.f('alnscore.Rdata'))
+  ff <- scratch.f('alnscore.Rdata')
+  if (!file.exists(ff)) {
+    aln <- mysqlReadTable(con, 'aln')
+    save(aln, file=ff)
+  } else {
+    load(ff)
+  }
   aln
 }
 
