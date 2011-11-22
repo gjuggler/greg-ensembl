@@ -583,6 +583,7 @@ sub extract_substitution_info {
   # Get the internal node taxon ID from the LCA of the taxids of all nodes beneath.
   my @taxids_beneath;
   foreach my $leaf ($node->leaves) {
+    
     my $compara_leaf = $tree->find_node_by_name($leaf->id);
     if ($compara_leaf && $compara_leaf->can('taxon_id')) {
       push @taxids_beneath, $compara_leaf->taxon_id;
@@ -775,7 +776,7 @@ sub _get_taxon_id_from_leaves_beneath {
     map {$map->{$_->name} = $_->taxon_id} $taxid_tree->nodes;
     map {$_->name($_->taxon_id)} $taxid_tree->nodes;
     $taxid_tree = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($taxid_tree);
-    print $taxid_tree->ascii(1,1,1);
+    #print $taxid_tree->ascii(1,1,1);
     $self->{_genome_tree} = $taxid_tree;
   }
   if (!defined $self->{_taxid_cache}) {
@@ -792,10 +793,13 @@ sub _get_taxon_id_from_leaves_beneath {
   foreach my $leaf ($taxid_tree->leaves) {
     push @leaves, $leaf if (grep {$leaf->id eq $_} @taxids)
   }
-  my $slice = $taxid_tree->get_lca(@leaves);
-
-  $self->{_taxid_cache}->{$taxids_str} = $slice->id;
-  return $slice->id;
+  my $id = '0';
+  if (scalar(@leaves) >= 2) {
+    my $slice = $taxid_tree->get_lca(@leaves);
+    $id = $slice->id;
+  }
+  $self->{_taxid_cache}->{$taxids_str} = $id;
+  return $id;
 }
 
 sub _get_sub_pattern {

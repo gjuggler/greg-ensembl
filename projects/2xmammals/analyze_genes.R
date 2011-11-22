@@ -7,20 +7,44 @@ if (uname == 'gj1') {
   source("~/lib/greg-ensembl/scripts/go_enrichments.R")
 }
 
+get.alns <- function(gene.names, ...) {
+  for (i in 1:length(gene.names)) {
+    cur.gene <- gene.names[i]
+    filename <- paste('aln_', cur.gene, '.pdf', sep='')
+    get.aln(gene_name=cur.gene, filename=filename, ...)
+  }
+}
+
 get.aln <- function(
   data_id, 
   aln_lo=1, 
   aln_hi=99999, 
+  gene_name=NULL,
   filename="test.pdf", 
   taxon_id=9606,
-  include.psets = c(1, 2, 3, 6),
+  include.psets = c(1, 2, 3, 4, 5, 6),
   include.subs = F,
   keep.species = 'mammals',
-  remove.blank.columns=F
+  remove.blank.columns=F,
+  flatten.seq=F,
+  plot.chars=T,
+  plot.protein=F
 ) {
   library(R.oo)
   library(phylosim)
   source("~/src/greg-ensembl/projects/phylosim/PhyloSimPlots.R")
+
+  if (!is.null(gene_name)) {
+    con <- connect(dbname())
+    cmd <- sprintf("select * from genes where gene_name='%s'", gene_name)
+    df <- dbGetQuery(con, cmd)
+    disconnect(con)
+    if (nrow(df) == 0) {
+      print(sprintf("Gene with name '%s' not found!", gene_name))
+      return()
+    }
+    data_id <- df$data_id
+  }
 
   con <- connect(dbname())
   cmd <- sprintf("select * from seqs where data_id=%d and aln_position between %d and %d order by aln_position",
@@ -41,6 +65,8 @@ get.aln <- function(
   gene <- dbGetQuery(con, cmd)
   disconnect(con)
 
+  print(sprintf("Gene: %s Align length: %d dN/dS: %.3f", gene$gene_name, gene$aln_length, gene$m_slr_dnds))
+
   # Get the gene name, MPL, and mammal dN/dS
   gene.name <- gene$gene_name
   gene.mpl <- gene$m_slr_mean_path
@@ -59,16 +85,26 @@ get.aln <- function(
   sites <- subset(sites, parameter_set_id %in% include.psets)
   tracks <- NA
   if (nrow(sites) > 0) {
-    sites$source <- paste("SLR", pset.to.alias(sites$parameter_set_id))
-    sites$score <- sites$lrt_stat
+    sites$source <- paste("PNSC", pset.to.alias(sites$parameter_set_id))
+    lrt.score <- rep(0, nrow(sites))
+    lrt.score <- ifelse(sites$lrt_stat > qchisq(0.95, df=1), 1, lrt.score)
+    lrt.score <- ifelse(sites$lrt_stat < -qchisq(0.95, df=1), -1, lrt.score)
+    lrt.score <- ifelse(sites$lrt_stat > qchisq(0.99, df=1), 2, lrt.score)
+    lrt.score <- ifelse(sites$lrt_stat < -qchisq(0.99, df=1), -2, lrt.score)
+    sites$score <- lrt.score
+    #sites$score <- sites$lrt_stat
+
     sites$start <- sites$aln_position - aln_lo + 1
     sites$end <- sites$aln_position - aln_lo + 1
 
     dnds <- subset(sites, parameter_set_id == 6)
+    include.dnds <- F
     if (nrow(dnds) > 0) {
-      dnds$source <- paste("dN/dS", pset.to.alias(dnds$parameter_set_id))
-      dnds$score <- dnds$omega
-      sites <- rbind(sites, dnds)
+      if (include.dnds) {
+        dnds$source <- paste("dN/dS", pset.to.alias(dnds$parameter_set_id))
+        dnds$score <- dnds$omega
+        sites <- rbind(sites, dnds)
+      }
 
       # Add Pfam annotations.
       pf.sites <- subset(dnds, !is.na(pfam_domain))
@@ -104,11 +140,12 @@ get.aln <- function(
     mamms <- slim.mammals()
   } else if (keep.species == 'mammals') {
     mamms <- mammals()
+  } else if (keep.species == 'primates') {
+    mamms <- primates()
   }
   mamms <- c(mamms, taxon_id)
   mamms <- unique(mamms)
   aln <- restrict.aln.to.seqs(aln, mamms)
-  #aln <- aln.tx(aln)
 
   f.con <- file("~/src/greg-ensembl/projects/orthologs/compara_63_taxids.nh")
   str <- readLines(con=f.con)
@@ -119,6 +156,13 @@ get.aln <- function(
   tree <- remove.branchlengths(tree)
   aln <- sort.aln.by.tree(aln, tree)
 
+  aln2 <- aln
+  aln2 <- aln.tx(aln2)
+  rownames(aln2) <- paste(gene.name, rownames(aln2), sep='_')
+  out.f <- paste('aln_', gene.name, '.fasta', sep='')
+#  write.seqs(aln2, out.f)
+  #write.dna(aln2, file=out.f, format='fasta', colsep='')
+
 #  if (remove.blank.columns) {
 #    aln <- remove.blank.columns(aln)
 #  }
@@ -128,6 +172,33 @@ get.aln <- function(
   rownames(aln) <- species.ids
   tree$tip.label <- taxid.to.alias(tree$tip.label, include.internals=T)
 
+  # Flatten to human sequence.
+  if (flatten.seq) {
+    h.gaps <- columns.without.sequence(aln, 'Human')
+
+    xpos <- 1:aln.length(aln)
+    xx <- rep(FALSE, aln.length(aln))
+    xx[h.gaps] <- TRUE
+    xx.cum <- cumsum(xx)
+    xx.df <- data.frame(
+      pos = xpos,
+      offset = xx.cum
+    )
+
+    aln <- remove.columns(aln, h.gaps)
+    tracks <- llply(tracks, function(x) {
+      x <- subset(x, !(pos %in% h.gaps))
+      x <- merge(x, xx.df, all.x=T)
+      x$pos <- x$pos - x$offset
+      x$offset <- NULL
+      x
+    })
+  }
+
+  if (plot.protein) {
+    aln <- aln.tx(aln)
+  }
+
   out.w <- .2 * length(aln[1,])
   out.h <- .2 * (length(rownames(aln)) + 3 + length(tracks))
 
@@ -135,8 +206,7 @@ get.aln <- function(
   p <- aln.plot(aln, 
     tree=tree,
     color.scheme='auto',
-    plot.chars=T, 
-    aln.plot.chars=T, 
+    aln.plot.chars=plot.chars,
     aln.char.text.size=1.5,
     aln.char.alpha = 0.7,
     aln.pos.offset=aln_lo-1,
@@ -154,17 +224,39 @@ get.aln <- function(
   dev.off()
 }
 
+write.seqs <- function(aln, out.f) {
+  zz <- file(out.f, "w")  # open an output file connection
+
+  seq.nms <- rownames(aln)
+  for (i in 1:length(seq.nms)) {
+    cur.row <- aln[i, ]
+    cur.row <- paste(cur.row, collapse='')
+    #print(paste(cur.row, collapse=''))
+    cur.row <- gsub('-', '', cur.row)
+    if (nchar(cur.row) == 0) {
+      next()
+    }
+    #print(cur.row)
+    cat(paste(">", seq.nms[i], "\n", sep=''), file=zz)
+    cat(paste(cur.row, "\n", sep=''), file=zz)
+  }
+  close(zz)
+}
+
 example.alns <- function() {
+  get.aln(1514564, 1, 300, filename="aln_ex_x.pdf", plot.chars=F)
+  get.aln(1640146, 1000, 1500, filename="aln_ex_rhesus.pdf", plot.chars=F)
   # Chimpanzee crap:
-#  get.aln(1592585, 700, 750, "aln_ex_1.pdf")
+  #get.aln(1592585, 700, 750, filename="aln_ex_1.pdf")
   # Gorilla crap:
-  get.aln(1863113, 1, 100, "aln_ex_2.pdf")
+  get.aln(gene_name="G3BP1", 1, 100, filename="aln_ex_2.pdf", plot.chars=F)
   # Human crap:
-  get.aln(1591434, 210, 260, "aln_ex_3.pdf")
+  #get.aln(gene_name="TPM1", filename="aln_ex_3.pdf", flatten.seq=T)
+  #get.aln(gene_name="TPM3", filename="aln_ex_3b.pdf", flatten.seq=T)
   # Platypus ain't so bad:
-  get.aln(1898971, 560, 610, "aln_ex_4.pdf")  
+  #get.aln(1898971, 560, 610, filename="aln_ex_4.pdf")  
   # Mouse/rat crap:
-  get.aln(1830947, 370, 450, "aln_ex_5.pdf")
+  get.aln(1830947, 370, 450, filename="aln_ex_5.pdf")
 }
 
 win.baddies <- function() {

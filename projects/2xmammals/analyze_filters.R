@@ -81,7 +81,7 @@ plot.paralog.histogram <- function() {
     strip.text.y = theme_text(angle=0, hjust=0.5)
   )
 
-  pdf(file="filtered_paralogs_hist.pdf", height=4, width=6)
+  svg(file="filtered_paralogs_hist.svg", height=4, width=6)
   print(p)
   dev.off()
 
@@ -122,14 +122,15 @@ plot.paralog.histogram <- function() {
     x
   }
   df <- r.f(df, 0.05, 0.05)
+  df <- subset(df, kept_dist >= 0 & removed_dist >= 0)
   p <- ggplot(df, aes(x=kept_dist, y=removed_dist))
   p <- p + theme_bw()
 
   p <- p + geom_point(stat='sum', aes(colour=..prop..), size=.8)
   p <- p + scale_colour_gradientn("Density", colour=c('white', rgb(0.5, 0.5, 1), 'red'), trans='log10')
 
-  p <- p + scale_x_continuous("Kept Divergence (subst. / site)", limits=c(-1, 2))
-  p <- p + scale_y_continuous("Discarded Divergence (subst. / site)", limits=c(-1, 2))
+  p <- p + scale_x_continuous("Kept Divergence (subst. / site)", limits=c(0, 2))
+  p <- p + scale_y_continuous("Discarded Divergence (subst. / site)", limits=c(0, 2))
   p <- p + facet_grid(. ~ reason.str)
   p <- p + coord_equal()
   p <- p + opts(

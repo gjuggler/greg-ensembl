@@ -15,13 +15,9 @@ use Bio::Greg::Hive::ComparaHiveLoaderUtils;
 use Bio::Greg::Hive::HiveLoaderUtils;
 use Bio::Greg::Hive::ComparaHiveLoaderUtils;
 
-my $url = 'mysql://ensadmin:ensembl@ens-research/gj1_orthologs_63';
-my $clean = 1;
+Bio::EnsEMBL::Compara::ComparaUtils->load_registry;
 
-my $h = new Bio::Greg::Hive::ComparaHiveLoaderUtils;
-$h->init($url);
-
-my $compara_dba = $h->compara_dba;
+my $compara_dba = Bio::EnsEMBL::Registry->get_DBAdaptor( 'multi', 'compara' );
 
 my $tree = Bio::EnsEMBL::Compara::ComparaUtils->get_genome_tree_with_extras($compara_dba,
                                                                             {});
@@ -29,7 +25,7 @@ my $taxid_map;
 map {$taxid_map->{$_->id} = $_->taxon_id if ($_->id ne '')} $tree->nodes;
 
 my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
-#print $treeI->ascii;
+print $treeI->ascii;
 
 my @internal_includes = (
   'Primates', 'Glires', 'Laurasiatheria',

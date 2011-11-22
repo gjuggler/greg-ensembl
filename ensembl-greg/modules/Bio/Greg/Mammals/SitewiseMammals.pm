@@ -29,6 +29,9 @@ sub fetch_input {
   $self->create_table_from_params( $self->compara_dba, 'sites',
                                    $self->_sites_table_structure );
 
+  $self->create_table_from_params( $self->compara_dba, 'sites_pos',
+                                   $self->_sites_table_structure );
+
   $self->create_table_from_params( $self->compara_dba, 'genes',
                                    $self->_genes_table_structure );
 }
@@ -36,7 +39,7 @@ sub fetch_input {
 sub run {
   my $self = shift;
 
-  $self->param('store_stuff', 0);
+  $self->param('store_stuff', 1);
 
   my $tree = $self->get_tree;
   my $member = $self->_get_ref_member($tree);
@@ -71,7 +74,7 @@ sub run {
 #  }
 
   my $seq_length = $member->seq_length;
-  if ($seq_length > 3000) {
+  if ($seq_length > 1200) {
     $self->param('aln_type', 'pagan');
   } else {
     $self->param('aln_type', 'prank_codon');
@@ -110,24 +113,26 @@ sub run {
   $self->save_hash;
 
   # Store realigned seqs in a table.
-  $self->_store_seqs($tree, $aln);
+  #$self->_store_seqs($tree, $aln);
 
   # Store / mask out substitution clusters
   $self->dbc->disconnect_when_inactive(1);
-  $aln = $self->_mask_subs($tree, $aln);
+  #$aln = $self->_mask_subs($tree, $aln);
   $self->save_hash;
 
   # Output alignment to a file.
   $self->output_alignment($tree, $aln);
   
   # Save m0-inferred substitutions.
-  my $m0_lines = $self->_save_subs($tree, $aln);
+  #my $m0_lines = $self->_save_subs($tree, $aln);
 
   # Run SLR.
-  $self->_run_slr($tree, $aln, 'sites');
+  $self->param('store_stuff', 1);
+  $self->_run_slr($tree, $aln);
   $self->save_hash;
+  $self->param('store_stuff', 0);
 
-  $self->_collect_gene_data($tree, $aln, $m0_lines);
+  $self->_collect_gene_data($tree, $aln);
   $self->save_hash;
 }
 
@@ -328,7 +333,7 @@ sub _store_seqs {
   my $aln = shift;
 
   return if ($self->param('store_stuff') == 0);
-
+  
   $self->store_seqs($tree, $aln);
 }
 
@@ -336,24 +341,26 @@ sub _run_slr {
   my $self = shift;
   my $tree = shift;
   my $aln = shift;
+  my $pos_only = shift;
 
-  $self->pretty_print($self->_tx_aln($aln), {full => 1});
+  $pos_only = 0 unless (defined $pos_only);
+
+  #$self->pretty_print($self->_tx_aln($aln), {full => 1});
 
   $self->param('analysis_action', 'slr');
 
   # Collect Pfam, exon, and filter data.
+  my $pep_aln = $self->_tx_aln($aln);
   my $pep_data = $self->get('pep_data');
-  if (!defined $pep_data || $self->param('force_recalc')) {
+#  if (!defined $pep_data || $self->param('force_recalc')) {
     $pep_data = {};
-    my $pfam_sites = $self->collect_pfam($tree,$aln);
-    my $exon_sites = $self->collect_exons($tree,$aln);
-    my $filter_sites = $self->do_filter($tree,$aln);
+    my $pfam_sites = $self->collect_pfam($tree,$pep_aln);
+    my $exon_sites = $self->collect_exons($tree,$pep_aln);
     $pep_data->{pfam} = $pfam_sites;
     $pep_data->{exons} = $exon_sites;
-    $pep_data->{filters} = $filter_sites;
     $self->put('pep_data', $pep_data);
-  }
-
+#  }
+  
   my $clade_map = {
     primates => 1,
     glires => 2,
@@ -382,12 +389,21 @@ sub _run_slr {
 
     #print $subtree->ascii."\n";
     my $lines_key = $clade.'_slr';
+    if ($pos_only) {
+      $lines_key = $clade . '_slr_pos';
+    }
+
     my $lines = $self->get($lines_key);
 
     my $pep_aln = $self->_tx_aln($subaln);
 
     if (!defined $lines || $self->param('force_recalc')) {
       $self->pretty_print($pep_aln);
+      if ($pos_only) {
+        $self->param('slr_positive', 1);
+      } else {
+        $self->param('slr_positive', 0);
+      }
       $lines = $self->run_sitewise_analysis($subtree, $subaln, $pep_aln);
       if (defined $lines) {
         $self->put($lines_key, $lines);
@@ -404,7 +420,7 @@ sub _run_slr {
 
       my $param_set_id = $clade_map->{$clade};
       if ($self->param('store_stuff') != 0) {
-        $self->_store_sitewise($subtree, $subaln, $pep_aln, $results, $clade, $param_set_id, $pep_data);
+        $self->_store_sitewise($subtree, $subaln, $pep_aln, $results, $clade, $param_set_id, $pep_data, $pos_only);
       }
       $self->save_hash;
     } else {
@@ -442,9 +458,11 @@ sub _store_sitewise {
   my $clade = shift;
   my $param_set_id = shift;
   my $pep_data = shift;
-
+  my $pos_only = shift;
+  
   my $ref_member = $self->param('member');
   my ($ref_seq) = grep {$_->id eq $ref_member->stable_id} $aln->each_seq;
+  my ($pep_ref_seq) = grep {$_->id eq $ref_member->stable_id} $pep_aln->each_seq;
   my $slr_tree = $slr_hash->{slr_tree};
   my $slr_treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($slr_tree);
 
@@ -474,11 +492,14 @@ sub _store_sitewise {
     $cur_params = $self->replace($cur_params,$site_obj);
     $cur_params->{parameter_set_id} = $param_set_id;
 
-    if ($ref_member->taxon_id == 9606 && defined $ref_seq) {
-      my $ref_position = $ref_seq->location_from_column($aln_position);
+    if (defined $pep_ref_seq) {
+      my $ref_position = $pep_ref_seq->location_from_column($aln_position);
       if (defined $ref_position && $ref_position->location_type() eq 'EXACT') {
-        my $ref_coords = $self->get_coords_from_pep_position($ref_member,$ref_position->start);
-        $cur_params = $self->replace($cur_params,$ref_coords);
+        if ($ref_member->taxon_id == 9606) {
+          my $ref_coords = $self->get_coords_from_pep_position($ref_member,$ref_position->start);
+          $cur_params = $self->replace($cur_params,$ref_coords);
+        }
+        $cur_params->{seq_position} = $ref_position->start;
       }
     }
 
@@ -488,11 +509,11 @@ sub _store_sitewise {
     if (defined $pep_data->{exons}->{$aln_position}) {
       $cur_params = $self->replace($cur_params, $pep_data->{exons}->{$aln_position});
     }
-    if (defined $pep_data->{filters}->{$aln_position}) {
-      $cur_params = $self->replace($cur_params, $pep_data->{filters}->{$aln_position});
-    }
+
+    my $table_name = 'sites';
+    $table_name = 'sites_pos' if ($pos_only);
     
-    $self->store_params_in_table($self->dbc, 'sites', $cur_params);
+    $self->store_params_in_table($self->dbc, $table_name, $cur_params);
   }
 
   $self->dbc->db_handle->{AutoCommit} = 1;
@@ -506,8 +527,8 @@ sub _collect_gene_data {
   my $aln = shift;
   my $m0_lines = shift;
 
-  my $m0_tree = Bio::Greg::Codeml->parse_codeml_results($m0_lines);
-  my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
+#  my $m0_tree = Bio::Greg::Codeml->parse_codeml_results($m0_lines);
+#  my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
 
   my $ref_member = $self->param('member');
 
@@ -538,12 +559,13 @@ sub _collect_gene_data {
 
   # Tree properties.
   $self->param('tree_mean_path',$self->mean_path($tree));
+  my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
   $self->param('tree_total_length',$treeI->root->total_branch_length);
 
-  $self->param('paml_mean_path', $m0_tree->root->mean_path_length);
-  $self->param('paml_total_length', $m0_tree->root->total_branch_length);  
-  my @omegas = Bio::Greg::Codeml->extract_omegas($m0_lines);
-  $self->param('paml_dnds', $omegas[0]);
+#  $self->param('paml_mean_path', $m0_tree->root->mean_path_length);
+#  $self->param('paml_total_length', $m0_tree->root->total_branch_length);  
+#  my @omegas = Bio::Greg::Codeml->extract_omegas($m0_lines);
+#  $self->param('paml_dnds', $omegas[0]);
 
   $self->param('leaf_count',scalar($tree->leaves));
 
@@ -663,15 +685,13 @@ sub _sites_table_structure {
     pfam_position => 'int',
     pfam_score => 'int',
 
-    # Filter.
-    filter_value => 'int',
-    
     # Exon annotation.
     exon_position => 'char8',
     splice_distance => 'int',
 
     # Basic SLR-derived attributes.
     aln_position => 'int',
+    seq_position => 'int',
     ncod => 'int',
     nongap_bl => 'float',           # This is calculated using StatsCollectionUtils' method add_ungapped_branch_lengths
     omega => 'float',

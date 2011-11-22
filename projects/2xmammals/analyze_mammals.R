@@ -55,6 +55,8 @@ get.genes <- function() {
       con <- connect(db()); 
       df <- dbGetQuery(con, 'select * from genes')
       dbDisconnect(con)
+      genes <- df
+      save(genes, file=genes.f)
     }
     assign('genes.df', df, envir=.GlobalEnv)
   }
@@ -181,8 +183,12 @@ bsub.plot.pvals <- function(...) {
 
 bsub.collect.sites <- function(...) {
 #  bsub.pset.function('collect_sites', queue='normal', mem=18, ...)
-   bsub.function('collect_sites', queue='normal', mem=12, extra.args='2 default')
-   bsub.function('collect_sites', queue='normal', mem=12, extra.args='2 default')
+  bsub.function('collect_sites', queue='normal', mem=12, extra.args='2 default')
+  bsub.function('collect_sites', queue='normal', mem=12, extra.args='2 default')
+}
+
+bsub.collect.orig.sites <- function() {
+  bsub.pset.function('collect_sites', queue='yesterday', mem=12, extra.args='orig')
 }
 
 bsub.collect.sites.filtered <- function(...) {
@@ -3031,6 +3037,25 @@ filter.stringent <- function(sites) {
   sites <- filter.default(sites)
 
   sites
+}
+
+summarize.baddies <- function() {
+  # Collect data_id / aln_positions of alignment segments w/ bad windows.
+  baddies.f <- scratch.f("win_baddies.Rdata")
+  load(baddies.f)
+  baddies <- df
+
+  print(nrow(baddies))
+
+  print(sum(table(baddies$data_id) >= 10))
+
+  bad.df <- ddply(baddies, .(data_id), function(x) {
+    data.frame(
+      n = nrow(x)
+    )
+  })
+  print(nrow(bad.df))
+
 }
 
 filter.clusters <- function(sites, return.inverse=F) {

@@ -57,6 +57,7 @@ sub param_defaults {
     slr_codonf       => 0,             # Options: 0, 1, 2 (default 0)
     slr_freqtype     => 0,             # Options: 0, 1, 2 (default 0)
     slr_skipsitewise => 0,             # Options: 0, 1 (default 0)
+    slr_positive => 0, # Options: 0 (pos+negative), 1 (positive only)
     slr_malloc_check => 0,
     
     # PAML Parameters
@@ -613,6 +614,7 @@ sub run_sitewise_dNdS {
   my $freqtype     = $params->{slr_freqtype};
   my $skipsitewise = $params->{slr_skipsitewise};
   my $icode = $params->{icode};
+  my $positive = $params->{slr_positive};
 
   my $gencode = 'universal';
   $gencode = 'mammalian' if ($icode == 1);
@@ -668,6 +670,7 @@ sub run_sitewise_dNdS {
   print SLR "codonf\: $codonf\n";
   print SLR "freqtype\: $freqtype\n";
   print SLR "skipsitewise\: $skipsitewise\n";
+  print SLR "positive_only\: ${positive}\n";
   print SLR "seed\: 1\n";
   close(SLR);
 

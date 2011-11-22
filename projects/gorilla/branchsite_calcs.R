@@ -913,16 +913,38 @@ venn.tables <- function(x) {
 }
 
 summary.table <- function(x) {
+
+  x <- x[,which(grepl("(gene_name|lrt|pval)", colnames(x)))]
+
   tbl.df <- data.frame()
 
-  for (i in 1:17) {
+  # Get the parallel LRT_min
+  x$lrt.18 <- pmin(x$lrt.1, x$lrt.2)
+  x$lrt.19 <- pmin(x$lrt.1, x$lrt.5)
+  x$lrt.20 <- pmin(x$lrt.2, x$lrt.5)
+
+  x$lrt.18 <- ifelse(x$lrt.18 > 0, x$lrt.18, pmin(pmax(x$lrt.1, x$lrt.2),0))
+  x$lrt.19 <- ifelse(x$lrt.19 > 0, x$lrt.19, pmin(pmax(x$lrt.1, x$lrt.5),0))
+  x$lrt.20 <- ifelse(x$lrt.20 > 0, x$lrt.20, pmin(pmax(x$lrt.2, x$lrt.5),0))
+
+  x$pval.18 <- 1 - pchisq(abs(x$lrt.18), df=1)
+  x$pval.19 <- 1 - pchisq(abs(x$lrt.19), df=1)
+  x$pval.20 <- 1 - pchisq(abs(x$lrt.20), df=1)
+
+  x$pval.adj.18 <- p.adjust(x$pval.18, method='BH')
+  x$pval.adj.19 <- p.adjust(x$pval.19, method='BH')
+  x$pval.adj.20 <- p.adjust(x$pval.20, method='BH')
+
+  print(x[1:5, c('gene_name', 'lrt.1', 'lrt.2', 'lrt.5', 'lrt.18', 'lrt.19', 'lrt.20', 'pval.18', 'pval.19', 'pval.20')])
+
+  for (i in 18:20) {
     pval.key <- paste('pval.', i, sep='')
     pval.adj.key <- paste('pval.adj.', i, sep='')
     print(pval.adj.key)
     lrt.key <- paste('lrt.', i, sep='')
     x$tmp.pval <- x[, pval.key]
     x$tmp.pval.adj <- x[, pval.adj.key]
-    if (i <= 10) {
+    if (i <= 10 || i >= 18) {
       x$tmp.lrt <- x[, lrt.key]
       tbl.df[i, 'Accelerated'] <- nrow(subset(x, tmp.pval < 0.05 & tmp.lrt > 0))
       tbl.df[i, 'Accelerated (FDR)'] <- nrow(subset(x, tmp.pval.adj < 0.1 & tmp.lrt > 0))
@@ -1329,10 +1351,6 @@ parallel.enrichments <- function(val.string, sig.t) {
     topgo.fis.pvals <- score(topgo.fis.res)
     topgo.fis.ids <- names(topgo.fis.pvals)
     topgo.fis.df <- data.frame(id=topgo.fis.ids, pval=as.numeric(topgo.fis.pvals), stringsAsFactors=F)
-
-    # Adjust the scalar scores by the alignment length: use the pwf p-values
-    # to normalize the score by the length-based probability of being significant
-    #y$scalar.score <- y$scalar.score / pwf$pwf
 
     all.distr <- sub.y[sub.y$scalar.score >= 0, 'scalar.score']
     all.pmax <- pmax(0, sub.y$scalar.score)

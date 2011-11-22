@@ -1,6 +1,7 @@
 library(plyr)
 library(ggplot2)
 library(xtable)
+uname  <- Sys.getenv("USER")
 if (uname == 'gj1') {
   source("~/src/greg-ensembl/scripts/mysql_functions.R")
   source("~/src/greg-ensembl/scripts/xtable_utils.R")
@@ -53,6 +54,9 @@ summarize.set <- function(x) {
     half.index <- min(which(sorted.sum > sum(sorted.counts) / 2))
     n.fifty <- sorted.counts[half.index]
 
+    n.total <- sum(x$leaf_count)
+    n.total <- sprintf("%.1e", n.total)
+
     median.n <- median(x$leaf_count)
     mean.n <- mean(x$leaf_count)
     min.n <- min(x$leaf_count)
@@ -80,6 +84,7 @@ summarize.set <- function(x) {
       method_id = method.id,
       'Count' = n,
       'Size' = paste(as.integer(median.n), ' (', min.n, ' / ', max.n, ')', sep=''),
+      'Sequence Count' = n.total,
       'N50' = n.fifty,
       
       'Zero' = n.zero.h / n,
@@ -147,10 +152,11 @@ summarize.nodesets <- function() {
   a <- summarize.set(root.trees)
   a$method_id <- "Ensembl Roots"
   b <- summarize.set(small.trees)
-  b$method_id <- "Ensembl Roots (<= 15)"
+  b$method_id <- "($<=$15)"
   d <- summarize.set(large.trees)
-  d$method_id <- "Ensembl Roots (> 15)"
+  d$method_id <- "($>$15)"
   summaries <- rbind(a,b,d)
+  summaries$Category <- NULL
   xt <- xtable(summaries)
   print(summaries)
   print(xt)

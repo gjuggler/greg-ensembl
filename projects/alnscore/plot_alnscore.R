@@ -10,11 +10,17 @@ if (Sys.getenv('USER') == 'gj1') {
 }
 
 get.data <- function() {
-  dbname <- 'gj1_alnscore'
-  con <- connect(dbname)
+  ff <- scratch.f('alnscore.Rdata')
+  if (file.exists(ff)) {
+    print("Loading data from file")
+    load(ff)
+  } else {
+    dbname <- 'gj1_alnscore'
+    con <- connect(dbname)
 
-  aln <- mysqlReadTable(con, 'aln')
-  save(aln, file=scratch.f('alnscore.Rdata'))
+    #aln <- mysqlReadTable(con, 'aln')
+    #save(aln, file=ff)
+  }
   aln
 }
 
@@ -58,6 +64,9 @@ scores.scatter <- function() {
 plot.bars <- function() {
   aln <- get.data()
 
+  print(unique(aln$tree))
+  print(unique(aln$aligner))
+
   cur.df <- aln
   cur.df$n_seqs <- factor(cur.df$n_seqs)
   cur.df$aligner <- factor(cur.df$aligner)
@@ -74,22 +83,27 @@ plot.bars <- function() {
     )
   })
 
-  relative.df <- subset(relative.df, tree == 'balanced.nh')
+  #relative.df <- subset(relative.df, tree == 'balanced.nh')
   #relative.df <- subset(relative.df, n_seqs %in% c(2, 6, 16))
   relative.df$n_seqs <- factor(relative.df$n_seqs)
 
   pdf(file="aln_relative_bars.pdf", width=10, height=5)
   p <- ggplot(relative.df, aes(x=aligner, y=y.val, fill=mpl))
+  p <- p + theme_bw()
   p <- p + geom_bar(position="dodge", stat='identity')
+  p <- p + scale_x_discrete("Aligner")
+  p <- p + scale_y_continuous("Mean SPS score, (subsetted - realigned)")
 
   clr.f <- colorRampPalette(colors=c('blue', 'red'))
   n.colors <- length(unique(relative.df$mpl))
   clrs <- clr.f(n.colors)
-  print(clrs)
   p <- p + scale_fill_manual(values=clrs)
   p <- p + facet_grid(n_seqs ~ tree)
-  print(p)
+  print.ggplot(p)
+
   dev.off()
+
+  return()
 
   abs.df <- ddply(cur.df, c('tree', 'aligner', 'mpl', 'n_seqs'), function(x) {
     avg.value <- mean(x$aln_sps)

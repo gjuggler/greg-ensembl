@@ -29,7 +29,7 @@ connect <- function(dbname=NULL) {
 
   con <- dbConnect(MySQL(), host=host, port=port, user=user, password=password, dbname=dbname)
   dbURL = paste("mysql://",userpass,"@",host,":",port,"/",dbname,sep="")
-  print(paste("Connected to:",user,"@",host,":",port,"/",dbname))
+  #print(paste("Connected to:",user,"@",host,":",port,"/",dbname))
 #  print(paste("[",dbURL,"]"))
   return(con)
 }
@@ -43,7 +43,7 @@ disconnect <- function(con) {
   dbname <- info$dbname  
 
   dbDisconnect(con)
-  print(paste("Disconnected from:",userpass,"@",host,":",port,"/",dbname))
+  #print(paste("Disconnected from:",userpass,"@",host,":",port,"/",dbname))
 }
 
 connect.livemirror <- function(dbname=NULL) {
@@ -59,14 +59,14 @@ connect.livemirror <- function(dbname=NULL) {
 
   con <- dbConnect(MySQL(), host=host, port=port, user=user, password=password, dbname=dbname)
   dbURL = paste("mysql://",userpass,"@",host,":",port,"/",dbname,sep="")
-  print(paste("Connected to:",user,"@",host,":",port,"/",dbname))
-  print(paste("[",dbURL,"]"))
+  #print(paste("Connected to:",user,"@",host,":",port,"/",dbname))
+  #print(paste("[",dbURL,"]"))
   return(con)
 }
 
 
 dbUpdateVars <- function(conn, dbtable, dataframe=NULL, primary, vars=colnames(dataframe)) { 
-  print(paste("dbupdateVars for table", dbtable))
+  #print(paste("dbupdateVars for table", dbtable))
   if (!dbExistsTable(conn, dbtable)) { 
     stop("The target table \"", dbtable, "\" does not exist in the database \"", dbGetInfo(conn)$dbname, "\"\n\n", call. = FALSE)
   }
@@ -128,8 +128,8 @@ write.or.update <- function(df, tbl, con, primary) {
       primary.str <- paste(primary, '(64)', sep='')
     }
     db.str <- paste('ALTER TABLE ', tbl, ' ADD UNIQUE (', primary.str, ')', sep='')
-    print(db.str)
+    #print(db.str)
     dbSendQuery(con, db.str)
-    print("Done!")
+    #print("Done!")
   }
 }
