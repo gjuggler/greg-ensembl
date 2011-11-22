@@ -29,7 +29,7 @@ connect <- function(dbname=NULL) {
 
   con <- dbConnect(MySQL(), host=host, port=port, user=user, password=password, dbname=dbname)
   dbURL = paste("mysql://",userpass,"@",host,":",port,"/",dbname,sep="")
-  #print(paste("Connected to:",user,"@",host,":",port,"/",dbname))
+#  print(paste("Connected to:",user,"@",host,":",port,"/",dbname))
 #  print(paste("[",dbURL,"]"))
   return(con)
 }
@@ -43,7 +43,7 @@ disconnect <- function(con) {
   dbname <- info$dbname  
 
   dbDisconnect(con)
-  #print(paste("Disconnected from:",userpass,"@",host,":",port,"/",dbname))
+#  print(paste("Disconnected from:",userpass,"@",host,":",port,"/",dbname))
 }
 
 connect.livemirror <- function(dbname=NULL) {
@@ -130,6 +130,11 @@ write.or.update <- function(df, tbl, con, primary) {
     db.str <- paste('ALTER TABLE ', tbl, ' ADD UNIQUE (', primary.str, ')', sep='')
     #print(db.str)
     dbSendQuery(con, db.str)
-    #print("Done!")
+
+    db.str <- paste('ALTER TABLE ', tbl, ' engine=InnoDB', sep='')
+    #print(db.str)
+    dbSendQuery(con, db.str)
+
+    print("Done!")
   }
 }

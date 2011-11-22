@@ -10,16 +10,15 @@ if (Sys.getenv('USER') == 'gj1') {
 }
 
 get.data <- function() {
-  ff <- scratch.f('alnscore.Rdata')
-  if (file.exists(ff)) {
-    print("Loading data from file")
-    load(ff)
-  } else {
-    dbname <- 'gj1_alnscore'
-    con <- connect(dbname)
+  dbname <- 'gj1_alnscore'
+  con <- connect(dbname)
 
-    #aln <- mysqlReadTable(con, 'aln')
-    #save(aln, file=ff)
+  ff <- scratch.f('alnscore.Rdata')
+  if (!file.exists(ff)) {
+    aln <- mysqlReadTable(con, 'aln')
+    save(aln, file=ff)
+  } else {
+    load(ff)
   }
   aln
 }

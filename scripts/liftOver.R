@@ -30,7 +30,7 @@ lift.over <- function(df, chainName, start.s='chr_start', end.s='chr_end', chr.s
   sub.df <- format(sub.df, scientific=F)
   write.table(sub.df, file=temp.in, row.names=F, quote=F, col.names=F)
 
-  exec <- '/software/ensembl/compara/bin/liftOver'
+  exec <- 'liftOver'
   cmd <- paste(exec, temp.in, chain.file, temp.out, temp.err)
   system(cmd)
   

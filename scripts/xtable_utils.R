@@ -24,6 +24,7 @@ library(xtable)
 color.column <- function(xt, column, 
   limits=range(xt[, column], na.rm=T), 
   low='white', 
+  color.bg=T,
   high=rgb(0.3, 0.3, 1),
   skip.coloring=F,
   log = F,
@@ -57,7 +58,11 @@ color.column <- function(xt, column,
   clr.string <- hex(RGB(clrs/255))
   clr.string <- substring(clr.string, 2) # Remove the hash prefix.
 
-  clr.command <- paste('\\cellcolor[HTML]{', clr.string, '}', sep='')
+  if (color.bg) {
+    clr.command <- paste('\\cellcolor[HTML]{', clr.string, '}', sep='')
+  } else {
+    clr.command <- paste('\\color[HTML]{', clr.string, '}', sep='')
+  }
 
   if (skip.coloring) {
     clr.command <- ''
@@ -67,15 +72,23 @@ color.column <- function(xt, column,
   xt
 }
 
-xt.surround <- function(xt, column, rows=c(1:nrow(xt)), prefix='', suffix='') {
-  vals <- xt[rows, column]
+xt.surround <- function(xt, column, rows=c(1:nrow(xt)), prefix='', suffix='', na.string='-') {
+  vals <- xt[, column]
   indx <- which(colnames(xt) == column)
   # Grab the digits and display values set by xtable
   digt <- attr(xt, 'digits')[indx+1]
   disply <- attr(xt, 'display')[indx+1]
-  formatted.vals <- formatC(xt[rows, column], digits=digt, format=disply)
-  formatted.column <- paste(prefix, R.oo::trim(formatted.vals), suffix, sep='')
-  xt[, column] <- formatted.column
+
+  if (any(is.na(vals))) {
+    vals[is.na(vals)] <- na.string
+  }
+
+  formatted.vals <- R.oo::trim(formatC(vals, digits=digt, format=disply))
+  formatted.column <- paste(prefix, formatted.vals[rows], suffix, sep='')
+  vals <- formatted.vals
+  vals[rows] <- formatted.column
+
+  xt[, column] <- vals
   xt
 }
 
@@ -87,13 +100,26 @@ color.columns <- function(xt, columns,  ...) {
   xt
 }
 
-color.rows <- function(xt, rows=c(1:nrow(xt)), color=gray(0.5), ...) {
-  all.cols <- colnames(xt)
+bold.t <- function(xt, column, t=0.05, dir='below', ...) {
+  vals <- xt[, column]
+  if (dir == 'below') {
+    rws <- which(vals < t)
+  } else {
+    rws <- which(vals > t)
+  }
 
+  xt.surround(xt, column=column, rows=rws, prefix='\\bf{', suffix='}')
+}
+
+color.rows <- function(xt, rows=c(1:nrow(xt)), columns=colnames(xt), color.bg=T, color=gray(0.5), ...) {
   clr.string <- substring(color, 2) # Remove the hash prefix.
-  clr.command <- paste('\\cellcolor[HTML]{', clr.string, '} ', sep='')
+  if (color.bg) {
+    clr.command <- paste('\\cellcolor[HTML]{', clr.string, '} ', sep='')
+  } else {
+    clr.command <- paste('\\color[HTML]{', clr.string, '} ', sep='')
+  }
 
-  for (cl in all.cols) {
+  for (cl in columns) {
     xt <- xt.surround(xt, column=cl, prefix=clr.command, rows=rows, ...)
   }
   xt
@@ -116,4 +142,5 @@ print.latex <- function(xt, filename, ...) {
     hline.after=NULL,
     ...
   )
+  print(sprintf("Wrote LaTeX to '%s'", filename))
 }

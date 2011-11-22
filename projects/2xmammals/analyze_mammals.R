@@ -1,3 +1,4 @@
+library(GenomicRanges)
 library(R.oo)
 library(ape)
 library(plyr)
@@ -15,8 +16,7 @@ if (uname == 'gj1') {
 }
 library(ggplot2)
 library(boot)
-library(ppcor)
-library(GenomicRanges)
+#library(ppcor)
 
 db <- function() {
    'gj1_2x_63_alt'
@@ -176,34 +176,28 @@ bsub.function <- function(fn_name, queue='normal', mem=4, extra.args='', jobarra
 }
 
 bsub.plot.pvals <- function(...) {
-   bsub.function('plot_pvals', mem=6, extra.args='1')
-   bsub.function('plot_pvals', mem=6, extra.args='2')
-   bsub.function('plot_pvals', mem=6, extra.args='6')
+   bsub.function('plot_pvals', mem=8, extra.args='1')
+   bsub.function('plot_pvals', mem=8, extra.args='2')
+   bsub.function('plot_pvals', mem=8, extra.args='3')
+   bsub.function('plot_pvals', mem=8, extra.args='6')
 }
 
 bsub.collect.sites <- function(...) {
-#  bsub.pset.function('collect_sites', queue='normal', mem=18, ...)
-  bsub.function('collect_sites', queue='normal', mem=12, extra.args='2 default')
-  bsub.function('collect_sites', queue='normal', mem=12, extra.args='2 default')
-}
-
-bsub.collect.orig.sites <- function() {
-  bsub.pset.function('collect_sites', queue='yesterday', mem=12, extra.args='orig')
+  #bsub.pset.function('collect_sites', queue='normal', mem=12, extra.args='none')
+  #bsub.pset.function('collect_sites', queue='normal', mem=12, extra.args='default')
+  #bsub.pset.function('collect_sites', queue='normal', mem=12, extra.args='stringent')
+  #bsub.pset.function('collect_sites', queue='normal', mem=12, extra.args='pfam')
+  bsub.pset.function('collect_sites', queue='normal', mem=12, extra.args='clusters_inverse')
+  bsub.pset.function('collect_sites', queue='normal', mem=12, extra.args='dups_inverse')
 }
 
 bsub.collect.sites.filtered <- function(...) {
-  bsub.function('collect_sites', mem=18, extra.args='1 clusters_inverse')
-#  bsub.function('collect_sites', mem=18, extra.args='1 dups_inverse')
-#  bsub.function('collect_sites', mem=18, extra.args='1 stringent')
+#  bsub.function('collect_sites', mem=18, extra.args='1 default')
 
-#  bsub.function('collect_sites', mem=18, extra.args='6 clusters_inverse')
-#  bsub.function('collect_sites', mem=18, extra.args='6 dups_inverse')
-#  bsub.function('collect_sites', mem=18, extra.args='6 stringent')
-
-  for (filter in c('default', 'stringent', 'pfam', 'pfam_stringent', 'clusters_inverse', 'dups_inverse')) {
+#   for (filter in c('default')) {
+#  for (filter in c('default', 'stringent', 'pfam', 'pfam_stringent', 'clusters_inverse', 'dups_inverse')) {
 #    bsub.pset.function('collect_sites', extra.args=filter, mem=18, ...)
-     
-  }
+#  }
 }
 
 bsub.collect.sites.recomb <- function(...) {
@@ -232,16 +226,15 @@ bsub.recomb.calc <- function(...) {
 }
 
 bsub.collect.genes <- function(...) {
-  n.parallel.jobs <- 100
+  n.parallel.jobs <- 10
 
   df <- pset.df()
   psets <- df$pset_id
-  for (pset in c(7, 8, 9, 10)) {
+#  for (pset in c(7)) {
+  for (pset in c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10)) {
     for (filter in c('default', 'stringent', 'pfam')) {
-#  for (pset in 1:length(psets)) {
-#    for (filter in c('default', 'stringent', 'pfam')) {
       jobarray_id <- paste('genes', pset, filter, sep='_')
-      bsub.function('collect_genes', mem=5,
+      bsub.function('collect_genes', mem=10,
         extra.args=paste(pset, filter, n.parallel.jobs, 'FALSE', sep=' '),
         jobarray=n.parallel.jobs,
         jobarray_id=jobarray_id
@@ -250,8 +243,30 @@ bsub.collect.genes <- function(...) {
   }
 }
 
+bsub.collect.domains <- function(...) {
+  n.parallel.jobs <- 20
+
+  df <- pset.df()
+  psets <- df$pset_id
+#  for (pset in c(6)) {
+#    for (fltr in c('pfam')) {
+  for (pset in c(1, 2, 3, 5, 6)) {
+    for (fltr in c('default', 'stringent', 'pfam')) {
+      jobarray_id <- paste('domains', pset, fltr, sep='_')
+      bsub.function('collect_domains', mem=18,
+        extra.args=paste(pset, fltr, n.parallel.jobs, 'FALSE', sep=' '),
+        jobarray=n.parallel.jobs,
+        jobarray_id=jobarray_id
+      )
+    }
+  }
+}
+
+
 bsub.summaries <- function(...) {
-  filters <- c('none', 'default', 'stringent', 'pfam', 'pfam_stringent', 'clusters_inverse', 'dups_inverse')
+#  filters <- c('none', 'default', 'stringent', 'pfam')
+  filters <- c('clusters_inverse', 'dups_inverse')
+#  filters <- c('none', 'default', 'stringent', 'pfam', 'pfam_stringent', 'clusters_inverse', 'dups_inverse')
   for (i in 1:length(filters)) {
     bsub.pset.function('summary_table', mem=12, extra.args=filters[i], ...)
   }
@@ -349,6 +364,8 @@ plot.pval.example <- function(pset=1, test=T) {
   sites <- get.pset.sites(pset, filter='default', test=test)
   sites <- subset(sites, select=c('omega', 'pval', 'pos.pval'))
 
+
+
   n.cols <- 4
   bw <- 0.02
 
@@ -356,9 +373,8 @@ plot.pval.example <- function(pset=1, test=T) {
   pdf(file=out.f, width=3 * n.cols, height=2.5)
   vplayout(n.cols, 1)
 
-  p <- ggplot(sites, aes(x=pval, y=..count..+10))
+  p <- ggplot(sites, aes(x=pval, y=..density..))
   p <- p + geom_histogram(binwidth=bw)
-#  p <- p + scale_y_log10()
   p <- p + scale_x_continuous("Two-tailed")
   p <- generic.opts(p)
   p <- p + opts(
@@ -367,9 +383,8 @@ plot.pval.example <- function(pset=1, test=T) {
   print.ggplot(p, vp=subplot(1, 1))
 
   sub.neg <- subset(sites, omega < 1)
-  p <- ggplot(sub.neg, aes(x=pval, y=..count..+1))
+  p <- ggplot(sub.neg, aes(x=pval, y=..density..))
   p <- p + geom_histogram(binwidth=bw)
-#  p <- p + scale_y_log10()
   p <- p + scale_x_continuous("Two-tailed (w < 1)")
   p <- generic.opts(p)
   p <- p + opts(
@@ -378,9 +393,8 @@ plot.pval.example <- function(pset=1, test=T) {
   print.ggplot(p, vp=subplot(2, 1))
 
   sub.pos <- subset(sites, omega > 1)
-  p <- ggplot(sub.pos, aes(x=pval, y=..count..+1))
+  p <- ggplot(sub.pos, aes(x=pval, y=..density..))
   p <- p + geom_histogram(binwidth=bw)
-#  p <- p + scale_y_log10()
   p <- p + scale_x_continuous("Two-tailed (w > 1)")
   p <- generic.opts(p)
   p <- p + opts(
@@ -391,9 +405,8 @@ plot.pval.example <- function(pset=1, test=T) {
   n.at.first <- nrow(subset(sites, pos.pval <= bw))
   print(n.at.first)
 
-  p <- ggplot(sites, aes_string(x="pos.pval", y=paste("pmin(", n.at.first, ", ..count..+1)", sep='')))
+  p <- ggplot(sites, aes_string(x="pos.pval", y="..density"))
   p <- p + geom_histogram(binwidth=bw)
-#  p <- p + scale_y_log10()
   p <- p + scale_x_continuous("One-tailed")
   p <- generic.opts(p)
   p <- p + opts(
@@ -569,10 +582,175 @@ write.fits.table <- function(use_t='ci') {
     dev.off()
 }
 
+get.pfam <- function() {
+  out.f <- scratch.f("pfam.Rdata")
+  if (!file.exists(out.f)) {
+    con <- connect(db())
+    cmd <- "select pfamA_acc pfam_id, pfamA_id pfam_name, model_length pfam_length, type pfam_type,  description from pfamA;"
+    pfam <- dbGetQuery(con, cmd)
+    disconnect(con)  
+    save(pfam, file=out.f)
+  }
+  load(out.f)
+  pfam
+}
+
+process.domains <- function(pset, fltr='default', subset.index=NULL, n.indices=0, test=F) {
+  # Get the sites corresponding to this pset.
+  print("Getting sites...")
+  sites <- get.pset.sites(pset, filter=fltr, test=test)
+  all.pvals <- sites$pos.pval
+
+  sites <- subset(sites, !is.na(pfam_domain))
+
+  if (!is.null(subset.index)) {
+    all.pfam <- sort(unique(sites$pfam_domain))
+    print(sprintf("%d total Pfam IDs", length(all.pfam)))
+    pfam.per.index <- floor(length(all.pfam) / n.indices)
+
+    cur.lo <- (subset.index-1) * pfam.per.index + 1
+    cur.hi <- cur.lo + (pfam.per.index - 1)
+    if (subset.index == n.indices) {
+      cur.hi <- length(all.pfam)
+    }
+    print(paste(cur.lo, cur.hi))
+
+    cur.pfam <- all.pfam[cur.lo:cur.hi]
+    sites <- subset(sites, pfam_domain %in% cur.pfam)
+    rm(all.pfam)
+    rm(cur.pfam)
+  }
+
+  # Extract the parameter-set specific columns from the genes df
+  genes <- get.genes()
+  pset.char <- pset.to.short(pset)
+  bl.s <- paste(pset.char, '_slr_total_length', sep='')
+  sites.s <- paste(pset.char, '_slr_sites', sep='')
+  dnds.s <- paste(pset.char, '_slr_dnds', sep='')
+  mpl.s <- paste(pset.char, '_slr_mean_path', sep='')
+  leaves.s <- paste(pset.char, '_leaf_count', sep='')
+  gene.cols <- subset(genes, select=c(
+    'data_id', 'aln_length', 'chr_end', 'chr_start', 'chr_name', 'chr_strand',
+    'data_prefix', 'dup_species_count', 'dup_species_list', 'gc_3', 'gc_cds', 'gc_genomic',
+    'gene_name', 'job_id', 'leaf_count', 'masked_ids', 'masked_nucs', 'paml_dnds', 'paml_mean_path',
+    'paml_total_length', 'ref_gene_description', 'ref_gene_id', 'ref_protein_id', 'ref_taxon_id',
+    'skipped_clade_count', 'skipped_clades', 'tree_mean_path', 'tree_total_length')
+  )
+  gene.cols$slr_bl <- genes[, bl.s]
+  gene.cols$slr_mpl <- genes[, mpl.s]
+  gene.cols$slr_sites <- genes[, sites.s]
+  gene.cols$slr_dnds <- genes[, dnds.s]
+  genes <- gene.cols
+
+  pfam <- get.pfam()
+  sites <- subset(sites, as.character(pfam_domain) %in% pfam$pfam_id)
+  sites$pfam_domain <- as.character(sites$pfam_domain)
+
+  redo.specific.domains <- T
+  if (redo.specific.domains) {
+    specific.domains <- c('PF00095')
+    sites <- subset(sites, pfam_domain %in% specific.domains)
+    if (nrow(sites) == 0) {
+      print("No sites in specific domain! Done...")
+      return()
+    }
+  }
+
+  # ddply each gene, extract the pset SLR values and analyze the sites.
+  d_ply(sites, .(pfam_domain), function(x) {
+    cur.pfam <- subset(pfam, pfam_id == x[1, 'pfam_domain'])
+
+    if (nrow(cur.pfam) == 0) {
+      print(sprintf("Could not find pfam for ID %s", x[1, 'pfam_domain']))
+      return()
+    }
+
+    summary.df <- summarize.sites(x, filter=fltr)
+
+    # Use the minimum hochberg-adjusted p-value.
+    hoch.p <- min(p.adjust(x$pos.pval, method='hochberg'))
+
+    # Get empirical p-values.
+    emp.005 <- 1
+    emp.01 <- 1
+    emp.05 <- 1
+    emp.10 <- 1
+    get.empirical.p <- TRUE
+    n <- nrow(x)
+    if (get.empirical.p) {
+      print(sprintf("Empirical pvals for %d sites ...", n))
+      emp.005 <- empirical.p(0.005, n, nrow(subset(x, pos.pval < 0.01)), 
+        pset=pset, filter=fltr, emp.pvals=all.pvals)
+      emp.01 <- empirical.p(0.01, n, nrow(subset(x, pos.pval < 0.01)), 
+        pset=pset, filter=fltr, emp.pvals=all.pvals)
+      emp.05 <- empirical.p(0.05, n, nrow(subset(x, pos.pval < 0.05)), 
+        pset=pset, filter=fltr, emp.pvals=all.pvals)
+      emp.10 <- empirical.p(0.10, n, nrow(subset(x, pos.pval < 0.10)), 
+        pset=pset, filter=fltr, emp.pvals=all.pvals)
+    }
+
+    all.ids <- unique(x$data_id)
+    pos.ids <- unique(subset(x, pos.pval < 0.05)$data_id)
+    top.ids <- names(head(sort(table(x$data_id), decreasing=T), n=5))
+
+    cur.genes <- subset(genes, data_id %in% all.ids)
+    top.genes <- subset(cur.genes, data_id %in% top.ids)
+    pos.genes <- subset(cur.genes, data_id %in% pos.ids)
+    pos.genes <- head(pos.genes, n=20)
+
+    n.genes <- nrow(cur.genes)
+    top.gene.names <- paste(top.genes$gene_name, collapse=' ')
+    all.gene.names <- paste(cur.genes$gene_name, collapse=' ')
+    pos.gene.names <- paste(pos.genes$gene_name, collapse=' ')
+
+    mean.dnds <- mean(cur.genes$slr_dnds)
+    mean.sites.per.gene <- mean(table(x$data_id))
+
+    cur.df <- cbind(summary.df, data.frame(
+      subset.index = ifelse(is.null(subset.index), -1, subset.index),
+      pfam_domain = as.character(x[1, 'pfam_domain']),
+      pfam_name = cur.pfam$pfam_name,
+      pfam_descr = cur.pfam$description,
+      pfam_length = cur.pfam$pfam_length,
+      pfam_type = cur.pfam$pfam_type,
+
+      top.gene.names = top.gene.names,
+      pos.gene.names = pos.gene.names,
+      all.gene.names = all.gene.names,
+      mean.dnds = mean.dnds,
+      mean.sites.per.gene = mean.sites.per.gene,
+      
+      hoch.p = hoch.p,
+      emp.005 = emp.005,
+      emp.01 = emp.01,
+      emp.05 = emp.05,
+      emp.10 = emp.10
+    ))
+
+    cur.df$label <- paste(cur.df$filter, cur.df$pset, cur.df$pfam_domain, collapse=' ')
+    print(cur.df)
+
+    print("Storing...")
+    if (TRUE) {
+      con <- connect(db())
+      cur.df$pfam_descr <- gsub("'", '', cur.df$pfam_descr)
+      cur.df$pfam_descr <- gsub('"', '', cur.df$pfam_descr)
+      cur.df$pfam_descr <- mysqlEscapeStrings(con, cur.df$pfam_descr)
+      cur.df$pfam_name <- mysqlEscapeStrings(con, cur.df$pfam_name)
+      write.or.update(cur.df, 'domain_sites', con, 'label')
+      disconnect(con)
+    } else {
+      print(cur.df)
+    }
+  })  
+
+}
+
 process.genes <- function(genes, pset, filter='default', subset.index=NULL, n.indices=0, test=F) {
   # Get the sites corresponding to this pset.
   print("Getting sites...")
   sites <- get.pset.sites(pset, filter=filter, test=test)
+  all.pvals <- sites$pos.pval
 
   cum.z <- function(x) {
     ecdf.f <- ecdf(x)
@@ -622,8 +800,8 @@ process.genes <- function(genes, pset, filter='default', subset.index=NULL, n.in
   genes$pset_char <- pset.char
 
   # Take a subset of data_ids to process gene-wise
-  process.all <- FALSE
-  if (!is.null(subset.index) && !process.all) {
+  randomly.sample <- FALSE
+  if (!is.null(subset.index) && !randomly.sample) {
     all.ids <- sort(unique(sites$data_id))
     print(sprintf("%d total genes", length(all.ids)))
     genes.per.index <- floor(length(all.ids) / n.indices)
@@ -639,7 +817,7 @@ process.genes <- function(genes, pset, filter='default', subset.index=NULL, n.in
     rm(all.ids)
     rm(cur.ids)
   } else {
-    # Shuffle the order of the data_ids
+    # Shuffle the order of the data_ids and take a chunk of 'em.
     all.ids <- sort(unique(sites$data_id))
     all.ids <- sample(all.ids,length(all.ids))
     keep.ids <- all.ids[1:floor(length(all.ids)/5)]
@@ -648,13 +826,21 @@ process.genes <- function(genes, pset, filter='default', subset.index=NULL, n.in
 
   print(sprintf("%d genes to process", length(unique(sites$data_id))))
 
-  con <- connect(db())
-  df <- dbGetQuery(con, 
-    sprintf("select * from genes_sites where filter='%s' and pset=%s",
-      filter, pset)
-  )
-  disconnect(con)
-  existing.data.ids <- df$data_id
+  existing.data.ids <- c()
+  if (!test) {
+#    con <- connect(db())
+#    df <- data.frame(data_id='')
+#    if (dbExistsTable(con, 'genes_sites')) {
+#      df <- dbGetQuery(con, 
+#        sprintf("select data_id,gene_name from genes_sites where filter='%s' and pset=%s",
+#          filter, pset)
+#      )
+#    }
+#    disconnect(con)
+#    existing.data.ids <- df$data_id
+  } else {
+    existing.data.ids <- c()
+  }
 
   # ddply each gene, extract the pset SLR values and analyze the sites.
   d_ply(sites, .(data_id), function(x) {
@@ -663,28 +849,32 @@ process.genes <- function(genes, pset, filter='default', subset.index=NULL, n.in
       print(paste("Gene not found for data_id", x[1, 'data_id']))
       return()
     }
+    cur.gene$filter <- filter
 
     already.exists <- cur.gene$data_id %in% existing.data.ids
     if (!already.exists) {
-      sites.cols <- process.gene.sites(cur.gene, x)
+      dt <- system.time({
+        sites.cols <- process.gene.sites(cur.gene, x, all.pvals)
+      })
+
+      print("Adding a few extra bits...")
       cur.df <- cbind(cur.gene, sites.cols)
+      cur.df$calc.time <- dt[3]
 
       cur.df$filter <- filter
       cur.df$label <- paste(cur.df$filter, cur.df$parameter_set_id, cur.df$data_id, collapse=' ')
       cur.df$pset <- cur.df$parameter_set_id  
-      cur.df$subset.index <- subset.index
+      cur.df$subset.index <- ifelse(is.null(subset.index), -1, subset.index)
 
-      con <- connect(db())
+      print("Storing...")
+      
       if (!test) {
+        con <- connect(db())
         write.or.update(cur.df, 'genes_sites', con, 'label')
-
-        #existing.df <- dbGetQuery(con, 
-        #  sprintf("select * from genes_sites where filter='%s' and pset=%s",
-        #  filter, pset)
-        #)
-        #existing.data.ids <- existing.df$data_id
+        disconnect(con)
+      } else {
+        print(cur.df)
       }
-      disconnect(con)
     } else {
       print(sprintf("Gene %s already exists in table!", cur.gene$gene_name))
     }
@@ -693,8 +883,8 @@ process.genes <- function(genes, pset, filter='default', subset.index=NULL, n.in
 }
 
 # Given a row corresponding to a gene, summarize the sitewise data w.r.t. pos and neg selection.
-process.gene.sites <- function(gene, sites) {
-  print(sprintf("%d sites for gene %s", nrow(sites), gene$gene_name))
+process.gene.sites <- function(gene, sites, all.pvals) {
+  print(sprintf("%s - %d sites to process...", gene$gene_name, nrow(sites)))
   
   if (is.ebi()) {
     source("~/lib/greg-ensembl/projects/2xmammals/Tpmw.r")
@@ -716,16 +906,29 @@ process.gene.sites <- function(gene, sites) {
   gc_100k <- NA_real_
   gc_1mb <- NA_real_
   if (!is.na(chr_start) && length(grep("ENSP0.*", gene$ref_protein_id)) > 0) {
+    print("Recomb / GC calc...")
     cur.range <- GRanges(
       seqnames = chr_name,
       ranges = IRanges(chr_start, chr_end),
       strand = '*'
     )
     for (width in c(1e4, 1e5, 1e6)) {
-      recomb.ranges <- get.recomb.ranges(width=width)
+      cache.s <- sprintf("recomb.ranges.%d", width)
+      if (!exists(cache.s, envir=.GlobalEnv)) {
+        recomb.ranges <- get.recomb.ranges(width=width)
+        assign(cache.s, recomb.ranges, envir=.GlobalEnv)
+      }
+      recomb.ranges <- get(cache.s)
       recomb.sub <- subsetByOverlaps(recomb.ranges, cur.range)
-      gc.ranges <- get.gc.ranges(width=width)
+      
+      cache.s <- sprintf("gc.ranges.%d", width)
+      if (!exists(cache.s, envir=.GlobalEnv)) {
+        gc.ranges <- get.gc.ranges(width=width)
+        assign(cache.s, gc.ranges, envir=.GlobalEnv)
+      }
+      gc.ranges <- get(cache.s)
       gc.sub <- subsetByOverlaps(gc.ranges, cur.range)
+
       mean.m <- NA_real_
       mean.f <- NA_real_
       mean.gc <- NA_real_
@@ -753,142 +956,121 @@ process.gene.sites <- function(gene, sites) {
       }
     }
   }
-  print(gene)
 
-  # omg_ml > 1 and < 1
-  n.abv.1 <- nrow(subset(sites, omega > 1))
-  n.blw.1 <- nrow(subset(sites, omega < 1))
+  mean.omega.geom <- exp(mean(log(pmax(sites$omega, 0.01))))
 
-  n.pos.50 <- nrow(subset(sites, omega > 1 & pval < 0.5))
-  n.neg.50 <- nrow(subset(sites, omega < 1 & pval < 0.5))
-  n.ntr.50 <- nrow(subset(sites, pval > 0.5))
-
-  n.pos.20 <- nrow(subset(sites, omega > 1 & pval < 0.2))
-  n.neg.20 <- nrow(subset(sites, omega < 1 & pval < 0.2))
-  n.ntr.20 <- nrow(subset(sites, pval > 0.2))
-
-  n.pos.10 <- nrow(subset(sites, omega > 1 & pval < 0.1))
-  n.neg.10 <- nrow(subset(sites, omega < 1 & pval < 0.1))
-  n.ntr.10 <- nrow(subset(sites, pval > 0.1))
-
-  n.pos.05 <- nrow(subset(sites, omega > 1 & pval < 0.05))
-  n.neg.05 <- nrow(subset(sites, omega < 1 & pval < 0.05))
-  n.ntr.05 <- nrow(subset(sites, pval > 0.05))
-
-  n.pos.01 <- nrow(subset(sites, omega > 1 & pval < 0.01))
-  n.pos.bh <- nrow(subset(sites, omega > 1 & pos.bh < 0.05))
-
-  n.pos.fwer <- 0
-  n.pos.gene.bh.10 <- 0
-  n.pos.gene.bh.05 <- 0
-  
-  if (nrow(sites > 1)) {
-    sites$hoch.pval <- p.adjust(sites$pval, method='hochberg')
-    n.pos.fwer <- nrow(subset(sites, hoch.pval < 0.05 & omega > 1))
-
-    # Use the one-tailed p-values to do BH adjustment.
-    sites$bh.pval <- p.adjust(sites$pos.pval, method='BH')
-    n.pos.gene.bh.10 <- nrow(subset(sites, bh.pval < 0.10))
-    n.pos.gene.bh.05 <- nrow(subset(sites, bh.pval < 0.05))
-  }
-
-  omgs <- pmin(sites$omega, 5)
-  mean.omg <- mean(omgs)
-  rm(omgs)
-
-  geom.mean.omg <- exp(mean(log(pmax(sites$omega, 0.01))))
-
-  sorted.omgs <- sort(sites$omega)
-  n.quart <- nrow(sites) / 10
-  mid.omgs <- sorted.omgs[floor(.5*n.quart):floor(9.5*n.quart)]
-  mean.mid.omega <- mean(mid.omgs)
-  rm(sorted.omgs)
-  rm(mid.omgs)
-
-  # Get some estimate of the lrt_stat autocorrelation using a Mantel test
-  #print("  mantel test")
-  library(ade4)
-  aln.dists <- dist(sites$aln_position)
-  lrt.dists <- dist(sites$lrt_stat)
-  #mantel.res <- mantel.test(aln.dists, lrt.dists, nperm=100)
-  #mantel.res <- mantel.rtest(aln.dists, lrt.dists, nrepet = 999)
-  #alt.mantel <- mantel(lrt.dists ~ aln.dists, nperm=1000)
-  #print(str(alt.mantel))
-  # Use the fast mantel test implemented in C.
   mantel.cor <- 0
   mantel.p <- 1
-  if (nrow(sites) > 10) {
-    mantel.res <- mantel.randtest(aln.dists, lrt.dists, nrepet = 500)
-    mantel.cor <- mantel.res$obs
-    mantel.p <- mantel.res$pvalue
-  }
-
-  # Also calculate Moran's I
-  #print("  moran's I")
   moran.dir <- 0
   moran.p <- 1
-  if (nrow(sites) > 10) {
-    aln.dists <- as.matrix(dist(sites$aln_position))
-    aln.dists.inv <- 1/aln.dists
-    diag(aln.dists.inv) <- 0
-    moran.res <- Moran.I(sites$lrt_stat, aln.dists.inv)
-    moran.dir <- moran.res$observed - moran.res$expected
-    moran.p <- moran.res$p.value
+  do.autocorr.tests <- F
+  if (do.autocorr.tests) {
+    print("Autocorrelation tests...")
+    # Get some estimate of the lrt_stat autocorrelation using a Mantel test
+    #print("  mantel test")
+    library(ade4)
+    aln.dists <- dist(sites$aln_position)
+    lrt.dists <- dist(sites$lrt_stat)
+    #mantel.res <- mantel.test(aln.dists, lrt.dists, nperm=100)
+    #mantel.res <- mantel.rtest(aln.dists, lrt.dists, nrepet = 999)
+    #alt.mantel <- mantel(lrt.dists ~ aln.dists, nperm=1000)
+    #print(str(alt.mantel))
+    # Use the fast mantel test implemented in C.
+    if (nrow(sites) > 10) {
+      mantel.res <- mantel.randtest(aln.dists, lrt.dists, nrepet = 500)
+      mantel.cor <- mantel.res$obs
+      mantel.p <- mantel.res$pvalue
+    }
+
+    # Also calculate Moran's I
+    #print("  moran's I")
+    if (nrow(sites) > 10) {
+      aln.dists <- as.matrix(dist(sites$aln_position))
+      aln.dists.inv <- 1/aln.dists
+      diag(aln.dists.inv) <- 0
+      moran.res <- Moran.I(sites$lrt_stat, aln.dists.inv)
+      moran.dir <- moran.res$observed - moran.res$expected
+      moran.p <- moran.res$p.value
+    }
   }
 
+  # Use the minimum hochberg-adjusted p-value.
+  hoch.p <- min(p.adjust(sites$pos.pval, method='hochberg'))
+
   # Combine p-values using Fisher's method.
+  print("Fisher calc...")
   fis.stat <- 2 * sum(-log(sites$pos.pval))
   fis.n <- 2 * nrow(sites)
   fis.p <- pchisq(fis.stat, df=fis.n, lower=F)
 
-  # Combine the top N, where N=ceiling(length/10), p-values using Fisher's method.
-  #blw.50 <- subset(sites, pos.pval < 0.5)
-  #blw.10 <- subset(sites, pos.pval < 0.1)
-
   # Use the weighted TPM method from
   # Zaykin et al. 2002
-  #print("  tpm p-value")
+  print("TPM calc...")
   weights <- sites$ncod
   pvals <- sites$pos.pval
-  loops <- 2500
+  loops <- 5000
   tpm.05 <- Tpmw(pvals, weights, 0.05, loops=loops)
   tpm.10 <- Tpmw(pvals, weights, 0.1, loops=loops)
   tpm.20 <- Tpmw(pvals, weights, 0.2, loops=loops)
   tpm.50 <- Tpmw(pvals, weights, 0.5, loops=loops)
 
+  # Get an empirical p-value.
+  emp.005 <- 1
+  emp.01 <- 1
+  emp.05 <- 1
+  emp.10 <- 1
+  get.empirical.p <- TRUE
+  if (get.empirical.p) {
+    print("Empirical pvals...")
+    pset <- gene$parameter_set_id
+    filter <- gene$filter
+    emp.005 <- empirical.p(0.005, nrow(sites), nrow(subset(sites, pos.pval < 0.01)), 
+      pset=pset, filter=filter)
+    emp.01 <- empirical.p(0.01, nrow(sites), nrow(subset(sites, pos.pval < 0.01)), 
+      pset=pset, filter=filter)
+    emp.05 <- empirical.p(0.05, nrow(sites), nrow(subset(sites, pos.pval < 0.05)), 
+      pset=pset, filter=filter)
+    emp.10 <- empirical.p(0.10, nrow(sites), nrow(subset(sites, pos.pval < 0.10)), 
+      pset=pset, filter=filter)
+  }
+  
   # Fit the distribution of sites.
-  #print("  fit distr")
-  lnorm.df <- fit.sites(sites, distr='lnorm', use='ci', i=0, write.to.table=F, boot.sample=F)
-  gamma.df <- fit.sites(sites, distr='gamma', use='ci', i=0, write.to.table=F, boot.sample=F)
-  exp.df <- fit.sites(sites, distr='exp', use='ci', i=0, write.to.table=F, boot.sample=F)
+  fit.distributions <- FALSE
+  if (fit.distributions) {
+    print("Fitdistr calc...")
+    #print("  fit distr")
+    #lnorm.df <- fit.sites(sites, distr='lnorm', use='ci', i=0, write.to.table=F, boot.sample=F)
+    #gamma.df <- fit.sites(sites, distr='gamma', use='ci', i=0, write.to.table=F, boot.sample=F)
+    #exp.df <- fit.sites(sites, distr='exp', use='ci', i=0, write.to.table=F, boot.sample=F)
+    #l.aic <- lnorm.df$aic
+    #l.mean <- lnorm.df$mean
+    #l.abv <- lnorm.df$f_above_1
+    #g.aic <- gamma.df$aic
+    #g.mean <- gamma.df$mean
+    #g.abv <- gamma.df$f_above_1
+    #e.aic <- exp.df$aic
+    #e.mean <- exp.df$mean
+    #e.abv <- exp.df$f_above_1
+  }
 
-  l.aic <- lnorm.df$aic
-  l.mean <- lnorm.df$mean
-  l.abv <- lnorm.df$f_above_1
-  g.aic <- gamma.df$aic
-  g.mean <- gamma.df$mean
-  g.abv <- gamma.df$f_above_1
-  e.aic <- exp.df$aic
-  e.mean <- exp.df$mean
-  e.abv <- exp.df$f_above_1
+  print("Summarizing sites...")
+  summary.df <- summarize.sites(sites)
 
-  print("  output")
+  print("Cbinding...")
   n <- nrow(sites)
-  out.df <- data.frame(
-    n_sites = nrow(sites),
-
+  out.df <- cbind(summary.df, data.frame(
     f_sites = nrow(sites) / gene$aln_length,
     mean_ncod = mean(sites$ncod),
 
-    fit_l_aic = l.aic,
-    fit_l_mean = l.mean,
-    fit_l_abv = l.abv,
-    fit_g_aic = g.aic,
-    fit_g_mean = g.mean,
-    fit_g_abv = g.abv,
-    fit_e_aic = e.aic,
-    fit_e_mean = e.mean,
-    fit_e_abv = e.abv,
+#    fit_l_aic = l.aic,
+#    fit_l_mean = l.mean,
+#    fit_l_abv = l.abv,
+#    fit_g_aic = g.aic,
+#    fit_g_mean = g.mean,
+#    fit_g_abv = g.abv,
+#    fit_e_aic = e.aic,
+#    fit_e_mean = e.mean,
+#    fit_e_abv = e.abv,
 
     recombM_10k = recombM_10k,
     recombM_100k = recombM_100k,
@@ -900,52 +1082,190 @@ process.gene.sites <- function(gene, sites) {
     gc_100k = gc_100k,
     gc_1mb = gc_1mb,
 
-    mean_omega = mean.omg,
-    mean_mid_omega = mean.mid.omega,
-    mean_omega_geom = geom.mean.omg,
+    mean_omega_geom = mean.omega.geom,
 
-    f_abv_1 = n.abv.1 / n,
-    f_blw_1 = n.blw.1 / n,
-    
-    f_pos_50 = n.pos.50 / n,
-    f_neg_50 = n.neg.50 / n,
-    f_ntr_50 = n.ntr.50 / n,
-    f_pos_20 = n.pos.20 / n,
-    f_neg_20 = n.neg.20 / n,
-    f_ntr_20 = n.ntr.20 / n,
-    f_pos_10 = n.pos.10 / n,
-    f_neg_10 = n.neg.10 / n,
-    f_ntr_10 = n.ntr.10 / n,
-    f_pos_05 = n.pos.05 / n,
-    f_neg_05 = n.neg.05 / n,
-    f_ntr_05 = n.ntr.05 / n,
-
-    n_pos_05 = n.pos.05,
-    n_pos_01 = n.pos.01,
-    n_pos_bh = n.pos.bh,
-    n_pos_fwer = n.pos.fwer,
-    n_pos_gene_bh_10 = n.pos.gene.bh.10,
-    n_pos_gene_bh_05 = n.pos.gene.bh.05,
-
-    f_pos_01 = n.pos.01 / n,
-    f_pos_bh = n.pos.bh / n,
-    f_pos_fwer = n.pos.fwer / n,
-    f_pos_gene_bh_10 = n.pos.gene.bh.10 / n,
-    f_pos_gene_bh_05 = n.pos.gene.bh.05 / n,
-
+    hoch_p = hoch.p,
     fis_p = fis.p,
     tpm_05 = tpm.05,
     tpm_10 = tpm.10,
     tpm_20 = tpm.20,
     tpm_50 = tpm.50,
+    emp_005 = emp.005,
+    emp_01 = emp.01,
+    emp_05 = emp.05,
+    emp_10 = emp.10,
 
     mantel_cor = mantel.cor,
     mantel_p = mantel.p,
     moran_dir = moran.dir,
     moran_p = moran.p
-  )
+  ))
   out.df
 }
+
+
+test.empirical.p <- function() {
+  print("Getting sites...")
+  sites <- get.pset.sites(1, 'default', test=T)
+  print("Sampling...")
+  pval <- empirical.p(sites$pos.pval, 0.05, 1000, 15)
+  print(pval)
+}
+
+bsub.empirical.tables <- function() {
+  for (pset in c(1:10)) {
+    for (filter in c('default', 'stringent', 'pfam')) {
+      bsub.function('empirical_counts', extra.args=paste(pset, filter), mem=12)
+    }
+  }
+}
+
+calc.empirical.counts <- function(pset, filter, test=F) {
+  file.s <- scratch.f(sprintf("empirical_counts_%d_%s.Rdata", pset, filter))
+
+  if (file.exists(file.s)) {
+    print("Empirical counts file already exists -- not re-calculating!")
+    return()
+  }
+
+  lengths <- c(30, 50, 70, 90)
+  lengths <- c(lengths, seq(from=100, to=1000, by=50))
+  lengths <- c(lengths, seq(from=1200, to=3000, by=200))
+  length <- c(lengths, 5000)
+
+  print("Getting sites...")
+  counts <- list()
+  sites <- get.pset.sites(pset=pset, filter=filter, test=test)
+  sites <- sites$pos.pval
+  
+  R <- 100000
+  
+  for (l in lengths) {
+    print(paste(l, "..."))
+    n.samples <- l * R
+
+    #print("  sampling")
+    big.sample <- sample(sites, n.samples, replace=T)
+    #print("  matrix")
+    big.mat <- matrix(big.sample, nrow=R, ncol=l, byrow=T)
+    #print("  row sums")
+
+    counts.005 <- rowSums(big.mat < 0.005)
+    counts.01 <- rowSums(big.mat < 0.01)
+    counts.05 <- rowSums(big.mat < 0.05)
+    counts.10 <- rowSums(big.mat < 0.10)
+
+    counts[[as.character(l)]] <- list(
+      'n' = R,
+      '005' = table(counts.005),
+      '01' = table(counts.01),
+      '05' = table(counts.05),
+      '10' = table(counts.10)
+    )
+  }
+
+  save(counts, file=file.s)
+}
+
+empirical.p <- function(pval.thresh, n.sites.in.gene, n.pos, pset=1, filter='default', 
+  emp.pvals=NULL, use.tables=T
+) {
+  # Count the # of positive sites at X threshold from R replicate
+  # samples of the empirical distribution.
+  print(sprintf("Empirical p: %d sites, %.3f pval, %d positive, %d pset",
+    n.sites.in.gene, pval.thresh, n.pos, pset))
+
+  if (is.null(emp.pvals) || (use.tables && n.sites.in.gene < 5000) ) {
+    #print("Using pre-calculated table for empirical p-value!")
+    # Use the pre-calculated stored counts.
+    file.s <- scratch.f(sprintf("empirical_counts_%d_%s.Rdata", pset, filter))
+    if (!file.exists(file.s)) {
+      stop("File doesn't exist for pre-calculated counts!")
+    }  
+    load(file.s)
+
+    # Count tables are keyed by length.
+    lengths <- as.integer(names(counts))
+    lengths <- sort(lengths)
+
+    max.below.i <- max(which(lengths < n.sites.in.gene))
+    # Use empirical counts gathered from the NEXT highest length, so we're conservative.
+    if (max.below.i == -Inf) {
+      use.i <- 1
+    } else if (max.below.i == length(lengths)) {
+      use.i <- max.below.i
+    } else {
+      use.i <- max.below.i + 1
+    }
+    
+    use.length <- lengths[use.i]
+
+    #print(sprintf("Use length: %d", use.length))
+    cur.counts <- counts[[as.character(use.length)]]
+
+    pt <- pval.thresh
+    if (pt == 0.005) {
+      tbl <- cur.counts[['005']]
+    } else if (pt == 0.01) {
+      tbl <- cur.counts[['01']]
+    } else if (pt == 0.05) {
+      tbl <- cur.counts[['05']]
+    } else if (pt == 0.1) {
+      tbl <- cur.counts[['10']]
+    }
+    n <- cur.counts[['n']]
+
+  } else {
+
+    R <- 100000
+    max.smpl <- 5e7
+    if (n.sites.in.gene * R > max.smpl) {
+      print("Many sites -- re-adjusting R to smaller value")
+      R <- floor(max.smpl / n.sites.in.gene)
+      print(sprintf("New R: %d", R))
+    }
+
+    n.samples <- n.sites.in.gene * R
+    print("  sampling")
+    print(head(emp.pvals))
+    big.sample <- sample(emp.pvals, n.samples, replace=T)
+    print("  matrix")
+    big.mat <- matrix(big.sample, nrow=R, ncol=n.sites.in.gene, byrow=T)
+    rm(big.sample)
+    gc()
+    print("  row sums")
+
+    counts <- rowSums(big.mat < pval.thresh)
+    tbl <- table(counts)
+    n <- R
+
+    use.length <- n.sites.in.gene
+  } 
+
+  # The table of counts may have missing entries -- Put zeroes in empty cells.
+  tbl2 <- rep(0, times=n.sites.in.gene+1)
+  names(tbl2) <- as.character(0:n.sites.in.gene)
+  tbl2[names(tbl)] <- as.numeric(tbl)
+
+  tbl <- tbl2
+  tbl <- tbl[order(as.integer(names(tbl)), decreasing=TRUE)]
+  tbl <- cumsum(tbl)
+
+  # OK - now the counts are sorted in order from most extreme to least extreme,
+  # with a cumulative sum going along. This means that the cumulative sum at zero
+  # should be equal to N.
+  stopifnot(tbl[length(tbl)] == n)
+
+  tbl.names <- names(tbl)
+  tbl.counts <- as.integer(tbl.names)
+  max.index.above <- max(which(tbl.counts >= n.pos))
+  r <- tbl[max.index.above]
+  emp.p <- (r+1)/(n+1)
+
+  print(sprintf("t:%.2f l:%d usel:%d npos: %d r: %d n: %d p: %.3f", pval.thresh, n.sites.in.gene, use.length, n.pos, r, n, emp.p))
+  return(as.numeric(emp.p))
+}
+
 
 w.to.s <- function(ws) {
   # Go from dnds to s
@@ -1509,7 +1829,8 @@ summarize.sites <- function(sites, filter='',
   short.output=F, 
   recomb.gc=F, 
   primate.subs=F,
-  do.bootstrap=F
+  do.bootstrap=F,
+  recalc.fdr=T
 ) {
   if (primate.subs) {
     sub.sites <- subset(sites, !is.na(mut_ws))
@@ -1523,48 +1844,73 @@ summarize.sites <- function(sites, filter='',
     lbl <- paste(filter, ' ', pset.alias, sep='')
 
     n.sites <- nrow(sites)  
-
-    sub.above.one <- subset(sites, omega > 1)
-    pos.sites <- subset(sub.above.one, pval < 0.05)
-    pos.domains <- subset(pos.sites, !is.na(pfam_domain))  
-
-    n.total.domains <- nrow(unique(sites[,c('data_id','pfam_domain')]))
-    n.total.domain.types <- length(unique(sites$pfam_domain))
     n.total.genes <- length(unique(sites$data_id))
 
-    n.pos.domains <- nrow(unique(pos.domains[,c('data_id','pfam_domain')]))
-    n.pos.domain.types <- length(unique(pos.domains$pfam_domain))
-    rm(pos.domains)
-    n.pos.genes <- length(unique(pos.sites$data_id))
+    `f.less.0.5` <- nrow(subset(sites, omega < 0.5)) / n.sites
+    `f.less.1` <- nrow(subset(sites, omega < 1)) / n.sites
+    `f.gt.1` <- nrow(subset(sites, omega > 1)) / n.sites
+    `f.gt.1.5` <- nrow(subset(sites, omega > 1.5)) / n.sites
 
-    `f.less.0.5` <- nrow(subset(sites, omega < 0.5)) / nrow(sites)
-    `f.less.1` <- nrow(subset(sites, omega < 1)) / nrow(sites)
-    `f.gt.1` <- nrow(subset(sites, omega > 1)) / nrow(sites)
-    `f.gt.1.5` <- nrow(subset(sites, omega > 1.5)) / nrow(sites)
-
-    n.pos.sites <- nrow(pos.sites)
-    rm(pos.sites)
-    pos.1 <- nrow(subset(sub.above.one, pval < 0.01))
-    pos.5 <- nrow(subset(sub.above.one, pval < 0.05))
-    pos.10 <- nrow(subset(sub.above.one, pval < 0.1))
-    rm(sub.above.one)
-
-    gc(F)
+    pos.005 <- nrow(subset(sites, omega > 1 & pval < 0.005))
+    pos.01 <- nrow(subset(sites, omega > 1 & pval < 0.01))
+    pos.05 <- nrow(subset(sites, omega > 1 & pval < 0.05))
+    pos.10 <- nrow(subset(sites, omega > 1 & pval < 0.1))
 
     pos.bh.05 <- nrow(subset(sites, pos.bh < 0.05))
     pos.bh.10 <- nrow(subset(sites, pos.bh < 0.10))
+    pos.bh.20 <- nrow(subset(sites, pos.bh < 0.20))
+
+    gc(F)
+
+    pos.hoch.01 <- 0
+    pos.hoch.05 <- 0
+    pos.hoch.10 <- 0
+    pos.gbh.05 <- 0
+    pos.gbh.10 <- 0
+    pos.gbh.20 <- 0
+    pos.q.05 <- 0
+    pos.q.10 <- 0
+    pos.q.20 <- 0
+    pi0 <- 1
+    if (recalc.fdr) {
+      library(qvalue)
+
+      print("Bonf adjust...")
+      sites$pos.hoch <- p.adjust(sites$pos.pval, method='hochberg')
+      pos.hoch.01 <- nrow(subset(sites, pos.hoch < 0.01))
+      pos.hoch.05 <- nrow(subset(sites, pos.hoch < 0.05))
+      pos.hoch.10 <- nrow(subset(sites, pos.hoch < 0.10))
+
+      print("BH adjust...")
+      sites$pos.gbh <- p.adjust(sites$pos.pval, method='BH')
+      pos.gbh.05 <- nrow(subset(sites, pos.gbh < 0.05))
+      pos.gbh.10 <- nrow(subset(sites, pos.gbh < 0.10))
+      pos.gbh.20 <- nrow(subset(sites, pos.gbh < 0.20))
+
+      #print("Qvalue adjust...")
+      #q.res <- qvalue(sites$pos.pval, pi0.method='bootstrap')
+      #sites$qval <- q.res$qvalues
+      #pi0 <- q.res$pi0
+      #pos.q.05 <- nrow(subset(sites, qval < 0.05))
+      #pos.q.10 <- nrow(subset(sites, qval < 0.10))
+      #pos.q.20 <- nrow(subset(sites, qval < 0.20))
+    }
 
     n.const <- nrow(subset(sites, note == 'constant'))
     n.syn <- nrow(subset(sites, note == 'synonymous'))
 
-    pos.f5 <- nrow(subset(sites, omega > 1 & pval < 0.05))
-    neg.f5 <- nrow(subset(sites, omega < 1 & pval < 0.05))
-    neutral.f5 <- nrow(subset(sites, pval > 0.05))
-
-    #print(head(sites$pval))
-    pos.f10 <- nrow(subset(sites, omega > 1 & pval < 0.1))
-    neg.f10 <- nrow(subset(sites, omega < 1 & pval < 0.1))
-    neutral.f10 <- nrow(subset(sites, pval > 0.1))
+    n.pos.05 <- nrow(subset(sites, omega > 1 & pval < 0.05))
+    n.neg.05 <- nrow(subset(sites, omega < 1 & pval < 0.05))
+    n.ntr.05 <- nrow(subset(sites, pval > 0.05))
+    n.pos.10 <- nrow(subset(sites, omega > 1 & pval < 0.1))
+    n.neg.10 <- nrow(subset(sites, omega < 1 & pval < 0.1))
+    n.ntr.10 <- nrow(subset(sites, pval > 0.1))
+    n.pos.20 <- nrow(subset(sites, omega > 1 & pval < 0.2))
+    n.neg.20 <- nrow(subset(sites, omega < 1 & pval < 0.2))
+    n.ntr.20 <- nrow(subset(sites, pval > 0.2))
+    n.pos.50 <- nrow(subset(sites, omega > 1 & pval < 0.5))
+    n.neg.50 <- nrow(subset(sites, omega < 1 & pval < 0.5))
+    n.ntr.50 <- nrow(subset(sites, pval > 0.5))
 
     med.bl <- median(sites$nongap_bl)
     mean.bl <- mean(sites$nongap_bl)
@@ -1583,12 +1929,6 @@ summarize.sites <- function(sites, filter='',
     mean.blw <- mean(capped.omegas[capped.omegas < 1])
     sd.blw <- sd(capped.omegas[capped.omegas < 1])
     rm(capped.omegas)
-
-    sorted.omgs <- sort(sites$omega)
-    n.quart <- nrow(sites) / 10
-    mid.omgs <- sorted.omgs[c(floor(.5*n.quart):floor(9.5*n.quart))]
-    mean.mid.omega <- mean(mid.omgs)
-    rm(sorted.omgs)
 
     boot.mean.fn <- function(D, d) {
       E <- D[d]
@@ -1622,6 +1962,8 @@ summarize.sites <- function(sites, filter='',
     mean.lrt <- mean(sites$lrt_stat)
     lrt.qs <- quantile(sites$lrt_stat, c(0.25, 0.5, 0.75))
 
+    n <- n.sites
+
     df.out <- data.frame(
       pset = pset,
       label = lbl,
@@ -1636,7 +1978,6 @@ summarize.sites <- function(sites, filter='',
       med.ncod = med.ncod,
       mean.omega = mean.omega,
       omega.cap = omega.cap,
-      mean.mid.omega = mean.mid.omega,
 
       mean.bl = mean.bl,
       sd.bl = sd.bl,
@@ -1657,18 +1998,43 @@ summarize.sites <- function(sites, filter='',
       'f.gt.1.5' = `f.gt.1.5`,
 
       pos.10 = pos.10,
-      pos.05 = pos.5,
-      pos.01 = pos.1,
+      pos.05 = pos.05,
+      pos.01 = pos.01,
+      pos.005 = pos.005,
+
+      pos.hoch.10 = pos.hoch.10,
+      pos.hoch.05 = pos.hoch.05,
+      pos.hoch.01 = pos.hoch.01,
+      pos.bh.20 = pos.bh.20,
       pos.bh.10 = pos.bh.10,
       pos.bh.05 = pos.bh.05,
+      pos.gbh.20 = pos.gbh.20,
+      pos.gbh.10 = pos.gbh.10,
+      pos.gbh.05 = pos.gbh.05,
+      pos.q.20 = pos.q.20,
+      pos.q.10 = pos.q.10,
+      pos.q.05 = pos.q.05,
+      pi0 = pi0,
 
-      pos.f05 = pos.f5 / n.sites,
-      neg.f05 = neg.f5 / n.sites,
-      neutral.f05 = neutral.f5 /n.sites,
+      pos.f05 = n.pos.05 / n.sites,
+      neg.f05 = n.neg.05 / n.sites,
+      neutral.f05 = n.ntr.05 /n.sites,
+      pos.f10 = n.pos.10 / n.sites,
+      neg.f10 = n.neg.10 / n.sites,
+      neutral.f10 = n.ntr.10 / n.sites,
 
-      pos.f10 = pos.f10 / n.sites,
-      neg.f10 = neg.f10 / n.sites,
-      neutral.f10 = neutral.f10 / n.sites,
+      f.pos.05 = n.pos.05 / n,
+      f.ntr.05 = n.ntr.05 / n,
+      f.neg.05 = n.neg.05 / n,
+      f.pos.10 = n.pos.10 / n,
+      f.ntr.10 = n.ntr.10 / n,
+      f.neg.10 = n.neg.10 / n,
+      f.pos.20 = n.pos.20 / n,
+      f.ntr.20 = n.ntr.20 / n,
+      f.neg.20 = n.neg.20 / n,
+      f.pos.50 = n.pos.50 / n,
+      f.ntr.50 = n.ntr.50 / n,
+      f.neg.50 = n.neg.50 / n,
       
       pos.f10.lo = pos.ci.lo,
       pos.f10.hi = pos.ci.hi,
@@ -2912,35 +3278,47 @@ add.recomb.gc <- function(sites, test=F, width=width) {
 }
 
 get.recomb.ranges <- function(width) {
-  recomb <- collect.recomb.rates(width=width)
-  st <- recomb$start
-  ed <- recomb$end
-  chr <- recomb$chr
-  recomb$start <- NULL
-  recomb$end <- NULL
-  recomb$chr <- NULL
-  GRanges(
-    seqnames = chr,
-    ranges =
-      IRanges(st, ed),
-    strand = "*",
-    as.list(recomb)
-  )
+  cache.f <- scratch.f(sprintf("recomb.ranges.%d.Rdata", width))
+  if (!file.exists(cache.f)) {
+    recomb <- collect.recomb.rates(width=width)
+    st <- recomb$start
+    ed <- recomb$end
+    chr <- recomb$chr
+    recomb$start <- NULL
+    recomb$end <- NULL
+    recomb$chr <- NULL
+    recomb.gr <- GRanges(
+      seqnames = chr,
+      ranges =
+        IRanges(st, ed),
+      strand = "*",
+      as.list(recomb)
+    )
+    save(recomb.gr, file=cache.f)
+  }
+  load(cache.f)
+  recomb.gr
 }
 
 get.gc.ranges <- function(width=width) {
-  gc.df <- get.gc.content(width=width)
-  st <- gc.df$start
-  ed <- gc.df$end
-  chr <- gc.df$chr
-  gc.df$start <- NULL
-  gc.df$end <- NULL
-  gc.df$chr <- NULL
-  GRanges(
-    seqnames = chr,
-    ranges = IRanges(st, ed),
-    gc = gc.df$gc
-  )
+  cache.f <- scratch.f(sprintf("gc.ranges.%d.Rdata", width))
+  if (!file.exists(cache.f)) {
+    gc.df <- get.gc.content(width=width)
+    st <- gc.df$start
+    ed <- gc.df$end
+    chr <- gc.df$chr
+    gc.df$start <- NULL
+    gc.df$end <- NULL
+    gc.df$chr <- NULL
+    gc.gr <- GRanges(
+      seqnames = chr,
+      ranges = IRanges(st, ed),
+      gc = gc.df$gc
+    )
+    save(gc.gr, file=cache.f)
+  }
+  load(cache.f)
+  gc.gr
 }
 
 # Merge the GC and recombination data into the sites
@@ -3795,7 +4173,7 @@ plot.poisson.sims <- function() {
 
   comb.emp <- data.frame()
 
-  empirical.vals <- 
+
   con <- connect(db()); 
 
   empirical.df <- dbGetQuery(con, 'select pset, mean_bl as bl,

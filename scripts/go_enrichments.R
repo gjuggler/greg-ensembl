@@ -251,8 +251,7 @@ enrich.dir <- function(dir) {
 
 load.go.csv <- function(csv.f, out.f) {
   print("Loading GO data...")
-  # Download link:
-  # http://www.ensembl.org/biomart/martview/11303929625047b175098c75bacc9456/11303929625047b175098c75bacc9456/11303929625047b175098c75bacc9456?VIRTUALSCHEMANAME=default&ATTRIBUTES=hsapiens_gene_ensembl.default.feature_page.ensembl_gene_id|hsapiens_gene_ensembl.default.feature_page.ensembl_peptide_id|hsapiens_gene_ensembl.default.feature_page.ensembl_transcript_id|hsapiens_gene_ensembl.default.feature_page.go_biological__id|hsapiens_gene_ensembl.default.feature_page.go_biological_process_linkage_type&FILTERS=hsapiens_gene_ensembl.default.filters.biol_process_evidence_code."IC,IDA,IEA,IEP,IGI,IMP,IPI,ISS,NAS,ND,TAS,EXP"&VISIBLEPANEL=filterpanel
+
   go.csv = read.csv(csv.f, header=T, stringsAsFactors=F)
   print(head(go.csv))
   go.ens = by(go.csv,go.csv$Ensembl.Protein.ID, function(df) {
@@ -948,6 +947,18 @@ do.enrichments <- function(x, lbl, go.ens) {
       }
     }
 
+    score.lo <- NA
+    score.mid <- NA
+    score.hi <- NA
+    cur.scores <- sub.x[row.indices, 'score']
+    if (length(cur.scores) > 0) {
+      qs <- quantile(cur.scores, c(0.25, 0.5, 0.75))
+      
+      score.lo <- qs[1]
+      score.mid <- qs[2]
+      score.hi <- qs[3]
+    }
+
     t.pval <- 1
     t.dir <- NA
     has.t.values <- any(!is.na(cur.rows$t_test_a))
@@ -968,6 +979,7 @@ do.enrichments <- function(x, lbl, go.ens) {
     cur.df <- data.frame(
       'go_id'=cur.id,
       'mean_length' = mean.length,
+      'total_n' = total.genes,
       'total_sig' = total.n.sig,
       'n' = sum(row.indices),
       'n_sig' = n.sig,
@@ -982,11 +994,14 @@ do.enrichments <- function(x, lbl, go.ens) {
       'topgo_fis' = topgo.fis.pval,
       t_pval = t.pval,
       t_dir = t.dir,
+      score_lo = score.lo,
+      score_mid = score.mid,
+      score_hi = score.hi,      
       descr=descr,
       genes=genes.str,
       stringsAsFactors=F
     )
-    print(sprintf("%s", cur.df$descr))
+    #print(sprintf("%s", cur.df$descr))
     cur.df
   })
 
