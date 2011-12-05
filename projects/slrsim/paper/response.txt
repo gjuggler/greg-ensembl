@@ -1,0 +1,41 @@
+Associate Editor: Holland, Barbara
+
+(0A) It might be nice to cite the David Morrison paper "A framework for phylogenetic sequence alignment" as it has a nice discussion of the different reasons people make alignments and makes the good point that the best alignment software for downstream phylogenetic inference might be different from the best aligner for doing homology searches, or in this case detecting positive selection.
+
+>> Response 0A: We have added a sentence highlighting that aligners may be designed with different downstream applications in mind, citing the aforementioned paper (page 2, red text).
+
+(0B) I wasn't quite clear on the difference between 'over-alignment' and 'non-alignment of homologous codons' on pg 2, line 24-25
+
+>> Response 0B: We have changed the text (page 2, red text) to clarify the situation being explained in that paragraph. The goal was to concisely explain two plausible scenarios for why how false negatives (e.g., truly positively-selected sites not identified due to misalignment) might occur.
+
+(0C) on page 7, line 28 do you really mean 'Bayes Empirical Bayes' or is one of the Bayes unnecessary?
+
+>> Response 0C: Yes, the method implemented by PAML is termed 'Bayes Empirical Bayes', as written in the title of the cited Yang et al. 2005 paper.
+
+(0D) I got myself completely confused in the results when I couldn't find where MPL had been defined and assumed for a page or so that it stood for maximum performance level - I did eventually find that it was mean path length, but it might be worth repeating the definition at the start of this section.
+
+>> Response 0D: Good point -- this relatively non-standard acronym is now redefined at the start of the Results section (page 9, red text).
+
+Reviewer: 1
+
+(1A) My only observation is that positive selection is often inferred using branch-site models. That is, it is being tested for a specific tree branch. It could have been interesting to test the effect of the alignment program and filtering on this type of inference.
+
+>> Response 1A: We agree that branch-site models are popular and potentially more powerful for detecting certain adaptive events. However, alignment error in branch-site models was covered at some depth by Fletcher and Yang (2010, first cited on p. 3 of our manuscript). Given our result on sites-based models which showed that filtering has a limited ability to improve the power over unfiltered PRANK alignments, we wouldn't necessarily expect filtering to show a significantly different result for the branch-site model. On the more practical side, we should note that a significant amount of computation was already required to run this extensive set of simulations using the relatively quick SLR method -- to explore an equivalent parameter space evaluating the branch-site test (which is notoriously slow for large trees and alignments) would be rather prohibitive. We feel that any further extension of our approach to branch-site models is better left to a separate dedicated study.
+
+In the submitted manuscript, we did briefly compare our results to those from Fletcher and Yang in the third full paragraph on p.16, noting that the false positive rates from PRANK were higher in Fletcher and Yang's branch-site tests than in our simulations under roughly similar conditions. We have added a sentence to the end of that paragraph to further emphasize the point (page 17, red text).
+
+Reviewer: 2
+
+(2A) I only want to raise two minor points.  First, the number of aligners that PRANK is tested against is limited to MaFFT, and ClustalW which is popular but known to be suboptimal.  I think the current paper is interesting and useful as it is, but its impact would be enhanced if the set of aligners were more comprehensive, and include e.g. ProbCons or T-Coffee.
+
+>> Response 2A: We focused on MAFFT, ClustalW and PRANK in the manuscript in order to frame the discussion in terms of aligners which (in our hands, for detecting sitewise positive selection) showed the greatest range of performance. However, as the reviewer points out, the inclusion of additional aligners such as the consistency-based ProbCons or T-Coffee might provide further benefit, and so we have added results from those two aligners (ProbCons and T-Coffee) in Supplementary Figure 1. We chose to limit the discussion of those aligners in the main text to avoid increasing the length of the manuscript, but we mention their overall performance in the Results section (Pages 10 and 12, red text) and note that the complete set of results can be found in Supplementary Figure S1.
+
+(2B) Second, the authors themselves point out that the assumption of a uniform indel rate is not a good reflection of reality (p. 17 line 40).  Their dismissal of the importance of this feature is not backed up by data, and is not in keeping with the thoroughness of the rest of the paper.  Clustered indels in regions under systematic reduced constraint may lead to increased rates of alignment errors in already more divergent sequence, conceivably leading to higher rates of spurious postitive selection inferences.
+
+>> Response 2B: It was not our intent to come across as dismissive of the importance of the variation in rates of insertion and deletion in proteins (and covariation with selection pressures). We believe this type of heterogeneity is extremely important in the analysis and interpretation real data. However, we deliberately decided not to include indel-rate heterogeneity in our simulations for two main reasons:
+
+  (1) The correlation between distribution of selective constraints and indel rates is not well understood. Privman et al. took an interesting approach to this problem, estimating the dN/dS distribution and indel rate in sliding windows along the length of HIV-1 proteins, but it is unclear to what extent this pattern (which in the case of HIV-1 did reveal a situation similar to that mentioned by the reviewer) generalizes across all proteins. Thus, we did not feel confident basing our entire simulation strategy on a potentially misleading or non-representative model of heterogeneity.
+
+  (2) The use of uniform indel rates also has an advantage in the interpretation of results. Even with a good understanding of patterns of heterogeneity, the power and error rates resulting from simulations incorporating heterogeneity across the length of the sequence are less widely applicable than the results from uniform simulations. This is because the FPR estimated from a model with a specific pattern of indel rate variation is only relevant for proteins sharing that specific pattern, as many of the FPs likely came from those regions under relaxed constraint. On the other hand, our results based on uniform indel rates characterize the general performance of each aligner at a fixed alignment "difficulty". The matrix of FPRs and TPRs could be used as a look-up table to guide researchers analyzing heterogeneous proteins: if a researcher suspects that a part of her protein of interest is evolving with a high rate of insertion and deletion, our results calculated at that high indel rate could be taken as an upper bound on the overall error rate of sitewise analysis on her protein.
+
+We have expanded and refined the relevant text in the Conclusions section (page 18, red text), making more explicit our deliberate decision not to include indel rate heterogeneity in our simulations and indicating how one might use our matrix of error rates and power levels to qualitatively assess the expected performance in a protein with segments evolving under a variety of evolutionary patterns.
