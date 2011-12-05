@@ -57,6 +57,7 @@ sub param_defaults {
     slr_codonf       => 0,             # Options: 0, 1, 2 (default 0)
     slr_freqtype     => 0,             # Options: 0, 1, 2 (default 0)
     slr_skipsitewise => 0,             # Options: 0, 1 (default 0)
+    slr_positive => 0, # Options: 0 (pos+negative), 1 (positive only)
     slr_malloc_check => 0,
     
     # PAML Parameters
@@ -210,8 +211,6 @@ sub run_with_params {
   Bio::EnsEMBL::Compara::AlignUtils->pretty_print( $input_cdna, { length => 100,full=>1 } );
   my $action = $self->param('analysis_action');
 
-  $self->compara_dba->dbc->disconnect_when_inactive(1);
-
   if ( $action =~ m/slr/i ) {
     $self->run_sitewise_dNdS( $tree, $input_cdna, $self->params );
     sleep(2);
@@ -234,7 +233,6 @@ sub run_with_params {
     $self->run_indelign( $tree, $input_cdna, $self->params );
   }
 
-  $self->compara_dba->dbc->disconnect_when_inactive(0);
 }
 
 sub run_hyphy {
@@ -616,6 +614,7 @@ sub run_sitewise_dNdS {
   my $freqtype     = $params->{slr_freqtype};
   my $skipsitewise = $params->{slr_skipsitewise};
   my $icode = $params->{icode};
+  my $positive = $params->{slr_positive};
 
   my $gencode = 'universal';
   $gencode = 'mammalian' if ($icode == 1);
@@ -671,6 +670,7 @@ sub run_sitewise_dNdS {
   print SLR "codonf\: $codonf\n";
   print SLR "freqtype\: $freqtype\n";
   print SLR "skipsitewise\: $skipsitewise\n";
+  print SLR "positive_only\: ${positive}\n";
   print SLR "seed\: 1\n";
   close(SLR);
 
@@ -705,7 +705,9 @@ sub run_sitewise_dNdS {
 
   my $exited_well = close($run);
   if ( !$exited_well ) {
-    throw("Slr didn't exit well!");
+    chdir($cwd);
+    return undef;
+    #throw("Slr didn't exit well!");
   }
 
   if ( ( grep { /\berr(or)?: /io } @output ) ) {
@@ -796,6 +798,7 @@ sub parse_slr_output {
     $next_line_is_it = 1 if ( $outline =~ /lnL =/ );
   }
   $results->{'slr_tree'} = $new_pt;
+  $results->{'slr_tree_string'} = $new_pt->newick_format;
 
   my $skipsitewise = $params->{slr_skipsitewise};
   my $tmpdir     = $self->worker_temp_directory;

@@ -2,6 +2,7 @@ library(plyr)
 library(ggplot2)
 library(boot)
 library(Hmisc)
+library(goseq)
 source("~/src/greg-ensembl/scripts/go_enrichments.R")
 
 dbname <- 'gj1_gorilla'
@@ -667,7 +668,7 @@ table.fields <- function() {
       'pval.15', 'pval.adj.15',
       'pval.16', 'pval.adj.16',
       'pval.17', 'pval.adj.17',
-      'pval.18', 'pval.adj.18',
+#      'pval.18', 'pval.adj.18',
       'masked_nucs', 'masked_ids', 'poor_coverage', 'masked_ils')
   return(fields)
 }
@@ -912,16 +913,38 @@ venn.tables <- function(x) {
 }
 
 summary.table <- function(x) {
+
+  x <- x[,which(grepl("(gene_name|lrt|pval)", colnames(x)))]
+
   tbl.df <- data.frame()
 
-  for (i in 1:17) {
+  # Get the parallel LRT_min
+  x$lrt.18 <- pmin(x$lrt.1, x$lrt.2)
+  x$lrt.19 <- pmin(x$lrt.1, x$lrt.5)
+  x$lrt.20 <- pmin(x$lrt.2, x$lrt.5)
+
+  x$lrt.18 <- ifelse(x$lrt.18 > 0, x$lrt.18, pmin(pmax(x$lrt.1, x$lrt.2),0))
+  x$lrt.19 <- ifelse(x$lrt.19 > 0, x$lrt.19, pmin(pmax(x$lrt.1, x$lrt.5),0))
+  x$lrt.20 <- ifelse(x$lrt.20 > 0, x$lrt.20, pmin(pmax(x$lrt.2, x$lrt.5),0))
+
+  x$pval.18 <- 1 - pchisq(abs(x$lrt.18), df=1)
+  x$pval.19 <- 1 - pchisq(abs(x$lrt.19), df=1)
+  x$pval.20 <- 1 - pchisq(abs(x$lrt.20), df=1)
+
+  x$pval.adj.18 <- p.adjust(x$pval.18, method='BH')
+  x$pval.adj.19 <- p.adjust(x$pval.19, method='BH')
+  x$pval.adj.20 <- p.adjust(x$pval.20, method='BH')
+
+  print(x[1:5, c('gene_name', 'lrt.1', 'lrt.2', 'lrt.5', 'lrt.18', 'lrt.19', 'lrt.20', 'pval.18', 'pval.19', 'pval.20')])
+
+  for (i in 18:20) {
     pval.key <- paste('pval.', i, sep='')
     pval.adj.key <- paste('pval.adj.', i, sep='')
     print(pval.adj.key)
     lrt.key <- paste('lrt.', i, sep='')
     x$tmp.pval <- x[, pval.key]
     x$tmp.pval.adj <- x[, pval.adj.key]
-    if (i <= 10) {
+    if (i <= 10 || i >= 18) {
       x$tmp.lrt <- x[, lrt.key]
       tbl.df[i, 'Accelerated'] <- nrow(subset(x, tmp.pval < 0.05 & tmp.lrt > 0))
       tbl.df[i, 'Accelerated (FDR)'] <- nrow(subset(x, tmp.pval.adj < 0.1 & tmp.lrt > 0))
@@ -1046,6 +1069,810 @@ percent.overlap <- function(x) {
 
 }
 
+parallel.numbers <- function() {
+  library(RUnit)
+
+  thresh <- qchisq(0.95, df=1)
+  checkEquals(nrow(subset(y, lrt.1 > thresh)), 663, "Human branch accel. check")
+
+  p.f <- function(lbl, number) {print(paste(lbl, number))}
+
+  parallel.tests <- function(a, b, c, orig.thresh, lbl) {
+
+    # Get the threshold that causes the same # of parallel genes using the overlap of the
+    # independent branch models to equal the # of parallel genes using the parallel branch model.
+    cur.thresh <- orig.thresh
+    cur.overlap <- sum(a > cur.thresh & b > cur.thresh)
+    branch.model.count <- sum(c > thresh)
+    repeat {
+      if (cur.overlap > branch.model.count) { break }
+      cur.thresh <- cur.thresh - 0.05
+      cur.overlap <- sum(pmin(a,b) > cur.thresh)
+    }
+    cur.overlap.genes <- y[a > cur.thresh & b > cur.thresh, ]
+    branch.model.genes <- y[c > orig.thresh,]
+
+    # Get the threshold that identifies 5% of accelerated genes using the independent   
+    # branch models.
+    pct.thresh <- orig.thresh
+    cur.overlap <- sum(a > pct.thresh & b > pct.thresh)
+    pct.target.count <- length(a) / 20
+    repeat {
+      if (cur.overlap > pct.target.count) { break }
+      pct.thresh <- pct.thresh - 0.05
+      cur.overlap <- sum(pmin(a,b) > pct.thresh)
+    }
+
+    ## Randomization test.
+    random.t <- function(a, b, total, reps=100) {
+      n.overlaps <- c()
+      for (i in 1:reps) {
+        a.sample <- base::sample(1:total, a, replace=F)
+        b.sample <- base::sample(1:total, b, replace=F)
+        n.overlaps[i] <- length(intersect(a.sample, b.sample))
+      }
+      ecdf(n.overlaps)
+    }
+    random.ecdf <- random.t(sum(a > orig.thresh), sum(b > orig.thresh), length(a))
+    random.res <- 1 - random.ecdf(sum(pmin(a,b) > orig.thresh))
+
+    expected.n <- (sum(a > orig.thresh) / length(a)) * (sum(b > orig.thresh) / length(b)) * length(a)
+    print(expected.n)
+
+    excess <- sum(pmin(a,b) > orig.thresh) / expected.n - 1
+    print(excess)
+    
+    a.factor <- factor(a > orig.thresh)
+    b.factor <- factor(b > orig.thresh)
+    fisher.res <- fisher.test(a.factor, b.factor, alternative='greater')
+    fisher.pval <- fisher.res$p.value
+
+    overlap.n <- nrow(y[a > orig.thresh & b > orig.thresh,])
+    intersect.n = length(intersect(cur.overlap.genes$data_id, branch.model.genes$data_id))
+
+    n.a <- sum(a > orig.thresh)
+    n.b <- sum(b > orig.thresh)
+
+    return(data.frame(
+      lbl = lbl,
+      n.a = n.a,
+      n.b = n.b,
+      n.overlap = overlap.n,
+      n.branch = nrow(branch.model.genes),
+      pct.thresh = pct.thresh,
+      ol.b.intersect = intersect.n,
+      ol.b.f = intersect.n / nrow(branch.model.genes),
+      random.test = random.res,
+      fisher.test = fisher.pval
+    ))
+  }
+
+  orig.thresh <- qchisq(0.95, df=1)
+
+#  x.gh <- parallel.tests(y$lrt.5, y$lrt.1, y$lrt.9, orig.thresh, 'gorilla-human')
+#  x.gc <- parallel.tests(y$lrt.5, y$lrt.2, y$lrt.10, orig.thresh, 'gorilla-chimp')
+#  x.hc <- parallel.tests(y$lrt.1, y$lrt.2, y$lrt.8, orig.thresh, 'human-chimp')  
+#  print(rbind(x.gh, x.gc, x.hc))
+
+  tt <- qchisq(0.95, df=1)
+  gene.scores <- y$lrt.7 > tt
+  names(gene.scores) <- y$protein_id
+  pwf <- nullp(gene.scores, bias.data=y$aln_length)
+
+  pdf(file="pwf.pdf")
+  plotPWF(pwf)
+  dev.off()
+
+  # Output the top 10 genes for each parallel combination.
+  top.f <- function(scalar.score, nsyn, syn) {
+    sub.y <- y
+    #if (!is.na(c.field)) {
+    #  sub.y$scalar.score <- pmin(sub.y[, a.field], sub.y[, b.field], sub.y[, c.field])
+    #} else if (!is.na(b.field)) {
+    #  sub.y$scalar.score <- pmin(sub.y[, a.field], sub.y[, b.field])
+    #} else {
+    #  sub.y$scalar.score <- sub.y[, a.field]
+    #}
+
+    sub.y$scalar.score <- scalar.score
+    sub.y$scalar.rank <- rank(sub.y$scalar.score)
+    genes <- as.integer(sub.y$scalar.rank > (nrow(sub.y) - nrow(sub.y)/5))
+    names(genes) <- sub.y$protein_id
+    sub.y$pwf <- pwf$pwf
+    sub.y$score.corr <- sub.y$scalar.score / pwf$pwf
+
+    sub.y$nsyn <- nsyn
+    sub.y$syn <- syn
+
+    sub.y <- subset(sub.y, nsyn > 0)
+
+    flds.short <- c('gene_name', 'aln_length', 'slr_dnds', 'm0_dnds', 'nsyn', 'syn', 'scalar.score')
+    flds <- c('gene_name', 'aln_length', 'scalar.score', 'score.corr', 'pwf', 'm0_dnds', 'slr_dnds', 'lrt.1', 'lrt.2', 'lrt.5', 'lrt.8', 'lrt.9', 'lrt.10', 'g.ns', 'g.s', 'c.ns', 'c.s', 'h.ns', 'h.s')
+
+    x <- sub.y[order(sub.y$scalar.score, decreasing=T),]
+    head(x[, flds.short], n=10)
+    #x2 <- sub.y[order(sub.y$score.corr, decreasing=T),]
+    #print(setdiff(x[1:20, 'gene_name'], x2[1:20, 'gene_name']))
+    #rbind(head(x[, flds], n=20), head(x2[, flds], n=20))
+  }
+
+  write.csv(top.f(y$lrt.1, y$h.ns, y$h.s), file=pdf.f('top.h.csv'))
+  write.csv(top.f(y$lrt.2, y$c.ns, y$c.s), file=pdf.f('top.c.csv'))
+  write.csv(top.f(y$lrt.5, y$g.ns, y$g.s), file=pdf.f('top.g.csv'))
+  write.csv(top.f(pmin(y$lrt.1, y$lrt.5), y$h.ns + y$g.ns, y$h.s + y$g.s), file=pdf.f('top.parallel.gh.csv'))
+  write.csv(top.f(pmin(y$lrt.2, y$lrt.5), y$c.ns + y$g.ns, y$c.s + y$g.s), file=pdf.f('top.parallel.gc.csv'))
+  write.csv(top.f(pmin(y$lrt.1, y$lrt.2), y$h.ns + y$c.ns, y$h.s + y$c.s), file=pdf.f('top.parallel.hc.csv'))
+  write.csv(top.f(pmin(y$lrt.1, y$lrt.2, y$lrt.5), y$h.ns + y$c.ns + y$g.ns, y$h.s + y$c.s + y$g.s), file=pdf.f('top.parallel.all.csv'))
+}
+
+dump.enrichments <- function() {
+
+  single.thresh <- 3.8415
+  parallel.thresh <- 1.5
+
+  single.stats <- c('h.val', 'g.val', 'c.val', 'aga.val', 'aga.clade.val')
+  parallel.stats <- c('gh.val', 'gc.val', 'hc.val')
+
+  source("~/src/greg-ensembl/scripts/mysql_functions.R")
+  con <- connect('gj1_gorilla_go')
+
+  sql.f <- function(stat, thresh) {
+    sql.cmd <- sprintf("select n, n_sig, n_exp, go_id, descr, fis_pval, topgo_pval, goseq_wall, mean_length, genes from go where stat='%s' and t=%s and n_sig >= 5 and fis_pval < 0.05 and topgo_pval < 0.25 order by topgo_pval asc",
+      stat, thresh)
+    print(sql.cmd)
+    db.res <- dbSendQuery(con, sql.cmd)
+    res.df <- fetch(db.res, n=-1)
+    write.csv(res.df, file=paste('godump', stat, 'csv', sep='.'))
+  }
+  
+  for (stat in single.stats) {
+    sql.f(stat, single.thresh)
+  }
+
+  for (stat in parallel.stats) {
+    sql.f(stat, parallel.thresh)
+  }
+}
+
+submit.enrichment.jobs <- function() {
+  ### Single-lineage enrichments.
+  vals <- c('aga.clade.val')
+#  vals <- c('h.val', 'g.val', 'c.val', 'g.filt.val', 'h.filt.val', 'c.filt.val', 'aga.val')
+  thresholds <- qchisq(c(0.9, 0.95, 0.97, 0.98, 0.99, 0.995), df=1)
+  for (i in 1:length(vals)) {
+    for(j in 1:length(thresholds)) {
+      cmd <- sprintf('bsub -q normal -R "select[mem>4000] rusage[mem=4000]" -M4000000 "/software/R-2.12.0/bin/R --vanilla --args %s %.4f < enrich_script.R"',
+        vals[i],
+        thresholds[j]
+      )
+      print(cmd)
+      system(cmd)
+    }
+  }
+
+  return()
+
+  ### Dual-lineage enrichments.
+  vals <- c('gh.val', 'hc.val', 'gc.val', 'gh.filt.val', 'hc.filt.val', 'gc.filt.val')
+  thresholds <- c(0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3)
+
+  for (i in 1:length(vals)) {
+    for(j in 1:length(thresholds)) {
+      cmd <- sprintf('bsub -q normal "/software/R-2.12.0/bin/R --vanilla --args %s %.4f < enrich_script.R"',
+        vals[i],
+        thresholds[j]
+      )
+      print(cmd)
+      system(cmd)
+    }
+  }
+}
+
+parallel.enrichments <- function(val.string, sig.t) {
+  go.f <- function(scalar.scores, binary.scores, lbl) {
+    ### Load the GO annotations from file.
+    if (!exists('go.ens')) {
+      go.rdata.file <- "~/src/greg-ensembl/projects/gorilla/go_60.Rdata"
+      load(go.rdata.file)
+      assign('go.ens', go.ens, envir=.GlobalEnv)
+    }
+
+    if (!exists("root.godata", envir=.GlobalEnv)) {
+      scores <- y$lrt.9
+      names(scores) <- y$protein_id
+      geneSelFn <- function(score){return(score >= qchisq(0.95, df=1))}
+      root.godata <- new("topGOdata",
+        ontology = "BP",
+        allGenes = scores,
+        annot = annFUN.gene2GO,
+        gene2GO = go.ens,
+        geneSelectionFun = geneSelFn,
+        nodeSize = 8,
+        description = ''
+      )
+      assign("root.godata", root.godata, envir=.GlobalEnv)
+    }
+    root.godata <- get("root.godata", envir=.GlobalEnv)
+
+    if (!exists("go.pairs", envir=.GlobalEnv)) {
+      go.pairs <- load.go.annotations()
+      assign("go.pairs", go.pairs, envir=.GlobalEnv)
+    }
+    go.pairs <- get("go.pairs", envir=.GlobalEnv)
+    print(head(go.pairs))
+
+    #go.terms <- data.frame(go_id=c('GO:0000003', 'GO:0000018', 'GO:0000070', 'GO:0006458'), stringsAsFactors=F)
+    go.terms <- data.frame(go_id=usedGO(root.godata), stringsAsFactors=F)
+
+    scores <- binary.scores
+    names(scores) <- y$protein_id
+    geneSelFn <- function(score){return(score == 1)}
+    fields.s <- lbl
+    godata.s <- paste('godata_', fields.s, sep='')
+    if (!exists(godata.s, envir=.GlobalEnv)) {
+      go.data <- new("topGOdata",
+        ontology = "BP",
+        allGenes = scores,
+        annot = annFUN.gene2GO,
+        gene2GO = go.ens,
+        geneSelectionFun = geneSelFn,
+        nodeSize = 8,
+        description = ''
+      )
+      assign(godata.s, go.data, envir=.GlobalEnv)
+    }
+    go.data <- get(godata.s, envir=.GlobalEnv)
+    print(paste("N sig:", sum(geneSelFn(scores))))
+
+    y$binary.score <- binary.scores
+    y$scalar.score <- scalar.scores
+    sub.y <- y[y$protein_id %in% genes(go.data),]
+    total.genes <- length(genes(go.data))
+
+    pwf.scores <- as.integer(y$binary.score)
+    names(pwf.scores) <- y$protein_id
+    pwf <- nullp(pwf.scores, bias.data=y$aln_length)
+    print(nrow(go.pairs))
+    go.pairs <- subset(go.pairs, protein.id %in% genes(go.data))
+    go.pairs <- subset(go.pairs, go.id %in% usedGO(go.data))
+    print(nrow(go.pairs))
+    print(head(pwf))
+    go.corr <- goseq(pwf, gene2cat=go.pairs)
+    print(head(go.corr))
+    go.uncorr <- goseq(pwf, gene2cat=go.pairs, method='Hypergeometric')
+    print(head(go.uncorr))
+
+    topgo.res <- runTest(go.data, algorithm="weight01", statistic="Fisher")
+    topgo.pvals <- score(topgo.res)
+    topgo.ids <- names(topgo.pvals)
+    topgo.df <- data.frame(id=topgo.ids, pval=as.numeric(topgo.pvals), stringsAsFactors=F)
+
+    topgo.fis.res <- runTest(go.data, algorithm="classic", statistic="Fisher")
+    topgo.fis.pvals <- score(topgo.fis.res)
+    topgo.fis.ids <- names(topgo.fis.pvals)
+    topgo.fis.df <- data.frame(id=topgo.fis.ids, pval=as.numeric(topgo.fis.pvals), stringsAsFactors=F)
+
+    all.distr <- sub.y[sub.y$scalar.score >= 0, 'scalar.score']
+    all.pmax <- pmax(0, sub.y$scalar.score)
+
+    sig.indices <- geneSelFn(sub.y$binary.score)
+
+    go.summaries <- ddply(go.terms, 'go_id', function(x) {
+      cur.id <- x[1, 'go_id']
+      cur.id <- as.character(cur.id)
+      cur.genes <- unlist(genesInTerm(go.data, cur.id))
+      n.genes <- length(cur.genes)
+
+      row.indices <- sub.y$protein_id %in% cur.genes
+      cur.rows <- sub.y[sub.y$protein_id %in% cur.genes, ]
+      sig.rows <- cur.rows[geneSelFn(cur.rows$binary.score), ]
+      sig.rows <- sig.rows[order(sig.rows$scalar.score, decreasing=T),]
+
+      sig.q <- quantile(sig.rows$scalar.score, c(0.25, 0.5, 0.75))
+      all.q <- quantile(cur.rows$scalar.score, c(0.25, 0.5, 0.75))
+
+      f.in.term <- sum(row.indices) / total.genes
+      f.sig <- sum(sig.indices) / total.genes
+      total.n.sig <- sum(sig.indices)      
+      n.expected <- f.in.term * f.sig * total.genes
+      n.sig <- sum(geneSelFn(cur.rows$binary.score))
+
+      min.n <- 1
+
+      fisher.pval <- 1
+      # Only run FET for terms with > N significant genes.
+      if (n.sig >= min.n) {
+        a.factor <- factor(row.indices)
+        b.factor <- factor(sig.indices)
+        if (length(levels(a.factor)) < 2 || length(levels(b.factor)) < 2) {
+          print(cur.id)
+          fisher.pval <- 1
+        } else {
+          fisher.res <- fisher.test(a.factor, b.factor, alternative='g')
+          fisher.pval <- fisher.res$p.value
+        }
+      }
+
+      hyper.pval <- 1
+      if (n.sig >= min.n) {
+        n.white <- sum(row.indices)
+        n.black <- length(row.indices) - sum(row.indices)
+        n.balls.drawn <- sum(sig.indices)
+        n.white.drawn <- sum(sig.indices & row.indices)
+        hyper.pval <- phyper(n.white.drawn, n.white, n.black, n.balls.drawn, lower.tail=F)
+      }
+
+
+      mwu.pval <- 1
+      ks.pval <- 1
+      contains.all <- all(row.indices, TRUE)
+      if (!contains.all) {
+        cur.pmax <- pmax(0, sub.y[row.indices, 'scalar.score'])
+        all.pmax <- pmax(0, sub.y[!(row.indices), 'scalar.score'])
+
+        #if (nrow(above.zero) > 0) {
+        #  cur.distr <- above.zero$scalar.score
+        #  ks.res <- ks.test(cur.distr, all.distr, alternative='l')
+        #  ks.pval <- ks.res$p.value
+        #}
+
+        if (max(cur.pmax) > 0) {
+          mwu.res <- wilcox.test(cur.pmax, all.pmax, alternative='g')
+          mwu.pval <- mwu.res$p.value
+        }
+      }
+
+      mean.length <- mean(cur.rows$aln_length)
+      goseq.corr.pval <- go.corr[go.corr$category == cur.id, ]$over
+      goseq.uncorr.pval <- go.uncorr[go.uncorr$category == cur.id, ]$over
+      topgo.pval <- topgo.df[topgo.df$id == cur.id, ]$pval
+      topgo.fis.pval <- topgo.fis.df[topgo.fis.df$id == cur.id, ]$pval
+      descr <- getTermsDefinition(cur.id, 'BP', numChar=40)
+      genes.str <- paste(sig.rows$gene_name, collapse=' ')
+
+      cur.df <- data.frame(
+        'go_id'=cur.id,
+        'mean_length' = mean.length,
+        'total_sig' = total.n.sig,
+        'n' = sum(row.indices),
+        'n_sig' = n.sig,
+        'n_exp' = n.expected,
+        'fis_pval' = fisher.pval,
+        'hyper_pval' = hyper.pval,
+        'ks_pval' = ks.pval,
+        'mwu_pval' = mwu.pval,
+        'goseq_wall' = goseq.corr.pval,
+        'goseq_fis' = goseq.uncorr.pval,
+        'topgo_pval' = topgo.pval,
+        'topgo_fis' = topgo.fis.pval,
+        descr=descr,
+        genes=genes.str,
+        stringsAsFactors=F
+      )
+      cur.df
+    })
+
+    adj.f <- function(x, fld) {
+      adj.s <- paste(fld, '_adj', sep='')
+      #b.one <- x[, fld] < 1
+      large.terms <- x[, 'n'] >= 20
+      x[, adj.s] <- 1
+      x[large.terms, adj.s] <- p.adjust(x[large.terms, fld], method='BH')
+      x
+    }
+
+    go.summaries <- adj.f(go.summaries, 'fis_pval')
+    #go.summaries <- adj.f(go.summaries, 'hyper_pval')
+    #go.summaries <- adj.f(go.summaries, 'ks_pval')
+    go.summaries <- adj.f(go.summaries, 'mwu_pval')
+    go.summaries <- adj.f(go.summaries, 'goseq_wall')
+    go.summaries <- adj.f(go.summaries, 'topgo_fis')
+    go.summaries
+  }
+
+  t <- qchisq(0.95, df=1)
+
+  hc.val <- pmin(y$lrt.1, y$lrt.2)
+  gh.val <- pmin(y$lrt.5, y$lrt.1)
+  gc.val <- pmin(y$lrt.5, y$lrt.2)
+  hc.filt.val <- pmin(y$lrt.1, y$lrt.2) - pmax(0, y$lrt.5)
+  gh.filt.val <- pmin(y$lrt.5, y$lrt.1) - pmax(0, y$lrt.2)
+  gc.filt.val <- pmin(y$lrt.5, y$lrt.2) - pmax(0, y$lrt.1)
+  g.val <- y$lrt.5
+  h.val <- y$lrt.1
+  c.val <- y$lrt.2
+  aga.val <- y$lrt.6
+  aga.clade.val <- y$lrt.7
+
+  g.filt.val <- y$lrt.5
+  g.filt.val[y$g.ns + y$g.s < 3] <- 0
+  c.filt.val <- y$lrt.2
+  c.filt.val[y$c.ns + y$c.s < 3] <- 0
+  h.filt.val <- y$lrt.1
+  h.filt.val[y$h.ns + y$h.s < 3] <- 0
+
+  zero <- 0
+
+  print("#####")
+  print(val.string)
+  print(sig.t)
+  print("#####")
+
+  cur.val <- get(val.string)
+
+  source("~/src/greg-ensembl/scripts/mysql_functions.R")
+  con <- connect('gj1_gorilla_go')
+
+  cur.go <- go.f(cur.val, as.integer(cur.val > sig.t), val.string)
+  cur.go$t <- sig.t
+  cur.go$stat <- val.string
+  cur.go$label <- paste(cur.go$go_id, sig.t, val.string, sep='_')
+
+  if (dbExistsTable(con, 'go')) {
+    print(head(cur.go))
+    dbUpdateVars(con, 'go', cur.go, 'label')
+  } else {
+    dbWriteTable(con, 'go', cur.go, row.names=F)
+    dbSendQuery(con, 'ALTER TABLE go ADD UNIQUE (label(64))')
+  }
+}
+
+load.go.annotations <- function() {
+  if (file.exists("go.pairs.Rdata")) {
+    load("go.pairs.Rdata")
+    return(go.pairs)
+  }
+
+  if (!exists("root.godata", envir=.GlobalEnv)) {
+    go.rdata.file <- "go_60.Rdata"
+    load(go.rdata.file)
+    assign('go.ens', go.ens, envir=.GlobalEnv)
+    scores <- y$lrt.9
+    names(scores) <- y$protein_id
+    geneSelFn <- function(score){return(score >= qchisq(0.95, df=1))}
+    root.godata <- new("topGOdata",
+      ontology = "BP",
+      allGenes = scores,
+      annot = annFUN.gene2GO,
+      gene2GO = go.ens,
+      geneSelectionFun = geneSelFn,
+      nodeSize = 5,
+      description = ''
+    )
+    assign("root.godata", root.godata, envir=.GlobalEnv)
+  }
+  root.godata <- get("root.godata", envir=.GlobalEnv)
+
+  go.terms <- usedGO(root.godata)
+  go.df <- ldply(go.terms, function(x) {
+    cur.term <- x
+    cur.genes <- as.character(unlist(genesInTerm(root.godata, cur.term)))
+    data.frame(
+      protein.id = cur.genes,
+      go.id = cur.term
+    )
+  })
+  go.df
+}
+
+overlap.excess <- function(length.corr=T) {
+  x <- y
+
+  excess.f <- function(a, b, c, lbl) {
+    thresholds <- c(0, 0.25, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, qchisq(0.95, df=1), 4, 4.5, 5)
+    #thresholds <- c(1, 1.5, 2, qchisq(0.95, df=1))
+
+    cur.df <- data.frame(a=a, b=b, c=c)
+
+    res.df <- data.frame()
+    for (i in 1:length(thresholds)) {
+      cur.t <- thresholds[i]
+      orig.t <- cur.t
+      cur.pval <- pchisq(cur.t, df=1, lower.tail=F)
+
+      if (length.corr) {
+        genes.a <- as.integer(a > cur.t)
+        names(genes.a) <- x$protein_id
+        genes.b <- as.integer(b > cur.t)
+        names(genes.b) <- x$protein_id
+        pwf.a <- nullp(genes.a, bias.data=x$aln_length)
+        pwf.b <- nullp(genes.b, bias.data=x$aln_length)
+        cur.df$pwf.a <- pwf.a$pwf
+        cur.df$pwf.b <- pwf.b$pwf
+
+        #print(head(pwf.a))
+        #print(sum(a > cur.t) / length(a))
+
+        #f.a <- sum(a > cur.t) / length(a)
+        #f.b <- sum(b > cur.t) / length(b)
+        #a <- a / pwf.a$pwf
+        #b <- b / pwf.b$pwf
+        #cur.df$a <- a
+        #cur.df$b <- b
+        #cur.t.a <- cur.t / f.a
+        #cur.t.b <- cur.t / f.b
+        cur.t.a <- cur.t
+        cur.t.b <- cur.t
+
+        #print(sum(a > cur.t) / length(a))
+      }
+      cur.t.a <- cur.t
+      cur.t.b <- cur.t
+
+      boot.f <- function(D, d) {
+        E <- D[d,]
+        obs.n <- sum(E$a > cur.t.a & E$b > cur.t.b)
+        if (length.corr) {
+          exp.n <- sum(E$pwf.a * E$pwf.b)
+        } else {
+          exp.n <- sum(E$a > cur.t.a) / nrow(E) * sum(E$b > cur.t.b) / nrow(E) * nrow(E)
+        }
+
+        if (exp.n == 0 && obs.n == 0) {
+          return(0)
+        } else if (exp.n == 0 && obs.n > 0) {
+          return(1)
+        } else {
+          return(obs.n / exp.n - 1)
+        }
+      }
+      boot.res <- boot(cur.df, boot.f, R=100)
+      ci.res <- boot.ci(boot.res, type='basic', conf=0.5)
+      single.res <- boot.f(cur.df, 1:nrow(cur.df))
+      bt <- c(ci.res$basic[1, 4], single.res, ci.res$basic[1, 5])
+
+      random.t <- function(x, y, total, reps=1000) {
+        n.overlaps <- c()
+        for (i in 1:reps) {
+          if (length.corr) {
+            a.sample <- base::sample(1:total, x, replace=F, prob=pwf.a$pwf)
+            b.sample <- base::sample(1:total, y, replace=F, prob=pwf.b$pwf)
+          } else {
+            a.sample <- base::sample(1:total, x, replace=F)
+            b.sample <- base::sample(1:total, y, replace=F)
+          }
+            n.overlaps[i] <- length(intersect(a.sample, b.sample))
+        }
+        ecdf(n.overlaps)
+      }
+      random.ecdf <- random.t(sum(a > cur.t.a), sum(b > cur.t.b), length(a))
+      random.res <- 1 - random.ecdf(sum(a > cur.t.a & b > cur.t.b))
+      
+      obs.n <- sum(a > cur.t & b > cur.t)
+      if (length.corr) {
+        exp.n <- sum(pwf.a$pwf * pwf.b$pwf)
+      } else {
+        exp.n <- sum(a > cur.t.a) / length(a) * sum(b > cur.t.b) / length(b) * length(a)
+      }
+      exp.n <- as.integer(exp.n)
+
+      res.df <- rbind(res.df, data.frame(
+        lbl = lbl,
+        pval = cur.pval,
+        t = orig.t,
+        obs.n = obs.n,
+        exp.n = exp.n,
+        r = bt[2],
+        r.lo = bt[1],
+        r.hi = bt[3],
+        random.p = random.res
+      ))
+    }
+    print(res.df)
+    res.df
+  }
+
+  if (length.corr) {
+    excess.df.s <- 'excess.df.corr'
+  } else {
+    excess.df.s <- 'excess.df.nocorr'
+  }
+
+  if (!exists(excess.df.s, envir=.GlobalEnv)) {
+    dfs <- data.frame()
+    dfs <- rbind(dfs, excess.f(x$lrt.5, x$lrt.2, x$lrt.1, 'Gorilla-Chimpanzee'))
+    dfs <- rbind(dfs, excess.f(x$lrt.5, x$lrt.1, x$lrt.2, 'Gorilla-Human'))
+    dfs <- rbind(dfs, excess.f(x$lrt.1, x$lrt.2, x$lrt.5, 'Human-Chimpanzee'))
+    assign(excess.df.s, dfs, envir=.GlobalEnv)
+  }
+  dfs <- get(excess.df.s, envir=.GlobalEnv)
+  print(dfs)
+
+  if (length.corr) {
+    pdf(file=pdf.f("overlap.excess.pdf"), width=8, height=6)
+  } else {
+    pdf(file=pdf.f("overlap.excess.nocorr.pdf"), width=8, height=6)
+  }
+  p <- ggplot(dfs, aes(x=t, y=r, colour=lbl, group=lbl, fill=lbl))
+  p <- p + theme_bw()
+  p <- p + geom_line()
+  p <- p + geom_ribbon(aes(ymin=r.lo, ymax=r.hi), alpha=0.3, colour=NA)
+  p <- p + geom_vline(x=qchisq(0.95, df=1), linetype=2, size=0.3)
+  p <- p + scale_colour_discrete("Species Pair")
+  p <- p + scale_fill_discrete("Species Pair")
+
+  p <- p + scale_x_continuous("Acceleration Cutoff Threshold (LRT)")
+  p <- p + scale_y_continuous("Acceleration Co-occurrence Excess")
+
+  sub.1 <- subset(dfs, random.p <= 0.1 & random.p > 0.05)
+  sub.05 <- subset(dfs, random.p <= 0.05 & random.p > 0.01)
+  sub.01 <- subset(dfs, random.p <= 0.01)
+
+  p <- p + geom_text(data=sub.1, label='*', size=4, colour='gray50', vjust=0.7)
+  p <- p + geom_text(data=sub.05, label='*', size=4, colour='black', vjust=0.7)
+  p <- p + geom_text(data=sub.01, label='**', size=4, colour='black', vjust=0.7)
+
+  print(p)
+  dev.off()
+}
+
+length.effect <- function() {
+  x <- y
+#  x <- subset(x, aln_length > 100 & aln_length < 800)  
+
+  ind.stat <- 'aln_length'
+  dep.stat <- 'lrt.5'
+  x$ind.stat <- x[, ind.stat]
+  x$dep.stat <- x[, dep.stat]
+  x$abs.stat <- abs(x$dep.stat)
+
+  lm.res <- lm(abs.stat ~ ind.stat, data=x)
+  print(lm.res$coefficients)
+
+  mdn <- median(x$ind.stat)
+  asdf <- 1
+  #x$dep.stat <- pmax(0, x$abs.stat + asdf - asdf * x$ind.stat / mdn) * sign(x$dep.stat)
+  #x$dep.stat <- pmax(0, (1-asdf) * x$abs.stat + asdf * x$abs.stat * mdn / x$ind.stat) * sign(x$dep.stat)
+
+  pdf(file="temp.pdf")
+  p <- ggplot(x, aes(y=abs(dep.stat)+2.7, x=ind.stat))
+  p <- p + geom_point(size=0.5, alpha=0.5)
+  p <- p + scale_y_log10() + scale_x_log10()
+  print(p)
+  dev.off()
+
+  thresh <- qchisq(0.95, df=1)
+
+  n.quantiles <- 11
+  length.qs <- quantile(x$ind.stat, seq(from=0, to=1, length.out=n.quantiles))
+  length.qs[1] <- length.qs[1] - 0.001
+
+  out.df <- data.frame()
+  for (i in 1:(length(length.qs)-1)) {
+    lo <- length.qs[i]
+    hi <- length.qs[i+1]
+
+    cur.rows <- subset(x, ind.stat > lo & ind.stat <= hi)
+    n.rows <- nrow(cur.rows)
+    n.sig <- nrow(subset(cur.rows, abs(dep.stat) > thresh))
+    f.sig <- n.sig / n.rows
+
+    mean.abs <- mean(abs(cur.rows$dep.stat))
+    mean.lrt <- mean(cur.rows$dep.stat)
+
+    n.below <- nrow(subset(cur.rows, dep.stat < 0))
+    n.above <- nrow(subset(cur.rows, dep.stat > 0))
+
+    out.df <- rbind(out.df, data.frame(
+      lo = lo,
+      hi = hi,
+      mean = sprintf("%.2f",mean(cur.rows$ind.stat)),
+      f.sig = f.sig,
+      mean.abs = mean.abs,
+      mean.lrt = mean.lrt,
+      f.above = n.above / n.rows,
+      f.below = n.below / n.rows
+    ))
+  }
+
+  print(out.df)
+}
+
+go.sweeps <- function() {
+
+  cur.id <- 'GO:0007265'
+  len <- y$aln_length
+  len <- 1
+
+  a <- go.sweep.f(y, pmin(y$lrt.1, y$lrt.5) / len, cur.id)
+  print(a)
+  a <- go.sweep.f(y, y$lrt.1 / len, cur.id)
+  #print(a)
+  a <- go.sweep.f(y, y$lrt.2 / len, cur.id)
+  #print(a)
+  a <- go.sweep.f(y, y$lrt.5 / len, cur.id)
+  #print(a)
+
+}
+
+go.sweep.f <- function(y, statistic, ids) {
+  rank.cutoffs <- c(25, 50, seq(from=100, to=1500, by=100))
+  out.df <- data.frame()
+
+  if (!exists("sweep.godata", envir=.GlobalEnv)) {
+    scores <- statistic
+    names(scores) <- y$protein_id
+    geneSelFn <- function(score){return(score >= qchisq(0.95, df=1))}
+    sweep.godata <- new("topGOdata",
+      ontology = "BP",
+      allGenes = scores,
+      annot = annFUN.gene2GO,
+      gene2GO = go.ens,
+      geneSelectionFun = geneSelFn,
+      nodeSize = 5,
+      description = ''
+    )
+    assign("sweep.godata", sweep.godata, envir=.GlobalEnv)
+  }
+  go.data <- get('sweep.godata', envir=.GlobalEnv)
+
+  y$score <- statistic
+  sub.y <- y[y$protein_id %in% genes(go.data),]
+  sub.y <- sub.y[order(sub.y$score, decreasing=T), ]
+  sub.y$rank <- 1:nrow(sub.y)
+  total.genes <- length(genes(go.data))
+
+  for (j in 1:length(ids)) {
+    id <- ids[j]
+
+    cur.genes <- unlist(genesInTerm(go.data, id))
+    row.indices <- sub.y$protein_id %in% cur.genes
+    a.factor <- factor(row.indices)  
+    n.in.term <- sum(row.indices)
+    all.lengths <- sub.y[row.indices, 'aln_length']
+
+    for (i in 1:length(rank.cutoffs)) {
+      cur.t <- rank.cutoffs[i]
+      sig.indices <- sub.y$rank <= cur.t
+      n.sig <- sum(sig.indices)
+      min.n <- 1
+
+      f.in.term <- sum(row.indices) / total.genes
+      f.sig <- sum(sig.indices) / total.genes
+      n.expected <- f.in.term * f.sig * total.genes
+      n.expected <- sprintf("%.1f", n.expected)
+      n.sig <- sum(row.indices & sig.indices)
+
+      fisher.pval <- 1
+      # Only run FET for terms with > N significant genes.
+      if (n.sig >= min.n) {
+        b.factor <- factor(sig.indices)
+        if (length(levels(a.factor)) < 2 || length(levels(b.factor)) < 2) {
+          print(cur.id)
+          fisher.pval <- 1
+        } else {
+          fisher.res <- fisher.test(a.factor, b.factor, alternative='g')
+          fisher.pval <- fisher.res$p.value
+        }
+      }
+
+      sig.lengths <- sub.y[row.indices & sig.indices, 'aln_length']
+      mean.len <- as.integer(mean(all.lengths))
+      mean.sig.len <- as.integer(mean(sig.lengths))
+      mwu.p <- 1
+      if (is.finite(mean.sig.len)) {
+        mwu.res <- wilcox.test(all.lengths, sig.lengths, alternative='l')
+        mwu.p <- mwu.res$p.value
+      }
+
+      out.df <- rbind(out.df, data.frame(
+        id = id,
+        t = cur.t,
+        pval = as.numeric(sprintf("%.3f",fisher.pval)),
+        logp = as.numeric(sprintf("%.3f", -log(fisher.pval))),
+        n.sig = n.sig,
+        n.exp = n.expected,
+        n.in.term = n.in.term,
+        mean.len = mean.len,
+        sig.len = mean.sig.len,
+        len.mwu = mwu.p
+      ))
+    }
+  }
+
+  out.df
+}
+
 go.enrichments <- function(x) {
   if (!exists('go.ens')) {
     go.rdata.file <- "~/scratch/gorilla/go_60.Rdata"
@@ -1062,114 +1889,164 @@ go.enrichments <- function(x) {
 
   bot <- nrow(y) - top
 
+  t <- qchisq(0.95, df=1)
+
+  do.parallel <- F
+  if (do.parallel) {
+
+    cur <- subset(y, pmin(lrt.1, lrt.5) > 1.5 & lrt.2 < pmin(lrt.1, lrt.5))
+    tbl <- enrich.list(cur$protein_id, y$protein_id, include.iea=TRUE)
+    assign('overlap.gh', process.tbl(x, last.godata, tbl), envir=.GlobalEnv)
+    output.tbl(overlap.gh, pdf.f('overlap.gh.csv'))
+
+    cur <- subset(y, pmin(lrt.2, lrt.5) > 1.5 & lrt.1 < pmin(lrt.2, lrt.5))
+    tbl <- enrich.list(cur$protein_id, y$protein_id, include.iea=TRUE)
+    assign('overlap.gc', process.tbl(x, last.godata, tbl), envir=.GlobalEnv)
+    output.tbl(overlap.gc, pdf.f('overlap.gc.csv'))
+
+    cur <- subset(y, pmin(lrt.1, lrt.2) > 1.5 & lrt.5 < pmin(lrt.1, lrt.2))
+    tbl <- enrich.list(cur$protein_id, y$protein_id, include.iea=TRUE)
+    assign('overlap.hc', process.tbl(x, last.godata, tbl), envir=.GlobalEnv)
+    output.tbl(overlap.hc, pdf.f('overlap.hc.csv'))
+  }
+
+  do.branch.parallel <- F
+  if (do.branch.parallel) {
+    cur <- subset(y, rank.lrt.8 <= top & rank.lrt.5 > top)
+    tbl <- enrich.list(cur$protein_id, y$protein_id, include.iea=TRUE)
+    assign('unique.hi.hc', process.tbl(x, last.godata, tbl), envir=.GlobalEnv)
+    output.tbl(unique.hi.hc, pdf.f('unique.hi.hc.csv'))
+
+    cur <- subset(y, rank.lrt.9 <= top & rank.lrt.2 > top)
+    tbl <- enrich.list(cur$protein_id, y$protein_id, include.iea=TRUE)
+    assign('unique.hi.gh', process.tbl(x, last.godata, tbl), envir=.GlobalEnv)
+    output.tbl(unique.hi.gh, pdf.f('unique.hi.gh.csv'))
+
+    cur <- subset(y, rank.lrt.10 <= top & rank.lrt.1 > top)
+    tbl <- enrich.list(cur$protein_id, y$protein_id, include.iea=TRUE)
+    assign('unique.hi.gc', process.tbl(x, last.godata, tbl), envir=.GlobalEnv)
+    output.tbl(unique.hi.gc, pdf.f('unique.hi.gc.csv'))
+  }
+
   ### Standard enrichments.
 
-  cur <- subset(y, rank.lrt.1 <= top)
-  tbl <- enrich.list(cur$protein_id, y$protein_id, include.iea=TRUE)
-  assign('hi.human', process.tbl(x, last.godata, tbl), envir=.GlobalEnv)
-  output.tbl(hi.human, pdf.f('hi.human.csv'))
+  do.standard <- F
+  if (do.standard) {
+    cur <- subset(y, rank.lrt.1 <= top)
+    tbl <- enrich.list(cur$protein_id, y$protein_id, include.iea=F)
+    assign('hi.human', process.tbl(x, last.godata, tbl), envir=.GlobalEnv)
+    output.tbl(hi.human, pdf.f('hi.human.csv'))
 
-  cur <- subset(y, rank.lrt.2 <= top)
-  tbl <- enrich.list(cur$protein_id, y$protein_id, include.iea=TRUE)
-  assign('hi.chimpanzee', process.tbl(x, last.godata, tbl), envir=.GlobalEnv)
-  output.tbl(hi.chimpanzee, pdf.f('hi.chimpanzee.csv'))
+    cur <- subset(y, rank.lrt.2 <= top)
+    tbl <- enrich.list(cur$protein_id, y$protein_id, include.iea=F)
+    assign('hi.chimpanzee', process.tbl(x, last.godata, tbl), envir=.GlobalEnv)
+    output.tbl(hi.chimpanzee, pdf.f('hi.chimpanzee.csv'))
 
-  cur <- subset(y, rank.lrt.5 <= top)
-  tbl <- enrich.list(cur$protein_id, y$protein_id, include.iea=TRUE)
-  assign('hi.gorilla', process.tbl(x, last.godata, tbl), envir=.GlobalEnv)
-  output.tbl(hi.gorilla, pdf.f('hi.gorilla.csv'))
+    cur <- subset(y, rank.lrt.5 <= top)
+    tbl <- enrich.list(cur$protein_id, y$protein_id, include.iea=F)
+    assign('hi.gorilla', process.tbl(x, last.godata, tbl), envir=.GlobalEnv)
+    output.tbl(hi.gorilla, pdf.f('hi.gorilla.csv'))
 
-  cur <- subset(y, rank.lrt.6 <= top)
-  tbl <- enrich.list(cur$protein_id, y$protein_id, include.iea=TRUE)
-  assign('hi.aga.branch', process.tbl(x, last.godata, tbl), envir=.GlobalEnv)
-  output.tbl(hi.aga.branch, pdf.f('hi.aga.branch.csv'))
+    cur <- subset(y, rank.lrt.6 <= top)
+    tbl <- enrich.list(cur$protein_id, y$protein_id, include.iea=F)
+    assign('hi.aga.branch', process.tbl(x, last.godata, tbl), envir=.GlobalEnv)
+    output.tbl(hi.aga.branch, pdf.f('hi.aga.branch.csv'))
 
-  cur <- subset(y, rank.lrt.7 <= top)
-  tbl <- enrich.list(cur$protein_id, y$protein_id, include.iea=TRUE)
-  assign('hi.aga.clade', process.tbl(x, last.godata, tbl), envir=.GlobalEnv)
-  output.tbl(hi.aga.clade, pdf.f('hi.aga.clade.csv'))
+    cur <- subset(y, rank.lrt.7 <= top)
+    tbl <- enrich.list(cur$protein_id, y$protein_id, include.iea=F)
+    assign('hi.aga.clade', process.tbl(x, last.godata, tbl), envir=.GlobalEnv)
+    output.tbl(hi.aga.clade, pdf.f('hi.aga.clade.csv'))
 
-  cur <- subset(y, rank.lrt.8 <= top)
-  tbl <- enrich.list(cur$protein_id, y$protein_id, include.iea=TRUE)
-  assign('hi.hc', process.tbl(x, last.godata, tbl), envir=.GlobalEnv)
-  output.tbl(hi.hc, pdf.f('hi.hc.csv'))
+    cur <- subset(y, rank.lrt.8 <= top)
+    tbl <- enrich.list(cur$protein_id, y$protein_id, include.iea=F)
+    assign('hi.hc', process.tbl(x, last.godata, tbl), envir=.GlobalEnv)
+    output.tbl(hi.hc, pdf.f('hi.hc.csv'))
 
-  cur <- subset(y, rank.lrt.9 <= top)
-  tbl <- enrich.list(cur$protein_id, y$protein_id, include.iea=TRUE)
-  assign('hi.gh', process.tbl(x, last.godata, tbl), envir=.GlobalEnv)
-  output.tbl(hi.gh, pdf.f('hi.gh.csv'))
+    cur <- subset(y, rank.lrt.9 <= top)
+    tbl <- enrich.list(cur$protein_id, y$protein_id, include.iea=F)
+    assign('hi.gh', process.tbl(x, last.godata, tbl), envir=.GlobalEnv)
+    output.tbl(hi.gh, pdf.f('hi.gh.csv'))
 
-  cur <- subset(y, rank.lrt.10 <= top)
-  tbl <- enrich.list(cur$protein_id, y$protein_id, include.iea=TRUE)
-  assign('hi.gc', process.tbl(x, last.godata, tbl), envir=.GlobalEnv)
-  output.tbl(hi.gc, pdf.f('hi.gc.csv'))
+    cur <- subset(y, rank.lrt.10 <= top)
+    tbl <- enrich.list(cur$protein_id, y$protein_id, include.iea=F)
+    assign('hi.gc', process.tbl(x, last.godata, tbl), envir=.GlobalEnv)
+    output.tbl(hi.gc, pdf.f('hi.gc.csv'))
 
-  ### Unique enrichments.
-  cur <- subset(y, rank.lrt.1 <= top & rank.lrt.2 > top & rank.lrt.5 > top)
-  tbl <- enrich.list(cur$protein_id, y$protein_id, include.iea=TRUE)
-  assign('unique.hi.human', process.tbl(x, last.godata, tbl), envir=.GlobalEnv)
-  output.tbl(unique.hi.human, pdf.f('unique.hi.human.csv'))
+    ### Unique enrichments.
+    cur <- subset(y, rank.lrt.1 <= top & rank.lrt.2 > top & rank.lrt.5 > top)
+    tbl <- enrich.list(cur$protein_id, y$protein_id, include.iea=TRUE)
+    assign('unique.hi.human', process.tbl(x, last.godata, tbl), envir=.GlobalEnv)
+    output.tbl(unique.hi.human, pdf.f('unique.hi.human.csv'))
 
-  cur <- subset(y, rank.lrt.2 <= top & rank.lrt.1 > top & rank.lrt.5 > top)
-  tbl <- enrich.list(cur$protein_id, y$protein_id, include.iea=TRUE)
-  assign('unique.hi.chimpanzee', process.tbl(x, last.godata, tbl), envir=.GlobalEnv)
-  output.tbl(unique.hi.chimpanzee, pdf.f('unique.hi.chimpanzee.csv'))
+    cur <- subset(y, rank.lrt.2 <= top & rank.lrt.1 > top & rank.lrt.5 > top)
+    tbl <- enrich.list(cur$protein_id, y$protein_id, include.iea=TRUE)
+    assign('unique.hi.chimpanzee', process.tbl(x, last.godata, tbl), envir=.GlobalEnv)
+    output.tbl(unique.hi.chimpanzee, pdf.f('unique.hi.chimpanzee.csv'))
 
-  cur <- subset(y, rank.lrt.5 <= top & rank.lrt.1 > top & rank.lrt.2 > top)
-  tbl <- enrich.list(cur$protein_id, y$protein_id, include.iea=TRUE)
-  assign('unique.hi.gorilla', process.tbl(x, last.godata, tbl), envir=.GlobalEnv)
-  output.tbl(unique.hi.gorilla, pdf.f('unique.hi.gorilla.csv'))
+    cur <- subset(y, rank.lrt.5 <= top & rank.lrt.1 > top & rank.lrt.2 > top)
+    tbl <- enrich.list(cur$protein_id, y$protein_id, include.iea=TRUE)
+    assign('unique.hi.gorilla', process.tbl(x, last.godata, tbl), envir=.GlobalEnv)
+    output.tbl(unique.hi.gorilla, pdf.f('unique.hi.gorilla.csv'))
 
-  cur <- subset(y, rank.lrt.6 <= top)
-  tbl <- enrich.list(cur$protein_id, y$protein_id, include.iea=TRUE)
-  assign('unique.hi.aga.branch', process.tbl(x, last.godata, tbl), envir=.GlobalEnv)
-  output.tbl(unique.hi.aga.branch, pdf.f('unique.hi.aga.branch.csv'))
+    cur <- subset(y, rank.lrt.6 <= top)
+    tbl <- enrich.list(cur$protein_id, y$protein_id, include.iea=TRUE)
+    assign('unique.hi.aga.branch', process.tbl(x, last.godata, tbl), envir=.GlobalEnv)
+    output.tbl(unique.hi.aga.branch, pdf.f('unique.hi.aga.branch.csv'))
 
-  cur <- subset(y, rank.lrt.7 <= top & rank.lrt.1 > top & rank.lrt.2 > top & rank.lrt.5 > top)
-  tbl <- enrich.list(cur$protein_id, y$protein_id, include.iea=TRUE)
-  assign('unique.hi.aga.clade', process.tbl(x, last.godata, tbl), envir=.GlobalEnv)
-  output.tbl(unique.hi.aga.clade, pdf.f('unique.hi.aga.clade.csv'))
+    cur <- subset(y, rank.lrt.7 <= top & rank.lrt.1 > top & rank.lrt.2 > top & rank.lrt.5 > top)
+    tbl <- enrich.list(cur$protein_id, y$protein_id, include.iea=TRUE)
+    assign('unique.hi.aga.clade', process.tbl(x, last.godata, tbl), envir=.GlobalEnv)
+    output.tbl(unique.hi.aga.clade, pdf.f('unique.hi.aga.clade.csv'))
 
-  cur <- subset(y, rank.lrt.8 <= top & rank.lrt.5 > top)
-  tbl <- enrich.list(cur$protein_id, y$protein_id, include.iea=TRUE)
-  assign('unique.hi.hc', process.tbl(x, last.godata, tbl), envir=.GlobalEnv)
-  output.tbl(unique.hi.hc, pdf.f('unique.hi.hc.csv'))
+    cur <- subset(y, rank.lrt.8 <= top & rank.lrt.5 > top)
+    tbl <- enrich.list(cur$protein_id, y$protein_id, include.iea=TRUE)
+    assign('unique.hi.hc', process.tbl(x, last.godata, tbl), envir=.GlobalEnv)
+    output.tbl(unique.hi.hc, pdf.f('unique.hi.hc.csv'))
 
-  cur <- subset(y, rank.lrt.9 <= top & rank.lrt.2 > top)
-  tbl <- enrich.list(cur$protein_id, y$protein_id, include.iea=TRUE)
-  assign('unique.hi.gh', process.tbl(x, last.godata, tbl), envir=.GlobalEnv)
-  output.tbl(unique.hi.gh, pdf.f('unique.hi.gh.csv'))
+    cur <- subset(y, rank.lrt.9 <= top & rank.lrt.2 > top)
+    tbl <- enrich.list(cur$protein_id, y$protein_id, include.iea=TRUE)
+    assign('unique.hi.gh', process.tbl(x, last.godata, tbl), envir=.GlobalEnv)
+    output.tbl(unique.hi.gh, pdf.f('unique.hi.gh.csv'))
 
-  cur <- subset(y, rank.lrt.10 <= top & rank.lrt.1 > top)
-  tbl <- enrich.list(cur$protein_id, y$protein_id, include.iea=TRUE)
-  assign('unique.hi.gc', process.tbl(x, last.godata, tbl), envir=.GlobalEnv)
-  output.tbl(unique.hi.gc, pdf.f('unique.hi.gc.csv'))
+    cur <- subset(y, rank.lrt.10 <= top & rank.lrt.1 > top)
+    tbl <- enrich.list(cur$protein_id, y$protein_id, include.iea=TRUE)
+    assign('unique.hi.gc', process.tbl(x, last.godata, tbl), envir=.GlobalEnv)
+    output.tbl(unique.hi.gc, pdf.f('unique.hi.gc.csv'))
 
-  ### Hi-masked nucs.
+  }
 
-  cur <- subset(y, masked_nucs / aln_length > 0.2)
-  tbl <- enrich.list(cur$protein_id, y$protein_id, include.iea=TRUE)
-  assign('hi.masked.nucs', process.tbl(x, last.godata, tbl), envir=.GlobalEnv)
-  output.tbl(hi.masked.nucs, pdf.f('hi.masked.nucs.csv'))
+  do.corrected = T
+  if (do.corrected) {
+    
+  }
 
-   ### Super-unique LOW
-  cur <- subset(y, rank.lrt.1 >= bot & rank.lrt.2 < bot & rank.lrt.5 < bot)
-  print(nrow(cur))
-  tbl <- enrich.list(cur$protein_id, y$protein_id, include.iea=TRUE)
-  assign('lo.super.unique.human', process.tbl(x, last.godata, tbl), envir=.GlobalEnv)   
-  output.tbl(lo.super.unique.human, pdf.f('lo.super.unique.human.csv'))
 
-  cur <- subset(y, rank.lrt.5 >= bot & rank.lrt.2 < bot & rank.lrt.1 < bot)
-  print(nrow(cur))
-  tbl <- enrich.list(cur$protein_id, y$protein_id, include.iea=TRUE)
-  assign('lo.super.unique.gorilla', process.tbl(x, last.godata, tbl), envir=.GlobalEnv)   
-  output.tbl(lo.super.unique.gorilla, pdf.f('lo.super.unique.gorilla.csv'))
+  if (do.extras) {
+    ### Hi-masked nucs.
+    cur <- subset(y, masked_nucs / aln_length > 0.2)
+    tbl <- enrich.list(cur$protein_id, y$protein_id, include.iea=TRUE)
+    assign('hi.masked.nucs', process.tbl(x, last.godata, tbl), envir=.GlobalEnv)
+    output.tbl(hi.masked.nucs, pdf.f('hi.masked.nucs.csv'))
 
-  cur <- subset(y, rank.lrt.2 >= bot & rank.lrt.1 < bot & rank.lrt.5 < bot)
-  print(nrow(cur))
-  tbl <- enrich.list(cur$protein_id, y$protein_id, include.iea=TRUE)
-  assign('lo.super.unique.chimpanzee', process.tbl(x, last.godata, tbl), envir=.GlobalEnv)   
-  output.tbl(lo.super.unique.chimpanzee, pdf.f('lo.super.unique.chimpanzee.csv'))
+    ### Super-unique LOW
+    cur <- subset(y, rank.lrt.1 >= bot & rank.lrt.2 < bot & rank.lrt.5 < bot)
+    print(nrow(cur))
+    tbl <- enrich.list(cur$protein_id, y$protein_id, include.iea=TRUE)
+    assign('lo.super.unique.human', process.tbl(x, last.godata, tbl), envir=.GlobalEnv)   
+    output.tbl(lo.super.unique.human, pdf.f('lo.super.unique.human.csv'))
+
+    cur <- subset(y, rank.lrt.5 >= bot & rank.lrt.2 < bot & rank.lrt.1 < bot)
+    print(nrow(cur))
+    tbl <- enrich.list(cur$protein_id, y$protein_id, include.iea=TRUE)
+    assign('lo.super.unique.gorilla', process.tbl(x, last.godata, tbl), envir=.GlobalEnv)   
+    output.tbl(lo.super.unique.gorilla, pdf.f('lo.super.unique.gorilla.csv'))
+
+    cur <- subset(y, rank.lrt.2 >= bot & rank.lrt.1 < bot & rank.lrt.5 < bot)
+    print(nrow(cur))
+    tbl <- enrich.list(cur$protein_id, y$protein_id, include.iea=TRUE)
+    assign('lo.super.unique.chimpanzee', process.tbl(x, last.godata, tbl), envir=.GlobalEnv)   
+    output.tbl(lo.super.unique.chimpanzee, pdf.f('lo.super.unique.chimpanzee.csv'))
+  }
 
 }
 

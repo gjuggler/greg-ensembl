@@ -209,6 +209,8 @@ sub collect_pfam {
     return {};
   }
 
+  #$self->pretty_print($pep_aln, {width => 150, full => 1});
+
   my @features = @{ $tx->get_all_ProteinFeatures('PFam') };
   foreach my $f (@features) {
     my $pf_id = $f->display_id;
@@ -217,16 +219,19 @@ sub collect_pfam {
     my $lo    = $f->start;
     my $hi    = $f->end;
     $hi = $tx->length if ( $hi > $tx->length );
-    print "  $pf_id  lo:$lo hi:$hi hstart:$pf_lo hend:$pf_hi\n" if ($self->debug);
+    #print "  $pf_id  lo:$lo hi:$hi hstart:$pf_lo hend:$pf_hi\n";
     foreach my $i ( 0 .. ( $hi - $lo ) ) {
       my $pos     = $lo + $i;
       my $aln_col = $pep_aln->column_from_residue_number( $name, $pos );
+      #print "$name $pos => $aln_col\n";
 
       $site_objects->{$aln_col} = {
         pfam_domain => $pf_id,
         pfam_position => $pf_lo + $i,
         pfam_score  => $f->score
       };
+      #print "$aln_col:\n";
+      #$self->hash_print($site_objects->{$aln_col});
     }
   }
   return $site_objects;

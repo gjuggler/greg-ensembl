@@ -732,6 +732,7 @@ sub nongap_branch_lengths {
     my @nongap_ids_at_pos = grep { $obj->{$_}->[$i] ne '-' } @id_list;
     my $nongap_bl = $class->_subtree_bl( $tree, \@nongap_ids_at_pos, $tree_bl_hash );
 
+    print "$i $nongap_bl\n";
     push @branchlengths, $nongap_bl;
   }
 
@@ -1369,7 +1370,7 @@ sub contains_sequence {
   my $ref_aa = new Bio::PrimarySeq(-seq=>$seq_str)->translate(-codontable_id => $codontable_id)->seq;
   $ref_aa =~ s/[\*X]//g;
   
-  print "REF AA: $ref_aa\n";
+  #print "REF AA: $ref_aa\n";
 
   foreach my $seq ($aln->each_seq) {
     my $compare_str = $seq->seq;
@@ -1378,7 +1379,7 @@ sub contains_sequence {
     my $nogaps_aa = new Bio::PrimarySeq(-seq=>$nogaps)->translate( -codontable_id => $codontable_id)->seq;
     $nogaps_aa =~ s/[\*X]//g;
 
-    print "NOGAPS: $nogaps_aa\n";
+    #print "NOGAPS: $nogaps_aa\n";
 
     #print $nogaps_aa." ".$seq->id."\n";
     #print $ref_aa."\n";

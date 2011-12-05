@@ -136,7 +136,7 @@ sub align {
     $aln->map_chars( '\.', '-' );    # Clustalw sucks and puts gaps as periods.
   } elsif ( $method =~ m/muscle/ ) {
     $aln = $self->align_with_muscle( $aln, $tree, $params );
-  } elsif ( $method =~ m/coffee/ ) {
+  } elsif ( $method =~ m/mcoffee/ ) {
     $aln = $self->align_with_mcoffee( $aln, $tree, $params );
   } elsif ( $method =~ m/prank/ ) {
     if ( $method =~ m/_nof/ ) {
@@ -164,6 +164,8 @@ sub align {
     }
   } elsif ( $method =~ m/probcons/i ) {
     $aln = $self->align_with_probcons( $aln, $tree, $params );
+  } elsif ( $method =~ m/tcoffee/i ) {
+    $aln = $self->align_with_tcoffee( $aln, $tree, $params );
   } elsif ( $method =~ m/mafft/i ) {
     $aln = $self->align_with_mafft( $aln, $tree, $params );
   } elsif ( $method =~ m/fsa/i ) {
@@ -528,6 +530,55 @@ sub align_with_fsa {
   my $aln = $alignio->next_aln();
   return $aln;
 }
+
+sub align_with_tcoffee {
+  my $self   = shift;
+  my $aln    = shift;
+  my $tree   = shift;
+  my $params = shift;
+
+  my $tmp = $self->worker_temp_directory;
+
+  # Output alignment.
+  my $aln_file = $tmp . "aln.fasta";
+  rmtree( [$aln_file] ) if ( -e $aln_file );
+  Bio::EnsEMBL::Compara::AlignUtils->dump_ungapped_seqs( $aln, $aln_file );
+
+  my $tree_file = $tmp . "tree.nh";
+  rmtree( [$tree_file] ) if ( -e $tree_file );
+  my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
+  Bio::EnsEMBL::Compara::TreeUtils->to_file( $treeI, $tree_file );
+
+  my $output_file = "$tmp/output.fasta";
+  
+  my $tc_tmp = substr($tmp,0,-1);
+  my $prefix = "export HOME_4_TCOFFEE=\"${tc_tmp}\";";
+  $prefix = "export DIR_4_TCOFFEE=\"${tc_tmp}\";";
+  $prefix .= "export METHODS_4_TCOFFEE=\"${tc_tmp}\";";
+  $prefix .= "export MCOFFEE_4_TCOFFEE=\"${tc_tmp}\";";
+  $prefix .= "export TMP_4_TCOFFEE=\"${tc_tmp}\";";
+  $prefix .= "export CACHE_4_TCOFFEE=\"${tc_tmp}\";";
+  $prefix .= "export NO_ERROR_REPORT_4_TCOFFEE=1;";
+  $prefix .= "export NUMBER_OF_PROCESSORS_4_TCOFFEE=1;";
+    ;    # GJ 2008-11-04. What a hack!
+
+  my $bin = 't_coffee';
+  my $cmd =
+    qq^$bin -infile=$aln_file -outfile=$output_file -output=fasta_aln -n_core=1 -multi_core=no^;
+
+  my $rc = system( $prefix. $cmd );
+
+  $rc == 0 or die("TCoffee failed: $?");
+
+  use Bio::AlignIO;
+  my $alignio = Bio::AlignIO->new(
+    -file   => $output_file,
+    -format => "fasta"
+  );
+  my $aln = $alignio->next_aln();
+  return $aln;
+}
+
 
 sub align_with_clustalw {
   my $self   = shift;

@@ -906,6 +906,7 @@ sub parse_params {
 
   my $seen_lnl = 0;
   my $n_past_lnl = 0;
+  my $seen_se = 0;
 
   my @branches;
   my @branch_lengths;
@@ -933,15 +934,16 @@ sub parse_params {
       my @param_tokens = @tokens[$divider+1..scalar(@tokens)-1];
       @params = @param_tokens;
     }
-    if ($n_past_lnl == 4) {
-      # We're in the parameters line.
+    if ($n_past_lnl == 4 && $seen_se) {
+      # We're in the SEs line.
       my @tokens = split(/\s+/,strip($line));
       my $divider = scalar(@branches) - 1;
       @branch_standard_errors = @tokens[0..$divider];
       my @param_tokens = @tokens[$divider+1..scalar(@tokens)-1];
       @standard_errors = @param_tokens;
     }
-    
+
+    $seen_se = 1 if ($line =~ /SEs for parameters/);
     $seen_lnl = 1 if ( $line =~ /lnL(.*):\s+(\S*?)\s+(\S*?)/ );
   }
 
@@ -949,7 +951,10 @@ sub parse_params {
   for (my $i=0; $i < scalar(@branches); $i++) {
     my $key = $branches[$i];
     my $length = $branch_lengths[$i];
-    my $se = $branch_standard_errors[$i];
+    my $se = 0;
+    if ($seen_se) {
+      $se = $branch_standard_errors[$i];
+    }
     $branch_map->{$key} = [$length,$se];
   }
 

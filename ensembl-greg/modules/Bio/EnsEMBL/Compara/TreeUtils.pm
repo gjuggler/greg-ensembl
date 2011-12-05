@@ -246,7 +246,7 @@ sub has_ancestor_node_id {
 sub to_treeI {
   my $class = shift;
   my $tree = shift;
-  my $format = shift;
+  my $format = shift || 'full';
 
   my $newick = "";
   if (!ref $tree) {
@@ -262,6 +262,8 @@ sub to_treeI {
     $newick = $tree->newick_format($format);
     $newick .= ';' unless ($newick =~ m/;/);
     #warn("Temporary Newick for NSET to TREEI conversion: [$newick]\n");
+  } else {
+
   }
 
   my $treein = new Bio::TreeIO
@@ -269,6 +271,26 @@ sub to_treeI {
      -format => 'newick');
   my $treeI = $treein->next_tree;
   $treein->close;
+
+  #print $treeI->ascii(1,1,1);
+
+  if (ref $tree && $tree->isa($NSET)) {
+    foreach my $node ($tree->nodes) {
+      my $id = $node->name;
+      next if ($id eq '');
+      my $i_node = $treeI->find($id);
+      if ($i_node) {
+        my $tags = $node->{'_tags'};
+        if ($tags) {
+          foreach my $key (keys %$tags) {
+            $i_node->set_tag_value($key, $tags->{$key});
+#            print "Setting tag $key to ".$tags->{$key}."\n";
+          }
+        }
+      }
+    }
+  }
+
   return $treeI;
 }
 
@@ -1137,7 +1159,7 @@ sub translate_ids {
 
   $tree = $class->copy_tree($tree); # Important!!
   
-  print $tree->ascii."\n";
+  #print $tree->ascii(1,1,1)."\n";
 
   my $ensure_unique = 1;
   $ensure_unique = $params->{ensure_unique} if (defined $params->{ensure_unique});
@@ -1160,6 +1182,7 @@ sub translate_ids {
         while ($used_ids->{$new_name}) {
           $new_name =~ m/_(\d+)$/;
           my $num = $1;
+          $num = 0 if (!defined $num);
           #print "ID in use: [$new_id]\n";
           $new_name =~ s/_\d+$//;
           my $new_int = $num + 1;

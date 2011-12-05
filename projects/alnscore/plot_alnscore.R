@@ -13,8 +13,13 @@ get.data <- function() {
   dbname <- 'gj1_alnscore'
   con <- connect(dbname)
 
-  aln <- mysqlReadTable(con, 'aln')
-  save(aln, file=scratch.f('alnscore.Rdata'))
+  ff <- scratch.f('alnscore.Rdata')
+  if (!file.exists(ff)) {
+    aln <- mysqlReadTable(con, 'aln')
+    save(aln, file=ff)
+  } else {
+    load(ff)
+  }
   aln
 }
 
@@ -24,7 +29,7 @@ scores.scatter <- function() {
   cur.df <- aln
 #  cur.df$n_seqs <- factor(cur.df$n_seqs)
 
-  stats <- c('sub_tcs', 'sub_sps', 'sub_pbl', 'sub_mmbl')
+  stats <- c('sub_tcs', 'sub_sps', 'sub_pbl', 'sub_cbl')
   comb.df <- data.frame()
   for (stat in stats) {
     new.df <- cur.df
@@ -32,21 +37,6 @@ scores.scatter <- function() {
     new.df$stat <- stat
     comb.df <- rbind(comb.df, new.df)
   }
-
-#  pdf(file="mpl_pbl.pdf", width=10, height=5)
-#  p <- ggplot(comb.df, aes(x=mpl, y=y.val, colour=n_seqs))
-#  p <- p + geom_point(size=1, alpha=1)
-#  p <- p + scale_colour_brewer()
-#  p <- p + facet_grid(stat ~ tree)
-#  print(p)
-#  dev.off()
-
-#  pdf(file="total_bl_pbl.pdf", width=10, height=5)
-#  p <- ggplot(comb.df, aes(x=total_bl, y=y.val, colour=n_seqs))
-#  p <- p + geom_point(size=1, alpha=1)
-#  p <- p + facet_grid(stat ~ tree)
-#  print(p)
-#  dev.off()
 
   cur.df <- subset(comb.df, aligner=='prank' & mpl > 0.9 & mpl < 1.1)
   pdf(file="n_seqs_scatter.pdf", width=10, height=5)
@@ -57,7 +47,7 @@ scores.scatter <- function() {
   print(p)
   dev.off()
 
-  cur.df <- subset(comb.df, n_seqs %in% c(2, 32))
+  cur.df <- subset(comb.df, n_seqs %in% c(2))
   cur.df$aligner <- paste(cur.df$aligner, cur.df$n_seqs, sep=' ')
 
   pdf(file="aln_scatter.pdf", width=10, height=10)
@@ -68,22 +58,15 @@ scores.scatter <- function() {
   print(p)
   dev.off()
 
-  pdf(file="aln_scatter_total_bl.pdf", width=10, height=10)
-  p <- ggplot(cur.df, aes(x=log(total_bl/(2*n_seqs-2)), y=y.val, colour=aligner))
-  p <- p + geom_point(size=1, alpha=1)
-  p <- p + stat_smooth(aes(group=aligner, colour=aligner), method='loess')
-  p <- p + facet_grid(stat ~ tree)
-  print(p)
-  dev.off()
-  
-
 }
 
 plot.bars <- function() {
   aln <- get.data()
 
+  print(unique(aln$tree))
+  print(unique(aln$aligner))
+
   cur.df <- aln
-  cur.df <- subset(cur.df, n_seqs %in% c(2, 16))
   cur.df$n_seqs <- factor(cur.df$n_seqs)
   cur.df$aligner <- factor(cur.df$aligner)
 
@@ -92,22 +75,84 @@ plot.bars <- function() {
   print(unique(cur.df$mpl))  
   cur.df$mpl <- factor(cur.df$mpl)
 
-  cur.df <- ddply(cur.df, c('tree', 'aligner', 'mpl', 'n_seqs'), function(x) {
+  relative.df <- ddply(cur.df, c('tree', 'aligner', 'mpl', 'n_seqs'), function(x) {
     avg.diff <- mean(x$sub_sps - x$aln_sps)
     data.frame(
       y.val=avg.diff
     )
   })
 
-  pdf(file="aln_sub.pdf", width=10, height=5)
-  p <- ggplot(cur.df, aes(x=aligner, y=y.val, fill=mpl))
+  #relative.df <- subset(relative.df, tree == 'balanced.nh')
+  #relative.df <- subset(relative.df, n_seqs %in% c(2, 6, 16))
+  relative.df$n_seqs <- factor(relative.df$n_seqs)
+
+  pdf(file="aln_relative_bars.pdf", width=10, height=5)
+  p <- ggplot(relative.df, aes(x=aligner, y=y.val, fill=mpl))
+  p <- p + theme_bw()
   p <- p + geom_bar(position="dodge", stat='identity')
+  p <- p + scale_x_discrete("Aligner")
+  p <- p + scale_y_continuous("Mean SPS score, (subsetted - realigned)")
+
+  clr.f <- colorRampPalette(colors=c('blue', 'red'))
+  n.colors <- length(unique(relative.df$mpl))
+  clrs <- clr.f(n.colors)
+  p <- p + scale_fill_manual(values=clrs)
   p <- p + facet_grid(n_seqs ~ tree)
+  print.ggplot(p)
+
+  dev.off()
+
+  return()
+
+  abs.df <- ddply(cur.df, c('tree', 'aligner', 'mpl', 'n_seqs'), function(x) {
+    avg.value <- mean(x$aln_sps)
+    avg.hi <- quantile(x$aln_sps, probs=c(0.75))
+    avg.lo <- quantile(x$aln_sps, probs=c(0.25))
+    mean.bl <- mean(x$mean_bl)
+    data.frame(
+      mean.bl=mean.bl,
+      y.val=avg.value,
+      y.hi=avg.hi,
+      y.lo=avg.lo
+    )
+  })
+
+  abs.df <- subset(abs.df, tree == 'balanced.nh')  
+
+  pdf(file="aln_abs_mean_bl.pdf", width=5, height=10)
+  p <- ggplot(abs.df, aes(x=mean.bl, y=y.val, ymin=y.lo, ymax=y.hi, colour=n_seqs, group=n_seqs))
+  p <- p + geom_point(size=1)
+  p <- p + geom_errorbar(width=0.02, alpha=0.5)
+  p <- p + geom_line()
+  p <- p + facet_grid(aligner ~ tree)
   print(p)
   dev.off()
+
+  pdf(file="aln_abs_mpl.pdf", width=5, height=10)
+  p <- ggplot(abs.df, aes(x=mpl, y=y.val, ymin=y.lo, ymax=y.hi, colour=n_seqs, group=n_seqs))
+#  p <- p + geom_point(size=1)
+  p <- p + geom_errorbar(position='dodge')
+#  p <- p + geom_line(alpha=0.7)
+  p <- p + facet_grid(aligner ~ tree)
+  print(p)
+  dev.off()
+
+  cur.abs.df <- subset(abs.df, n_seqs %in% c(2, 32))
+  cur.abs.df$n_seqs <- factor(as.character(cur.abs.df$n_seqs))
+
+  cur.abs.df$aligner <- reorder(cur.abs.df$aligner, cur.abs.df$y.val, mean)
+
+  pdf(file="aln_abs_bars.pdf", width=5, height=10)
+  p <- ggplot(cur.abs.df, aes(x=aligner, y=y.val, ymin=y.lo, ymax=y.hi, fill=n_seqs, colour=n_seqs))
+  p <- p + geom_bar(stat='identity', position='dodge')
+  p <- p + geom_errorbar(position='dodge')
+  p <- p + facet_grid(mpl ~ tree)
+  print(p)
+  dev.off()
+
 
 }
 
 scratch.f <- function(file) {
-  return(paste("~/scratch/gj1_alnscore/2011-06-22_03/", file, sep=''))
+  return(paste("~/scratch/gj1_alnscore/current/", file, sep=''))
 }
