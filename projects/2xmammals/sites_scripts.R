@@ -722,22 +722,52 @@ plot_qc_histograms <- function(pset, filter='default', test=F) {
   test <- as.logical(test)
 
   sites <- get.pset.sites(pset, filter=filter, test=test)
-  
-  qc.fields <- list(
-    'omega' = c(-0.2, 3),
-    'lrt_stat' = c(-50, 10),
-    'ncod' = c(0, 40),
-    'nongap_bl' = c(0, 15),
-    'note' = c('Constant', 'Synonymous', 'Nonsynonymous'),
-    'random' = c('Nonrandom', 'Random')
-  )
+
+  if (pset == 1) {
+    qc.fields <- list(
+      'omega' = c(-0.2, 3),
+      'lrt_stat' = c(-10, 5),
+      'ncod' = c(0, 40),
+      'nongap_bl' = c(0, 3),
+      'note' = c('Constant', 'Synonymous', 'Nonsynonymous'),
+      'random' = c('Nonrandom', 'Random')
+    )
+    qc.fields.y <- list(
+      'omega' = c(0, 9e6),
+      'lrt_stat' = c(0, 5e5),
+      'ncod' = c(0, 4e6),
+      'nongap_bl' = c(0, 5e5),
+      'note' = c(0, 6e6),
+      'random' = c(0, 1e7)
+    )
+  } else {
+    qc.fields <- list(
+      'omega' = c(-0.2, 3),
+      'lrt_stat' = c(-50, 10),
+      'ncod' = c(0, 40),
+      'nongap_bl' = c(0, 15),
+      'note' = c('Constant', 'Synonymous', 'Nonsynonymous'),
+      'random' = c('Nonrandom', 'Random')
+    )
+    qc.fields.y <- list(
+      'omega' = c(0, 9e6),
+      'lrt_stat' = c(0, 6e5),
+      'ncod' = c(0, 1.1e6),
+      'nongap_bl' = c(0, 3e5),
+      'note' = c(0, 5e6),
+      'random' = c(0, 1.1e7)
+    )
+  }
+
 
   p.list <- list()
   for (i in 1:length(qc.fields)) {
     fld <- names(qc.fields)[i]
     rng <- qc.fields[[i]]
+    rng.y <- qc.fields.y[[fld]]
     print(fld)
     print(rng)
+    print(rng.y)
     sites$cur.val <- sites[, fld]
     cur.df <- subset(sites, select='cur.val')
 
@@ -753,13 +783,6 @@ plot_qc_histograms <- function(pset, filter='default', test=F) {
     p <- ggplot(cur.df, aes(x=cur.val))
     p <- p + theme_bw()
     if (any(is.numeric(rng))) {
-      if (pset %in% c(1, 2, 3, 4)) {
-        if (fld == 'nongap_bl') {
-          rng <- c(0, 5)
-        } else if (fld == 'lrt_stat') {
-          rng <- c(-20, 5)
-        }
-      }
       if (test) {
         binw <- diff(rng) / 30
       } else {
@@ -776,14 +799,31 @@ plot_qc_histograms <- function(pset, filter='default', test=F) {
       cur.df$cur.val <- pmax(cur.df$cur.val, rng[1])
       rng[2] <- rng[2] * 1.05
       rng[1] <- rng[1] * 0.95
-      p <- p + geom_histogram(binwidth=binw)
+      p <- p + geom_histogram(binwidth=binw, ymin=1)
       p <- p + scale_x_continuous(fld, limits=rng)
     } else {
-      p <- p + geom_histogram()
+      p <- p + geom_histogram(ymin=1)
       p <- p + scale_x_discrete(fld)
       p <- p + opts(
         axis.text.x = theme_blank()
       )
+    }
+
+    frmt.f <- function(x, ...) {
+      format(x, scientific=T, ...)
+    }
+
+    if (any(is.numeric(rng.y))) {
+      if (test) {
+        rng.y[2] <- rng.y[2] / 3
+      }
+      print(rng.y)
+      if (fld == 'omega') {
+        rng.y[1] <- 1
+        p <- p + scale_y_log10(limits=rng.y, formatter = frmt.f)
+      } else {
+        p <- p + scale_y_continuous(limits=rng.y, formatter = frmt.f)
+      }
     }
 
     p <- p + opts(

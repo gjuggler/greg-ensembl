@@ -25,7 +25,7 @@ color.column <- function(xt, column,
   limits=range(xt[, column], na.rm=T), 
   low='white', 
   color.bg=T,
-  high=rgb(0.3, 0.3, 1),
+  high=rgb(0.6, 0.6, 1),
   skip.coloring=F,
   log = F,
   ...

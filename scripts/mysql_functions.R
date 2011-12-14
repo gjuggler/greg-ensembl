@@ -51,11 +51,19 @@ connect.livemirror <- function(dbname=NULL) {
     stop("Must give dbname to connect to mysql!")
   }
 
-  host = 'ens-livemirror'
+  if (Sys.getenv('USER') == 'gj1') {
+    host = 'ens-livemirror'
     port=3306
     user='ensadmin'
     password='ensembl'
     userpass='ensadmin:ensembl'
+  } else {
+    host = 'ensembldb.ensembl.org'
+    port = 5306
+    user = 'anonymous'
+    password = NULL
+    userpass='anonymous'
+  }
 
   con <- dbConnect(MySQL(), host=host, port=port, user=user, password=password, dbname=dbname)
   dbURL = paste("mysql://",userpass,"@",host,":",port,"/",dbname,sep="")
