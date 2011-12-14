@@ -3,21 +3,292 @@ if (uname == 'gj1') {
   source("~/src/greg-ensembl/projects/2xmammals/analyze_mammals.R")
 #  source("~/src/greg-ensembl/scripts/go_enrichments.R")
   source("~/src/greg-ensembl/scripts/liftOver.R")
+  source("~/src/greg-ensembl/projects/phylosim/PhyloSimPlots.R")
 } else {
   source("~/lib/greg-ensembl/projects/2xmammals/analyze_mammals.R")
 #  source("~/lib/greg-ensembl/scripts/go_enrichments.R")
   source("~/lib/greg-ensembl/scripts/liftOver.R")
+  source("~/lib/greg-ensembl/projects/phylosim/PhyloSimPlots.R")
 }
 
-get.alns <- function(gene.names, ...) {
-  for (i in 1:length(gene.names)) {
-    cur.gene <- gene.names[i]
-    filename <- paste('aln_', cur.gene, '.pdf', sep='')
-    get.aln(gene_name=cur.gene, filename=filename, ...)
+save.alns <- function() {
+  con <- connect(dbname())
+  cmd <- "select * from genes where ref_taxon_id=9606 and chr_name like '%chr%';"
+  df <- dbGetQuery(con, cmd)
+  disconnect(con)
+
+  print(table(df$chr_name))
+  return()
+
+  for (i in 1:nrow(df)) {
+    con <- connect(dbname())
+    data_id <- df[i, 'data_id']
+    cmd <- sprintf("select * from seqs where data_id=%d order by aln_position",
+      data_id)
+    aln.df <- dbGetQuery(con, cmd)
+    disconnect(con)
+
+    print(paste(i, nrow(aln.df)))
+  }
+
+}
+
+process.seqs.df <- function(seqs.df) {
+  cols <- colnames(seqs.df)
+  cols <- setdiff(cols, c('data_id', 'aln_position'))  
+
+  for (i in 1:length(cols)) {
+    cc <- as.character(cols[i])
+    seqs.df[,cc] <- ifelse(seqs.df[, cc] == '---', NA, seqs.df[, cc])
+    seqs.df[,cc] <- as.factor(seqs.df[,cc])
+  }
+  seqs.df
+}
+
+get.aln.df.export <- function(d.id) {
+  aln.df <- subset(seqs.df, data_id==d.id)
+  aln.df
+}
+
+get.cluster.windows.export <- function(d.id) {
+  win.df <- subset(windows.df, data_id==d.id)
+  win.df
+}
+
+get.genes.export <- function() {
+  genes.df
+}
+
+get.taxid.df.export <- function() {
+  taxid.df
+}
+
+get.aln.df <- function(d.id) {
+  con <- connect(dbname())
+  cmd <- sprintf("select * from seqs where data_id=%d order by aln_position",
+    d.id)
+  aln.df <- dbGetQuery(con, cmd)
+  disconnect(con)
+  aln.df
+}
+
+get.all.baddies <- function() {
+  con <- connect(dbname())
+  cmd <- sprintf("select * from win_baddies")
+  win.df <- dbGetQuery(con, cmd)
+  disconnect(con)
+  win.df
+}
+
+get.cluster.windows <- function(data_id) {
+  con <- connect(dbname())
+  cmd <- sprintf("select * from win_baddies where data_id=%d",
+    data_id)
+  win.df <- dbGetQuery(con, cmd)
+  disconnect(con)
+  win.df
+}
+
+get.aln <- function(gene.name,
+  remove.paralogs=T, 
+  mask.clusters=T,
+  remove.short.seqs=T
+) {
+  genes <- get.genes()
+  cur.gene <- subset(genes, gene_name==gene.name)
+  if (nrow(cur.gene) == 0) {
+    return(NULL)
+  }
+
+  aln.df <- get.aln.df(cur.gene$data_id)
+  taxid.df <- get.taxid.df()
+
+  aln <- df.to.aln(aln.df)
+  aln.stats(aln)
+
+  if (remove.short.seqs) {
+    cols <- colnames(aln.df)
+    cols <- setdiff(cols, c('data_id', 'aln_position'))  
+    seq.df <- subset(aln.df, select=cols)
+
+    len.by.row <- apply(seq.df, 2, function(x) {
+      sum(x != '---' & x != 'NNN')
+    })
+    nonzero.lengths <- len.by.row[len.by.row != 0]
+    mean.nonzero <- mean(nonzero.lengths)
+
+    # Remove sequences with less than half the mean length of non-NNN seqs.
+    short.genes <- which(len.by.row <= mean.nonzero/2 && len.by.row > 0)
+    short.tx <- names(len.by.row)[short.genes]
+    #print(short.tx)
+    if (length(short.tx) > 0) {
+      for (j in 1:length(short.tx)) {
+        i2 <- as.character(short.tx[j])
+        aln.df[, i2] <- ifelse(aln.df[, i2] == '---', '---', '---')
+      }
+    }
+  }
+
+  if (remove.paralogs) {
+    paralog.s <- cur.gene$dup_species_list
+    if (!is.na(paralog.s)) {
+      paralog.tx <- unlist(strsplit(paralog.s, ' '))
+      for (j in 1:length(paralog.tx)) {
+        i2 <- as.character(paralog.tx[j])
+        aln.df[, i2] <- ifelse(aln.df[, i2] == '---', '---', '---')
+      }
+    }
+  }
+
+  if (mask.clusters) {
+    win.df <- get.cluster.windows(cur.gene$data_id)
+    for (i in 1:nrow(win.df)) {
+      x <- win.df[i,]
+      cur.tx <- x$taxon_id
+      spec.beneath <- taxids.beneath.node(cur.tx)
+      spec.tree <- get.species.tree()
+      n.species <- spec.tree$Nnode
+
+      # Only remove windows if the number of nsyn subs is greater than
+      # half the window size, and the number of species beneath the bad
+      # node is less than half the total tree
+      if (length(spec.beneath ) <= n.species/2 && x$n_ns_subs <= x$win_size) {
+
+        tx.lbl <- taxid.to.alias2(cur.tx, taxid.df)
+        #print(sprintf("Masking window from %s", tx.lbl))
+      
+        aln.lo <- x$aln_position
+        aln.hi <- x$aln_position + x$win_size
+
+        for (j in 1:length(spec.beneath)) {
+          i1 <- aln.lo:aln.hi
+          i2 <- as.character(spec.beneath[j])
+          # Mask out bad regions with Ns, or leave as gaps
+          #print(aln.df[i1, i2])
+          aln.df[i1, i2] <- ifelse(aln.df[i1, i2] == '---', '---', 'NNN')
+          #print(aln.df[i1, i2])
+        }
+      }
+    }
+  }
+
+  aln <- df.to.aln(aln.df)
+
+  # Sort aln by tree.
+  tree <- get.species.tree()
+  tree <- remove.branchlengths(tree)
+  aln <- sort.aln.by.tree(aln, tree)
+
+  # Translate the aln taxon ids into names.
+  tx.ids <- rownames(aln)
+  species.ids <- taxid.to.alias2(tx.ids, taxid.df)
+  rownames(aln) <- species.ids
+  aln.stats(aln)
+}
+
+df.to.aln <- function(aln.df) {
+  aln.positions <- aln.df$aln_position
+  cols <- colnames(aln.df)
+  cols <- setdiff(cols, c('data_id', 'aln_position'))  
+  seq.df <- subset(aln.df, select=cols)
+  rownames(seq.df) <- aln.positions
+  aln <- t(as.matrix(seq.df))
+  aln
+}
+
+get.species.tree.export <- function() {
+  species.tree
+}
+
+get.species.tree <- function() {
+  f.con <- file("~/src/greg-ensembl/projects/orthologs/compara_63_taxids.nh")
+  str <- readLines(con=f.con)
+  close(f.con)
+  tree <- read.nhx.tree(str)
+  tree
+}
+
+get.taxa.df <- function() {
+  con <- connect.livemirror('ensembl_compara_64')
+  cmd <- sprintf('select * from genome_db where name != "ancestral_sequences"')
+  tx.df <- dbGetQuery(con, cmd)
+  disconnect(con)
+
+  tx.df$alias <- as.character(taxid.to.alias(tx.df$taxon_id))
+
+  tx.df <- subset(tx.df, select=c('taxon_id', 'alias', 'name', 'assembly'))
+  tx.df
+}
+
+get.subset.newicks <- function() {
+  taxids.list <- list(
+    '1' = c(9478, 9483, 9544, 9593, 9598, 9601, 9606, 30608,
+  30611, 61853),
+    '4' = c(9358, 9361, 9371, 9785, 9813),
+    '10' = c(9606, 10090, 10116, 9615),
+    '7' = c(10090, 10116, 10020, 43179, 10141),
+    '9' = c(9606, 9598, 9544, 10090, 10116, 9615, 9913, 9823, 9796),
+    '2' = c(9978, 9986, 10020, 10090, 10116, 10141, 43179),
+    '3' = c(9365, 9615, 9646, 9685, 9739, 9796, 9823, 9913, 30538,
+  42254, 59463, 132908),
+    '8' = c(9258, 9315, 9361, 9785, 9606, 10090, 9615),
+    '5' = c(9358, 9361, 9365, 9371, 9478, 9483, 9544, 9593, 9598,
+  9601, 9606, 9615, 9646, 9685, 9739, 9785, 9796, 9813, 9823, 9913,
+  9978, 9986, 10020, 10090, 10116, 10141, 30538, 30608, 30611, 37347,
+  42254, 43179, 59463, 61853, 132908),
+    '6' = c(9258, 9315, 9358, 9361, 9365, 9371, 9478, 9483, 9544,
+  9593, 9598, 9601, 9606, 9615, 9646, 9685, 9739, 9785, 9796, 9813,
+  9823, 9913, 9978, 9986, 10020, 10090, 10116, 10141, 13616, 30538,
+  30608, 30611, 37347, 42254, 43179, 59463, 61853, 132908)
+  )
+  taxid.names = pset.to.alias(names(taxids.list))
+  names(taxids.list) <- taxid.names
+  
+  newick.df <- ldply(taxids.list, function(x) {
+    tree <- get.species.tree()
+    not.in.set <- setdiff(tree$tip.label, x)
+    tree <- drop.tip(tree, not.in.set)
+    tree2 <- tree
+    tree$edge.length <- NULL
+    tree$node.label <- NULL
+    str <- write.tree(tree)
+
+    tree2$tip.label <- taxid.to.alias(tree2$tip.label, include.internals=T)
+    tree2$edge.length <- NULL
+    tree2$node.label <- NULL
+    str2 <- write.tree(tree2)
+
+    data.frame(
+      taxid_newick=str,
+      label_newick=str2
+    )
+  })
+
+  newick.df
+}
+
+taxids.beneath.node <- function(taxid) {
+  tree <- get.species.tree()
+  #print(str(tree))
+  cur.node <- node.with.label(tree, taxid)
+  #print(cur.node)
+  if (cur.node > tree$Nnode) {
+    nongap.tree <- extract.clade(tree, cur.node)
+    nongap.tree$tip.label
+  } else {
+    taxid
   }
 }
 
-get.aln <- function(
+plot.alns <- function(gene.names, ...) {
+  for (i in 1:length(gene.names)) {
+    cur.gene <- gene.names[i]
+    filename <- paste('aln_', cur.gene, '.pdf', sep='')
+    plot.aln(gene_name=cur.gene, filename=filename, ...)
+  }
+}
+
+plot.aln <- function(
   data_id, 
   aln_lo=1, 
   aln_hi=99999, 

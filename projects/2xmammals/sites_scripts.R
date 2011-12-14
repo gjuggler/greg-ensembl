@@ -73,6 +73,52 @@ collect_genes <- function(pset, filter='default', n.indices=0, test=F, subset.in
   print(" done!")
 }
 
+collect_alns <- function(chr) {
+  genes <- get.genes()
+  chr.s <- paste('chr', chr, sep='')
+  genes <- subset(genes, chr_name == chr.s)
+  genes <- head(genes)
+  id.s <- paste(genes$data_id, collapse=',')
+
+  print(genes$gene_name)
+
+  con <- connect(db()); 
+  cmd <- sprintf("select * from seqs where data_id in (%s)", id.s)
+  seqs.df <- dbGetQuery(con, cmd)
+  disconnect(con)
+  seqs.df <- process.seqs.df(seqs.df)
+
+  # Get the cluster windows and genes data frames.
+  windows.df <- get.all.baddies()
+  genes.df <- get.genes()
+
+  out.env <- new.env()
+  assign("seqs.df", seqs.df, envir=out.env)
+  assign("windows.df", windows.df, envir=out.env)
+  assign("genes.df", genes.df, envir=out.env)
+
+  assign("get.aln", get.aln, envir=out.env)
+  assign("get.aln.df", get.aln.df.export, envir=out.env)
+  assign("get.cluster.windows", get.cluster.windows.export, envir=out.env)
+  assign("get.genes", get.genes.export, envir=out.env) 
+  assign("get.species.tree", get.species.tree.export, envir=out.env) 
+  assign("species.tree", get.species.tree(), envir=out.env) 
+
+  assign("df.to.aln", df.to.aln, envir=out.env)
+  assign("aln.stats", aln.stats, envir=out.env)
+  assign("taxids.beneath.node", taxids.beneath.node, envir=out.env)
+  assign("node.with.label", node.with.label, envir=out.env) 
+  assign("get.taxid.df", get.taxid.df.export, envir=out.env)
+  assign("taxid.df", get.taxid.df(), envir=out.env)
+  assign("taxid.to.alias2", taxid.to.alias2, envir=out.env)
+
+  assign("genomes", get.taxa.df(), envir=out.env)
+  assign("species.subsets", get.subset.newicks(), envir=out.env)
+ 
+  out.f <- scratch.f(sprintf("export_%s.Rdata", chr.s))
+  save(out.env, file=out.f)
+}
+
 collect_domains <- function(pset, fltr='default', n.indices=0, test=F, subset.index=NULL) {
   pset <- as.integer(pset)
   if (!is.null(subset.index)) {
