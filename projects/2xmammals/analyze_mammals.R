@@ -166,9 +166,9 @@ bsub.function <- function(fn_name, queue='normal', mem=4, extra.args='', jobarra
     sprintf('bsub -q research -M%d000 %s -o "/homes/greg/scratch/lsf_logs/%s_%%J_%%I.txt" "R-2.12.0 --vanilla --args %s < sites_scripts.R"',
       mem, array_s, fn_name, args_s
     ),
-    sprintf('bsub -q %s -R "select[mem>%d000] rusage[mem=%d000]" -M%d000000 %s "/software/R-2.13.0/bin/R --vanilla --args %s < sites_scripts.R"',
+    sprintf('bsub -q %s -R "select[mem>%d000] rusage[mem=%d000]" -M%d000000 %s -o "/nfs/users/nfs_g/gj1/scratch/lsf_logs/%s_%%J_%%I.txt" "/software/R-2.13.0/bin/R --vanilla --args %s < sites_scripts.R"',
       queue, mem, mem, mem,
-      array_s, args_s
+      array_s, fn_name, args_s
     )
   )
   print(cmd)

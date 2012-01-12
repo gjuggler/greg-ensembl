@@ -73,15 +73,45 @@ collect_genes <- function(pset, filter='default', n.indices=0, test=F, subset.in
   print(" done!")
 }
 
-collect_alns <- function(chr) {
+write_alns <- function(chr.s, remove.paralogs=T, mask.clusters=T) {
+  remove.paralogs <- as.logical(remove.paralogs)
+  mask.clusters <- as.logical(mask.clusters)
+
+  print("  loading file...")
+  out.f <- scratch.f(sprintf("export_%s.Rdata", chr.s))
+  load(out.f)
+
+  print("  writing alns...")
+  attach(ensembl_alns)
+
+  p.s <- ifelse(remove.paralogs, 'NG', 'ng')
+  p.s <- ifelse(remove.paralogs, 'PR', 'PR')
+  c.s <- ifelse(mask.clusters, 'CW', 'CW')
+  out.f <- paste('alns_', p.s, c.s, sep='')
+  write.all.alns(scratch.f(out.f), 
+    remove.paralogs=remove.paralogs, 
+    mask.clusters=mask.clusters,
+    remove.short.seqs=T,
+    keep.species='Mammals'
+  )
+
+  print("  done!")
+}
+
+collect_alns <- function(chr.s, test=F) {
   genes <- get.genes()
-  chr.s <- paste('chr', chr, sep='')
   genes <- subset(genes, chr_name == chr.s)
-  genes <- head(genes)
+  
+  test <- as.logical(test)
+  if (test) {
+    genes <- head(genes, n=20)
+  }
+
   id.s <- paste(genes$data_id, collapse=',')
 
-  print(genes$gene_name)
+  print(sprintf("%d genes to collect", nrow(genes)))
 
+  print("  getting seqs...")
   con <- connect(db()); 
   cmd <- sprintf("select * from seqs where data_id in (%s)", id.s)
   seqs.df <- dbGetQuery(con, cmd)
@@ -89,9 +119,21 @@ collect_alns <- function(chr) {
   seqs.df <- process.seqs.df(seqs.df)
 
   # Get the cluster windows and genes data frames.
+  print("  getting bad windows...")
   windows.df <- get.all.baddies()
+  windows.df <- subset(windows.df, data_id %in% genes$data_id)
+  print("  getting genes...")
   genes.df <- get.genes()
+  genes.df <- subset(genes.df, data_id %in% genes$data_id)
 
+  # Get the mammalian sites corresponding to these genes, and keep only important
+  # columns.
+  sites <- get.sitewise()
+  sites <- subset(sites, data_id %in% genes$data_id, 
+    select=c('data_id', 'aln_position', 'seq_position', 'ncod', 'nongap_bl', 'random')
+  )
+
+  print('Creating new env...')
   out.env <- new.env()
   assign("seqs.df", seqs.df, envir=out.env)
   assign("windows.df", windows.df, envir=out.env)
@@ -101,6 +143,8 @@ collect_alns <- function(chr) {
   assign("get.aln.df", get.aln.df.export, envir=out.env)
   assign("get.cluster.windows", get.cluster.windows.export, envir=out.env)
   assign("get.genes", get.genes.export, envir=out.env) 
+  assign("get.sitewise", get.sitewise.export, envir=out.env)
+  assign("sitewise.df", sites, envir=out.env)
   assign("get.species.tree", get.species.tree.export, envir=out.env) 
   assign("species.tree", get.species.tree(), envir=out.env) 
 
@@ -111,12 +155,27 @@ collect_alns <- function(chr) {
   assign("get.taxid.df", get.taxid.df.export, envir=out.env)
   assign("taxid.df", get.taxid.df(), envir=out.env)
   assign("taxid.to.alias2", taxid.to.alias2, envir=out.env)
+  assign("remove.branchlengths", remove.branchlengths, envir=out.env)
+  assign("depth.to.root", depth.to.root, envir=out.env)
+  assign("parent.node", parent.node, envir=out.env)
+  assign("leaves.beneath", leaves.beneath, envir=out.env)
+  assign("extract.subtree", extract.subtree, envir=out.env)
+  assign("sort.aln.by.tree", sort.aln.by.tree, envir=out.env)
+  assign("restrict.aln.to.seqs", restrict.aln.to.seqs, envir=out.env)
 
   assign("genomes", get.taxa.df(), envir=out.env)
   assign("species.subsets", get.subset.newicks(), envir=out.env)
+  assign("get.subset.newicks", get.subset.newicks.export, envir=out.env)
+
+  assign("write.aln", write.aln, envir=out.env)
+  assign("write.all.alns", write.all.alns, envir=out.env)
  
+  print("  saving file...")
   out.f <- scratch.f(sprintf("export_%s.Rdata", chr.s))
-  save(out.env, file=out.f)
+  ensembl_alns <- out.env
+  rm(out.env)
+  save(ensembl_alns, file=out.f)
+  print("Done!")
 }
 
 collect_domains <- function(pset, fltr='default', n.indices=0, test=F, subset.index=NULL) {

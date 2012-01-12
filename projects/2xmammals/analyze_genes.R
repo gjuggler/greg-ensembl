@@ -11,6 +11,79 @@ if (uname == 'gj1') {
   source("~/lib/greg-ensembl/projects/phylosim/PhyloSimPlots.R")
 }
 
+write.aln <- function(x, ff) {
+  # Mostly copied from ape, but I removed the space between the Fasta
+  # '>' and the sequence ID.
+  zz <- file(ff, "w")
+  on.exit(close(zz))
+  colw <- 120
+  colsep <- ''
+  indent <- ''
+  nbcol <- 1
+  N <- dim(x)
+  S <- N[2]
+  N <- N[1]
+  xx <- vector("list", N)
+  for (i in 1:N) xx[[i]] <- x[i, ]
+  names(xx) <- rownames(x)
+  x <- xx
+  rm(xx)
+  for (i in 1:N) {
+    cat(">", names(x)[i], file = zz, sep='')
+    cat("\n", file = zz, sep='')
+    X <- paste(x[[i]], collapse = "")
+    S <- length(x[[i]])
+    totalcol <- ceiling(S/colw)
+    if (nbcol < 0) 
+      nbcol <- totalcol
+    nb.lines <- ceiling(totalcol/nbcol)
+    SEQ <- character(totalcol)
+    for (j in 1:totalcol) {
+      SEQ[j] <- substr(X, 1 + (j - 1) * colw, colw + (j - 1) * colw)
+    }
+    for (k in 1:nb.lines) {
+      endsel <- if (k == nb.lines) 
+        length(SEQ)
+        else nbcol + (k - 1) * nbcol
+      cat(indent, file = zz)
+      cat(SEQ[(1 + (k - 1) * nbcol):endsel], sep = colsep, file = zz)
+      cat("\n", file = zz)
+    }
+  }
+}
+
+write.all.alns <- function(folder, genes=NULL, ...) {
+  if (is.null(genes)) {
+    genes <- get.genes()
+  }
+  
+  for (i in 1:nrow(genes)) {
+    cur.gene <- genes[i,]
+    gene.name <- cur.gene$gene_name
+    ref.taxon <- cur.gene$ref_taxon_id
+    if (is.na(gene.name)) {
+      gene.name <- cur.gene$ref_gene_id
+    }
+    print(sprintf("%s (%d of %d)", gene.name, i, nrow(genes)))
+    #print(cur.gene)
+    data.prefix <- cur.gene$data_prefix
+
+    aln <- get.aln(cur.gene$data_id, ...)
+
+    dir.create(folder)
+    if (ref.taxon != 9606) {
+      dir.create(file.path(folder, 'no_human'))
+      data.dir <- paste('no_human/', data.prefix, sep='')
+    } else {
+      data.dir <- paste(data.prefix, sep='')
+    }
+    dir.create(file.path(folder, data.dir))
+    aln.f <- paste(file.path(folder, data.dir), '/', gene.name, '.fasta', sep='')
+    write.aln(aln, file=aln.f)
+    print(sprintf("%s (%d of %d)", aln.f, i, nrow(genes)))
+  }
+}
+
 save.alns <- function() {
   con <- connect(dbname())
   cmd <- "select * from genes where ref_taxon_id=9606 and chr_name like '%chr%';"
@@ -30,7 +103,6 @@ save.alns <- function() {
 
     print(paste(i, nrow(aln.df)))
   }
-
 }
 
 process.seqs.df <- function(seqs.df) {
@@ -43,6 +115,10 @@ process.seqs.df <- function(seqs.df) {
     seqs.df[,cc] <- as.factor(seqs.df[,cc])
   }
   seqs.df
+}
+
+get.subset.newicks.export <- function() {
+  species.subsets
 }
 
 get.aln.df.export <- function(d.id) {
@@ -89,22 +165,42 @@ get.cluster.windows <- function(data_id) {
   win.df
 }
 
-get.aln <- function(gene.name,
-  remove.paralogs=T, 
+get.aln <- function(data.id,
+  remove.paralogs=T,
   mask.clusters=T,
-  remove.short.seqs=T
+  remove.short.seqs=T,
+  mask.nongap=T,
+  mask.nongap.threshold=2,
+  keep.species = 'Mammals'
 ) {
   genes <- get.genes()
-  cur.gene <- subset(genes, gene_name==gene.name)
+  
+  cur.gene <- subset(genes, data_id==data.id)
   if (nrow(cur.gene) == 0) {
-    return(NULL)
+    # Try finding by gene_name
+    cur.gene <- subset(genes, gene_name==data.id)
   }
+  if (nrow(cur.gene) == 0) {
+    stop(sprintf("Cannot find gene for ID %s!", data.id))
+  }
+
+  id <- cur.gene$gene_name
 
   aln.df <- get.aln.df(cur.gene$data_id)
   taxid.df <- get.taxid.df()
+  
+  if (mask.nongap) {
+    # TODO: use non-gap BL to mask out sites from the alignment.
+    sites <- get.sitewise()
+    sites <- subset(sites, data_id == data.id)
+    remove.sites <- subset(sites, nongap_bl < mask.nongap.threshold)
+    remove.positions <- remove.sites$aln_position
 
-  aln <- df.to.aln(aln.df)
-  aln.stats(aln)
+    species <- colnames(aln.df)
+    species <- setdiff(species, c('data_id', 'aln_position'))  
+    # Mask out bad columns with Ns (or leave as gaps)
+    aln.df[remove.positions, species] <- ifelse(aln.df[remove.positions, species] == '---', '---', 'NNN')
+  }
 
   if (remove.short.seqs) {
     cols <- colnames(aln.df)
@@ -126,6 +222,7 @@ get.aln <- function(gene.name,
         i2 <- as.character(short.tx[j])
         aln.df[, i2] <- ifelse(aln.df[, i2] == '---', '---', '---')
       }
+      warning(sprintf("Removed %d short sequences from %s", length(short.tx), id))
     }
   }
 
@@ -137,53 +234,71 @@ get.aln <- function(gene.name,
         i2 <- as.character(paralog.tx[j])
         aln.df[, i2] <- ifelse(aln.df[, i2] == '---', '---', '---')
       }
+      warning(sprintf("Removed %d paralogs from %s", length(paralog.tx), id))
     }
   }
 
   if (mask.clusters) {
     win.df <- get.cluster.windows(cur.gene$data_id)
-    for (i in 1:nrow(win.df)) {
-      x <- win.df[i,]
-      cur.tx <- x$taxon_id
-      spec.beneath <- taxids.beneath.node(cur.tx)
-      spec.tree <- get.species.tree()
-      n.species <- spec.tree$Nnode
+    if (nrow(win.df) > 0) {
+      for (i in 1:nrow(win.df)) {
+        x <- win.df[i,]
+        cur.tx <- x$taxon_id
+        #print("  getting beneath..")
+        #print(cur.tx)
+        spec.beneath <- taxids.beneath.node(cur.tx)
+        #print("  got em!")
+        spec.tree <- get.species.tree()
+        n.species <- spec.tree$Nnode
 
-      # Only remove windows if the number of nsyn subs is greater than
-      # half the window size, and the number of species beneath the bad
-      # node is less than half the total tree
-      if (length(spec.beneath ) <= n.species/2 && x$n_ns_subs <= x$win_size) {
+        # Only remove windows if the number of nsyn subs is greater than
+        # half the window size, and the number of species beneath the bad
+        # node is less than half the total tree
+        if (length(spec.beneath ) <= n.species/2 && x$n_ns_subs <= x$win_size) {
 
-        tx.lbl <- taxid.to.alias2(cur.tx, taxid.df)
-        #print(sprintf("Masking window from %s", tx.lbl))
+          tx.lbl <- taxid.to.alias2(cur.tx, taxid.df)
+          #print(sprintf("Masking window from %s", tx.lbl))
       
-        aln.lo <- x$aln_position
-        aln.hi <- x$aln_position + x$win_size
+          aln.lo <- x$aln_position
+          aln.hi <- x$aln_position + x$win_size
 
-        for (j in 1:length(spec.beneath)) {
-          i1 <- aln.lo:aln.hi
-          i2 <- as.character(spec.beneath[j])
-          # Mask out bad regions with Ns, or leave as gaps
-          #print(aln.df[i1, i2])
-          aln.df[i1, i2] <- ifelse(aln.df[i1, i2] == '---', '---', 'NNN')
-          #print(aln.df[i1, i2])
+          for (j in 1:length(spec.beneath)) {
+            i1 <- aln.lo:aln.hi
+            i2 <- as.character(spec.beneath[j])
+            # Mask out bad regions with Ns, or leave as gaps
+            #print(aln.df[i1, i2])
+            aln.df[i1, i2] <- ifelse(aln.df[i1, i2] == '---', '---', 'NNN')
+            #print(aln.df[i1, i2])
+          }
         }
       }
+      warning(sprintf("Removed %d substitution clusters from %s", length(win.df), id))
     }
   }
 
   aln <- df.to.aln(aln.df)
 
+  # Remove species if necessary.
+  if (keep.species != 'all') {
+    subset.newicks <- get.subset.newicks()
+    cur.ind <- which(subset.newicks$name == keep.species)
+    cur.subset <- subset.newicks[cur.ind,]
+    taxid.s <- cur.subset$taxid_list
+    cur.taxids <- strsplit(taxid.s, ' ')[[1]]
+    aln <- restrict.aln.to.seqs(aln, cur.taxids)
+  }
+
   # Sort aln by tree.
   tree <- get.species.tree()
   tree <- remove.branchlengths(tree)
+  tree <- extract.subtree(tree, rownames(aln))
   aln <- sort.aln.by.tree(aln, tree)
 
   # Translate the aln taxon ids into names.
   tx.ids <- rownames(aln)
   species.ids <- taxid.to.alias2(tx.ids, taxid.df)
   rownames(aln) <- species.ids
-  aln.stats(aln)
+  aln
 }
 
 df.to.aln <- function(aln.df) {
@@ -193,7 +308,54 @@ df.to.aln <- function(aln.df) {
   seq.df <- subset(aln.df, select=cols)
   rownames(seq.df) <- aln.positions
   aln <- t(as.matrix(seq.df))
+  if (any(is.na(aln))) {
+    aln <- ifelse(is.na(aln), '---', aln)
+  }
   aln
+}
+
+aln.stats <- function(aln) {
+  n.seqs <- length(aln[,1])
+  n.cols <- length(aln[1,])
+
+  nongap.counts <- apply(aln, 1, function(x) {
+    sum(!grepl('-', x))
+  })
+  nz.counts <- nongap.counts != 0
+  mean.nz.len <- mean(nongap.counts[nz.counts])
+
+  nuc.counts <- apply(aln, 1, function(x) {
+    str <- paste(x, collapse='')
+    mtchs <- unlist(gregexpr('[GACT]', str))
+    sum(mtchs != -1)
+  })
+  total.nucs <- sum(nuc.counts)
+
+  nongap.cols <- apply(aln, 2, function(x) {
+    sum(!grepl('(---|-)', x))
+  })
+  n.allgaps <- sum(nongap.cols == 0)
+
+  str <- sprintf('Seqs: %d
+Columns: %d
+All-gap columns: %d
+Mean seq length: %.1f
+Total nucs: %d\n',
+    n.seqs,
+    n.cols,
+    n.allgaps,
+    mean.nz.len,
+    total.nucs
+  )
+  cat(str)
+}
+
+get.sitewise.export <- function() {
+  sitewise.df
+}
+
+get.sitewise <- function() {
+  sites <- get.pset.sites(6, filter='orig', test=T)
 }
 
 get.species.tree.export <- function() {
@@ -260,9 +422,13 @@ get.subset.newicks <- function() {
 
     data.frame(
       taxid_newick=str,
-      label_newick=str2
+      label_newick=str2,
+      taxid_list=paste(x, collapse=' '),
+      stringsAsFactors=F
     )
   })
+  newick.df$.id <- NULL
+  newick.df$name <- taxid.names
 
   newick.df
 }
@@ -270,7 +436,7 @@ get.subset.newicks <- function() {
 taxids.beneath.node <- function(taxid) {
   tree <- get.species.tree()
   #print(str(tree))
-  cur.node <- node.with.label(tree, taxid)
+  cur.node <- node.with.label(tree, sprintf("%d", taxid))
   #print(cur.node)
   if (cur.node > tree$Nnode) {
     nongap.tree <- extract.clade(tree, cur.node)
@@ -517,19 +683,19 @@ write.seqs <- function(aln, out.f) {
 }
 
 example.alns <- function() {
-  get.aln(1514564, 1, 300, filename="aln_ex_x.pdf", plot.chars=F)
-  get.aln(1640146, 1000, 1500, filename="aln_ex_rhesus.pdf", plot.chars=F)
+  plot.aln(1514564, 1, 300, filename="aln_ex_x.pdf", plot.chars=F)
+  plot.aln(1640146, 1000, 1500, filename="aln_ex_rhesus.pdf", plot.chars=F)
   # Chimpanzee crap:
   #get.aln(1592585, 700, 750, filename="aln_ex_1.pdf")
   # Gorilla crap:
-  get.aln(gene_name="G3BP1", 1, 100, filename="aln_ex_2.pdf", plot.chars=F)
+  plot.aln(gene_name="G3BP1", 1, 100, filename="aln_ex_2.pdf", plot.chars=F)
   # Human crap:
   #get.aln(gene_name="TPM1", filename="aln_ex_3.pdf", flatten.seq=T)
   #get.aln(gene_name="TPM3", filename="aln_ex_3b.pdf", flatten.seq=T)
   # Platypus ain't so bad:
   #get.aln(1898971, 560, 610, filename="aln_ex_4.pdf")  
   # Mouse/rat crap:
-  get.aln(1830947, 370, 450, filename="aln_ex_5.pdf")
+  plot.aln(1830947, 370, 450, filename="aln_ex_5.pdf")
 }
 
 win.baddies <- function() {
@@ -866,6 +1032,39 @@ get.go.annotations <- function(exclude.iea=F) {
     go.ens
   }
 }
+
+bsub.collect.alns <- function(...) {
+  genes <- get.genes()
+  genes <- subset(genes, ref_taxon_id==9606)
+  genes <- subset(genes, grepl('chr', chr_name))
+
+  all.chrs <- unique(genes$chr_name)
+
+  for (chr in all.chrs) {
+    test <- FALSE
+    xtra <- paste(chr, test, sep=' ')
+    bsub.function('collect_alns', mem=6, extra.args=xtra, ...)
+  }
+}
+
+bsub.write.alns <- function(...) {
+  genes <- get.genes()
+  genes <- subset(genes, ref_taxon_id==9606)
+  genes <- subset(genes, grepl('chr', chr_name))
+
+  all.chrs <- unique(genes$chr_name)
+
+  for (remove.paralogs in c(FALSE, TRUE)) {
+    for (mask.clusters in c(FALSE, TRUE)) {
+      for (chr in all.chrs) {
+        test <- FALSE
+        xtra <- paste(chr, remove.paralogs, mask.clusters, sep=' ')
+        bsub.function('write_alns', mem=4, extra.args=xtra, ...)
+      }
+    }
+  }
+}
+
 
 bsub.genes.enrichment <- function(...) {
   filters <- c('default', 'stringent')
