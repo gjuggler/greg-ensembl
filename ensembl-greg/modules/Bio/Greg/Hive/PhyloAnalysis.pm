@@ -596,7 +596,10 @@ sub run_sitewise_dNdS {
   my $cdna_aln = shift;
   my $params   = shift;
 
-  $params = $self->replace($self->params, $params);
+  my $p1 = $self->replace($self->param_defaults, $self->params);
+  $params = $self->replace($p1, $params);
+
+  #$self->hash_print($params);
 
   print "  running SLR...\n" if ($self->debug);
 

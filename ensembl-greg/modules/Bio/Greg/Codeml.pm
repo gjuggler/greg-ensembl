@@ -550,14 +550,19 @@ sub run {
     } else {
       open( $run, "$codemlexe |" ) or $self->throw("Cannot open exe $codemlexe");
     }
-    my @output = <$run>;
+#    my @output = <$run>;
+    my @output;
+    while (<$run>) {
+      print $_;
+      push @output, $_;
+    }
 
     $exit_status = close($run);
     $self->error_string( join( '', @output ) );
     if ( ( grep { /error/io } @output ) || !$exit_status ) {
 
       if (!$exit_status) {
-        $self->throw("Bad codeml exist status!\n". $self->error_string);
+        $self->throw("Bad codeml exit status!\n". $self->error_string);
       } else {
         $self->throw( "ERROR RUNNING CODEML:\n" . $self->error_string );
         $rc = 0;
@@ -1487,6 +1492,7 @@ sub branch_model_likelihood {
 
     method => 0,
     getSE => 0,
+    RateAncestor => 1,
     Mgene => 0,
     aaDist => 0,
     CodonFreq => 2,
@@ -1511,6 +1517,7 @@ sub branch_model_likelihood {
     $final_params->{$param} = $params->{$param} if ( defined $params->{$param} );
   }
   $final_params->{verbose} = 1;
+  $final_params->{noisy} = 3;
 
   my $lines_ref;
   eval {
