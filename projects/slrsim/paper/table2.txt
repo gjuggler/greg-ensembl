@@ -10,13 +10,13 @@
 \begin{tabular}{
 l r r l
 }
-\hline
+\toprule
  Species
  & Pairwise $dS$
  & Root-to-tip $dS$
  & Reference
 \\
-  \hline
+\midrule
    Human-Chimp & 0.01 & (0.005) & \citealp{Nei2010Neutral}
 \\ Human-Mouse & 0.43 & (0.215) & \citealp{Nei2010Neutral}
 \\ Human-Mouse & 0.5 - 0.8 & (0.25 - 0.4) & \citealp{Ogurtsov2004Indel}
@@ -27,7 +27,7 @@ l r r l
 \\ Drosophila & -- & 1.0 & Siepel et al., 2005
 \\ Yeasts & -- & 1.25 & Siepel et al., 2005
 \\
-   \hline
+\bottomrule
 \label{table_2}
 \end{tabular}
 \begin{tablenotes}

@@ -498,10 +498,8 @@ clustered.subs.sim <- function() {
 }
 
 slim.mammals <- function() {
-
   c(9986, 9365, 9258, 9315, 9361, 9785, 9606, 9598, 9593, 10090, 10116, 9785,
   9478, 9615, 30611, 9371, 9358, 9796, 9913)
-
 }
 
 mammals <- function() {
@@ -527,9 +525,33 @@ eutheria <- function() {
   43179, 59463, 61853, 132908)
 }
 
-taxid.to.alias <- function(taxids, binomials=F, include.internals=F) {
+taxid.to.alias2 <- function(taxids, map.df) {
+  match.inds <- match(taxids, map.df$taxon_id)
+  map.df$name[match.inds]
+}
+
+get.taxid.df <- function() {
+  spec.tree <- get.species.tree()
+  taxids <- c(spec.tree$tip.label, spec.tree$node.label)
+
+  name_class <- 'ensembl alias'
+
+  unique.ids <- unique(taxids)
+  unique.ids <- unique.ids[unique.ids != '']
+  taxid_list <- paste(unique.ids, collapse=', ')
+  cmd <- sprintf('select n.taxon_id, n.name from ncbi_taxa_name n where
+    n.taxon_id IN (%s) and n.name_class like "%%%s%%" order by n.name',
+      taxid_list, name_class)
+  con <- connect.livemirror('ensembl_compara_64')
+  df <- dbGetQuery(con, cmd)
+  dbDisconnect(con)
+
+  df  
+}
+
+taxid.to.alias <- function(taxids, binomials=F, include.internals=F, save.df=T) {
   df.key <- paste('taxid', as.character(binomials), as.character(include.internals), sep='.')
-  if (!exists(df.key, envir=.GlobalEnv) || include.internals) {
+  if (!exists(df.key, envir=.GlobalEnv) || include.internals || !save.df) {
     con <- connect.livemirror('ensembl_compara_64')
     name_class <- "ensembl alias"
     if (binomials) {
@@ -538,6 +560,7 @@ taxid.to.alias <- function(taxids, binomials=F, include.internals=F) {
 
     if (include.internals) {
       unique.ids <- unique(taxids)
+      unique.ids <- unique.ids[unique.ids != '']
       taxid_list <- paste(unique.ids, collapse=', ')
       cmd <- sprintf('select n.taxon_id, n.name from ncbi_taxa_name n where
         n.taxon_id IN (%s) and n.name_class like "%%%s%%" order by n.name',
@@ -549,10 +572,16 @@ taxid.to.alias <- function(taxids, binomials=F, include.internals=F) {
     }
     df <- dbGetQuery(con, cmd)
     dbDisconnect(con)
-    df[df$name == 'Lesser hedgehog tenrec', 'name'] <- 'Tenrec'
-    assign(df.key, df, envir=.GlobalEnv)
+    if (any(df$name == 'Lesser hedgehog tenrec')) {
+      df[df$name == 'Lesser hedgehog tenrec', 'name'] <- 'Tenrec'
+    }
+    if (save.df) {
+      assign(df.key, df, envir=.GlobalEnv)
+    }
   }
-  df <- get(df.key, envir=.GlobalEnv)
+  if (save.df) {
+    df <- get(df.key, envir=.GlobalEnv)
+  }
 
   #print(df)
 

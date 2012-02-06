@@ -25,6 +25,10 @@ color.column <- function(xt, column,
   limits=range(xt[, column], na.rm=T), 
   low='white', 
   color.bg=T,
+<<<<<<< HEAD:scripts/xtable_utils.R
+=======
+#  high=rgb(0.3, 0.3, 1),
+>>>>>>> 8cba88b21ab3dcde5a648461ac52cb6440c40350:scripts/xtable_utils.R
   high=rgb(0.6, 0.6, 1),
   skip.coloring=F,
   log = F,
