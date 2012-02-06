@@ -34,12 +34,16 @@ sub fetch_input {
 
   $self->create_table_from_params( $self->compara_dba, 'genes',
                                    $self->_genes_table_structure );
+
+  $self->create_table_from_params( $self->compara_dba, 'trees',
+                                   $self->_trees_table_structure );
+
 }
 
 sub run {
   my $self = shift;
 
-  $self->param('store_stuff', 1);
+  $self->param('store_stuff', 0);
 
   my $tree = $self->get_tree;
   my $member = $self->_get_ref_member($tree);
@@ -87,8 +91,10 @@ sub run {
   my ($aln) = $self->_get_aln($tree, $member, 1);
   $self->save_hash;
 
-  my $tree_cpy = Bio::EnsEMBL::Compara::TreeUtils->copy_tree($tree);
-  ($tree, $aln) = $self->_get_clade($tree_cpy, $aln, 'mammals');
+  my $tree_orig = Bio::EnsEMBL::Compara::TreeUtils->copy_tree($tree);
+  my $orig_newick = Bio::EnsEMBL::Compara::TreeUtils->to_newick($tree_orig);
+
+  ($tree, $aln) = $self->_get_clade($tree_orig, $aln, 'mammals');
 
   if (!defined $tree || scalar($tree->leaves) < 2) {
     my $leaf_count = scalar($tree->leaves);
@@ -98,11 +104,20 @@ sub run {
   $self->param('dup_species_list',$self->species_with_dups($tree));
   $self->param('dup_species_count',$self->duplication_count($tree));
 
+  my $tree_w_paralogs = Bio::EnsEMBL::Compara::TreeUtils->copy_tree($tree);
+  my $w_paralogs_newick = Bio::EnsEMBL::Compara::TreeUtils->to_newick($tree_w_paralogs);
   ($tree, $aln) = $self->_remove_paralogs($tree, $aln, 1);
   # Get the ref member again now that paralogs are removed.
   $member = $self->_get_ref_member($tree);
   $self->param('member', $member);
   $self->save_hash;
+
+  $self->param('store_stuff', 1);
+  my $newick = Bio::EnsEMBL::Compara::TreeUtils->to_newick($tree);
+  $self->_save_trees($orig_newick, $w_paralogs_newick, $newick);
+  $self->param('store_stuff', 0);
+
+  return;
 
   $self->dbc->disconnect_when_inactive(1);
 
@@ -177,6 +192,21 @@ sub _remove_paralogs {
   my $store_in_table = shift;
 
   return $self->remove_paralogs($tree, $aln, $store_in_table);
+}
+
+sub _save_trees {
+  my $self = shift;
+  my $tree_orig = shift;
+  my $tree_w_paralogs = shift;
+  my $tree = shift;
+
+  my $params = $self->replace($self->params, {
+    tree_orig => $tree_orig,
+    tree_w_paralogs => $tree_w_paralogs,
+    tree => $tree
+  });
+
+  $self->store_params_in_table($self->dbc, 'trees', $params);
 }
 
 sub _align {
@@ -705,6 +735,21 @@ sub _sites_table_structure {
     unique_keys => 'data_id,parameter_set_id,aln_position'
   };
 
+  return $structure;
+}
+
+sub _trees_table_structure {
+  my $self = shift;
+
+  my $structure = {
+    # IDs.
+    data_id => 'int',
+    job_id => 'int',
+    tree_orig => 'string',
+    tree_w_paralogs => 'string',
+    tree => 'string',
+    unique_keys => 'data_id'
+  };
   return $structure;
 }
 

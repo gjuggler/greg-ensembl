@@ -546,6 +546,14 @@ get.taxid.df <- function() {
   df <- dbGetQuery(con, cmd)
   dbDisconnect(con)
 
+  # Translate spaces into underscores for species common names...
+  df$name <- gsub(' ', '_', df$name)
+
+  if (any(df$name == 'Lesser hedgehog tenrec')) {
+    df[df$name == 'Lesser hedgehog tenrec', 'name'] <- 'Tenrec'
+  }
+
+  df <- df[order(df$name),]   
   df  
 }
 
@@ -572,9 +580,6 @@ taxid.to.alias <- function(taxids, binomials=F, include.internals=F, save.df=T) 
     }
     df <- dbGetQuery(con, cmd)
     dbDisconnect(con)
-    if (any(df$name == 'Lesser hedgehog tenrec')) {
-      df[df$name == 'Lesser hedgehog tenrec', 'name'] <- 'Tenrec'
-    }
     if (save.df) {
       assign(df.key, df, envir=.GlobalEnv)
     }

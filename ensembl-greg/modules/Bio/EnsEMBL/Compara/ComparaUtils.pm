@@ -154,16 +154,16 @@ sub load_registry {
         -host => 'ens-livemirror',
         -user => 'ensadmin',
         -pass => 'ensembl',
-        #-verbose => 1,
+        -verbose => 1,
       },
-#      {
-#        -host => 'ensdb-archive',
-#        -port => 5304,
-#        -user => 'ensro',
-#        -user => 'ensadmin',
-#        -pass => 'ensembl',
-#        #-verbose => 1
-#      }
+      {
+        -host => 'ensdb-archive',
+        -port => 5304,
+        -user => 'ensro',
+        -user => 'ensadmin',
+        -pass => 'ensembl',
+        -verbose => 1
+      }
       );
     Bio::EnsEMBL::Registry->set_disconnect_when_inactive(1);
     my $compara_dba = Bio::EnsEMBL::Registry->get_DBAdaptor( 'multi', 'compara' );
@@ -1388,10 +1388,12 @@ sub fix_genome_polytomies {
   };
 
   # Fix homo/pan/gor.
-  $class->_fix_multifurcation($tree, 'Homininae', [ 'Homo sapiens', 'Pan troglodytes' ], $taxid_hash );
+  $new_node = $class->_fix_multifurcation($tree, 'Homininae', [ 'Homo sapiens', 'Pan troglodytes' ], $taxid_hash );
+  $new_node->name('human-chimp');
 
   # Fix squirrel and rodents.
-  $class->_fix_multifurcation( $tree, 'Sciurognathi', [ 'Murinae', 'Dipodomys ordii' ], $taxid_hash );  
+  $new_node = $class->_fix_multifurcation( $tree, 'Sciurognathi', [ 'Murinae', 'Dipodomys ordii' ], $taxid_hash );  
+  $new_node->name('squirrel-rodents');
 
   ### Fix the laurasiatheria mess.
   # Fix cow & dolphin.
@@ -1403,19 +1405,25 @@ sub fix_genome_polytomies {
   $new_node = $class->_fix_multifurcation( $tree, 'Laurasiatheria', [ 'Chiroptera', 'Carnivora' ], $taxid_hash );  
   $new_node->name('bats-carnivores');
   $new_node = $class->_fix_multifurcation( $tree, 'Laurasiatheria', [ 'horse-et-al', 'bats-carnivores' ], $taxid_hash );    
+  $new_node->name('horse-bats');
   # Fix cow & dolphin.
-  $class->_fix_multifurcation( $tree, 'Cetartiodactyla', [ 'cow-dolphin', 'Vicugna pacos' ], $taxid_hash );  
+  $new_node = $class->_fix_multifurcation( $tree, 'Cetartiodactyla', [ 'cow-dolphin', 'Vicugna pacos' ], $taxid_hash );  
+  $new_node->name('cow-dolphin-alpaca');
 
   # Fix Afrotheria.
-  $class->_fix_multifurcation( $tree, 'Afrotheria', [ 'Procavia capensis', 'Loxodonta africana' ], $taxid_hash );
+  $new_node = $class->_fix_multifurcation( $tree, 'Afrotheria', [ 'Procavia capensis', 'Loxodonta africana' ], $taxid_hash );
+  $new_node->name('procav-loxod');
 
   # Atlantogenata following http://www.pnas.org/content/106/13/5235.full
   $class->_fix_multifurcation( $tree, 'Eutheria', [ 'Afrotheria', 'Xenarthra' ], $taxid_hash );
   $tree->find_node_by_name('Afrotheria')->parent->name('Atlantogenata');
 
   # Fix Euarchontoglires, Laurasiatheria, Afrotheria.
-  $class->_fix_multifurcation( $tree, 'Eutheria', [ 'Laurasiatheria', 'Euarchontoglires' ], $taxid_hash );
-  $class->_fix_multifurcation( $tree, 'Euarchontoglires', [ 'Primates', 'Tupaia belangeri'], $taxid_hash );
+  $new_node = $class->_fix_multifurcation( $tree, 'Eutheria', [ 'Laurasiatheria', 'Euarchontoglires' ], $taxid_hash );
+  $new_node->name('laur-euarch');
+
+  $new_node = $class->_fix_multifurcation( $tree, 'Euarchontoglires', [ 'Primates', 'Tupaia belangeri'], $taxid_hash );
+  $new_node->name('primate-tupaia');
 
   my $n = $tree->find_node_by_name('Fungi/Metazoa group');
   $n->name('Eukaryota') if ($n);
@@ -1461,8 +1469,8 @@ sub _fix_multifurcation {
     $new_group->add_child($node);
   }
 
-  #print $new_group->name."  ". $new_group->taxon_id."\n";
-  #print "New group: ". $new_group->newick_format . "\n";
+  print $new_group->name."  ". $new_group->taxon_id."\n";
+  print "New group: ". $new_group->newick_format . "\n";
   return $new_group;
 }
 
