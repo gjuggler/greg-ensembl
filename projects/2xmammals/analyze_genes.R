@@ -3785,6 +3785,7 @@ thesis.tables <- function() {
   tab$V12 <- NULL # 
 
   tab$V11 <- gsub(', ', paste(' \\\\', 'newline ',sep=''), tab$V11)
+  tab$V11 <- paste('\\tiny{', tab$V11, '}', sep='')
 #  tab$V11 <- paste('\\singlespacing{', tab$V11, '}', sep='')
   #print(tab$V11)
 
@@ -3848,13 +3849,14 @@ thesis.tables <- function() {
   xt <- color.rows(xt, rows=which(!bs.sig.adj), columns='V13', color.bg=F, na.string='')
 
   print.latex(xt, file=scratch.f("gorilla_top_genes.txt"), na.string='asdf') 
-
   
   tab <- read.csv(file="gorilla_dnds.csv", header=F, stringsAsFactors=F)
   print(tab)
   tab$V4 <- sprintf("%.1e",tab$V4)
   tab$V6 <- sprintf("%.1e",tab$V6)
+  print(tab)
   xt <- xtable(tab)
+  attr(xt, 'digits') <- c(0, 2, 2, 4, 2, 4, 2, 2)
   xt <- color.columns(xt, columns=c('V2', 'V3', 'V5', 'V7'), na.string='')
   print.latex(xt, file=scratch.f("gorilla_dnds.txt"), na.string='')
   

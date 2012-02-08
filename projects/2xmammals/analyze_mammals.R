@@ -94,11 +94,13 @@ get.genes.split <- function() {
 
     pset.df <- pset.df()
     clades <- pset.df$char
+    psets <- pset.df$pset_id
 
     out.df <- data.frame()
     
     for (i in 1:length(clades)) {
       clade <- clades[i]
+      pset <- psets[i]
       bl.s <- paste(clade, '_slr_total_length', sep='')
       sites.s <- paste(clade, '_slr_sites', sep='')
       dnds.s <- paste(clade, '_slr_dnds', sep='')
@@ -108,7 +110,7 @@ get.genes.split <- function() {
       cum <- ecdf.f(genes[, dnds.s])
 
       cur.genes <- genes
-      cur.genes$pset <- i
+      cur.genes$pset <- pset
       cur.genes$clade <- clade
       cur.genes$n_leaves <- genes[, leaves.s]
       cur.genes$dnds <- genes[, dnds.s]
@@ -267,10 +269,9 @@ bsub.function <- function(fn_name, queue='normal', mem=3, extra.args='', jobarra
 }
 
 bsub.plot.pvals <- function(...) {
-   bsub.function('plot_pvals', mem=8, extra.args='1')
-   bsub.function('plot_pvals', mem=8, extra.args='2')
-   bsub.function('plot_pvals', mem=8, extra.args='3')
-   bsub.function('plot_pvals', mem=8, extra.args='6')
+  for (i in 1:10) {
+    bsub.function('plot_pvals', mem=10, extra.args=as.character(i))
+  }
 }
 
 bsub.eduard <- function() {
@@ -935,56 +936,81 @@ parallel.sites <- function(filter, pset.a, pset.b, test=F) {
 
 
 plot.pval.example <- function(pset=1, test=T) {
-  sites <- get.pset.sites(pset, filter='default', test=test)
+  sites <- get.pset.sites(pset, filter='stringent', test=test)
   sites <- subset(sites, select=c('omega', 'pval', 'pos.pval'))
 
-
+  frmt <- function(x, ...) {
+    sprintf("%.1e", x)
+  }
 
   n.cols <- 4
-  bw <- 0.02
+  bw <- 0.025
 
   out.f <- scratch.f(sprintf("pval_example_%d.pdf", pset))
   pdf(file=out.f, width=3 * n.cols, height=2.5)
   vplayout(n.cols, 1)
 
-  p <- ggplot(sites, aes(x=pval, y=..density..))
+#  p <- ggplot(sites, aes(x=pval, y=..count..))
+#  p <- p + geom_histogram(binwidth=bw)
+#  p <- p + scale_x_continuous("Two-tailed")
+#  p <- p + scale_y_continuous(formatter=frmt)
+#  p <- generic.opts(p)
+#  p <- p + opts(
+#    axis.text.y = theme_blank(),
+#    axis.text.x = theme_blank(),
+#    axis.ticks = theme_blank(),
+#    axis.title.y = theme_blank(),
+#    axis.title.x = theme_blank()  
+#  )
+#  print.ggplot(p, vp=subplot(1, 1))
+
+  sub.neg <- subset(sites, omega < 1)
+  p <- ggplot(sub.neg, aes(x=pval, y=..count..))
   p <- p + geom_histogram(binwidth=bw)
-  p <- p + scale_x_continuous("Two-tailed")
+  p <- p + scale_x_continuous("Two-tailed (w < 1)")
+  p <- p + scale_y_continuous(formatter=frmt)
   p <- generic.opts(p)
   p <- p + opts(
-    axis.title.y = theme_blank()  
+    axis.text.y = theme_blank(),
+    axis.text.x = theme_blank(),
+    axis.ticks = theme_blank(),
+    axis.title.y = theme_blank(),
+    axis.title.x = theme_blank()  
   )
   print.ggplot(p, vp=subplot(1, 1))
 
-  sub.neg <- subset(sites, omega < 1)
-  p <- ggplot(sub.neg, aes(x=pval, y=..density..))
-  p <- p + geom_histogram(binwidth=bw)
-  p <- p + scale_x_continuous("Two-tailed (w < 1)")
-  p <- generic.opts(p)
-  p <- p + opts(
-    axis.title.y = theme_blank()
-  )
-  print.ggplot(p, vp=subplot(2, 1))
+  y.sq <- seq(from=0, to=2e4, by=.5e4)
 
   sub.pos <- subset(sites, omega > 1)
-  p <- ggplot(sub.pos, aes(x=pval, y=..density..))
+  p <- ggplot(sub.pos, aes(x=pval, y=..count..))
   p <- p + geom_histogram(binwidth=bw)
   p <- p + scale_x_continuous("Two-tailed (w > 1)")
+  p <- p + scale_y_continuous(formatter=frmt, breaks=y.sq)
+  p <- p + coord_cartesian(ylim=c(0, 2e4))
   p <- generic.opts(p)
   p <- p + opts(
-    axis.title.y = theme_blank()
+    axis.text.y = theme_blank(),
+    axis.text.x = theme_blank(),
+    axis.ticks = theme_blank(),
+    axis.title.y = theme_blank(),
+    axis.title.x = theme_blank()  
   )
-  print.ggplot(p, vp=subplot(3, 1))
+  print.ggplot(p, vp=subplot(2:3, 1))
 
-  n.at.first <- nrow(subset(sites, pos.pval <= bw))
-  print(n.at.first)
+  y.sq <- seq(from=0, to=4e4, by=1e4)
 
-  p <- ggplot(sites, aes_string(x="pos.pval", y="..density"))
+  p <- ggplot(sites, aes(x=pos.pval, y=..count..))
   p <- p + geom_histogram(binwidth=bw)
   p <- p + scale_x_continuous("One-tailed")
+  p <- p + scale_y_continuous(formatter=frmt, breaks=y.sq)
+  p <- p + coord_cartesian(ylim=c(0, 4e4))
   p <- generic.opts(p)
   p <- p + opts(
-    axis.title.y = theme_blank()  
+    axis.text.y = theme_blank(),
+    axis.text.x = theme_blank(),
+    axis.ticks = theme_blank(),
+    axis.title.y = theme_blank(),
+    axis.title.x = theme_blank()  
   )
   print.ggplot(p, vp=subplot(4, 1))
 
@@ -4402,22 +4428,33 @@ write.subsets.table <- function() {
   })
 
   genes.df <- get.genes.split()
-  pset.mpls <- dlply(genes.df, .(pset), function(x) {
-    median(x$mpl, na.rm=T)
+  #print(head(genes.df))
+
+  pset.mpls <- ddply(genes.df, .(pset), function(x) {
+    data.frame(
+      slrMPL=median(x$mpl, na.rm=T)
+    )
   })
-  pset.bls <- dlply(genes.df, .(pset), function(x) {
-    median(x$bl, na.rm=T)
+  pset.bls <- ddply(genes.df, .(pset), function(x) {
+    data.frame(
+      slrTotal=median(x$bl, na.rm=T)
+    )
   })
 
   out.df <- data.frame(
+    pset = as.integer(names(taxids.list)),
     'Name' = pset.to.alias(names(taxids.list)),
     'Count' = unlist(counts),
-    'Species' = paste("\\tiny{", unlist(aliases), "}", sep=""),
-    'slrMPL' = 0,
-    'slrTotal' = 0
+    'Species' = paste("\\tiny{", unlist(aliases), "}", sep="")
   )
-  out.df[names(pset.mpls), 'slrMPL'] <- unlist(pset.mpls)
-  out.df[names(pset.bls), 'slrTotal'] <- unlist(pset.bls)
+  out.df <- merge(out.df, pset.mpls)
+  out.df <- merge(out.df, pset.bls)
+
+  out.df$pset <- NULL
+
+  out.df <- out.df[order(out.df$slrTotal),]
+
+  print(out.df)
 
   xt <- xtable(out.df)
   xt <- color.column(xt, 'slrMPL')
