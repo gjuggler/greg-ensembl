@@ -1236,4 +1236,22 @@ sub transfer_branchlengths {
   }
 }
 
+sub transfer_annotations {
+  my $class = shift;
+  my $source = shift;
+  my $target = shift;
+
+  my @s_nodes = $source->nodes;
+  my @t_nodes = $target->nodes;
+  foreach my $t_node (@t_nodes) {
+    # Find the equivalent source node.
+    my ($s_node) = grep {$_->enclosed_leaves_string eq $t_node->enclosed_leaves_string} @s_nodes;
+    die("No source node!") unless (defined $s_node);
+
+    my $source_hash = $s_node->get_tagvalue_hash;
+    $t_node->apply_tagvalue_hash($source_hash);
+  }
+}
+
+
 1; # Keep perl happy.

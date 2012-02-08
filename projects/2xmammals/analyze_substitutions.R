@@ -146,20 +146,17 @@ nsyn.plot <- function(pset.id=1, test=F, clean=F) {
   print(out.df)
 
   out.df <- ddply(subs.sites, .(site_id), function(x) {
-    n.nsyn <- sum(x$mut_nsyn)
-    n.syn <- sum(x$mut_syn)
-    nsyn.sites <- subset(x, mut_nsyn == 1)
-    nsyn.taxa <- paste(sort(unique(nsyn.sites$taxon_alias)), collapse=', ')
-    n.nsyn.taxa <- length(unique(nsyn.sites$taxon_id))
+    x <- subset(x, mut_nsyn == 1)
+    nsyn.taxa <- paste(sort(unique(x$taxon_alias)), collapse=', ')
+    n.nsyn.taxa <- length(unique(x$taxon_id))
     data.frame(
-      nsyn = n.nsyn,
-      syn = n.syn,
       nsyn.taxa = nsyn.taxa,
-      n.nsyn.taxa = n.nsyn.taxa
+      n.nsyn.taxa = n.nsyn.taxa,
+      stringsAsFactors=F
     )
   })
-  print(table(out.df$nsyn))
-  print(table(out.df$nsyn.taxa))
+  print(tail(sort(table(out.df$nsyn.taxa)), n=20))
+  print(table(out.df$n.nsyn.taxa))
 
   xx <- subset(subs.sites, mut_nsyn == 1)
   unique.positions <- as.factor(xx$site_id)

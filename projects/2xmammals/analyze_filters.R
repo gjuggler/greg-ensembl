@@ -588,7 +588,46 @@ taxid.to.alias <- function(taxids, binomials=F, include.internals=F, save.df=T) 
     df <- get(df.key, envir=.GlobalEnv)
   }
 
+  # Add some manual fix-ups.
+  tax.ids <- c(
+    '1000000',
+    '1000001',
+    '1000002',
+    '1000003',
+    '1000004',
+    '1000005',
+    '1000006',
+    '1000007',
+    '1000008',
+    '1000009',
+    '1000010'
+  )
+  tax.lbls <- c(
+    'Human/Chimp ancestor',
+    'Squirrel/Rodent ancestor',
+    'Cow/Dolphin ancestor',
+    'Horse/etc ancestor',
+    'Bat/Carnivore ancestor',
+    'Horse/Bat ancestor',
+    'Cow/Dolphin/Alpaca ancestor',
+    'Procavia/Loxodontia ancestor',
+    'Atlantogenata',
+    'Laurasia/Euarchontoglires ancestor',
+    'Primate/Tupaia ancestor'
+    )
+  df <- rbind.fill(df, data.frame(
+    taxon_id = tax.ids,
+    name = tax.lbls,
+    stringsAsFactors=F
+  ))
+  df <- rbind.fill(df, data.frame(
+    taxon_id = '314295',
+    name = 'Hominoidea',
+    stringsAsFactors=F
+  ))
+
   #print(df)
+  #print(taxids)
 
   if (missing(taxids)) {
     print("  Missing some taxids!")

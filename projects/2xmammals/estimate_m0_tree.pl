@@ -58,6 +58,11 @@ if (!-e $file_out || $clean) {
   }
   print "  running PAML $model...\n";
   my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
+  foreach my $node ($treeI->nodes) {
+    if (!$node->is_leaf) {
+      $node->name('');
+    }
+  }
   my $results = Bio::Greg::Codeml->branch_model_likelihood( $treeI, $aln, $phylo->worker_temp_directory, $params );
   $lines = $results->{lines};
 
@@ -93,7 +98,8 @@ foreach my $node (@nodes) {
   $node->remove_tag('id');
   $node->remove_tag('branch_label');
 }
-my $nhx_str = $codeml_tree->as_text('nhx');
+Bio::EnsEMBL::Compara::TreeUtils->transfer_annotations($codeml_tree, $treeI);
+my $nhx_str = $treeI->as_text('nhx');
 print $nhx_str."\n";
 
 open(OUT, '>', $nhx_out);

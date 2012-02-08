@@ -1,13 +1,8 @@
 uname  <- Sys.getenv("USER")
 if (uname == 'gj1') {
-  source("~/src/greg-ensembl/projects/2xmammals/aln.R")
-  source("~/src/greg-ensembl/projects/2xmammals/analyze_mammals.R")
-#  source("~/src/greg-ensembl/scripts/go_enrichments.R")
   source("~/src/greg-ensembl/scripts/liftOver.R")
   source("~/src/greg-ensembl/projects/phylosim/PhyloSimPlots.R")
 } else {
-  source("~/lib/greg-ensembl/projects/2xmammals/aln.R")
-  source("~/lib/greg-ensembl/projects/2xmammals/analyze_mammals.R")
 #  source("~/lib/greg-ensembl/scripts/go_enrichments.R")
   source("~/lib/greg-ensembl/scripts/liftOver.R")
   source("~/lib/greg-ensembl/projects/phylosim/PhyloSimPlots.R")

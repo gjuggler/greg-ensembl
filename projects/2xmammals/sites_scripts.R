@@ -1,5 +1,7 @@
 uname  <- Sys.getenv("USER")
 if (uname == 'gj1') {
+  source("~/src/greg-ensembl/projects/2xmammals/aln.R")
+  source("~/src/greg-ensembl/projects/2xmammals/tree.R")
   source("~/src/greg-ensembl/projects/2xmammals/analyze_mammals.R")
   source("~/src/greg-ensembl/projects/2xmammals/analyze_genes.R")
   source("~/src/greg-ensembl/projects/2xmammals/analyze_substitutions.R")
@@ -8,6 +10,8 @@ if (uname == 'gj1') {
   source("~/src/greg-ensembl/projects/2xmammals/calc_recomb.R")
   source("~/src/greg-ensembl/scripts/xtable_utils.R")
 } else {
+  source("~/lib/greg-ensembl/projects/2xmammals/aln.R")
+  source("~/lib/greg-ensembl/projects/2xmammals/tree.R")
   source("~/lib/greg-ensembl/projects/2xmammals/analyze_mammals.R")
   source("~/lib/greg-ensembl/projects/2xmammals/analyze_genes.R")
   source("~/lib/greg-ensembl/projects/2xmammals/analyze_substitutions.R")
@@ -118,12 +122,12 @@ concat_alns <- function(remove.paralogs, mask.clusters, mask.nongaps, n.jobs=1, 
   concat.alns(remove.paralogs, mask.clusters, mask.nongaps, n.jobs, subset.index)
 }
 
-estimate_m0_tree <- function(out.f, subdir, species.group, aln.in, n.codons, clean=F) {
-  estimate.m0.tree(out.f, subdir, species.group, aln.in, n.codons, clean)
+estimate_m0_tree <- function(out.f, subdir, pset, aln.in, n.codons, clean=F) {
+  estimate.m0.tree(out.f, subdir, pset, aln.in, n.codons, clean)
 }
 
-estimate_branch_tree <- function(out.f, subdir, species.group, aln.in, n.codons, clean=F) {
-  estimate.branch.tree(out.f, subdir, species.group, aln.in, n.codons, clean)
+estimate_branch_tree <- function(out.f, subdir, pset, aln.in, n.codons, clean=F) {
+  estimate.branch.tree(out.f, subdir, pset, aln.in, n.codons, clean)
 }
 
 collect_alns <- function(chr.s, test=F) {
