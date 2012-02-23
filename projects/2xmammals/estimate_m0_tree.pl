@@ -41,14 +41,14 @@ if (!-e $file_out || $clean) {
       fix_blength => 0,
       method => 1,
       cleandata => 0,
-      getSE => 1,
+      getSE => 0,
       RateAncestor => 0,
       Small_Diff => 1e-6
     };
   } else {
     $params = {
       model => 1,
-      fix_blength => 1,
+      fix_blength => 2,
       method => 1,
       cleandata => 0,
       RateAncestor => 0,

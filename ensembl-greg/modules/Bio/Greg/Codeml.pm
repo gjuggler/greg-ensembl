@@ -561,11 +561,16 @@ sub run {
     $self->error_string( join( '', @output ) );
     if ( ( grep { /error/io } @output ) || !$exit_status ) {
 
-      if (!$exit_status) {
-        $self->throw("Bad codeml exit status!\n". $self->error_string);
+      if ( ( grep { /wrong in minB/io } @output)) {
+        # See http://gsf.gc.ucdavis.edu/viewtopic.php?f=1&t=2438
+        print "Something wrong with method=1 / minB iteration... check output for sensible results!\n";
       } else {
-        $self->throw( "ERROR RUNNING CODEML:\n" . $self->error_string );
-        $rc = 0;
+        if (!$exit_status) {
+          $self->throw("Bad codeml exit status!\n". $self->error_string);
+        } else {
+          $self->throw( "ERROR RUNNING CODEML:\n" . $self->error_string );
+          $rc = 0;
+        }
       }
     }
 
@@ -912,6 +917,7 @@ sub parse_params {
   my $seen_lnl = 0;
   my $n_past_lnl = 0;
   my $seen_se = 0;
+  my $params_contain_branchlengths = 0;
 
   my @branches;
   my @branch_lengths;
@@ -928,22 +934,34 @@ sub parse_params {
       $n_past_lnl++;
     }
     if ($n_past_lnl == 1) {
-      my $str = strip($line);
-      @branches = split(/\s+/,$str);
+      $params_contain_branchlengths = 1 if ($line =~ m/ \d+\.\.\d+ /g);
+      if ($params_contain_branchlengths) {
+        #print "Params contain branchlengths!\n";
+        my $str = strip($line);
+        @branches = split(/\s+/,$str);
+      } else {
+        @branches = ();
+      }
     }
     if ($n_past_lnl == 2) {
       # We're in the parameters line.
+      #print "Branch lengths: $line\n";
       my @tokens = split(/\s+/,strip($line));
       my $divider = scalar(@branches) - 1;
-      @branch_lengths = @tokens[0..$divider];
+      if ($divider > 0) {
+        @branch_lengths = @tokens[0..$divider];
+      }
       my @param_tokens = @tokens[$divider+1..scalar(@tokens)-1];
       @params = @param_tokens;
     }
     if ($n_past_lnl == 4 && $seen_se) {
+      print "SEs: $line\n";
       # We're in the SEs line.
       my @tokens = split(/\s+/,strip($line));
       my $divider = scalar(@branches) - 1;
-      @branch_standard_errors = @tokens[0..$divider];
+      if ($divider > 0) {
+        @branch_standard_errors = @tokens[0..$divider];
+      }
       my @param_tokens = @tokens[$divider+1..scalar(@tokens)-1];
       @standard_errors = @param_tokens;
     }
@@ -953,14 +971,16 @@ sub parse_params {
   }
 
   my $branch_map;
-  for (my $i=0; $i < scalar(@branches); $i++) {
-    my $key = $branches[$i];
-    my $length = $branch_lengths[$i];
-    my $se = 0;
-    if ($seen_se) {
-      $se = $branch_standard_errors[$i];
+  if (scalar(@branches) > 0) {
+    for (my $i=0; $i < scalar(@branches); $i++) {
+      my $key = $branches[$i];
+      my $length = $branch_lengths[$i];
+      my $se = 0;
+      if ($seen_se) {
+        $se = $branch_standard_errors[$i];
+      }
+      $branch_map->{$key} = [$length,$se];
     }
-    $branch_map->{$key} = [$length,$se];
   }
 
   return {
@@ -1114,7 +1134,6 @@ sub parse_m0_dnds {
   my $line_arrayref = shift;
 
   my $param_objs = $class->parse_params($line_arrayref);
-  my $branches = $param_objs->{branches};
 
   my @params = @{$param_objs->{params}};
 
@@ -1141,7 +1160,7 @@ sub parse_branch_params {
   my @params_se = @{$param_objs->{params_se}};
 
   my $kappa = shift @params;
-  my $kappa_se = shift @params_se;
+  my $kappa_se = shift @params_se || 0;
 
   my $values;
   my $looking = 0;
@@ -1181,15 +1200,21 @@ sub parse_branch_params {
         my $parent_id = $parent;
 
         my $branch_label = $tokens[0];
-        my $branch_bl_arrayref = $branches->{$branch_label};
 
-        my ($bl,$se) = @{$branch_bl_arrayref};
+        #print "branch label: $branch_label\n";
+        my $bl = 0;
+        my $se = 0;
+        if (defined $branches) {
+          my $branch_bl_arrayref = $branches->{$branch_label};
+          #print "b_bl_arrayref: $branch_bl_arrayref\n";
+          ($bl,$se) = @{$branch_bl_arrayref};
+        }
 
         my $dnds_se = -1;
         if ($free_model) {
-          $dnds_se = shift @params_se if ($free_model);
+          $dnds_se = shift @params_se || 0;
         } else {
-          $dnds_se = @params_se[0];
+          $dnds_se = @params_se[0] || 0;
         }
 
         #	print "$child!!\n";
@@ -1517,7 +1542,7 @@ sub branch_model_likelihood {
     $final_params->{$param} = $params->{$param} if ( defined $params->{$param} );
   }
   $final_params->{verbose} = 1;
-  $final_params->{noisy} = 3;
+  $final_params->{noisy} = 1;
 
   my $lines_ref;
   eval {

@@ -130,6 +130,11 @@ estimate_branch_tree <- function(out.f, subdir, pset, aln.in, n.codons, clean=F)
   estimate.branch.tree(out.f, subdir, pset, aln.in, n.codons, clean)
 }
 
+estimate_both_trees <- function(out.f, subdir, pset, aln.in, n.codons, clean=F) {
+  estimate.both.trees(out.f, subdir, pset, aln.in, n.codons, clean)
+}
+
+
 collect_alns <- function(chr.s, test=F) {
   test <- as.logical(test)
   collect.alns(chr.s, test=test)
