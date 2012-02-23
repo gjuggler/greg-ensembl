@@ -381,7 +381,11 @@ get.species.tree.export <- function() {
 }
 
 get.species.tree <- function() {
-  f.con <- file("~/src/greg-ensembl/projects/orthologs/compara_63_taxids.nh")
+  f.con <- ifebi(
+    file("~/lib/greg-ensembl/projects/orthologs/compara_63_taxids.nh"),
+    file("~/src/greg-ensembl/projects/orthologs/compara_63_taxids.nh")
+  )
+    
   str <- readLines(con=f.con)
   close(f.con)
   tree <- read.nhx.tree(str)
