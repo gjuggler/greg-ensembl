@@ -1,0 +1,180 @@
+No. Accession Gene Name Chr Description PA PH PC PM Dup
+1 AB126077 KRTAP5-8 11 keratin associated protein 5-8 6.2e-16 1.0e+00 5.0e-01 9.7e-21 !
+2 NM_006669 LILRB1 19 leukocyte immunoglobulin-like receptor 7.2e-14 4.7e-14 1.9e-05 1.4e-01 !
+3 NM_001942 DSG1 18 desmoglein 1 preproprotein 1.1e-10 8.5e-02 1.0e+00 1.5e-03
+4 NM_173523 MAGEB6 X melanoma antigen family B, 6 5.3e-08 1.5e-04 7.8e-18 1.0e+00 !
+5 NM_054032 MRGPRX4 11 G protein-coupled receptor MRGX4 5.6e-08 5.0e-01 1.0e+00 3.9e-09 !
+6 NM_000397 CYBB X cytochrome b-245, beta polypeptide 1.5e-07 1.0e+00 4.6e-01 1.6e-09
+7 NM_001911 CTSG 14 cathepsin G preproprotein 1.5e-07 4.9e-01 1.0e+00 2.5e-07
+8 NM_153264 FLJ35880 3 hypothetical protein LOC256076 1.7e-07 1.1e-02 5.0e-01 1.6e-04
+9 NM_001013734 LOC442247 6 hypothetical protein LOC442247 3.8e-07 5.6e-02 5.4e-03 6.7e-03
+10 NM_000735 CGA 6 glycoprotein hormones, alpha polypeptide 1.2e-06 1.0e+00 1.8e-03 8.8e-06
+11 NM_001012709 KRTAP5-4 11 keratin associated protein 5-4 2.7e-06 5.0e-01 1.2e-01 7.5e-07 !
+12 NM_000201 ICAM1 19 intercellular adhesion molecule 1 precursor 2.7e-06 1.2e-03 4.5e-01 1.2e-03
+13 NM_001024667 - 1 - 4.5e-06 1.0e+00 3.8e-02 9.3e-07
+14 NM_138363 CCDC45 17 coiled-coil domain containing 45 4.9e-06 3.8e-01 1.0e+00 7.2e-03
+15 NM_001131 CRISP1 6 acidic epididymal glycoprotein-like 1 isoform 1 1.6e-05 5.0e-01 1.0e+00 5.7e-07
+16 NM_022074 FAM111A 11 hypothetical protein LOC63901 2.8e-05 2.9e-01 2.6e-01 1.9e-03
+17 NM_002287 LAIR1 19 leukocyte-associated immunoglobulin-like 3.1e-05 1.0e+00 1.0e+00 3.5e-06 !
+18 NM_153368 CX40.1 10 connexin40.1 4.9e-05 1.0e+00 1.0e+00 5.0e-01
+19 NM_153269 C20orf96 20 hypothetical protein LOC140680 5.5e-05 2.1e-03 3.9e-01 6.4e-02
+20 NM_004616 TSPAN8 12 transmembrane 4 superfamily member 3 5.6e-05 1.0e+00 1.0e+00 3.8e-05
+21 NM_018643 TREM1 6 triggering receptor expressed on myeloid cells 6.3e-05 1.0e+00 5.5e-02 6.7e-04
+22 NM_144682 SLFN13 17 schlafen family member 13 6.6e-05 5.0e-01 5.0e-01 6.3e-05 !
+23 NM_198947 FAM111B 11 hypothetical protein LOC374393 1.3e-04 1.0e+00 1.0e+00 3.9e-06
+24 AK123368 AK123368 4 Hypothetical protein FLJ41374. 1.3e-04 1.0e+00 1.0e+00 2.0e-05
+25 NM_000300 PLA2G2A 1 phospholipase A2, group IIA 1.3e-04 4.1e-01 1.0e+00 1.9e-03
+26 NM_207645 LOC399947 11 hypothetical protein LOC399947 1.3e-04 8.1e-06 1.0e+00 4.8e-01
+27 NM_000733 CD3E 11 CD3E antigen, epsilon polypeptide 1.5e-04 4.6e-01 4.6e-01 1.9e-06
+28 NM_001424 EMP2 16 epithelial membrane protein 2 1.5e-04 1.0e+00 5.0e-01 1.8e-04
+29 NM_001423 EMP1 12 epithelial membrane protein 1 1.5e-04 1.0e+00 1.0e+00 1.9e-04
+30 NM_001014975 CFH 1 complement factor H isoform b precursor 1.5e-04 1.0e+00 2.5e-01 1.3e-02
+31 NM_030766 BCL2L14 12 BCL2-like 14 isoform 2 1.5e-04 4.7e-01 4.6e-01 1.5e-02
+32 BC020840 TCRA 14 T-cell receptor alpha chain C region 1.5e-04 3.5e-02 5.0e-01 6.6e-02
+33 OTTHUMT00000004245 RP11-558F24.1-001 1 novel protein 1.5e-04 3.2e-02 1.1e-01 9.7e-02
+34 NM_002170 IFNA8 9 interferon, alpha 8 1.5e-04 7.3e-03 3.9e-03 1.2e-01
+35 NM_175900 C16orf54 16 hypothetical protein LOC283897 1.8e-04 5.0e-01 4.0e-01 3.6e-05
+36 NM_006464 TGOLN2 2 trans-golgi network protein 2 1.8e-04 4.9e-01 5.0e-01 5.3e-05
+37 NM_014317 PDSS1 10 prenyl diphosphate synthase, subunit 1 1.8e-04 3.6e-01 1.0e+00 1.7e-03
+38 NM_000518 HBB 11 beta globin 2.0e-04 5.0e-01 1.0e+00 4.8e-06
+39 NM_001647 APOD 3 apolipoprotein D precursor 2.0e-04 1.0e+00 1.0e+00 6.4e-04
+40 NM_004211 SLC6A5 11 solute carrier family 6 2.3e-04 3.1e-01 4.2e-01 5.0e-01
+41 NM_001024855 ZNF197 3 zinc ﬁnger protein 197 isoform 2 3.4e-04 1.8e-01 3.3e-01 1.0e+00
+42 BC017592 ZNRF4 19 R31343 1. 3.9e-04 1.8e-01 3.1e-02 7.0e-03
+43 NM_017446 MRPL39 21 mitochondrial ribosomal protein L39 isoform a 4.0e-04 6.1e-03 1.0e+00 1.3e-04
+44 OTTHUMT00000041603 RP11-98I9.1-002 6 - 4.0e-04 1.3e-02 1.0e+00 1.6e-01
+45 AB051446 AB051446 22 KIAA1659 protein (Fragment). 4.3e-04 2.4e-01 2.3e-01 2.4e-02
+46 NM_198076 FAM36A 1 family with sequence similarity 36, member A 4.3e-04 2.7e-01 1.7e-01 9.4e-02
+47 NM_002343 LTF 3 lactotransferrin 4.9e-04 1.0e+00 4.3e-01 1.9e-05
+48 NM_194300 CCDC129 7 coiled-coil domain containing 129 4.9e-04 4.8e-01 4.8e-01 3.0e-05
+49 NM_000097 CPOX 3 coproporphyrinogen oxidase 4.9e-04 4.0e-01 4.0e-01 2.2e-02
+50 NM_173352 KRT78 12 keratin 5b 5.0e-04 1.0e+00 4.9e-01 1.9e-06
+51 NM_001708 OPN1SW 7 opsin 1 (cone pigments), short-wave-sensitive 5.8e-04 1.0e+00 4.9e-01 2.3e-05
+52 NM_014508 APOBEC3C 22 apolipoprotein B mRNA editing enzyme, catalytic 5.9e-04 1.0e+00 5.0e-01 7.7e-04
+53 OTTHUMT00000058121 RP1-321E8.3-001 X novel protein similar to LOC347458 6.0e-04 1.0e+00 2.1e-01 2.2e-02 !
+54 NM_018224 C7orf44 7 hypothetical protein LOC55744 6.1e-04 3.8e-01 4.9e-01 2.7e-03
+55 NM_002078 GOLGA4 3 golgi autoantigen, golgin subfamily a, 4 6.6e-04 5.3e-03 1.0e+00 1.0e+00
+56 AB051518 AB051518 11 Hypothetical protein FLJ37899. 6.8e-04 3.7e-01 4.3e-01 1.5e-02
+57 NM_031950 KSP37 4 Ksp37 protein 6.8e-04 1.0e+00 1.0e+00 1.0e+00
+58 NM_001622 AHSG 3 alpha-2-HS-glycoprotein 6.9e-04 4.8e-01 1.0e+00 2.7e-04
+59 NM_148959 HUS1B 6 HUS1 checkpoint protein B 6.9e-04 3.6e-03 8.6e-02 5.0e-01
+60 NM_004552 NDUFS5 1 NADH dehydrogenase (ubiquinone) Fe-S protein 5 7.1e-04 1.0e+00 1.0e+00 1.1e-04
+61 NM_014220 TM4SF1 3 transmembrane 4 superfamily member 1 7.3e-04 1.5e-01 2.1e-01 1.0e+00
+62 AY172952 ADAM32 8 Metalloproteinase 12-like protein. 7.6e-04 1.0e+00 1.0e+00 1.4e-05
+63 NM_016286 DCXR 17 dicarbonyl/L-xylulose reductase 8.1e-04 2.9e-03 1.0e+00 2.6e-02
+64 NM_001245 SIGLEC6 19 sialic acid binding Ig-like lectin 6 isoform 1 8.3e-04 5.0e-01 1.0e+00 3.4e-03
+65 NM_005218 DEFB1 8 defensin, beta 1 preproprotein 8.3e-04 5.0e-01 5.0e-01 2.6e-02
+66 OTTHUMT00000055500 C9orf11-002 9 chromosome 9 open reading frame 11 8.3e-04 3.0e-01 4.7e-01 2.8e-01
+67 NM_015492 C15orf39 15 hypothetical protein LOC56905 8.3e-04 3.9e-01 3.9e-01 1.0e+00
+68 OTTHUMT00000096701 RP11-523K4.1-001 1 novel protein 8.8e-04 5.0e-01 1.0e+00 3.3e-04
+69 NM_032338 C12orf31 12 hypothetical protein LOC84298 8.9e-04 1.0e+00 1.0e+00 1.3e-04
+70 NM_004363 CEACAM5 19 carcinoembryonic antigen-related cell adhesion 1.0e-03 5.0e-01 1.0e+00 2.5e-06 !
+71 NM_001002254 DGAT2L4 X diacylglycerol O-acyltransferase 2-like 4 1.1e-03 1.0e+00 1.0e+00 2.8e-04
+72 NM_032149 C4orf17 4 hypothetical protein LOC84103 1.1e-03 3.4e-01 1.0e+00 3.4e-04
+73 NM_174901 FAM9C X family with sequence similarity 9, member C 1.1e-03 4.8e-01 3.5e-01 5.3e-04 !
+74 NM_001803 CD52 1 CD52 antigen 1.1e-03 1.0e+00 1.0e+00 2.1e-04
+75 NM_022782 MPHOSPH9 12 M-phase phosphoprotein 9 1.2e-03 5.0e-01 1.0e+00 8.8e-04
+76 NM_022366 TFB2M 1 transcription factor B2, mitochondrial 1.3e-03 4.9e-01 1.0e+00 3.1e-04
+77 NM_001295 CCR1 3 chemokine (C-C motif) receptor 1 1.5e-03 1.0e+00 1.0e+00 1.6e-05
+78 NM_002652 PIP 7 prolactin-induced protein 1.5e-03 1.0e+00 1.0e+00 6.9e-05
+79 NM_015324 KIAA0409 11 hypothetical protein LOC23378 1.6e-03 1.0e+00 1.0e+00 5.8e-05
+80 NM_000638 VTN 17 vitronectin precursor 2.1e-03 1.0e+00 1.0e+00 1.2e-04
+81 NM_002761 PRM1 16 protamine 1 2.3e-03 8.7e-03 2.5e-04 1.0e+00
+82 NM_005697 SCAMP2 15 secretory carrier membrane protein 2 2.3e-03 1.0e+00 1.0e+00 2.0e-04
+83 NM_030763 NSBP1 X nucleosomal binding protein 1 2.4e-03 4.4e-01 1.0e+00 1.7e-04
+84 NM_004131 GZMB 14 granzyme B precursor 2.9e-03 1.0e+00 1.0e+00 1.2e-03
+85 NM_145246 C10orf4 10 FRA10AC1 protein isoform FRA10AC1-1 2.9e-03 2.6e-01 1.0e+00 4.4e-04
+86 NM_018473 THEM2 6 thioesterase superfamily member 2 3.1e-03 5.0e-01 1.0e+00 4.0e-04
+87 NM_199289 NEK5 13 NIMA (never in mitosis gene a)-related kinase 5 3.1e-03 1.0e+00 1.0e+00 1.9e-04
+88 NM_003016 SFRS2 17 splicing factor, arginine/serine-rich 2 3.2e-03 1.0e+00 5.0e-01 6.6e-04
+89 NM_001025778 VRK3 19 vaccinia related kinase 3 isoform 2 3.2e-03 1.0e+00 1.0e+00 3.1e-04
+90 NM_002483 CEACAM6 19 carcinoembryonic antigen-related cell adhesion 3.3e-03 5.0e-01 5.0e-01 3.6e-04
+91 NM_002389 CD46 1 CD46 antigen, complement regulatory protein 3.6e-03 5.0e-01 1.0e+00 8.7e-05 !
+92 NM_014860 SUPT7L 2 SPTF-associated factor 65 gamma 3.7e-03 5.0e-01 5.0e-01 4.7e-04
+No. Accession Gene Name Chr Description PA PH PC PM Dup
+93 OTTHUMT00000147963 LMAN1-001 18 - 3.7e-03 1.0e+00 1.0e+00 2.9e-04
+94 NM_000927 ABCB1 7 ATP-binding cassette sub-family B member 1 3.8e-03 5.0e-01 5.0e-01 8.4e-04
+95 NM_004891 MRPL33 2 mitochondrial ribosomal protein L33 isoform a 3.8e-03 1.0e+00 1.0e+00 2.6e-04
+96 BC032347 BC032347 8 C8orf59 protein. 3.8e-03 1.0e+00 1.0e+00 9.5e-04
+97 NM_138371 FAM113B 12 hypothetical protein LOC91523 3.9e-03 5.0e-01 1.0e+00 3.6e-04
+98 NM_000396 CTSK 1 cathepsin K preproprotein 4.1e-03 1.0e+00 3.4e-01 5.1e-04
+99 NM_012128 CLCA4 1 calcium activated chloride channel 4 4.3e-03 4.8e-01 1.0e+00 1.4e-04
+100 NM_001285 CLCA1 1 chloride channel, calcium activated, family 4.4e-03 1.0e+00 1.0e+00 2.2e-05
+101 AK056484 AK056484 7 Hypothetical protein FLJ31922. 4.5e-03 1.0e+00 1.0e+00 1.2e-04
+102 NM_000783 CYP26A1 10 cytochrome P450, family 26, subfamily A 4.6e-03 1.0e+00 3.2e-01 2.9e-04
+103 NM_174941 CD163L1 12 scavenger receptor cysteine-rich type 1 protein 4.7e-03 4.9e-01 1.0e+00 6.4e-04
+104 NM_033049 MUC13 3 mucin 13, epithelial transmembrane 4.9e-03 1.0e+00 1.0e+00 5.1e-06
+105 NM_000584 IL8 4 interleukin 8 precursor 5.2e-03 1.0e+00 1.0e+00 1.0e-03
+106 OTTHUMT00000154594 BUCS1-002 16 butyryl Coenzyme A synthetase 1 5.4e-03 1.0e+00 1.0e+00 1.1e-03
+107 AK058196 CCDC13 3 Hypothetical protein FLJ25467. 5.6e-03 1.0e+00 4.9e-01 4.0e-04
+108 AK130385 AK130385 20 Hypothetical protein FLJ26875. 6.2e-03 1.0e+00 1.0e+00 1.4e-05
+109 NM_175625 RAB3IP 12 RAB3A interacting protein isoform beta 2 6.2e-03 5.0e-01 1.0e+00 1.3e-03
+110 NM_145276 ZNF563 19 zinc ﬁnger protein 563 6.5e-03 5.0e-01 1.0e+00 3.3e-04
+111 AF279900 MCM7 7 PNAS-146. 6.5e-03 1.0e+00 1.0e+00 7.5e-04
+112 NM_205838 LST1 6 leukocyte speciﬁc transcript 1 isoform 3 6.7e-03 4.9e-01 4.9e-01 9.6e-05
+113 NM_022377 ICAM4 19 intercellular adhesion molecule 4 isoform 2 7.1e-03 1.0e+00 5.0e-01 2.5e-04
+114 NM_030588 DHX9 1 - 7.6e-03 1.0e+00 1.0e+00 1.1e-03
+115 NM_018374 TMEM106B 7 hypothetical protein LOC54664 8.0e-03 1.0e+00 1.0e+00 3.9e-04
+116 NM_153226 TMEM20 10 transmembrane protein 20 8.0e-03 1.0e+00 1.0e+00 1.3e-05
+117 NM_024021 MS4A4A 11 membrane-spanning 4-domains, subfamily A, member 8.0e-03 1.0e+00 1.0e+00 4.2e-04
+118 NM_024576 OGFRL1 6 opioid growth factor receptor-like 1 8.2e-03 3.1e-01 7.3e-04 5.0e-01
+119 NM_031264 MUCDHL 11 mucin and cadherin-like isoform 3 9.0e-03 1.0e+00 1.0e+00 1.5e-05
+120 NM_214711 LOC401137 4 hypothetical protein LOC401137 9.4e-03 1.0e+00 1.0e+00 3.6e-04
+121 AK126014 AK126014 4 Hypothetical protein FLJ44026. 9.7e-03 5.0e-01 5.0e-01 4.9e-05
+122 AY358798 AY358798 13 FRSS1829. 9.9e-03 1.0e+00 1.0e+00 7.4e-04
+123 NM_013263 BRD7 16 bromodomain containing 7 1.0e-02 5.0e-01 1.0e+00 1.3e-03
+124 NM_005603 ATP8B1 18 ATPase, Class I, type 8B, member 1 1.0e-02 5.0e-01 4.9e-01 1.0e-03
+125 NM_021114 SPINK2 4 serine protease inhibitor, Kazal type 2 1.0e-02 1.0e+00 1.0e+00 1.0e-04
+126 NM_000574 CD55 1 decay accelerating factor for complement 1.1e-02 1.0e+00 1.0e+00 1.3e-03
+127 NM_000361 THBD 20 thrombomodulin precursor 1.1e-02 4.7e-01 5.0e-01 1.2e-03
+128 BC110910 RBM21 11 Hypothetical protein FLJ22267. 1.2e-02 1.0e+00 1.0e+00 1.2e-03
+129 NM_001008784 CD200R2 3 CD200 cell surface glycoprotein receptor isoform 1.2e-02 5.0e-01 4.9e-01 9.4e-04
+130 NM_032040 CCDC8 19 coiled-coil domain containing 8 1.2e-02 1.0e+00 4.8e-01 3.7e-04
+131 NM_178812 MTDH 8 LYRIC/3D3 1.3e-02 1.0e+00 1.0e+00 4.8e-05
+132 NM_021185 C19orf15 19 hypothetical protein LOC57828 1.3e-02 1.0e+00 4.9e-01 7.6e-04
+133 NM_058173 SBEM 12 small breast epithelial mucin precursor 1.4e-02 1.0e+00 1.0e+00 1.3e-04
+134 BX641066 KLF8 X Kruppel-like factor 8 1.5e-02 1.0e+00 1.0e+00 1.3e-03
+135 BC110814 SFI1 22 SFI1 protein. 1.5e-02 1.0e+00 1.0e+00 1.3e-03
+136 NM_001011548 MAGEA4 X melanoma antigen family A, 4 1.6e-02 1.0e+00 4.8e-01 3.7e-04
+137 NM_002711 PPP1R3A 7 protein phosphatase 1 glycogen-binding 1.7e-02 4.9e-01 4.9e-01 4.7e-04
+138 NM_133274 FCAR 19 Fc alpha receptor isoform f 1.8e-02 1.0e+00 1.0e+00 4.2e-04
+139 AF076494 IRF7 11 Putative collagen homolog protein-a. 2.0e-02 1.0e+00 5.2e-04 4.6e-01
+140 NM_018322 C6orf64 6 hypothetical protein LOC55776 2.0e-02 4.0e-01 4.3e-01 1.2e-04
+141 NM_078476 BTN2A1 6 butyrophilin, subfamily 2, member A1 isoform 2 2.0e-02 1.0e+00 1.0e+00 3.2e-05 !
+142 NM_002029 FPR1 19 formyl peptide receptor 1 2.1e-02 1.0e+00 1.0e+00 4.1e-04
+143 AK097725 PLCZ1 12 Hypothetical protein FLJ40406. 2.1e-02 1.0e+00 1.0e+00 5.2e-04
+144 NM_172241 CTAGE1 18 cutaneous T-cell lymphoma-associated antigen 1 2.1e-02 1.0e+00 1.0e+00 1.4e-04 !
+145 NM_024077 SECISBP2 9 SECIS binding protein 2 2.2e-02 1.0e+00 1.0e+00 9.1e-04
+146 OTTHUMT00000150637 CEACAM1-009 19 carcinoembryonic antigen-related cell adhesion
+147 BC003094 TBCD 17 TBCD protein. 2.5e-02 1.0e+00 1.0e+00 6.4e-04
+148 NM_174939 MGC39681 11 - 2.6e-02 1.0e+00 1.0e+00 2.8e-04
+149 NM_000873 ICAM2 17 intercellular adhesion molecule 2 precursor 2.6e-02 5.0e-01 1.0e+00 2.9e-04
+150 NM_004547 NDUFB4 3 NADH dehydrogenase (ubiquinone) 1 beta 2.7e-02 1.0e+00 1.0e+00 2.8e-05
+151 NM_019606 BCDIN3 7 bin3, bicoid-interacting 3 2.8e-02 1.0e+00 4.7e-04 1.0e+00
+152 NM_031271 TEX15 8 testis expressed sequence 15 2.9e-02 4.8e-01 5.0e-01 7.6e-04
+153 NM_032317 WBSCR18 7 Williams Beuren syndrome chromosome region 18 2.9e-02 1.0e+00 1.0e+00 6.5e-04
+154 NM_152358 C19orf41 19 hypothetical protein LOC126123 3.0e-02 1.0e+00 1.0e+00 7.9e-04
+155 NM_003771 KRT36 17 keratin 36 3.0e-02 3.9e-01 2.4e-04 1.0e+00
+156 NM_002994 CXCL5 4 chemokine (C-X-C motif) ligand 5 precursor 3.1e-02 1.0e+00 3.9e-01 3.5e-04 !
+157 OTTHUMT00000059995 AC073647.2-001 7 - 3.2e-02 1.0e+00 1.0e+00 1.0e-03
+158 NM_152453 TMCO5 15 transmembrane and coiled-coil domains 5 3.3e-02 6.5e-03 4.4e-04 1.0e+00
+159 NM_003064 SLPI 20 secretory leukocyte peptidase inhibitor 3.8e-02 1.0e+00 1.0e+00 1.1e-03
+160 NM_003708 RDH16 12 retinol dehydrogenase 16 4.5e-02 1.0e+00 1.0e+00 1.5e-04 !
+161 NM_003104 SORD 15 sorbitol dehydrogenase 4.5e-02 1.0e+00 1.0e+00 9.0e-04 !
+162 NM_152243 CDC42EP1 22 CDC42 effector protein 1 isoform a 4.7e-02 1.0e+00 5.0e-01 1.1e-03
+163 NM_015245 ANKS1A 6 ankyrin repeat and sterile alpha motif domain 5.2e-02 1.0e+00 4.6e-01 1.0e-03
+164 NM_007335 DLEC1 3 deleted in lung and esophageal cancer 1 isoform 5.6e-02 1.0e+00 7.9e-05 5.0e-01
+165 NM_138360 C14orf121 14 hypothetical protein LOC90668 6.0e-02 4.1e-01 7.7e-05 1.0e+00
+166 NM_003226 TFF3 21 trefoil factor 3 precursor 6.5e-02 1.0e+00 4.9e-01 1.1e-03
+167 NM_000073 CD3G 11 CD3G gamma precursor 7.4e-02 1.0e+00 1.0e+00 1.1e-05
+168 NM_006746 SCML1 X sex comb on midleg-like 1 isoform b 1.1e-01 2.9e-01 5.6e-09 1.0e+00
+169 NM_002030 FPRL2 19 formyl peptide receptor-like 2 1.1e-01 1.0e+00 1.0e+00 4.0e-04
+170 NM_053036 NPFFR2 4 G protein-coupled receptor 74 isoform 2 1.1e-01 1.0e+00 5.3e-04 5.0e-01
+171 NM_016519 AMBN 4 ameloblastin precursor 1.2e-01 1.0e+00 1.0e+00 1.0e-04
+172 NM_024516 C16orf53 16 hypothetical protein LOC79447 1.3e-01 1.0e+00 1.0e+00 2.5e-04
+173 NM_001145 ANG 14 angiogenin, ribonuclease, RNase A family, 5 1.3e-01 1.0e+00 1.0e+00 3.5e-04
+174 NM_152912 MTIF3 13 mitochondrial translational initiation factor 3 1.4e-01 1.0e+00 1.0e+00 6.1e-04
+175 NM_012089 ABCB10 1 ATP-binding cassette, sub-family B, member 10 1.5e-01 1.0e+00 1.0e+00 1.4e-04
+176 NM_001004315 FLJ46210 3 hypothetical protein LOC389152 1.7e-01 1.0e+00 5.2e-04 1.0e+00 !
+177 OTTHUMT00000152323 PYPAF6-003 19 - 2.4e-01 1.0e+00 1.0e+00 3.1e-06
+178 OTTHUMT00000047532 PARD3-007 10 par-3 partitioning defective 3 homolog (C.elegans) 1.0e+00 1.0e+00 4.7e-04 5.0e-01

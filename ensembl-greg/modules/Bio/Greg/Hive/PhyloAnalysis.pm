@@ -53,8 +53,9 @@ sub param_defaults {
 
     # SLR Parameters
     slr_gencode      => 'universal',
-    slr_aminof       => 1,             # Options: 0, 1, 2 (default 1)
-    slr_codonf       => 0,             # Options: 0, 1, 2 (default 0)
+    slr_aminof       => 0,             # Options: 0, 1, 2 (default 0)
+    slr_codonf       => 1,             # Options: 0, 1, 2 (default 0)
+    slr_ldiff       => '3.841459',
     slr_freqtype     => 0,             # Options: 0, 1, 2 (default 0)
     slr_skipsitewise => 0,             # Options: 0, 1 (default 0)
     slr_positive => 0, # Options: 0 (pos+negative), 1 (positive only)
@@ -599,7 +600,7 @@ sub run_sitewise_dNdS {
   my $p1 = $self->replace($self->param_defaults, $self->params);
   $params = $self->replace($p1, $params);
 
-  #$self->hash_print($params);
+  $self->hash_print($params);
 
   print "  running SLR...\n" if ($self->debug);
 
@@ -616,6 +617,7 @@ sub run_sitewise_dNdS {
   my $codonf       = $params->{slr_codonf};
   my $freqtype     = $params->{slr_freqtype};
   my $skipsitewise = $params->{slr_skipsitewise};
+  my $ldiff = $params->{slr_ldiff};
   my $icode = $params->{icode};
   my $positive = $params->{slr_positive};
 
@@ -671,6 +673,7 @@ sub run_sitewise_dNdS {
   print SLR "gencode\: $gencode\n";
   print SLR "aminof\: $aminof\n";
   print SLR "codonf\: $codonf\n";
+  print SLR "ldiff\: $ldiff\n";
   print SLR "freqtype\: $freqtype\n";
   print SLR "skipsitewise\: $skipsitewise\n";
   print SLR "positive_only\: ${positive}\n";

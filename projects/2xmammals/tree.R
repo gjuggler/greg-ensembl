@@ -1,6 +1,8 @@
+require(ape)
+
 # Extracts the NHX annotations from a tree and returns a list with the annotations and the
 # tree string (with NHX stuff removed).
-read.nhx.tree <- function(str) {
+tree.read.nhx <- function(str) {
   if (file.exists(str)) {
     # We're reading a file -- load the file into a string.
     str <- readLines(str)
@@ -12,7 +14,7 @@ read.nhx.tree <- function(str) {
   match.len <- attr(matches, 'match.length')
 
   if (match.len[1] == -1) {
-    return(read.tree(text=str))
+    return(tree.read(text=str))
   }
 
   match.pos <- match.pos + 1
@@ -36,7 +38,7 @@ read.nhx.tree <- function(str) {
   
   # Parse the Phylo object from the cleaned-up string.
   #print(str)
-  tree <- read.tree(text=str)
+  tree <- tree.read(text=str)
 
   #print(str(tree))
 
@@ -67,7 +69,7 @@ read.nhx.tree <- function(str) {
   for (i in 1:length(match.pos)) {
     cur.node <- node.with.label(tree, paste('zzz', i, 'zzz', sep=''))
     
-    leaf <- is.leaf(tree, cur.node)
+    leaf <- tree.is.leaf(tree, cur.node)
     real.node.name <- names(map.list)[i]
    if (leaf) {
       tree$tip.label[cur.node] <- real.node.name
@@ -81,14 +83,18 @@ read.nhx.tree <- function(str) {
   return(tree)
 }
 
+tree.write <- function(phylo, f) {
+  write.tree(phylo, f)
+}
+
 # Tries to get a tag from 
-get.tag <- function(phylo, node, tag) {
+tree.get.tag <- function(phylo, node, tag) {
   tag <- phylo$.tags[[node]][[tag]]
   if(is.null(tag)) {return('')}
   return(tag)
 }
 
-get.tags <- function(phylo, node) {
+tree.get.tags <- function(phylo, node) {
   tags <- phylo$.tags[[node]]
   if (is.null(tags)) {
     return(list())
@@ -118,15 +124,15 @@ tree.as.data.frame <- function(tree, order.cladewise=T) {
   tags <- c()
 
   tree.foreach(tree, function(phylo, node) {
-    cur.tags <- get.tags(phylo, node)
+    cur.tags <- tree.get.tags(phylo, node)
     tags <<- c(tags, names(cur.tags))
   })
 
   tree.df <- data.frame(stringsAsFactors=F)
   tree.foreach(tree, function(phylo, node) {
-    cur.tags <- get.tags(phylo, node)
-    cur.tags[['Label']] <- label.for.node(phylo, node)
-    cur.tags[['Depth']] <- leaves.beneath(phylo, node)
+    cur.tags <- tree.get.tags(phylo, node)
+    cur.tags[['Label']] <- tree.label.for.node(phylo, node)
+    cur.tags[['Depth']] <- tree.leaves.beneath(phylo, node)
     cur.tags[['id']] <- node
     tree.df <<- rbind.fill(tree.df, as.data.frame(cur.tags, stringsAsFactors=F))
   })
@@ -237,7 +243,7 @@ tree.build <- function(tp)
     obj
 }
 
-read.tree <- function(file = "", text = NULL, tree.names = NULL, skip = 0, remove.whitespace=F,
+tree.read <- function(file = "", text = NULL, tree.names = NULL, skip = 0, remove.whitespace=F,
     comment.char = "#", keep.multi = FALSE, ...)
 {
     unname <- function(treetext) {
@@ -309,22 +315,25 @@ read.tree <- function(file = "", text = NULL, tree.names = NULL, skip = 0, remov
     obj
 }
 
+tree.remove.node.labels <- function(phylo) {
+  phylo$node.label <- NULL
+  phylo
+}
 
-remove.branchlengths <- function(phylo, push.to.tips=F) {
-
+tree.remove.branchlengths <- function(phylo, push.to.tips=F) {
   n.leaves <- length(phylo$tip.label)
   n.nodes <- length(phylo$tip.label)+phylo$Nnode
 
   max.depth <- 0
   for (i in 1:n.nodes) {
-    depth <- depth.to.root(phylo, i)
+    depth <- tree.depth.to.root(phylo, i)
     max.depth <- max(depth, max.depth)
   }
   max.depth <- max.depth + 1
 
   for (i in 1:n.nodes) {
-    cur.depth <- depth.to.root(phylo,i)
-    parent.node <- parent.node(phylo, i)
+    cur.depth <- tree.depth.to.root(phylo,i)
+    parent.node <- tree.parent.node(phylo, i)
     edge.index <- which(phylo$edge[,2]==i)
 
     is.leaf <- i <= n.leaves
@@ -332,11 +341,11 @@ remove.branchlengths <- function(phylo, push.to.tips=F) {
     if (is.leaf) {
       cur.count <- 1
     } else {
-      cur.count <- leaves.beneath(phylo, i)
+      cur.count <- tree.leaves.beneath(phylo, i)
     }
 
     if (parent.node > -1) {
-      parent.count <- leaves.beneath(phylo, parent.node)
+      parent.count <- tree.leaves.beneath(phylo, parent.node)
       if (push.to.tips) {
         count.diff <- parent.count - cur.count
         #print(paste(i, count.diff))
@@ -344,7 +353,7 @@ remove.branchlengths <- function(phylo, push.to.tips=F) {
       } else {
         if (is.leaf) {
           # Branch length should equal diff. between depth to root and max depth.
-          cur.d <- depth.to.root(phylo, i)
+          cur.d <- tree.depth.to.root(phylo, i)
           phylo$edge.length[edge.index] <- max.depth - cur.d
         } else {
           phylo$edge.length[edge.index] <- 1
@@ -358,16 +367,16 @@ remove.branchlengths <- function(phylo, push.to.tips=F) {
   phylo
 }
 
-leaves.beneath <- function(phylo, node) {
+tree.leaves.beneath <- function(phylo, node) {
   if (is.leaf(phylo, node)) {
     return(1)
   }
-  cld <- extract.clade(phylo, node)
+  cld <- tree.extract.clade(phylo, node)
   length(cld$tip.label)
 }
 
 # The length from the root to the given node. Can be given either as a node ID or a tip label.
-depth.to.root <- function(phylo,node) {
+tree.depth.to.root <- function(phylo,node) {
   tip.index <- node
   if (is.character(node)) {
     tip.index <- which(phylo$tip.label==node)
@@ -387,12 +396,12 @@ depth.to.root <- function(phylo,node) {
 }
 
 # Finds the node with a given label.
-node.with.label <- function(tree,label) {
+tree.node.with.label <- function(tree,label) {
   all.labels <- c(tree$tip.label,tree$node.label)
   return(which(all.labels %in% label))
 }
 
-label.for.node <- function(tree, node) {
+tree.label.for.node <- function(tree, node) {
   if (node <= length(tree$tip.label)) {
     return(tree$tip.label[node])
   } else if (node <= (tree$Nnode + length(tree$tip.label))) {
@@ -402,7 +411,7 @@ label.for.node <- function(tree, node) {
 }
 
 # Extracts the length of the branch above the given node. Returns 0 if the node is root.
-branch.length <- function(phylo,node) {
+tree.branch.length <- function(phylo,node) {
   edge.index <- which(phylo$edge[,2]==node)
   bl <- phylo$edge.length[edge.index]
   if (length(bl)==0 || is.na(bl)) {
@@ -411,42 +420,52 @@ branch.length <- function(phylo,node) {
   return(bl)
 }
 
-scale.tree.by <- function(phylo, factor) {
+tree.scale.by <- function(phylo, factor) {
   phylo$edge.length <- phylo$edge.length * factor
   return(phylo)
 }
 
+tree.scale.to <- function(phylo, total.length) {
+  cur.total <- tree.total.branch.length(phylo)
+  scale.factor <- total.length / cur.total
+  tree.scale.by(phylo, scale.factor)
+}
+
+tree.total.branch.length <- function(phylo) {
+  sum(phylo$edge.length)
+}
+
 # The maximum root-to-tip length in the tree.
-max.length.to.root <- function(phylo) {
-  max.length <- max(lengths.to.root(phylo))
+tree.max.length.to.root <- function(phylo) {
+  max.length <- max(tree.lengths.to.root(phylo))
   if (is.na(max.length)) {
     max.depth <- 0
     for (i in 1:length(phylo$tip.label)) {
-      cur.depth <- depth.to.root(phylo,i)
-      max.depth <- max(max.depth,cur.depth)
+      cur.depth <- tree.depth.to.root(phylo,i)
+      max.depth <- max(max.depth, cur.depth)
     }
     return(max.depth)
   }
   return(max.length)
 }
 
-mean.path.length <- function(phylo) {
-  mean(lengths.to.root(phylo))
+tree.mean.path.length <- function(phylo) {
+  mean(tree.lengths.to.root(phylo))
 }
 
-lengths.to.root <- function(phylo) {
+tree.lengths.to.root <- function(phylo) {
   lengths <- c()
   if (length(phylo$tip.label) == 0) {
     return(NA)
   }
   for (i in 1:length(phylo$tip.label)) {
-    lengths[i] <- length.to.root(phylo,i)
+    lengths[i] <- tree.length.to.root(phylo,i)
   }
   lengths
 }
 
 # The length from the root to the given node. Can be given either as a node ID or a tip label.
-length.to.root <- function(phylo,node) {
+tree.length.to.root <- function(phylo,node) {
   tip.index <- node
   if (is.character(node)) {
     tip.index <- which(phylo$tip.label==node)
@@ -474,18 +493,23 @@ length.to.root <- function(phylo,node) {
   return(length)
 }
 
-extract.subtree <- function(tree, x) {
+tree.remove.leaf <- function(tree, x) {
+  tree <- drop.tip(tree, x)
+  tree
+}
+
+tree.extract.subtree <- function(tree, x) {
   not.in.set <- setdiff(tree$tip.label, x)
   tree <- drop.tip(tree, not.in.set)
   tree
 }
 
-is.leaf <- function(phylo,node) {
+tree.is.leaf <- function(phylo,node) {
   return(node <= length(phylo$tip.label))
 }
 
  # Extracts a list of child node IDs for the given node. Returns (-1,-1) if the node is a leaf.
-child.nodes <- function(phylo,node) {
+tree.child.nodes <- function(phylo,node) {
   edge.indices <- which(phylo$edge[,1]==node)
   nodes <- phylo$edge[edge.indices,2]
   if (length(nodes)==0) {
@@ -497,7 +521,7 @@ child.nodes <- function(phylo,node) {
 }
 
 # Extracts the parent node ID for the given node. Returns -1 if the node is root.
-parent.node <- function(phylo,node) {
+tree.parent.node <- function(phylo,node) {
   edge.index <- which(phylo$edge[,2]==node)
   node <- phylo$edge[edge.index,1]
   if (length(node)==0) {
@@ -527,4 +551,12 @@ sort.df.by.tree <- function(tree.df, tree) {
 
   df.order <- match(phylo.order, tree.df$id)
   tree.df[df.order, ]
+}
+
+is.tree <- function(x) {
+  if (!is.null(x$edge) && x$Nnode > 0) {
+    TRUE
+  } else {
+    FALSE
+  }
 }
