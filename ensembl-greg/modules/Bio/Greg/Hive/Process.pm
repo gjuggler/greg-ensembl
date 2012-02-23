@@ -4,9 +4,6 @@ use strict;
 use Bio::EnsEMBL::Utils::Argument;
 use Bio::EnsEMBL::Utils::Exception;
 
-use Data::UUID;
-use Data::Types qw(:all);
-
 use Digest::MD5 qw(md5_hex);
 
 use Bio::EnsEMBL::Hive;

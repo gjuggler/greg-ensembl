@@ -552,7 +552,7 @@ sub _run_r_with_sites {
     }
   }
   
-  my $ug = new Data::UUID;
+  my $ug = 1234;
   my $filename = $ug->create_str;
   my $temp_f = $self->worker_temp_directory . $filename . ".txt";
   open( OUT, ">$temp_f" );

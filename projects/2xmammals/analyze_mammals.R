@@ -2168,7 +2168,7 @@ fit.sites <- function(sites, distr, use, i=NA, boot.sample=T, write.to.table=T, 
 
   # Make sure the upper values are within a reasonable range.
   sites$left <- pmin(sites$left, big.value)
-  sites$right <- pmin(sites$right, big.value * 2)
+  sites$right <- pmin(sites$right, big.value * 1.1)
 
   sites$left <- pmax(sites$left, small.value)
   sites$right <- pmax(sites$right, small.value * 2)
@@ -2334,7 +2334,7 @@ fit.sites <- function(sites, distr, use, i=NA, boot.sample=T, write.to.table=T, 
       write.or.update(out.df, 'fitdistr', con, 'label')
       dbDisconnect(con)  
     } else {
-      print(out.df)
+      #print(out.df)
     }
   }
   out.df

@@ -75,6 +75,10 @@ aln.tx <- function(aln, n.char='X') {
   return(pep.aln)
 }
 
+aln.read <- function(file) {
+  read.dna(file, format='fasta')
+}
+
 s.aln.read <- function(file) {
   getTaxaNames <- function(x) {
     x <- sub("^['\" ]+", "", x)
@@ -350,4 +354,15 @@ Total nucs: %d\n',
 
 tree.all.labels <- function(tree) {
   c(tree$tip.label, tree$node.label)
+}
+
+aln.remove.phylosim.internals <- function(aln) {
+  all.seqs <- rownames(aln)
+  
+  node.seqs <- grepl("^Node \\d+$", all.seqs, perl=TRUE)
+  root.seqs <- grepl("^Root node \\d+$", all.seqs, perl=TRUE)
+
+  keep.seqs <- all.seqs[!(node.seqs | root.seqs)]
+  #print(keep.seqs)
+  aln.restrict.to.seqs(aln, keep.seqs)
 }
