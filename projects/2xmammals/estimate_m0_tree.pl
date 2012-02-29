@@ -14,15 +14,19 @@ my $nhx_out;
 my $file_out;
 my $aln_in;
 my $clean;
+my $get_se;
 GetOptions('tree=s' => \$tree_in,
            'model=s' => \$model,
            'tree_out=s' => \$tree_out,
            'nhx_out=s' => \$nhx_out,
            'file_out=s' => \$file_out,
            'aln=s' => \$aln_in,
-           'clean' => \$clean);
+           'clean' => \$clean,
+           'get_se' => \$get_se);
 
 print "$tree_in\n$model\n$tree_out\n$nhx_out\n$file_out\n$aln_in\n";
+
+$get_se = 1 if ($get_se);
 
 my $phylo = new Bio::Greg::Hive::PhyloAnalysis;
 my $tree = Bio::EnsEMBL::Compara::TreeUtils->from_file($tree_in);
@@ -52,7 +56,7 @@ if (!-e $file_out || $clean) {
       method => 1,
       cleandata => 0,
       RateAncestor => 0,
-      getSE => 1,
+      getSE => $get_se,
       Small_Diff => 1e-6
     };      
   }

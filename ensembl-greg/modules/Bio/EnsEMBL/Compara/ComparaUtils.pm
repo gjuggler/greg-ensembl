@@ -171,6 +171,13 @@ sub load_registry {
       printf " >> Using Compara DB at [%s/%s]\n",$compara_dba->dbc->host,$compara_dba->dbc->dbname;
     }
   } else {
+    Bio::EnsEMBL::Registry->load_registry_from_multiple_dbs(
+      {
+        -host => 'mysql-ensembl-mirror.ebi.ac.uk',
+        -user => 'anonymous',
+        -port => 4240,
+        -verbose => 0,
+      });
     #Bio::EnsEMBL::Registry->no_version_check(1);
   }
 }
@@ -1377,8 +1384,12 @@ sub fix_genome_polytomies {
   my $class = shift;
   my $tree  = shift;
 
-  # Fix up any multifurcations in the tree. For now we'll follow:
-  # http://mbe.oxfordjournals.org/cgi/content/full/26/6/1259/FIG6
+  # Fix up any multifurcations in the tree. Let's follow:
+  # http://mbe.oxfordjournals.org/content/29/2/457/F3.large.jpg
+  # and
+  # http://mbe.oxfordjournals.org/content/27/12/2804.full
+  # and
+  # http://dx.doi.org/doi:10.1371/journal.pone.0028199.g001
 
   my $node;
   my $new_node;
@@ -1399,6 +1410,7 @@ sub fix_genome_polytomies {
   # Fix cow & dolphin.
   $new_node = $class->_fix_multifurcation( $tree, 'Cetartiodactyla', [ 'Bos taurus', 'Tursiops truncatus' ], $taxid_hash );  
   $new_node->name('cow-dolphin');
+
   # Bring horse out next to the cetartiodactyla.
   $new_node = $class->_fix_multifurcation( $tree, 'Laurasiatheria', [ 'Cetartiodactyla', 'Equus caballus' ], $taxid_hash );  
   $new_node->name('horse-et-al');
@@ -1430,9 +1442,44 @@ sub fix_genome_polytomies {
   $n = $tree->find_node_by_name('Opisthokonta');
   $n->name('Eukaryota') if ($n);
 
-  #print $tree->ascii;
+  # Move horse from cetartiodactyla to just outside carnivores
+  $class->_splice_out_in($tree, 'Equus caballus', 'Carnivora', $taxid_hash);
+
+  # Move squirrel outside of mouse/rat/guinea pig clade
+  $class->_splice_out_in($tree, 'Spermophilus tridecemlineatus', 'Rodentia', $taxid_hash);
+
+  # Move alpaca outside of pig.
+  $class->_splice_out_in($tree, 'Vicugna pacos', 'Cetartiodactyla', $taxid_hash);
 
   return $tree;
+}
+
+sub _splice_out_in {
+  my $class = shift;
+  my $tree = shift;
+  my $remove_me = shift;
+  my $attach_above_me = shift;
+  my $taxid_hash = shift;
+
+  my $remove_node = $tree->find_node_by_name($remove_me);
+  my $attach_node = $tree->find_node_by_name($attach_above_me);
+
+  my $parent = $remove_node->parent;
+  my $gparent = $parent->parent;
+  my @children = @{ $parent->sorted_children };
+  my $other_child;
+  foreach my $child (@children) {
+    $other_child = $child if ($child != $remove_node);
+  }
+
+  $parent->disavow_parent;
+  $gparent->add_child($other_child);
+
+  my $attach_parent = $attach_node->parent;
+  $attach_node->disavow_parent;
+  $attach_parent->add_child($parent);
+  $parent->add_child($attach_node);
+
 }
 
 sub _fix_multifurcation {
@@ -1469,8 +1516,8 @@ sub _fix_multifurcation {
     $new_group->add_child($node);
   }
 
-  print $new_group->name."  ". $new_group->taxon_id."\n";
-  print "New group: ". $new_group->newick_format . "\n";
+  #print $new_group->name."  ". $new_group->taxon_id."\n";
+  #print "New group: ". $new_group->newick_format . "\n";
   return $new_group;
 }
 

@@ -249,14 +249,14 @@ bsub.pset.function <- function(fn_name, psets=NA, queue='normal', mem=4, extra.a
   }
 }
 
-bsub.function <- function(fn_name, queue='normal', mem=3, extra.args='', jobarray=NULL, jobarray_id=fn_name) {
+bsub.function <- function(fn_name, queue='normal', mem=3, extra.args='', jobarray=NULL, jobarray_id=fn_name, test=F) {
   array_s = ''
   if (!is.null(jobarray)) {
     array_s <- paste('-J ', jobarray_id, '[1-', jobarray, ']', sep='')
   }
   args_s <- paste(fn_name, ' ', extra.args, sep='')
   cmd <- ifebi(
-    sprintf('bsub -q research -M%d000 %s -o "/homes/greg/scratch/lsf_logs/%s_%%J_%%I.txt" "R-2.12.0 --vanilla --args %s < sites_scripts.R"',
+    sprintf('bsub -q research-rh6 -M%d000 %s -o "/homes/greg/scratch/lsf_logs/%s_%%J_%%I.txt" "R-2.14.0 --vanilla --args %s < sites_scripts.R"',
       mem, array_s, fn_name, args_s
     ),
     sprintf('bsub -q %s -R "select[mem>%d000] rusage[mem=%d000]" -M%d000000 %s -o "/nfs/users/nfs_g/gj1/scratch/lsf_logs/%s_%%J_%%I.txt" "/software/R-2.13.0/bin/R --vanilla --args %s < sites_scripts.R"',
@@ -265,7 +265,9 @@ bsub.function <- function(fn_name, queue='normal', mem=3, extra.args='', jobarra
     )
   )
   print(cmd)
-  system(cmd)
+  if (!test) {
+    system(cmd)
+  }
 }
 
 bsub.plot.pvals <- function(...) {

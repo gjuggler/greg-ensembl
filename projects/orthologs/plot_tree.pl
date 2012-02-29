@@ -25,7 +25,7 @@ my $taxid_map;
 map {$taxid_map->{$_->id} = $_->taxon_id if ($_->id ne '')} $tree->nodes;
 
 my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
-print $treeI->ascii;
+print $treeI->ascii(1,1,1);
 
 my @internal_includes = (
   'Primates', 'Glires', 'Laurasiatheria',
@@ -56,7 +56,7 @@ close(OUT);
 # Output a taxon_id tree.
 my $taxids = $treeI;
 $taxids->translate_ids($taxid_map);
-print $taxids->ascii;
+#print $taxids->ascii;
 my $tax_str = $taxids->root->as_text('newick');
 open(OUT, ">compara_63_taxids.nh");
 print OUT $tax_str."\n";
@@ -65,33 +65,24 @@ close(OUT);
 my $plot_tree_file = "compara_63.pdf";
 
 my $cmd = qq^
-library(phylosim);
-source("~/src/greg-ensembl/projects/phylosim/PhyloSimPlots.R")
+library(devtools)
+load_all("~/lib/greg-ensembl/projects/ggphylo", reset=TRUE)
+  phylo <- tree.read.nhx("compara_63_tree.nhx")
 
-  sim <- PhyloSim()
-  str <- readLines(con=file("compara_63_tree.nhx"))
-  phylo <- read.nhx.tree(str)
-
-  phylo <- remove.branchlengths(phylo)
+  phylo <- tree.scale.to(phylo, 1)
+  phylo <- tree.normalize.branchlengths(phylo, push.to.tips=F)
   phylo <- ladderize(phylo)
 
-  sim\$.phylo <- phylo
-  pdf(file="${plot_tree_file}", width=10, height=12)
-  xlab <- ""
-  obj <- plotTree(sim, tree.do.plot=F, color.by='low_coverage', tree.xlab=xlab, tree.xlim.expand=c(1, 2), line.width=1, include.internal.labels=T, internal.angle=15, internal.size=1, internal.color=rgb(.1, .1, .7))
-  p <- obj[['grob']]
+  pdf(file="${plot_tree_file}", width=8, height=12)
+  p <- ggphylo(phylo,
+    do.plot=F,
+    x.expand = c(0.5, 0.5),
+    internal.label.angle = 10,
+    line.alpha = 0.5,
+    line.color.by='low_coverage',
+    line.color.scale = scale_colour_gradient("Sequencing Coverage", low='black', high='red', breaks=c(0, 1), labels=c('High', 'Low'))
+  )
   p <- p + theme_bw()
-  p <- p + scale_colour_gradient("Sequencing Coverage",
-    low="black", high="red",
-    breaks=c(0, 1),
-    labels=c('High', 'Low')
-  )
-  p <- p + scale_y_continuous("")
-  p <- p + opts(
-    title="Ensembl Compara Species v63",
-    axis.text.x = theme_blank(),
-    axis.text.y = theme_blank()
-  )
   print(p)
   dev.off()
 ^;

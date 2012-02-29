@@ -917,6 +917,7 @@ sub parse_params {
   my $seen_lnl = 0;
   my $n_past_lnl = 0;
   my $seen_se = 0;
+  my $n_past_seen_se = 0;
   my $params_contain_branchlengths = 0;
 
   my @branches;
@@ -932,6 +933,9 @@ sub parse_params {
  
     if ($seen_lnl) {
       $n_past_lnl++;
+    }
+    if ($seen_se) {
+      $n_past_seen_se++;
     }
     if ($n_past_lnl == 1) {
       $params_contain_branchlengths = 1 if ($line =~ m/ \d+\.\.\d+ /g);
@@ -954,7 +958,7 @@ sub parse_params {
       my @param_tokens = @tokens[$divider+1..scalar(@tokens)-1];
       @params = @param_tokens;
     }
-    if ($n_past_lnl == 4 && $seen_se) {
+    if ($n_past_seen_se == 1) {
       print "SEs: $line\n";
       # We're in the SEs line.
       my @tokens = split(/\s+/,strip($line));

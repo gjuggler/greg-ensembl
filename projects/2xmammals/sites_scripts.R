@@ -130,8 +130,8 @@ estimate_branch_tree <- function(out.f, subdir, pset, aln.in, n.codons, clean=F)
   estimate.branch.tree(out.f, subdir, pset, aln.in, n.codons, clean)
 }
 
-estimate_both_trees <- function(out.f, subdir, pset, aln.in, n.codons, clean=F) {
-  estimate.both.trees(out.f, subdir, pset, aln.in, n.codons, clean)
+estimate_both_trees <- function(out.f, subdir, pset, aln.in, n.codons, clean, get.se, subset.index=0) {
+  estimate.both.trees(out.f, subdir, pset, aln.in, n.codons, subset.index, clean, get.se)
 }
 
 

@@ -1,82 +1,40 @@
-bsub.estimate.m0 <- function() {
-  newicks.df <- get.subset.newicks()
-
-  psets <- newicks.df$pset_id
-  #psets <- c(1)
-
-  subdirs <- get.output.subdirs()
-  subdirs <- c('concat_nongaps_20')
-
-  out.f <- output.folder(T, T, T)
-  for (subdir in subdirs) {
-    for (pset in psets) {
-      for (n.codons in c(1e3, 1e4, 1e5, 3e5)) {
-        aln.in <- 'all_combined.fasta'
-        clean <- FALSE
-        xtra <- paste(out.f, subdir, pset, aln.in, n.codons, clean, sep=' ')
-        
-        required.mem <- n.codons / 100000 * 3
-        required.mem <- ceiling(required.mem)
-        required.mem <- max(12, required.mem)
-        required.mem <- min(24, required.mem)
-        bsub.function('estimate_m0_tree', mem=required.mem, extra.args=xtra, queue='long')
-      }
-    }
-  }
-}
-
 bsub.estimate.both.trees <- function() {
-  newicks.df <- get.subset.newicks()
-  psets <- newicks.df$pset_id
-  psets <- c(1, 6)
-  subdirs <- c('concat_nongaps_20')
-
+  subdir <- 'concat_nongaps_20'
   out.f <- output.folder(T, T, T)
-  for (subdir in subdirs) {
-    for (pset in psets) {
-      for (n.codons in c(1e3, 1e4, 5e4, 1e5, 3e5)) {
-        aln.in <- 'all_combined.fasta'
-        clean <- TRUE
-        xtra <- paste(out.f, subdir, pset, aln.in, n.codons, clean, sep=' ')
+  aln.in <- 'all_combined.fasta'
 
-        required.mem <- n.codons / 100000 * 3
-        required.mem <- ceiling(required.mem)
-        required.mem <- max(8, required.mem)
-        required.mem <- min(24, required.mem)
-        bsub.function('estimate_both_trees', mem=required.mem, extra.args=xtra, queue='basement')
-      }
+  psets <- c(1, 2, 3)
+  reps <- 20
+  get.se <- TRUE
+  clean <- FALSE
+  for (pset in psets) {
+    for (n.codons in c(1e5, 5e5, 1e6)) {
+      xtra <- paste(out.f, subdir, pset, aln.in, n.codons, clean, get.se, sep=' ')
+
+      required.mem <- n.codons / 100000 * 3
+      required.mem <- ceiling(required.mem)
+      required.mem <- max(6, required.mem)
+      required.mem <- min(24, required.mem)
+      #bsub.function('estimate_both_trees', mem=required.mem, extra.args=xtra, jobarray=reps, queue='basement')
+    }
+  }
+
+  psets <- c(6)
+  reps <- 10
+  get.se <- FALSE
+  clean <- TRUE
+  for (pset in psets) {
+    for (n.codons in c(5e4, 1e5)) {
+      xtra <- paste(out.f, subdir, pset, aln.in, n.codons, clean, get.se, sep=' ')
+
+      required.mem <- n.codons / 100000 * 3
+      required.mem <- ceiling(required.mem)
+      required.mem <- max(6, required.mem)
+      required.mem <- min(24, required.mem)
+      bsub.function('estimate_both_trees', mem=required.mem, extra.args=xtra, jobarray=reps, queue='basement')
     }
   }
 }
-
-bsub.estimate.branch <- function() {
-  newicks.df <- get.subset.newicks()
-
-  psets <- newicks.df$pset_id
-  #psets <- c(3)
-
-  subdirs <- get.output.subdirs()
-  subdirs <- c('concat_nongaps_20')
-
-  out.f <- output.folder(T, T, T)
-  for (subdir in subdirs) {
-    for (pset in psets) {
-#      for (n.codons in c(1e4, 1e5, 5e5, 1e6, 2e6)) {
-      for (n.codons in c(1e3, 1e4, 1e5)) {
-        aln.in <- 'all_combined.fasta'
-        clean <- FALSE
-        xtra <- paste(out.f, subdir, pset, aln.in, n.codons, clean, sep=' ')
-
-        required.mem <- n.codons / 100000 * 3
-        required.mem <- ceiling(required.mem)
-        required.mem <- max(12, required.mem)
-        required.mem <- min(24, required.mem)
-        bsub.function('estimate_branch_tree', mem=required.mem, extra.args=xtra, queue='long')
-      }
-    }
-  }
-}
-
 
 test.estimate.m0 <- function() {
   base.dir <- output.folder(T, T, T)
@@ -102,10 +60,11 @@ test.estimate.both.trees <- function() {
   base.dir <- output.folder(T, T, T)
   subdir <- 'concat_nongaps_20'
   pset <- 1
-  aln.in <- 'all_combined.fasta'
-  n.codons <- 300000
+  aln.in <- 'alns_1.fasta'
+  n.codons <- 1000
   clean <- FALSE
-  estimate.both.trees(base.dir, subdir, pset, aln.in, n.codons, clean=clean)
+  rep <- 1
+  estimate.both.trees(base.dir, subdir, pset, aln.in, n.codons, rep, clean=clean, get.se=T)
 }
 
 estimate.both.trees <- function(base.dir,
@@ -113,10 +72,13 @@ estimate.both.trees <- function(base.dir,
   pset=1,
   aln.in='test.fasta',
   n.codons=0,
-  clean=FALSE) {
+  rep=0,
+  clean=FALSE,
+  get.se=FALSE
+) {
 
-  estimate.m0.tree(base.dir, subdir, pset, aln.in, n.codons, clean)
-  estimate.branch.tree(base.dir, subdir, pset, aln.in, n.codons, clean)
+  estimate.m0.tree(base.dir, subdir, pset, aln.in, n.codons, rep, clean)
+  estimate.branch.tree(base.dir, subdir, pset, aln.in, n.codons, rep, clean, get.se)
 }
 
 estimate.m0.tree <- function(base.dir,
@@ -124,13 +86,35 @@ estimate.m0.tree <- function(base.dir,
   pset=1,
   aln.in='test.fasta',
   n.codons=0,
+  rep=0, 
   clean=FALSE) {
 
   tree <- get.subset.taxid.tree(pset.id=pset, include.outgroup=T)
   tree <- tree.taxids.to.labels(tree)
   tree$node.label <- gsub('[^[:alnum:]]', '_', tree$node.label)
   
-  estimate.tree(tree, 'm0', base.dir, subdir, pset, aln.in, n.codons, clean)
+  estimate.tree(tree, 'm0', base.dir, subdir, pset, aln.in, n.codons, rep, clean)
+}
+
+plot.subset.trees <- function() {
+  psets <- c(1, 2, 3, 4)
+
+  pdf(file="~/scratch/subset.trees.pdf")
+
+  tree.l <- list()
+  for (pset in psets) {
+    tree <- get.subset.taxid.tree(pset.id=pset, include.outgroup=T)
+    tree <- tree.taxids.to.labels(tree)
+    tree$node.label <- gsub('[^[:alnum:]]', '_', tree$node.label)
+
+    tree <- tree.normalize.branchlengths(tree)
+
+    taxon.lbl <- pset.to.alias(pset)
+    tree.l[[taxon.lbl]] <- tree
+  }
+
+  ggphylo(tree.l)
+  dev.off()
 }
 
 estimate.branch.tree <- function(base.dir,
@@ -138,16 +122,18 @@ estimate.branch.tree <- function(base.dir,
   pset=1,
   aln.in='test.fasta',
   n.codons=0,
-  clean=FALSE) {
-  require(phylosim)
-  require(rphast)
+  rep=0, 
+  clean=FALSE,
+  get.se=FALSE) {
+
+  library(rphast)
 
   print("loading M0 tree...")
-  m0.tree.f <- get.tree.file('m0', base.dir, subdir, pset, aln.in, n.codons)
+  m0.tree.f <- get.tree.file('m0', base.dir, subdir, pset, aln.in, n.codons, rep)
   print(m0.tree.f)
   tree <- read.tree(file=m0.tree.f)
 
-  m0.aln.f <- get.tmpaln.file('m0', base.dir, subdir, pset, aln.in, n.codons)
+  m0.aln.f <- get.tmpaln.file('m0', base.dir, subdir, pset, aln.in, n.codons, rep)
   print(m0.aln.f)
   msa.obj <- read.msa(file=m0.aln.f,
     pointer.only=T,
@@ -156,13 +142,17 @@ estimate.branch.tree <- function(base.dir,
 
   model <- 'free'
 
-  estimate.tree(tree, model, base.dir, subdir, pset, aln.in, n.codons, clean, msa.obj=msa.obj)
+  estimate.tree(tree, model, base.dir, subdir, pset, aln.in, n.codons, rep, clean, get.se, msa.obj=msa.obj)
 
   n.codons <- as.integer(n.codons)
   aln.lbl <- gsub('[^[:alnum:]]', '_', aln.in)
   aln.lbl <- gsub('\\.fasta', '', aln.lbl)
-  lbl <- paste(pset, '_', model, '_', aln.lbl, '_', n.codons, sep='')
-  nhx.out.f <- paste(base.dir, '/', subdir, '/', 'tree_', lbl, '.nhx', sep='')
+  lbl <- paste(pset, '_', model, '_', aln.lbl, '_', n.codons, '_', rep, sep='')
+
+  sub.sub.dir <- paste('est_', pset, '_', n.codons, sep='')
+  entire.dir <- paste(base.dir, '/', subdir, '/', sub.sub.dir, sep='')
+
+  nhx.out.f <- paste(entire.dir, '/', 'tree_', lbl, '.nhx', sep='')
 
   if (file.exists(nhx.out.f)) {
     output.branch.data(nhx.out.f)
@@ -174,13 +164,28 @@ estimate.branch.tree <- function(base.dir,
 }
 
 output.branch.data <- function(tree.f) {
-  tree <- read.nhx.tree(tree.f)
+  library(devtools)
+  dev_mode(TRUE)
+  library(RColorBrewer)
+  load_all("~/lib/greg-ensembl/projects/ggphylo", reset=T)
+
+  tree <- tree.read.nhx(tree.f)
+  tree <- tree.remove.outgroup(tree)
+  #print(str(tree))
+
+  #cur.data <- as.data.frame(tree)
+  #cur.data$dN.dS <- as.numeric(cur.data$dN.dS)
+  #print(head(cur.data))
+  #tree <- tree.load.data(tree, cur.data)
+
+  #print(str(tree))
 
   tree.pdf.out.f <- gsub('\\.nhx', '_tree.pdf', tree.f)
   dnds.pdf.out.f <- gsub('\\.nhx', '_dnds.pdf', tree.f)
   csv.out.f <- gsub('\\.nhx', '_data.csv', tree.f)
 
   tree.df <- tree.as.data.frame(tree, order.cladewise=T)
+
   max.depth <- max(tree.df$Depth)
   #print(tree.df)
   tree.df <- ddply(tree.df, .(id), function(x) {
@@ -202,6 +207,10 @@ output.branch.data <- function(tree.f) {
   tree.df$Label <- factor(tree.df$Label, levels=tree.df$Label)
   #print(tree.df$Label)
 
+  print(head(tree.df))
+  # TODO: Plot the tree w/ branches colored by dnds.
+  write.csv(tree.df, file=csv.out.f, row.names=F)
+  
   p <- ggplot(tree.df, aes(y=as.numeric(dN.dS), x=Label))
   p <- p + theme_bw()
   p <- p + geom_crossbar(aes(ymin=low, ymax=hi), fill='gray')
@@ -209,19 +218,33 @@ output.branch.data <- function(tree.f) {
     axis.text.x = theme_text(angle=90, hjust=1)
   )
   pdf(file=dnds.pdf.out.f, height=10, width=6)
-  print.ggplot(p)
+  print(p)
   dev.off()
 
-  # TODO: Plot the tree w/ branches colored by dnds.
-  print(tree.df)
-  write.csv(tree.df, file=csv.out.f, row.names=F)
+  pdf(file=tree.pdf.out.f, width=8, height=8)
+  ggphylo(tree, 
+    line.size=2,
+#    line.size.by='`dN.dS`',
+#    line.size.scale = scale_size_continuous(range=c(1, 3)),
+    line.color.by='dN.dS',
+    line.color.scale = scale_colour_gradientn(colours=brewer.pal(5, 'YlOrRd')),
+    internal.label.angle=15,
+    plot.internals=F
+  )
+  dev.off()
+
 }
 
 test.output.branch.data <- function() {
-  tree.f <- '/nfs/users/nfs_g/gj1/scratch/gj1_2x_63_alt/current/data/alns_NGPRCW/concat_nongaps_20/'
-  tree.f <- paste(tree.f, 'tree_Primates_free_all_combined_fasta_10000.nhx', sep='')
-  #print(tree.f)
-  output.branch.data(tree.f)
+  #tree.f <- scratch.f('alns_NGPRCW/concat_nongaps_20/tree_6_free_all_combined_fasta_10000.nhx')
+  #tree.f <- scratch.f('alns_NGPRCW/concat_nongaps_20/tree_1_free_all_combined_fasta_300000.nhx')
+  #tree.f <- scratch.f('alns_NGPRCW/concat_nongaps_20/est_1_100000/tree_1_free_all_combined_fasta_100000_1.nhx')
+  tree.f <- scratch.f('alns_NGPRCW/concat_nongaps_20/est_6_100000/tree_6_free_all_combined_fasta_100000_3.nhx')
+  print(tree.f)
+  if (file.exists(tree.f)) {
+    print("File exists -- loading...")
+    output.branch.data(tree.f)
+  }
 }
 
 test.rphast.msa <- function() {
@@ -250,15 +273,20 @@ get.tree.file <- function(
   subdir,
   pset,
   aln.in,
-  n.codons
+  n.codons,
+  rep=0
 ) {
   n.codons <- as.integer(n.codons)
 
   aln.lbl <- gsub('[^[:alnum:]]', '_', aln.in)
   aln.lbl <- gsub('\\.fasta', '', aln.lbl)
-  lbl <- paste(pset, '_', model, '_', aln.lbl, '_', n.codons, sep='')
+  lbl <- paste(pset, '_', model, '_', aln.lbl, '_', n.codons, '_', rep, sep='')
 
-  aln.out.f <- paste(base.dir, '/', subdir, '/', 'tree_', lbl, '.nh', sep='')
+  sub.sub.dir <- paste('est_', pset, '_', n.codons, sep='')
+
+  entire.dir <- paste(base.dir, '/', subdir, '/', sub.sub.dir, sep='')
+
+  aln.out.f <- paste(entire.dir, '/', 'tree_', lbl, '.nh', sep='')
   aln.out.f
 }
 
@@ -268,15 +296,19 @@ get.tmpaln.file <- function(
   subdir,
   pset,
   aln.in,
-  n.codons
+  n.codons,
+  rep=0
 ) {
   n.codons <- as.integer(n.codons)
 
   aln.lbl <- gsub('[^[:alnum:]]', '_', aln.in)
   aln.lbl <- gsub('\\.fasta', '', aln.lbl)
-  lbl <- paste(pset, '_', model, '_', aln.lbl, '_', n.codons, sep='')
+  lbl <- paste(pset, '_', model, '_', aln.lbl, '_', n.codons, '_', rep, sep='')
 
-  aln.out.f <- paste(base.dir, '/', subdir, '/', 'tmpaln_', lbl, '.fasta', sep='')
+  sub.sub.dir <- paste('est_', pset, '_', n.codons, sep='')
+  entire.dir <- paste(base.dir, '/', subdir, '/', sub.sub.dir, sep='')
+
+  aln.out.f <- paste(entire.dir, '/', 'tmpaln_', lbl, '.fasta', sep='')
   aln.out.f
 }
 
@@ -287,12 +319,15 @@ estimate.tree <- function(tree,
   pset=1,
   aln.in='test.fasta',
   n.codons=0,
+  rep=0,
   clean=FALSE,
+  get.se=FALSE,
   msa.obj=NULL
 ) {
 
   n.codons <- as.integer(n.codons)
   clean <- as.logical(clean)  
+  get.se <- as.logical(get.se)
 
   library(rphast)
   tree.f <- tempfile()
@@ -301,15 +336,23 @@ estimate.tree <- function(tree,
   aln.lbl <- gsub('[^[:alnum:]]', '_', aln.in)
   aln.lbl <- gsub('\\.fasta', '', aln.lbl)
 
-  lbl <- paste(pset, '_', model, '_', aln.lbl, '_', n.codons, sep='')
+  lbl <- paste(pset, '_', model, '_', aln.lbl, '_', n.codons, '_', rep, sep='')
 
-  aln.out.f <- paste(base.dir, '/', subdir, '/', 'tmpaln_', lbl, '.fasta', sep='')
-  tree.out.f <- paste(base.dir, '/', subdir, '/', 'tree_', lbl, '.nh', sep='')
-  nhx.out.f <- paste(base.dir, '/', subdir, '/', 'tree_', lbl, '.nhx', sep='')
-  pdf.f <-      paste(base.dir, '/', subdir, '/', 'tree_', lbl, '.pdf', sep='')
-  file.out.f <- paste(base.dir, '/', subdir, '/', 'data_', lbl, '.txt', sep='')
+  sub.sub.dir <- paste('est_', pset, '_', n.codons, sep='')
+  entire.dir <- paste(base.dir, '/', subdir, '/', sub.sub.dir, sep='')  
+  if (!file.exists(entire.dir)) {
+    print("Creating directory...")
+    print(entire.dir)
+    dir.create(entire.dir, recursive=T)
+  }
 
-  output.files <- c(tree.out.f, nhx.out.f, pdf.f, file.out.f)
+  aln.out.f <- paste(entire.dir, '/', 'tmpaln_', lbl, '.fasta', sep='')
+  tree.out.f <- paste(entire.dir, '/', 'tree_', lbl, '.nh', sep='')
+  nhx.out.f <- paste(entire.dir, '/', 'tree_', lbl, '.nhx', sep='')
+  pdf.f <-      paste(entire.dir, '/', 'tree_', lbl, '.pdf', sep='')
+  file.out.f <- paste(entire.dir, '/', 'data_', lbl, '.txt', sep='')
+
+  output.files <- c(tree.out.f, pdf.f, file.out.f)
 
   skip.long.stuff <- FALSE
   if (all(file.exists(output.files)) && clean == FALSE) {
@@ -325,8 +368,6 @@ estimate.tree <- function(tree,
 
   if (!skip.long.stuff) {  
     # Use rphast for handling large alignments...
-    set.seed(1)
-
     print("loading aln...")
     aln.in.f <- paste(base.dir, subdir, aln.in, sep='/')
     msa <- read.msa(file=aln.in.f, pointer.only=T, tuple.size=3)
@@ -383,18 +424,20 @@ estimate.tree <- function(tree,
   }
 
   clean.s <- ifelse(clean, '--clean', '')
+  get.se.s <- ifelse(get.se, '--get_se', '')
 
   print("calculating...")
   script.f <- project.f('estimate_m0_tree.pl')
-  cmd.s <- sprintf("perl %s --tree=%s --aln=%s --tree_out=%s --nhx_out=%s --file_out=%s --model=%s %s",
+  cmd.s <- sprintf("perl %s --tree=%s --aln=%s --tree_out=%s --nhx_out=%s --file_out=%s --model=%s %s %s",
     script.f, 
-    normalizePath(tree.f), 
-    normalizePath(aln.f), 
+    normalizePath(tree.f),
+    normalizePath(aln.f),
     normalizePath(tree.out.f), 
-    normalizePath(nhx.out.f), 
-    normalizePath(file.out.f), 
+    normalizePath(nhx.out.f),
+    normalizePath(file.out.f),
     model,
-    clean.s
+    clean.s,
+    get.se.s
   )
   print(cmd.s)
   system(cmd.s)

@@ -388,7 +388,7 @@ get.species.tree <- function() {
     
   str <- readLines(con=f.con)
   close(f.con)
-  tree <- read.nhx.tree(str)
+  tree <- tree.read.nhx(str)
   tree
 }
 
