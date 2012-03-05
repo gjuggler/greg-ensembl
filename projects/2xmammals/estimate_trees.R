@@ -465,3 +465,45 @@ estimate.tree <- function(tree,
   file.remove(tree.f)
   file.remove(aln.f)
 }
+
+test.collect.bootstrap.reps <- function() {
+  base.dir <- scratch.f('alns_NGPRCW')
+  subdir <- 'concat_nongaps_20'
+  collect.bootstrap.reps(base.dir, subdir, 6, 100000)
+}
+
+collect.bootstrap.reps <- function(base.dir, subdir, pset, n.codons) {  
+  n.codons <- sprintf("%d", n.codons)
+  sub.sub.dir <- paste('est_', pset, '_', n.codons, sep='')
+  entire.dir <- paste(base.dir, '/', subdir, '/', sub.sub.dir, sep='')
+  
+
+  data.combined.f <- paste(entire.dir, '/', 'data.combined.Rdata', sep='')
+  data.plot.f <- paste(entire.dir, '/', 'data.summary.pdf', sep='')
+
+  if (!file.exists(data.combined.f)) {
+    print(entire.dir)
+    csv.files <- Sys.glob(sprintf("%s/*.csv", entire.dir))
+
+    comb.df <- data.frame()
+    for (i in 1:length(csv.files)) {
+      print(i)
+      x <- read.csv(csv.files[i], stringsAsFactors=F)
+      x$rep <- i
+      comb.df <- rbind.fill(comb.df, x)
+    }
+
+    data <- comb.df
+    save(data, file=data.combined.f)
+  }
+
+  load(data.combined.f)
+
+  pdf(file=data.plot.f)
+  p <- ggplot(data, aes(x=name, y=dN.dS))
+  p <- p + geom_boxplot()
+  p <- p + geom_point()
+  print(p)
+  dev.off()
+
+}
