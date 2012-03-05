@@ -388,7 +388,7 @@ get.species.tree <- function() {
     
   str <- readLines(con=f.con)
   close(f.con)
-  tree <- tree.read.nhx(str)
+  tree <- read.tree(text=str)
   tree
 }
 
@@ -404,7 +404,7 @@ get.taxa.df <- function() {
   tx.df
 }
 
-get.subset.newicks <- function() {
+get.subset.newicks <- function(pset=NULL) {
   taxids.list <- list(
     '1' = c(9478, 9483, 9544, 9593, 9598, 9601, 9606, 30608,
   30611, 61853),
@@ -429,6 +429,13 @@ get.subset.newicks <- function() {
   taxid.names = pset.to.alias(names(taxids.list))
   names(taxids.list) <- taxid.names
   
+  if (!is.null(pset)) {
+    pset.index <- which(pset.ids == pset)
+    taxids.list <- taxids.list[pset.index]
+    taxid.names <- taxid.names[pset.index]
+    pset.ids <- pset.ids[pset.index]
+  }
+
   newick.df <- ldply(taxids.list, function(x) {
     tree <- get.species.tree()
     tree.with.outgroup <- tree
@@ -452,7 +459,7 @@ get.subset.newicks <- function() {
     tree$node.label <- NULL
     str <- write.tree(tree)
 
-    tree2$tip.label <- taxid.to.alias(tree2$tip.label, include.internals=T)
+    tree2$tip.label <- taxid.to.alias(tree2$tip.label, include.internals=F)
     tree2$edge.length <- NULL
     tree2$node.label <- NULL
     str2 <- write.tree(tree2)
@@ -480,7 +487,7 @@ tree.remove.internal.labels <- function(tree) {
 }
 
 tree.taxids.to.labels <- function(tree, space.to.underscore=T) {
-  tree$tip.label <- taxid.to.alias(tree$tip.label, include.internals=T)
+  tree$tip.label <- taxid.to.alias(tree$tip.label, include.internals=F)
   if (any(is.character(tree$node.label))) {
     tree$node.label <- taxid.to.alias(tree$node.label, include.internals=T)
   }
@@ -500,7 +507,7 @@ species.group.to.pset <- function(species.group) {
 }
 
 get.subset.taxid.tree <- function(pset.id, include.outgroup=F) {
-  subset.df <- get.subset.newicks()
+  subset.df <- get.subset.newicks(pset.id)
   #print(subset.df)
   cur.row <- subset(subset.df, pset_id==pset.id)
   if (include.outgroup) {

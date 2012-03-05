@@ -58,8 +58,8 @@ connect.livemirror <- function(dbname=NULL) {
     password='ensembl'
     userpass='ensadmin:ensembl'
   } else {
-    host = 'ensembldb.ensembl.org'
-    port = 5306
+    host = 'mysql-ensembl-mirror.ebi.ac.uk'
+    port = 4240
     user = 'anonymous'
     password = NULL
     userpass='anonymous'
@@ -67,8 +67,8 @@ connect.livemirror <- function(dbname=NULL) {
 
   con <- dbConnect(MySQL(), host=host, port=port, user=user, password=password, dbname=dbname)
   dbURL = paste("mysql://",userpass,"@",host,":",port,"/",dbname,sep="")
-  #print(paste("Connected to:",user,"@",host,":",port,"/",dbname))
-  #print(paste("[",dbURL,"]"))
+  print(paste("Connected to:",user,"@",host,":",port,"/",dbname))
+  print(paste("[",dbURL,"]"))
   return(con)
 }
 

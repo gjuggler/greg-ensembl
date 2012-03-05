@@ -531,6 +531,11 @@ taxid.to.alias2 <- function(taxids, map.df) {
 }
 
 get.taxid.df <- function() {
+  if (file.exists("~/lib/greg-ensembl/projects/2xmammals/taxid.df.Rdata")) {
+    load("~/lib/greg-ensembl/projects/2xmammals/taxid.df.Rdata")
+    return(df)
+  }
+
   spec.tree <- get.species.tree()
   taxids <- c(spec.tree$tip.label, spec.tree$node.label)
 
@@ -553,40 +558,49 @@ get.taxid.df <- function() {
     df[df$name == 'Lesser hedgehog tenrec', 'name'] <- 'Tenrec'
   }
 
+  save(df, file="~/lib/greg-ensembl/projects/2xmammals/taxid.df.Rdata")
+
   df <- df[order(df$name),]   
   df  
 }
 
 taxid.to.alias <- function(taxids, binomials=F, include.internals=F, save.df=T) {
-  df.key <- paste('taxid', as.character(binomials), as.character(include.internals), sep='.')
-  if (!exists(df.key, envir=.GlobalEnv) || include.internals || !save.df) {
-    con <- connect.livemirror('ensembl_compara_64')
-    name_class <- "ensembl alias"
-    if (binomials) {
-      name_class <- 'scientific'
-    }
+  if (file.exists("~/lib/greg-ensembl/projects/2xmammals/taxids.Rdata")) {
+    load("~/lib/greg-ensembl/projects/2xmammals/taxids.Rdata")
+  } else {
 
-    if (include.internals) {
-      unique.ids <- unique(taxids)
-      unique.ids <- unique.ids[unique.ids != '']
-      taxid_list <- paste(unique.ids, collapse=', ')
-      cmd <- sprintf('select n.taxon_id, n.name from ncbi_taxa_name n where
-        n.taxon_id IN (%s) and n.name_class like "%%%s%%" order by n.name',
-          taxid_list, name_class)
-    } else {
-      cmd <- sprintf('select n.taxon_id, n.name from genome_db g, ncbi_taxa_name n
-        where n.taxon_id=g.taxon_id and n.name_class like "%%%s%%"
-        order by n.name', name_class)
+    df.key <- paste('taxid', as.character(binomials), as.character(include.internals), sep='.')
+    if (!exists(df.key, envir=.GlobalEnv) || include.internals || !save.df) {
+      con <- connect.livemirror('ensembl_compara_64')
+      name_class <- "ensembl alias"
+      if (binomials) {
+        name_class <- 'scientific'
+      }
+
+      if (include.internals) {
+        unique.ids <- unique(taxids)
+        unique.ids <- unique.ids[unique.ids != '']
+        taxid_list <- paste(unique.ids, collapse=', ')
+        cmd <- sprintf('select n.taxon_id, n.name from ncbi_taxa_name n where
+          n.taxon_id IN (%s) and n.name_class like "%%%s%%" order by n.name',
+            taxid_list, name_class)
+      } else {
+        cmd <- sprintf('select n.taxon_id, n.name from genome_db g, ncbi_taxa_name n
+          where n.taxon_id=g.taxon_id and n.name_class like "%%%s%%"
+          order by n.name', name_class)
+      }
+      df <- dbGetQuery(con, cmd)
+      disconnect(con)
+      if (save.df) {
+        assign(df.key, df, envir=.GlobalEnv)
+      }
     }
-    df <- dbGetQuery(con, cmd)
-    dbDisconnect(con)
     if (save.df) {
-      assign(df.key, df, envir=.GlobalEnv)
+      df <- get(df.key, envir=.GlobalEnv)
     }
   }
-  if (save.df) {
-    df <- get(df.key, envir=.GlobalEnv)
-  }
+
+  df <- get.taxid.df()
 
   # Add some manual fix-ups.
   tax.ids <- c(

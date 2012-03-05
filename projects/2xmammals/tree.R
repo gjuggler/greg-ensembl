@@ -2,7 +2,7 @@ require(ape)
 
 # Extracts the NHX annotations from a tree and returns a list with the annotations and the
 # tree string (with NHX stuff removed).
-tree.read.nhx <- function(str) {
+tree.read.nhx.old <- function(str) {
   if (file.exists(str)) {
     # We're reading a file -- load the file into a string.
     str <- readLines(str)

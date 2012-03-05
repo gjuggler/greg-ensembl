@@ -3,12 +3,12 @@ bsub.estimate.both.trees <- function() {
   out.f <- output.folder(T, T, T)
   aln.in <- 'all_combined.fasta'
 
-  psets <- c(1, 2, 3)
-  reps <- 20
+  psets <- c(1, 2, 3, 4)
+  reps <- 100
   get.se <- TRUE
   clean <- FALSE
   for (pset in psets) {
-    for (n.codons in c(1e5, 5e5, 1e6)) {
+      for (n.codons in c(5e5)) {
       xtra <- paste(out.f, subdir, pset, aln.in, n.codons, clean, get.se, sep=' ')
 
       required.mem <- n.codons / 100000 * 3
@@ -20,17 +20,17 @@ bsub.estimate.both.trees <- function() {
   }
 
   psets <- c(6)
-  reps <- 10
+  reps <- 100
   get.se <- FALSE
   clean <- TRUE
   for (pset in psets) {
-    for (n.codons in c(5e4, 1e5)) {
+    for (n.codons in c(1e5)) {
       xtra <- paste(out.f, subdir, pset, aln.in, n.codons, clean, get.se, sep=' ')
 
       required.mem <- n.codons / 100000 * 3
       required.mem <- ceiling(required.mem)
       required.mem <- max(6, required.mem)
-      required.mem <- min(24, required.mem)
+      required.mem <- min(18, required.mem)
       bsub.function('estimate_both_trees', mem=required.mem, extra.args=xtra, jobarray=reps, queue='basement')
     }
   }
@@ -97,14 +97,17 @@ estimate.m0.tree <- function(base.dir,
 }
 
 plot.subset.trees <- function() {
+  load.ggphylo()
   psets <- c(1, 2, 3, 4)
 
   pdf(file="~/scratch/subset.trees.pdf")
 
   tree.l <- list()
   for (pset in psets) {
+    print(pset)
     tree <- get.subset.taxid.tree(pset.id=pset, include.outgroup=T)
     tree <- tree.taxids.to.labels(tree)
+    print(tree$tip.label)
     tree$node.label <- gsub('[^[:alnum:]]', '_', tree$node.label)
 
     tree <- tree.normalize.branchlengths(tree)
@@ -115,6 +118,13 @@ plot.subset.trees <- function() {
 
   ggphylo(tree.l)
   dev.off()
+}
+
+load.ggphylo <- function() {
+  library(devtools)
+  dev_mode(TRUE)
+  library(RColorBrewer)
+  load_all("~/lib/greg-ensembl/projects/ggphylo", reset=T)
 }
 
 estimate.branch.tree <- function(base.dir,
@@ -170,6 +180,7 @@ output.branch.data <- function(tree.f) {
   load_all("~/lib/greg-ensembl/projects/ggphylo", reset=T)
 
   tree <- tree.read.nhx(tree.f)
+  #print(str(tree))
   tree <- tree.remove.outgroup(tree)
   #print(str(tree))
 
@@ -240,6 +251,7 @@ test.output.branch.data <- function() {
   #tree.f <- scratch.f('alns_NGPRCW/concat_nongaps_20/tree_1_free_all_combined_fasta_300000.nhx')
   #tree.f <- scratch.f('alns_NGPRCW/concat_nongaps_20/est_1_100000/tree_1_free_all_combined_fasta_100000_1.nhx')
   tree.f <- scratch.f('alns_NGPRCW/concat_nongaps_20/est_6_100000/tree_6_free_all_combined_fasta_100000_3.nhx')
+  #tree.f <- scratch.f('alns_NGPRCW/concat_nongaps_20/est_6_50000/tree_6_free_all_combined_fasta_50000_1.nhx')
   print(tree.f)
   if (file.exists(tree.f)) {
     print("File exists -- loading...")
