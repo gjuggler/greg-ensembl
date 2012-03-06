@@ -473,13 +473,23 @@ test.collect.bootstrap.reps <- function() {
 }
 
 collect.bootstrap.reps <- function(base.dir, subdir, pset, n.codons) {  
+  library(devtools)
+  dev_mode(TRUE)
+  library(RColorBrewer)
+  load_all("~/lib/greg-ensembl/projects/ggphylo", reset=T)
+
   n.codons <- sprintf("%d", n.codons)
   sub.sub.dir <- paste('est_', pset, '_', n.codons, sep='')
   entire.dir <- paste(base.dir, '/', subdir, '/', sub.sub.dir, sep='')
   
-
   data.combined.f <- paste(entire.dir, '/', 'data.combined.Rdata', sep='')
   data.plot.f <- paste(entire.dir, '/', 'data.summary.pdf', sep='')
+  data.csv.f <- paste(entire.dir, '/', 'data.summary.csv', sep='')
+  data.scatterplot.f <- paste(entire.dir, '/', 'data.bl.dnds.pdf', sep='')
+  data.scatterplot2.f <- paste(entire.dir, '/', 'data.bl.dnds_se.pdf', sep='')
+  data.treeplot.f <- paste(entire.dir, '/', 'data.tree.pdf', sep='')
+  tree.nh.f <- paste(entire.dir, '/', 'data.tree.nh', sep='')
+  tree.nhx.f <- paste(entire.dir, '/', 'data.tree.nhx', sep='')
 
   if (!file.exists(data.combined.f)) {
     print(entire.dir)
@@ -498,12 +508,187 @@ collect.bootstrap.reps <- function(base.dir, subdir, pset, n.codons) {
   }
 
   load(data.combined.f)
+  data$label <- data$name
 
-  pdf(file=data.plot.f)
-  p <- ggplot(data, aes(x=name, y=dN.dS))
-  p <- p + geom_boxplot()
-  p <- p + geom_point()
+  tree.files <- Sys.glob(sprintf("%s/*_free_*.nh", entire.dir))
+  tree <- tree.read.nhx(tree.files[1])
+
+ summary.df <- ddply(data, .(label), function(x) {
+    data.frame(
+      n.reps = nrow(x),
+      dN.dS_mean = mean(x$dN.dS),
+      dN.dS_25 = quantile(x$dN.dS, 0.25),
+      dN.dS_75 = quantile(x$dN.dS, 0.75),
+      dN.dS_sd = sd(x$dN.dS),
+      dS_mean = mean(x$dS),
+      dS_sd = sd(x$dS),
+      branchlength_mean = mean(x$t),
+      label = x[1, 'label']
+    )
+  })
+
+  summary.df$dnds <- summary.df$dN.dS_mean
+
+  dnds.df <- summary.df[, c('label', 'dnds')]
+  tree <- tree.load.data(tree, dnds.df)
+  tree <- tree.remove.outgroup(tree)
+  tree <- tree.apply.branchlengths(summary.df, tree, column='branchlength_mean')
+
+  nhx.str <- as.character(tree, ignore.tags=F)  
+  nh.str <- as.character(tree, ignore.tags=T)
+  writeChar(nhx.str, tree.nhx.f)
+  writeChar(nh.str, tree.nh.f)
+
+  write.csv(summary.df, file=data.csv.f, row.names=F)
+
+  fctr <- factorize.labels.by.tree(data, tree, indent.depth=T)
+  data$label.indent <- fctr
+
+  #data.plot.f <- "~/scratch/data.summary.pdf"
+  pdf(file=data.plot.f, width=12, height=8)
+  p <- ggplot(data, aes(x=label.indent, y=dN.dS))
+  p <- p + theme_bw()
+  p <- p + geom_boxplot(size=0.2, alpha=0.7, outlier.size=0)
+  p <- p + opts(
+    axis.text.x = theme_text(angle=90, hjust=1)
+  )
   print(p)
   dev.off()
 
+  pdf(file=data.scatterplot.f)
+  p <- ggplot(summary.df, aes(x=dS_mean, y=dN.dS_mean))
+  p <- p + theme_bw()
+  p <- p + geom_point()
+  p <- p + geom_text(aes(label=label), size=2, hjust=0, alpha=0.3)
+  print(p)
+  dev.off()
+
+  pdf(file=data.scatterplot2.f)
+  p <- ggplot(summary.df, aes(x=dS_mean, y=dN.dS_sd))
+  p <- p + theme_bw()
+  p <- p + geom_point()
+  p <- p + geom_text(aes(label=label), size=2, hjust=0, alpha=0.3)
+  print(p)
+  dev.off()
+
+
+  pdf(file=data.treeplot.f, width=16, height=8)
+  ggphylo(tree,
+    line.size=2,
+    line.color.by='dnds',
+    line.color.scale = scale_colour_gradientn(colours=c('blue', 'red')),
+    internal.label.angle=15
+  )
+  dev.off()
+
+  system(sprintf("cp %s/data*pdf ~/scratch", entire.dir))
+}
+
+string.replace <- function(string, map) {
+  keys <- names(map)
+  for (key in keys) {
+    string <- gsub(key, map[[key]], string)
+  }
+  string
+}
+
+package.data <- function(lbl, pset=6, n.codons=100000) {
+  base.dir <- scratch.f('alns_NGPRCW')
+  subdir <- 'concat_nongaps_20'
+  sub.sub.dir <- paste('est_', pset, '_', sprintf("%d",n.codons), sep='')
+  entire.dir <- paste(base.dir, '/', subdir, '/', sub.sub.dir, sep='')
+
+  old.wd <- getwd()
+  setwd(entire.dir)
+
+  map <- list(
+    DATE = format(Sys.time(), "%b %d %Y")
+  )
+
+  # Write a README file.
+  readme.s <- string.replace("
+
+This package contains genome-wide dN/dS estimates in mammals produced
+by Gregory Jordan (greg@ebi.ac.uk) on DATE.
+
+The source data were a concatenated set of alignments of
+protein-coding genes incorporating all mammalian species in Ensembl
+v63. 
+
+An outline of the alignment processing steps:
+
+1) Ensembl gene annotations and gene trees were used to identify ~16k
+genes with largely orthologous patterns in mammals.
+
+2) Genomes with PHRED-like quality scores available were filtered at
+Q>25 to remove low-quality sequence data.
+
+2) PRANK (http://code.google.com/p/prank-msa/) was used to re-align
+the coding sequences of each set of genes.
+
+3) Paralogous copies were removed and clusters of nonsynonymous
+substitutions were filtered out.
+
+4) Alignments for all genes were concatenated, and only columns with
+sequence present in at least 20 species were retained.
+
+More complete documentation of the data processing and filtering steps
+can be found in Chapters 3 and 4 of Greg Jordan's thesis (sorry!). See
+http://github.com/gjuggler/greg-thesis .
+
+To estimate dN/dS for each branch:
+
+1) The phylogenetic tree structure was taken as fixed, following the
+structure of recently-published mammalian supertrees.
+
+2) Roughly 100 replicate estimates were produced as follows:
+
+2a) An alignment containing 100k codons was extracted from the complete
+concatenated alignment (containing ~2.8M codons).
+
+2b) Branch lengths for the tree were estimated using a PAML M0 model (model=0).
+
+2c) Using those initial branch lengths, branch-specific dN/dS values
+were estimated using the PAML free-ratios model (model=1).
+
+3) The resulting set of estimates (1 value per branch x ~100 bootstrap
+replicates) is summarized and presented in the attached files:
+
+> data.bl.dnds_se.pdf - A plot of the standard deviation of dN/dS (y
+  axis) versus the mean dS value (x axis) for each branch. Shows the
+  effect of information content (e.g. more vs. fewer substitutions) on
+  the consistency of estimating dN/dS along each branch of the
+  tree. Estimates for the shortest branches are expeted to be somewhat
+  less reliable.
+
+> data.bl.dnds.pdf - A plot of the mean dN/dS (y axis) versus the mean
+  dS value (x axis) for each branch. The general trend towards lower
+  mean dN/dS for longer branches suggests a slight bias towards higher
+  dN/dS estimates along shorter branches of the tree.
+
+> data.summary.csv - A CSV file summarizing the dN/dS and branch
+  length estimates for each branch of the mammalian tree.
+
+> data.summary.pdf - A PDF plotting the data from data.summary.csv. Branches are sorted roughly in 'tree order'.
+
+> data.tree.nh - A Newick-formatted tree of the mammalian species (without Platypus, which was used as an outgroup and subsequently removed).
+
+> data.tree.nhx - A NHX-formatted tree of the mammalian species, as above but with dN/dS values included as NHX annotations.
+
+> data.tree.pdf - A PDF plotting the mammalian tree, with branch lengths and branch colors corresponding to the mean estimates across 100 replicates.
+", map)
+  
+  writeChar(readme.s, "README.txt")
+
+  all.plots <- Sys.glob("data*pdf")
+  csv.files <- Sys.glob("data*csv")
+  tree.files <- Sys.glob("data*nh*")
+  all.files <- c(all.plots, csv.files, tree.files, "README.txt")
+  all.files.s <- paste(all.files, collapse=' ')
+
+  out.f <- sprintf("%s.zip", lbl)
+  system(sprintf("zip %s %s", out.f, all.files.s))
+  system("cp *.zip ~/warehouse")
+
+  setwd(old.wd)
 }
