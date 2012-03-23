@@ -1,0 +1,13 @@
+From GABranch readme.pdf:
+
+$mpirun -np 17 ./HYPHYMPI BASEPATH=/abs path to hyphy install dir/ GABranch/ModelSelectorBranchLocal.bf
+
+From EBI Systems site:
+
+ bsub -I -n 16 -a openmpi mpirun.lsf -np 16 -mca btl tcp,self ~/mpi/Pi
+
+
+
+Here's my command:
+
+bsub -I -n 17 -a openmpi mpirun.lsf --verbose -n 17 -mca btl tcp,self /homes/greg/src/hyphy_build/bin/HYPHYMPI BASEPATH=/homes/greg/src/hyphy_build GABranchFiles/ModelSelectorBranchLocal.bf
