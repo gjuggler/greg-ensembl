@@ -1,3 +1,3 @@
 0
-/homes/greg/lib/greg-ensembl/projects/thesis-corrections/lysozyme.nex
-/homes/greg/lib/greg-ensembl/projects/thesis-corrections/lysozyme.newick
+/homes/greg/lib/greg-ensembl/projects/thesis-corrections/test.fasta
+/homes/greg/lib/greg-ensembl/projects/thesis-corrections/test.nh
