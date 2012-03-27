@@ -176,7 +176,7 @@ sub load_registry {
         -host => 'mysql-ensembl-mirror.ebi.ac.uk',
         -user => 'anonymous',
         -port => 4240,
-        -verbose => 0,
+        -verbose => 1,
       });
     #Bio::EnsEMBL::Registry->no_version_check(1);
   }
@@ -1579,7 +1579,7 @@ sub get_genome_tree_with_extras {
     my $tx    = $gdb->taxon;
     my $tx_id = $tx->taxon_id;
 
-    #print $gdb->name . "\n";
+    print $gdb->name . "\n";
     my $gdb_dba  = $gdb->db_adaptor;
     my $coverage = 'high';
     if ($gdb_dba) {

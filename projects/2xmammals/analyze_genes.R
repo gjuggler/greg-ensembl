@@ -442,6 +442,9 @@ get.subset.newicks <- function(pset=NULL) {
 
     # Drop tips falling outside the taxid list.
     not.in.set <- setdiff(tree$tip.label, x)
+
+    #print(not.in.set)
+
     tree <- drop.tip(tree, not.in.set)
     tree2 <- tree
     tree3 <- tree
@@ -492,6 +495,10 @@ tree.taxids.to.labels <- function(tree, space.to.underscore=T) {
     tree$node.label <- taxid.to.alias(tree$node.label, include.internals=T)
   }
 
+  if (any(is.na(tree$tip.label))) {
+    warning("NA tip labels when converting from taxid to label.")
+  }
+
   if (space.to.underscore) {
     tree$tip.label <- gsub(' ', '_', tree$tip.label)
     tree$node.label <- gsub(' ', '_', tree$node.label)
@@ -508,7 +515,7 @@ species.group.to.pset <- function(species.group) {
 
 get.subset.taxid.tree <- function(pset.id, include.outgroup=F) {
   subset.df <- get.subset.newicks(pset.id)
-  #print(subset.df)
+#  print(subset.df)
   cur.row <- subset(subset.df, pset_id==pset.id)
   if (include.outgroup) {
     tree.str <- cur.row$taxid_newick_with_outgroup

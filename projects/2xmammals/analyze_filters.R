@@ -571,7 +571,7 @@ taxid.to.alias <- function(taxids, binomials=F, include.internals=F, save.df=T) 
 
     df.key <- paste('taxid', as.character(binomials), as.character(include.internals), sep='.')
     if (!exists(df.key, envir=.GlobalEnv) || include.internals || !save.df) {
-      con <- connect.livemirror('ensembl_compara_64')
+      con <- connect.livemirror('ensembl_compara_63')
       name_class <- "ensembl alias"
       if (binomials) {
         name_class <- 'scientific'
@@ -600,7 +600,9 @@ taxid.to.alias <- function(taxids, binomials=F, include.internals=F, save.df=T) 
     }
   }
 
+  #print(df)
   df <- get.taxid.df()
+  #print(df)
 
   # Add some manual fix-ups.
   tax.ids <- c(

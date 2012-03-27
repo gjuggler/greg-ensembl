@@ -61,10 +61,10 @@ test.estimate.both.trees <- function() {
   subdir <- 'concat_nongaps_20'
   pset <- 1
   aln.in <- 'alns_1.fasta'
-  n.codons <- 1000
-  clean <- FALSE
+  n.codons <- 500
+  clean <- TRUE
   rep <- 1
-  estimate.both.trees(base.dir, subdir, pset, aln.in, n.codons, rep, clean=clean, get.se=T)
+  estimate.both.trees(base.dir, subdir, pset, aln.in, n.codons, rep, clean=clean, get.se=F)
 }
 
 estimate.both.trees <- function(base.dir,
@@ -378,6 +378,8 @@ estimate.tree <- function(tree,
 
   write.tree(tree, file=tree.f)
 
+  print(as.character(tree))
+
   if (!skip.long.stuff) {  
     # Use rphast for handling large alignments...
     print("loading aln...")
@@ -511,7 +513,12 @@ collect.bootstrap.reps <- function(base.dir, subdir, pset, n.codons) {
   data$label <- data$name
 
   tree.files <- Sys.glob(sprintf("%s/*_free_*.nh", entire.dir))
+  print(paste("Tree #1:",tree.files[1]))
   tree <- tree.read.nhx(tree.files[1])
+  print(labels(tree))
+
+  tree <- tree.read.nhx(tree.files[10])
+  print(labels(tree))
 
  summary.df <- ddply(data, .(label), function(x) {
     data.frame(
@@ -690,5 +697,22 @@ replicates) is summarized and presented in the attached files:
   system(sprintf("zip %s %s", out.f, all.files.s))
   system("cp *.zip ~/warehouse")
 
+  setwd(old.wd)
+}
+
+archive.results <- function(label) {
+  base.dir <- scratch.f('alns_NGPRCW')
+  subdir <- 'concat_nongaps_20'
+  entire.dir <- paste(base.dir, '/', subdir, '/', label, sep='')
+
+  print(sprintf("Archiving results to %s ...", label))
+
+  archive.f <- entire.dir
+  dir.create(archive.f)
+
+  old.wd <- getwd()
+  setwd(paste(base.dir, '/', subdir, sep=''))
+
+  system(sprintf("mv est_* -vf %s", label))
   setwd(old.wd)
 }
