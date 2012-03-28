@@ -43,6 +43,14 @@ aln.is.codon <- function(aln) {
   }
 }
 
+aln.tx.labels <- function(aln, subs) {
+  for (i in 1:length(subs)) {
+    x <- subs[[i]]
+    rownames(aln) <- gsub(x[1], x[2], rownames(aln))
+  }
+  aln
+}
+
 aln.tx <- function(aln, n.char='X') {
   library(phylosim)
   assign("PSIM_FAST", TRUE, envir=.GlobalEnv)
