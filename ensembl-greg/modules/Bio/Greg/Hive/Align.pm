@@ -345,7 +345,7 @@ sub align_with_pagan {
 
   unless ( $rc == 0 ) {
     print "Pagan error!\n";
-    die;
+    die "Pagan error";
   }
 
   $output_file .= '.fas';

@@ -7,7 +7,7 @@ use File::Path;
 use File::Copy;
 use File::Basename;
 use FreezeThaw qw(freeze thaw cmpStr safeFreeze cmpStrHard);
-use List::Util 'shuffle';
+use POSIX;
 
 use base (
   'Bio::Greg::Hive::Process',
@@ -25,7 +25,8 @@ sub param_defaults {
   my $alignment_scores = Bio::Greg::Hive::AlignmentScores::param_defaults;
 
   return $self->replace($phylosim, $align, $alignment_scores, {
-    force_recalc => 0
+    force_recalc => 0,
+    store_stuff => 1
                         });
 }
 
@@ -33,7 +34,7 @@ sub fetch_input {
   my $self = shift;
 
   $self->load_all_params();
-  $self->create_table_from_params( $self->compara_dba, 'aln',
+  $self->create_table_from_params( $self->dbc, 'aln',
                                    $self->_aln_table_structure );
   $self->dbc->disconnect_when_inactive(1);
 }
@@ -76,32 +77,46 @@ sub run {
   my $true_aln = $sim_obj->{aln};
   my $true_pep_aln = Bio::EnsEMBL::Compara::AlignUtils->translate($true_aln);
 
-  $self->pretty_print($true_pep_aln, {full => 1});
+  #$self->pretty_print($true_pep_aln, {full => 0});
   
   # Choose sizes at which to align / subset / score the subsets.
   #my @sizes = (2, 4, 6, 10, 16, 24, 32);
   my @sizes = (2, 6, 16, 24, 32);
 
-  my $whole_aln = $self->_align($treeI, $true_aln, $true_pep_aln, 'all');
+  my $whole_aln = $self->_align($treeI, $true_aln, $true_pep_aln, 'inferred_all');
+
+  my $tree_out_f = $self->_save_file('tree', 'nh');
+  Bio::EnsEMBL::Compara::TreeUtils->to_file($treeI, $tree_out_f->{full_file});
+
+  my $aln_out_f = $self->_save_file('true_aln', 'fasta');
+  Bio::EnsEMBL::Compara::AlignUtils->to_file($true_aln, $aln_out_f->{full_file});
+
+  print "RANDOM SEED: ".$self->param('random_seed')."\n";
+  srand(int($self->param('random_seed')));
+
+  my @arr = 0 .. (scalar($treeI->leaves) - 1);
+  my @shuffled = $self->shuffle(@arr);
+  print "Shuffled: @shuffled\n";
+  $self->param('shuffled', \@shuffled);
 
   foreach my $size (@sizes) {
     my ($sub_treeI, $sub_true_aln, $sub_true_pep_aln) = $self->_get_subsets($treeI, $true_aln, $true_pep_aln, $size);
 
     # Infer sub-alignment
-    print "  inferring sub-alignment\n";
-    my $sub_aln_inferred = $self->_align($sub_treeI, $sub_true_aln, $sub_true_pep_aln, 'n'.$size);
+    #print "  inferring sub-alignment\n";
+    my $sub_aln_inferred = $self->_align($sub_treeI, $sub_true_aln, $sub_true_pep_aln, 'inferred_'.$size);
 
     # Extract sub-alignment
-    print "  extracting sub-alignment\n";
+    #print "  extracting sub-alignment\n";
     my $sub_aln_subsetted = $self->_subset_aln($whole_aln, $sub_treeI);
 
     # Score sub-alignments
     print $sub_treeI->ascii(1,1,0);
 
-    print "  scoring inferred\n";
+    #print "  scoring inferred\n";
     my $scores_inf = $self->_score_aln($sub_treeI, $sub_true_aln, $sub_aln_inferred, 'aln');
 
-    print "  scoring extracted\n";
+    #print "  scoring extracted\n";
     my $scores_sub = $self->_score_aln($sub_treeI, $sub_true_aln, $sub_aln_subsetted, 'sub');
 
     my $params = $self->replace($self->params, $scores_inf, $scores_sub);
@@ -118,6 +133,52 @@ sub _simulate_alignment {
   my $out_f = $self->_save_file('sim', 'perlobj');
   my $out_file = $out_f->{full_file};
   $self->param('sim_file', $out_file);
+  
+  my $length    = $self->param('phylosim_seq_length');
+  #print "SEQ LENGTH: $length\n";
+
+  my @domains;
+
+  my $n_domains = $self->param('n_domains');
+  my $linker_ratio = $self->param('linker_ratio');
+  my $domain_ins_rate_mult = $self->param('domain_ins_rate_mult');
+
+  my $n_linkers = $n_domains - 1;
+  # total_length = domain_length * n + (domain_length * l_ratio) * (n-1)
+  my $domain_size = $length / ($n_domains + $linker_ratio * ($n_domains - 1));
+
+  my $ins_rate = $self->param('phylosim_insertrate');
+  my $del_rate = $self->param('phylosim_deleterate');
+  my $ins_model = $self->param('phylosim_insertmodel');
+  my $del_model = $self->param('phylosim_deletemodel');
+
+  my $n_segs = $n_domains * 2 - 1;
+  #print "N segs: ${n_segs}\n";
+  foreach my $i (0 .. ($n_segs-1)) {
+    #print "$i\n";
+    if ($i % 2 == 0) {
+      my $domain = {
+        length => ceil($domain_size),
+        insertrate => $ins_rate * $domain_ins_rate_mult,
+        deleterate => $del_rate * $domain_ins_rate_mult,
+        insertmodel => $ins_model,
+        deletemodel => $del_model
+      };
+      #$self->hash_print($domain);
+      push @domains, $domain;
+    } else {
+      my $linker = {
+        length => ceil($domain_size * $linker_ratio),
+        insertrate => $ins_rate,
+        deleterate => $del_rate,
+        insertmodel => $ins_model,
+        deletemodel => $del_model        
+      };
+      #$self->hash_print($linker);
+      push @domains, $linker;
+    }
+  }
+  $self->param('phylosim_domains', \@domains);
 
   if (!-e $out_file || $self->param('force_recalc')) {
     print "  running simulation\n";
@@ -137,7 +198,9 @@ sub _align {
   my $true_pep_aln = shift;
   my $lbl = shift;
 
+  #print $treeI->ascii;
   my $tree = Bio::EnsEMBL::Compara::TreeUtils->from_treeI($treeI);
+  #print "DONE\n";
 
   my $out_f = $self->_save_file($lbl, 'fasta');
   my $out_file = $out_f->{full_file};
@@ -161,18 +224,21 @@ sub _get_subsets {
   my $true_pep_aln = shift;
   my $n_keepers = shift;
 
-  my $sub_tree_f = $self->_save_file('sub_'.$n_keepers, 'nh');
-  my $sub_tree_file = $sub_tree_f->{full_file};
+#  my $sub_tree_f = $self->_save_file('sub_'.$n_keepers, 'nh');
+#  my $sub_tree_file = $sub_tree_f->{full_file};
 
-  if (!-e $sub_tree_file || $self->param('force_recalc')) {
-    my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
-    my @leaves = $treeI->leaves;
-    my @shuffled_leaves = shuffle(@leaves);
+#  if (!-e $sub_tree_file || $self->param('force_recalc')) {
+  my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
+  my @leaves = $treeI->leaves;
+  @leaves = sort {$a->name cmp $b->name} @leaves;
+  my @shuffled = @{$self->param('shuffled')};
+  my @shuffled_leaves = @leaves[@shuffled];
+  
     my @first_n = @shuffled_leaves[0..($n_keepers-1)];
 
     my $sub_treeI = $treeI->root->slice_with_internals(@first_n);
-    #print $sub_treeI->ascii(1,1,0);
     $sub_treeI->contract_linear_paths(1);
+    #print $sub_treeI->ascii(1,1,0);
 
     if ($sub_treeI->child_count == 1) {
       # We want to make the bifurcating node the new root, and give all left-over
@@ -184,16 +250,25 @@ sub _get_subsets {
       $sub_treeI = new Bio::Tree::Tree(-root => $new_root);
     }
 
-    open(OUT, ">$sub_tree_file");
-    print OUT $sub_treeI->to_newick."\n";
-    close(OUT);
+#    open(OUT, ">$sub_tree_file");
+#    print OUT $sub_treeI->to_newick."\n";
+#    print $sub_treeI->to_newick."\n";
+#    close(OUT);
     #my $sub_tree = Bio::EnsEMBL::Compara::TreeUtils->extract_subtree_from_leaf_objects($tree, \@first_n);
     #Bio::EnsEMBL::Compara::TreeUtils->to_file($sub_tree, $sub_tree_file);
-  }
+#  }
 
-  my $sub_treeI = Bio::Tree::Tree->from_file($sub_tree_file);
+#  my $sub_treeI = Bio::Tree::Tree->from_file($sub_tree_file);
   
-  my $sub_tree = Bio::EnsEMBL::Compara::TreeUtils->from_file($sub_tree_file);
+#  my $sub_tree = Bio::EnsEMBL::Compara::TreeUtils->from_file($sub_tree_file);
+
+  if ((ref $sub_treeI) =~ /Bio::Tree::Node/i) {
+    $sub_treeI = new Bio::Tree::Tree(-root => $sub_treeI);
+  }
+  my $sub_tree = Bio::EnsEMBL::Compara::TreeUtils->from_treeI($sub_treeI);
+
+  print "Sub tree: $sub_tree\n";
+  print $sub_tree->ascii."\n";
   my $sub_aln = Bio::EnsEMBL::Compara::ComparaUtils->restrict_aln_to_tree($true_aln, $sub_tree);
   my $sub_pep_aln = Bio::EnsEMBL::Compara::ComparaUtils->restrict_aln_to_tree($true_pep_aln, $sub_tree);
   
@@ -231,10 +306,10 @@ sub _score_aln {
   print "  sps\n";
   my $sps = Bio::EnsEMBL::Compara::AlignUtils->sum_of_pairs_score($true_pep_aln, $pep_aln);
 
-  print "  other\n";
-  my $aln_scores_calc = Bio::EnsEMBL::Compara::AlignUtils->_correct_subtree_calc($treeI, $true_pep_aln, $pep_aln);
-  my $cbl = $aln_scores_calc->{complete_match_bl} / $aln_scores_calc->{aligned_bl};
-  my $pbl = $aln_scores_calc->{partial_bl} / $aln_scores_calc->{aligned_bl};
+  # print "  other\n";
+  # my $aln_scores_calc = Bio::EnsEMBL::Compara::AlignUtils->_correct_subtree_calc($treeI, $true_pep_aln, $pep_aln);
+  # my $cbl = $aln_scores_calc->{complete_match_bl} / $aln_scores_calc->{aligned_bl};
+  # my $pbl = $aln_scores_calc->{partial_bl} / $aln_scores_calc->{aligned_bl};
 
   my $total_bl = $treeI->root->total_branch_length;
   my $mpl = $treeI->root->mean_path_length;
@@ -243,8 +318,8 @@ sub _score_aln {
   my $params = {
     $prefix.'_tcs' => $tcs,
     $prefix.'_sps' => $sps,
-    $prefix.'_cbl' => $cbl,
-    $prefix.'_pbl' => $pbl,
+    #$prefix.'_cbl' => $cbl,
+    #$prefix.'_pbl' => $pbl,
     n_seqs => scalar($treeI->leaves),
     mpl => sprintf("%.3f", $mpl),
     mean_bl => $mean_bl,
@@ -259,9 +334,9 @@ sub _save_file {
   my $ext = shift;
 
   my $rep = $self->param('replicate');
-  my $id = $self->param('label');
+  my $id = $self->param('data_id');
 
-  my $filename = "${id}_${filename_base}_${rep}";
+  my $filename = "${id}_${filename_base}";
 
   my $file_params = {
     id => $id,
@@ -281,10 +356,14 @@ sub _aln_table_structure {
   return {
     job_id => 'int',
     data_id => 'int',
+    data_prefix => 'char8',
     replicate => 'int',
 
     tree => 'char16',
     aligner => 'char16',
+    n_domains => 'int',
+    linker_ratio => 'float',
+    domain_ins_rate_mult => 'float',
     n_seqs => 'int',
     mpl => 'float',
     orig_mpl => 'float',
@@ -296,14 +375,25 @@ sub _aln_table_structure {
     aln_sps => 'float',
     sub_tcs => 'float',
     aln_tcs => 'float',
-    sub_pbl => 'float',
-    aln_pbl => 'float',
-    sub_cbl => 'float',
-    aln_cbl => 'float',
+    #sub_pbl => 'float',
+    #aln_pbl => 'float',
+    #sub_cbl => 'float',
+    #aln_cbl => 'float',
 
-    unique_keys => 'data_id,replicate,n_seqs'
-
+    unique_keys => 'data_id,n_seqs'
   };
 }
+
+sub shuffle {
+  my $self = shift;
+  my @a=\(@_);
+my $n;
+my $i=@_;
+map {
+  $n = rand($i--);
+  (${$a[$n]}, $a[$n] = $a[$i])[0];
+} @_;
+}
+
 
 1;

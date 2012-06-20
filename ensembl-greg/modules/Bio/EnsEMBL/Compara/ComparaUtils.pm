@@ -154,7 +154,7 @@ sub load_registry {
         -host => 'ens-livemirror',
         -user => 'ensadmin',
         -pass => 'ensembl',
-        -verbose => 1,
+        -verbose => 0,
       },
       {
         -host => 'ensdb-archive',
@@ -162,7 +162,7 @@ sub load_registry {
         -user => 'ensro',
         -user => 'ensadmin',
         -pass => 'ensembl',
-        -verbose => 1
+        -verbose => 0
       }
       );
     Bio::EnsEMBL::Registry->set_disconnect_when_inactive(1);
@@ -176,7 +176,7 @@ sub load_registry {
         -host => 'mysql-ensembl-mirror.ebi.ac.uk',
         -user => 'anonymous',
         -port => 4240,
-        -verbose => 1,
+        -verbose => 0,
       });
     #Bio::EnsEMBL::Registry->no_version_check(1);
   }
@@ -918,12 +918,14 @@ sub restrict_aln_to_tree {
     if ($leaf->isa("Bio::EnsEMBL::Compara::Member")) {
       #print "MEMBER\n";
       $ok_id_hash->{ $leaf->stable_id } = 1;
-      my $taxon = $leaf->taxon;
-      $ok_id_hash->{ $leaf->genome_db->name }    = 1;
-      $ok_id_hash->{ $taxon->taxon_id }    = 1;
-      $ok_id_hash->{ $taxon->common_name } = 1;
-      $ok_id_hash->{ $taxon->short_name }  = 1;
-      $ok_id_hash->{ $taxon->binomial }    = 1;
+      eval {
+        my $taxon = $leaf->taxon;
+        $ok_id_hash->{ $leaf->genome_db->name }    = 1;
+        $ok_id_hash->{ $taxon->taxon_id }    = 1;
+        $ok_id_hash->{ $taxon->common_name } = 1;
+        $ok_id_hash->{ $taxon->short_name }  = 1;
+        $ok_id_hash->{ $taxon->binomial }    = 1;
+      };
     }
   }
 
@@ -1868,18 +1870,18 @@ sub restrict_tree_to_aln {
     if ($leaf->can('stable_id') && $leaf->stable_id) {
       $seq = Bio::EnsEMBL::Compara::AlignUtils->get_seq_with_id( $aln, $leaf->stable_id );
     }
-    if ($leaf->can('genome_db') && $leaf->genome_db) {
-      $seq = Bio::EnsEMBL::Compara::AlignUtils->get_seq_with_id( $aln, $leaf->genome_db->name )
-        if ( !defined $seq );
-    }
-    if ($leaf->can('taxon') && $leaf->taxon) {
-      $seq = Bio::EnsEMBL::Compara::AlignUtils->get_seq_with_id( $aln, $leaf->taxon->binomial )
-        if ( !defined $seq );
-      $seq = Bio::EnsEMBL::Compara::AlignUtils->get_seq_with_id( $aln, $leaf->taxon->ensembl_alias )
-        if ( !defined $seq );
-      $seq = Bio::EnsEMBL::Compara::AlignUtils->get_seq_with_id( $aln, $leaf->taxon->taxon_id )
-        if ( !defined $seq );
-    }
+#    if ($leaf->can('genome_db') && $leaf->genome_db) {
+#      $seq = Bio::EnsEMBL::Compara::AlignUtils->get_seq_with_id( $aln, $leaf->genome_db->name )
+#        if ( !defined $seq );
+#    }
+#    if ($leaf->can('taxon') && $leaf->taxon) {
+#      $seq = Bio::EnsEMBL::Compara::AlignUtils->get_seq_with_id( $aln, $leaf->taxon->binomial )
+#        if ( !defined $seq );
+#      $seq = Bio::EnsEMBL::Compara::AlignUtils->get_seq_with_id( $aln, $leaf->taxon->ensembl_alias )
+#        if ( !defined $seq );
+#      $seq = Bio::EnsEMBL::Compara::AlignUtils->get_seq_with_id( $aln, $leaf->taxon->taxon_id )
+#        if ( !defined $seq );
+#    }
     next if ($used_seqs->{$seq});
     if (defined $seq) {
       $used_seqs->{$seq} = $seq;

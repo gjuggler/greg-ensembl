@@ -5,6 +5,7 @@ use Bio::EnsEMBL::Utils::Argument;
 use Bio::EnsEMBL::Utils::Exception;
 
 use Digest::MD5 qw(md5_hex);
+use Data::Types qw(is_int is_float);
 
 use Bio::EnsEMBL::Hive;
 use Bio::EnsEMBL::Hive::Utils 'stringify';    # import 'stringify()'

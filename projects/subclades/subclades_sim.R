@@ -20,7 +20,7 @@ scratch.f <- function(str) {
 }
 
 result.dir <- function(params) {
-  str <- paste(params, collapse='/')           
+  str <- paste(params, collapse='/')
   scratch.f(str)
 }
 
@@ -29,16 +29,21 @@ result.f <- function(params, f) {
 }
 
 get.species.groups <- function() {
-  c('Primates', 'Glires', 'Laurasiatheria', 'Atlantogenata')
-  #c('Primates', 'Glires', 'Laurasiatheria', 'Mammals')
+  #c('Primates', 'Glires', 'Laurasiatheria', 'Atlantogenata', 'Mammals')
+  c('Primates', 'Glires', 'Mammals')
+}
+
+
+get.all.species.groups <- function() {
+  c('Primates', 'Glires', 'Laurasiatheria', 'Atlantogenata', 'Mammals')
 }
 
 get.pop.sizes <- function() {
-  c(2e4, 3e4, 4e4, 6e4, 5e5)
+  c(2e4, 3e4, 4e4, 6e4, 1e5, 5e5)
 }
 
 get.total.bls <- function() {
-  c(0.5, 1, 2, 3)
+  c(0.5, 1, 2, 'observed')
 }
 
 get.positive.fs <- function() {
@@ -60,15 +65,19 @@ bsub.sim.aln <- function() {
   positive.fs <- get.positive.fs()
   n.jobs <- 250
 
+  total.jobs <- 0
   for (species in species.groups) {
     for (pop.size in pop.sizes) {
+      for (total.bl in total.bls) {
         for (positive.f in positive.fs) {
-          total.bl <- bl.for.species(species)
           xtra <- paste(species, pop.size, total.bl, positive.f, sep=' ')
+          total.jobs <- total.jobs + n.jobs
           bsub.function('sim.aln', extra.args=xtra, jobarray=n.jobs, drop.output=T)
         }
+      }
     }
   }
+  print(total.jobs)
 }
 
 test.sim.aln <- function() {
@@ -79,7 +88,10 @@ sim.aln <- function(species, pop.size, total.bl, positive.f, rep=1) {
   library(phylosim)
 
   pop.size <- as.numeric(pop.size)
-  total.bl <- as.numeric(total.bl)
+
+  if (total.bl != 'observed') {
+    total.bl <- as.numeric(total.bl)    
+  }
   positive.f <- as.numeric(positive.f)
 
   params <- list(
@@ -103,18 +115,22 @@ sim.aln <- function(species, pop.size, total.bl, positive.f, rep=1) {
   tree <- tree.remove.leaf(tree, tree.node.with.label(tree, 'Platypus'))
   cur.total <- tree.total.branch.length(tree)
 
-  # Sample from a realistic distribution of total branch lengths...
-  log.mean.sd <- switch(species, 
-    'Primates' = c(log(0.82), 0.4),
-    'Glires' = c(log(1.88), 0.4),
-    'Laurasiatheria' = c(log(2.15), 0.4),
-    'Mammals' = c(log(7.48), 0.27)
-  )
-  bl.smpl <- rlnorm(1, log.mean.sd[1], log.mean.sd[2])
-  print(bl.smpl)
-  stopifnot(bl.smpl > 0)
-  print(sprintf("Scaling tree by %.2f to total bl=%.2f", bl.smpl/cur.total, bl.smpl))
-  tree <- tree.scale.to(tree, bl.smpl)
+  if (total.bl == 'observed') {
+    # Sample from a realistic distribution of total branch lengths...
+    log.mean.sd <- switch(species, 
+      'Primates' = c(log(0.82), 0.4),
+      'Glires' = c(log(1.88), 0.4),
+      'Laurasiatheria' = c(log(2.15), 0.4),
+      'Mammals' = c(log(7.48), 0.27)
+    )
+    bl.smpl <- rlnorm(1, log.mean.sd[1], log.mean.sd[2])
+    print(bl.smpl)
+    stopifnot(bl.smpl > 0)
+    print(sprintf("Scaling tree by %.2f to total bl=%.2f", bl.smpl/cur.total, bl.smpl))
+    tree <- tree.scale.to(tree, bl.smpl)
+  } else {
+    tree <- tree.scale.to(tree, total.bl)
+  }
   
   if (file.exists(aln.f)) {
     aln <- aln.read(aln.f)
@@ -234,7 +250,9 @@ collect.sims <- function(species.group, pop.size, total.bl) {
   library(plyr)
 
   pop.size <- as.numeric(pop.size)
-  total.bl <- as.numeric(total.bl)
+  if (total.bl != 'observed') {
+    total.bl <- as.numeric(total.bl)
+  }
 
   species.dir <- scratch.f(paste(species.group, pop.size, total.bl, sep='/'))
   print(sprintf("Collecting results from %s ...", species.dir))
@@ -263,9 +281,9 @@ collect.sims <- function(species.group, pop.size, total.bl) {
   write.csv(ddply.result, file=ddply.results.f, row.names=F)
 
   print("Fitting distribution...")
-  fits.results.f <- scratch.f(sprintf("fit_results_%s_%s_%s.csv", species.group, pop.size, total.bl))
-  fits.result <- ddply(out.df, c('species', 'pop.size', 'total.bl', 'positive.f'), fit.distr.f)
-  write.csv(fits.result, file=fits.results.f, row.names=F)  
+  #fits.results.f <- scratch.f(sprintf("fit_results_%s_%s_%s.csv", species.group, pop.size, total.bl))
+  #fits.result <- ddply(out.df, c('species', 'pop.size', 'total.bl', 'positive.f'), fit.distr.f)
+  #write.csv(fits.result, file=fits.results.f, row.names=F)  
 }
 
 fit.distr.f <- function(xx, distr) {
@@ -327,6 +345,11 @@ summary.f <- function(xx) {
     sens <- n.tp / (n.tp + n.fn)
     spec <- n.tn  / (n.tn + n.fp)
 
+    if (x[1, 'positive.f'] == 0) {
+      fdr <- 0
+      sens <- 0
+    }
+
     data.frame(
       n.sites = n.sites,
       n.pos = n.pos,
@@ -346,6 +369,7 @@ summary.f <- function(xx) {
 
   main.df <- sub.summary.f(xx)
 
+  #boot.cols <- c('sens')
   boot.cols <- c('f.pos', 'n.pos', 'tpr', 'fpr', 'fdr', 'spec', 'sens')
   for (i in 1:length(boot.cols)) {
     boot.col <- boot.cols[i]
@@ -357,10 +381,13 @@ summary.f <- function(xx) {
       df.out[, boot.col]
     }
     n.boot.reps <- 100
+    #print("booting")
     boot.result <- boot(xx, boot.f, R=n.boot.reps)
+    #print("boot.ci-ing")
     ci.res <- boot.ci(boot.result, type='basic', conf=0.95)
     lo.s <- paste(boot.col, '_lo', sep='')
     hi.s <- paste(boot.col, '_hi', sep='')
+    #prin("Don!");
 
     boot.lo <- ci.res$basic[1, 4]
     boot.hi <- ci.res$basic[1, 5]
@@ -399,7 +426,11 @@ plot.results <- function() {
   print(head(out.df))
 
   x <- out.df
+  print(str(x$total.bl))
+
+
   x$facet_lbl <- paste(x$species, x$total.bl)
+  #print(x$facet_lbl)
   x$pop.size <- factor(x$pop.size)
 
   plot.df <- data.frame()
@@ -425,19 +456,38 @@ plot.results <- function() {
 
 test.plot.results.hist <- function() {
 
-  cur.results <- Sys.glob(scratch.f("combined_results_Primates_*.csv"))
+  cur.results <- Sys.glob(scratch.f("combined_results_Mammals_*observed*.csv"))
   x <- data.frame()
   for (csv in cur.results) {
+    print(csv)
     x <- rbind.fill(x, read.csv(csv))
   }
-  
-  p <- plot.results.hist(x)
-  pdf(file=scratch.f("../plot_hist.pdf"))
-  print(p)
-  dev.off()
+  plot.results.hist(x, 6)
+
+  return()
+
+  cur.results <- Sys.glob(scratch.f("combined_results_Primates_*observed*.csv"))
+  x <- data.frame()
+  for (csv in cur.results) {
+    print(csv)
+    x <- rbind.fill(x, read.csv(csv))
+  }
+  plot.results.hist(x, 1)
+
+  cur.results <- Sys.glob(scratch.f("combined_results_Glires_*observed*.csv"))
+  x <- data.frame()
+  for (csv in cur.results) {
+    print(csv)
+    x <- rbind.fill(x, read.csv(csv))
+  }
+  plot.results.hist(x, 2)
+
+
+
 }
 
-plot.results.hist <- function(df) {
+plot.results.hist <- function(df, pset.id) {
+  library(grid)
   # Two-tailed p-value.
   df[, 'pval'] <- 1 - pchisq(abs(df[, 'lrt_stat']), 1)
 
@@ -450,6 +500,12 @@ plot.results.hist <- function(df) {
   df[!abv.one, 'pos.pval'] <- 0.5 + (1 - df[!abv.one, 'pval']) / 2
   rm(abv.one)
 
+  out.f <- scratch.f(sprintf("pval_example_%s.pdf", pset.id))
+  pdf(file=out.f, width=12, height=2.5)
+  xx <- subset(df, total.bl == 'observed' & pop.size == 60000 & positive.f == 0.01)
+  plot.pval.example(xx)
+  dev.off()
+
   dx <- 0.02
   
   p <- ggplot(df, aes(x=pos.pval))
@@ -458,7 +514,12 @@ plot.results.hist <- function(df) {
   p <- p + scale_x_continuous(limits=c(0, 1))
 #  p <- p + scale_y_continuous(limits=c(0, 5000))
   p <- p + facet_grid(pop.size ~ positive.f)
-  p
+
+  print("Plotting...")
+  pdf(file=scratch.f(sprintf("plot_hist_%s.pdf", pset.id)))
+  print(p)
+  dev.off()
+
 }
 
 plot.tree.sizes <- function() {
@@ -479,7 +540,73 @@ plot.tree.sizes <- function() {
 #  p <- tree.plot(tree.list, label.size=2, do.plot=F, line.size=1)
   print(p)
   dev.off()
+
 }
+
+plot.pval.example <- function(sites) {
+  print(str(sites))
+  sites <- subset(sites, select=c('omega', 'pval', 'pos.pval'))
+
+  frmt <- function(x, ...) {
+    sprintf("%.1e", x)
+  }
+
+  n.cols <- 4
+  bw <- 0.025
+
+  vplayout(n.cols, 1)
+
+  sub.neg <- subset(sites, omega < 1)
+  p <- ggplot(sub.neg, aes(x=pval, y=..count..))
+  p <- p + geom_histogram(binwidth=bw)
+  p <- p + scale_x_continuous("Two-tailed (w < 1)")
+  p <- p + scale_y_continuous()
+  p <- generic.opts(p)
+  p <- p + opts(
+    axis.text.y = theme_blank(),
+    axis.text.x = theme_blank(),
+    axis.ticks = theme_blank(),
+    axis.title.y = theme_blank(),
+    axis.title.x = theme_blank()  
+  )
+  print(p, vp=subplot(1, 1))
+
+  y.sq <- seq(from=0, to=2e4, by=.5e4)
+
+  sub.pos <- subset(sites, omega > 1)
+  p <- ggplot(sub.pos, aes(x=pval, y=..count..))
+  p <- p + geom_histogram(binwidth=bw)
+  p <- p + scale_x_continuous("Two-tailed (w > 1)")
+  p <- p + scale_y_continuous()
+#  p <- p + coord_cartesian(ylim=c(0, 2e4))
+  p <- generic.opts(p)
+  p <- p + opts(
+    axis.text.y = theme_blank(),
+    axis.text.x = theme_blank(),
+    axis.ticks = theme_blank(),
+    axis.title.y = theme_blank(),
+    axis.title.x = theme_blank()  
+  )
+  print(p, vp=subplot(2:3, 1))
+
+  y.sq <- seq(from=0, to=4e4, by=1e4)
+
+  p <- ggplot(sites, aes(x=pos.pval, y=..count..))
+  p <- p + geom_histogram(binwidth=bw)
+  p <- p + scale_x_continuous("One-tailed")
+  p <- p + scale_y_continuous()
+  p <- p + coord_cartesian(ylim=c(0, 4e3))
+  p <- generic.opts(p)
+  p <- p + opts(
+    axis.text.y = theme_blank(),
+    axis.text.x = theme_blank(),
+    axis.ticks = theme_blank(),
+    axis.title.y = theme_blank(),
+    axis.title.x = theme_blank()  
+  )
+  print(p, vp=subplot(4, 1))
+}
+
 
 test.get.w.distribution <- function() {
   lst <- get.w.distribution(50000, 50000, positive.f=0.01)
@@ -544,23 +671,25 @@ s.to.w <- function(ss, Ne) {
 bsub.collect.sims <- function() {
   species.groups <- get.species.groups()
   pop.sizes <- get.pop.sizes()
+  #total.bls <- get.total.bls()
+  total.bls <- c('observed')
 
   for (species in species.groups) {
     for (pop.size in pop.sizes) {
-#      for (total.bl in total.bls) {
-       total.bl <- bl.for.species(species)
-
+      for (total.bl in total.bls) {
         xtra <- paste(species, pop.size, total.bl)
         bsub.function('collect.sims', extra.args=xtra)
-#      }
+      }
     }
   }
 }
 
+
 plot.w.distributions <- function() {
   library(plyr)
   library(ggplot2)
-  pop.sizes <- c(1e1, 1e2, 1e3, 5e3, 1e4, 2e4, 3e4, 4e4, 5e4, 6e4, 8e4)
+  pop.sizes <- get.pop.sizes()
+#  pop.sizes <- c(1e1, 1e2, 1e3, 5e3, 1e4, 2e4, 3e4, 4e4, 5e4, 6e4, 8e4)
   n <- 50000
   human.Ne <- 50000
 
@@ -620,7 +749,7 @@ plot.w.distributions <- function() {
   p <- p + geom_vline(data=mark.df, aes(xintercept=w, colour=orig.s), linetype='dashed')
   p <- p + scale_y_continuous(limits=c(0, 2000))
   p <- p + facet_grid(Ne ~ f.pos)
-  pdf(file=scratch.f("../w_distributions.pdf"), width=8, height=5)
+  pdf(file=scratch.f("w_distributions.pdf"), width=8, height=5)
   print(p)
   dev.off()
   
@@ -643,7 +772,7 @@ archive.results <- function(label) {
   old.wd <- getwd()
   setwd(scratch.f(''))
 
-  species.s <- paste(get.species.groups(), collapse=' ')
+  species.s <- paste(get.all.species.groups(), collapse=' ')
   system(sprintf("mv *.* %s -vf %s", species.s, label))
   setwd(old.wd)
 }

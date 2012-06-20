@@ -664,7 +664,7 @@ sub parse_results {
   $results = Bio::EnsEMBL::Compara::ComparaUtils->replace_params($results, $bayes_results);
 
   my $lnl = $self->extract_lnL($lines_arrayref);
-  print "LNL: $lnl\n";
+#  print "LNL: $lnl\n";
 
   $results->{lnl} = $lnl;
 

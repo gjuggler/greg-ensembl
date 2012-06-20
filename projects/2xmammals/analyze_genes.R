@@ -917,15 +917,15 @@ get.domains.sites <- function(filter='default') {
 }
 
 
-get.genes.sites <- function(filter='default') {
+get.genes.sites <- function(filter='default', clean=F) {
   cache.df <- sprintf("genes.sites.%s", filter)
-  if (exists(cache.df, envir=.GlobalEnv)) {
+  if (exists(cache.df, envir=.GlobalEnv) && !clean) {
     genes <- get(cache.df, envir=.GlobalEnv)
     return(genes)
   }
 
   cache.f <- scratch.f(sprintf("genes.sites.%s.Rdata", filter))
-  if (!file.exists(cache.f)) {
+  if (!file.exists(cache.f) || clean) {
     print("Genes.sites doesn't exist -- re-fetching...")
     con <- connect(dbname())
     cmd <- sprintf("select * from genes_sites where filter='%s'", filter)
@@ -1720,6 +1720,199 @@ write.psg.table <- function(filter='stringent') {
   print(mamm.row[1, c('n.hoch.10', 'n.tpm.50', 'n.e.01')] / mamm.row$n.genes)
 }
 
+pval.hist.two <- function() {
+  genes <- get.genes.sites(filter='stringent', clean=T)
+  genes <- subset(genes, pset==6)
+
+  flds <- c('hoch_p', 'tpm_05', 'emp_01', 'emp_05', 'meta_10_p', 'meta_05_p', 'meta_01_p')
+
+  print(summary(genes$meta_05_p))
+  #print(str(genes))
+
+  out.df <- data.frame()
+  for (i in 1:length(flds)) {
+    print(flds[i])
+    out.df <- rbind(out.df, data.frame(
+      fld=flds[i],
+      pval=genes[, flds[i]]
+    ))
+  }
+
+  out.df <- ddply(out.df, .(fld), function(x) {
+    ecdf.f <- ecdf(x$pval)
+    xx <- seq(from=0, to=1, length.out=400)
+    data.frame(
+      xx = xx,
+      yy = ecdf.f(xx)
+    )
+  })
+  #print(head(out.df))
+
+  #out.df$fld <- factor(out.df$fld)
+
+  p <- ggplot(out.df, aes(x=xx, y=yy, colour=fld))
+  p <- generic.opts(p)
+  p <- p + geom_line(size=1.5, alpha=0.7)
+  p <- p + scale_colour_brewer(palette="Set1")
+  p <- p + scale_x_continuous(limits=c(0, 0.2))
+  p <- p + scale_y_continuous(limits=c(0, 0.5))
+#  p <- p + coord_equal()
+
+  out.f <- scratch.f(sprintf("psg_pval_histogram_2.pdf"))
+  pdf(out.f, width=5, height=5)
+  print(p)
+  dev.off()
+
+#  genes <- subset(genes, meta_10_mean > 1)
+
+  flds <- c('meta_10_mean', 'meta_05_mean', 'meta_01_mean')
+  out.df <- data.frame()
+  for (i in 1:length(flds)) {
+    print(flds[i])
+    out.df <- rbind(out.df, data.frame(
+      fld=flds[i],
+      pval=genes[, flds[i]]
+    ))
+  }
+  out.df$pval <- pmin(5, out.df$pval)
+  out.df <- ddply(out.df, .(fld), function(x) {
+    ecdf.f <- ecdf(x$pval)
+    xx <- seq(from=0, to=3, length.out=400)
+    data.frame(
+      xx = xx,
+      yy = ecdf.f(xx)
+    )    
+  })
+
+  p <- ggplot(out.df, aes(x=xx, y=yy, colour=fld))
+  p <- generic.opts(p)
+  p <- p + geom_line()
+  p <- p + scale_colour_brewer()
+  p <- p + coord_equal()
+  
+  out.f <- scratch.f(sprintf("psg_pval_histogram_3.pdf"))
+  pdf(out.f)
+  print(p)
+  dev.off()
+
+  flds <- c('meta_10_lo', 'meta_05_lo', 'meta_01_lo')
+  out.df <- data.frame()
+  for (i in 1:length(flds)) {
+    print(flds[i])
+    out.df <- rbind(out.df, data.frame(
+      fld=flds[i],
+      pval=genes[, flds[i]]
+    ))
+  }
+  out.df$pval <- pmin(5, out.df$pval)
+  out.df <- ddply(out.df, .(fld), function(x) {
+    ecdf.f <- ecdf(x$pval)
+    xx <- seq(from=0, to=3, length.out=400)
+    data.frame(
+      xx = xx,
+      yy = ecdf.f(xx)
+    )    
+  })
+
+  p <- ggplot(out.df, aes(x=xx, y=yy, colour=fld))
+  p <- generic.opts(p)
+  p <- p + geom_line()
+  p <- p + scale_colour_brewer()
+  p <- p + coord_equal()
+  
+  out.f <- scratch.f(sprintf("psg_pval_histogram_4.pdf"))
+  pdf(out.f)
+  print(p)
+  dev.off()
+
+}
+
+s.dnds.plot <- function() {
+  min.s <- -10
+  max.s <- 0
+
+  x <- seq(from=min.s, to=max.s, length.out=200)
+  y <- x / (1 - exp(-x))
+
+  df <- data.frame(x=x, y=y)
+
+#  hi.dnds <- 0.0079
+#  low.dnds <- 0.0029
+  hi.dnds <- 0.25
+  low.dnds <- 0.2
+
+  s.for.dnds <- function(dnds) {
+    max.index <- max(which(df$y < dnds))
+    df[max.index, 'x']
+  }
+  hi.s <- s.for.dnds(hi.dnds)
+  low.s <- s.for.dnds(low.dnds)
+
+  print(low.s/hi.s)
+
+  p <- ggplot(df, aes(x=x, y=y))
+  p <- p + geom_line()
+
+  p <- p + geom_segment(x=min.s, y=hi.dnds, xend=hi.s, yend=hi.dnds, linetype='dashed', colour='red')
+  p <- p + geom_segment(x=hi.s, y=hi.dnds, xend=hi.s, yend=0, linetype='dashed', colour='red')
+
+  p <- p + geom_segment(x=min.s, y=low.dnds, xend=low.s, yend=low.dnds, linetype='dashed', colour='blue')
+  p <- p + geom_segment(x=low.s, y=low.dnds, xend=low.s, yend=0, linetype='dashed', colour='blue')
+
+  p <- p + scale_y_continuous(limits=c(0, 0.1))
+
+  p <- p + theme_bw()
+
+  pdf(file=scratch.f('s.dnds.pdf'), width=4, height=4)
+  print(p)
+  dev.off()
+
+}
+
+meta.comparison <- function() {
+  genes <- get.genes.sites(filter='stringent', clean=T)
+  genes <- subset(genes, pset==6)
+
+  flds <- c('hoch_p', 'fis_p', 'tpm_05', 'emp_01', 'meta_10_p', 'meta_01_p')
+  cor.df <- subset(genes, select=flds)
+  res <- cor(cor.df, method='spearman')
+  print(res)
+  
+  row.nms <- row.names(res)
+  df <- as.data.frame(res)  
+  df <- cbind(row.nms, df)
+  print(df)
+
+  xt <- xtable(df)
+  xt <- color.columns(xt, columns=flds)
+  print.latex(xt, file=scratch.f('table_pval_corrs.txt'))
+
+
+  for (fld in flds) {
+    cur.g <- genes[order(genes[, fld]),]
+    #print(fld)
+    #print(head(cur.g$gene_name, n=20))
+  }
+
+  other.flds <- c('hoch_p', 'fis_p', 'tpm_05', 'emp_01')
+  meta.vals <- genes[, 'meta_01_p']
+  meta.g <- genes[order(genes[, 'meta_01_p']),]
+
+  for (fld in other.flds) {
+    cur.vals <- genes[, fld]
+    cur.g <- genes[order(genes[, fld]),]
+
+    top.meta <- head(meta.g$gene_name, n=200)
+    top.cur <- head(cur.g$gene_name, n=200)
+
+    print(fld) 
+    print(length(intersect(top.meta, top.cur)))
+    
+    #print(cor(meta.vals, cur.vals, method='pearson'))
+  }
+
+}
+
 pval.histogram <- function() {
   flds <- c('hoch_p', 'fis_p', 'tpm_05', 'tpm_10', 'tpm_20', 'emp_005', 'emp_01', 'emp_05', 'emp_10')
   flds.fact <- pval.to.alias(flds)
@@ -1759,7 +1952,7 @@ pval.histogram <- function() {
   
   out.f <- scratch.f(sprintf("psg_pval_histogram.pdf"))
   pdf(out.f)
-  print.ggplot(p)
+  print(p)
   dev.off()
 
   genes <- get.genes.sites(filter='stringent')
@@ -1779,7 +1972,7 @@ pval.histogram <- function() {
   df4 <- genes
   df4$fld <- 'fis_p'
   df4$pval <- df4$fis_p
-  
+
   pval.df <- rbind(df1, df2, df3, df4)
 
   out.df <- ddply(pval.df, .(pset, fld), function(x) {
@@ -1803,7 +1996,6 @@ pval.histogram <- function() {
     })
   })
   
-
   p <- ggplot(out.df, aes(x=xx, y=yy, colour=pset, linetype=pset))
   p <- generic.opts(p)
   p <- p + geom_line()
@@ -1820,10 +2012,8 @@ pval.histogram <- function() {
 
   out.f <- scratch.f(sprintf("psg_pval_histogram_psets.pdf"))
   pdf(out.f, width=6, height=6)
-  print.ggplot(p)
+  print(p)
   dev.off()
-
-
 }
 
 length.bias <- function() {
@@ -1871,7 +2061,8 @@ pval.to.alias <- function(pvals, factors=T) {
     levels = c('hoch_p', 'fis_p', 'tpm_05', 'tpm_10', 'tpm_20', 'tpm_50',
       'emp_005', 'emp_01', 'emp_05', 'emp_10', 
       'hoch_p.1', 'hoch_p.6', 'emp_10.1', 'emp_10.6', 'emp_01.1', 'emp_01.3', 'emp_01.6',
-      'slr_dnds.1', 'slr_dnds.2', 'slr_dnds.3', 'slr_dnds.6'),
+      'slr_dnds.1', 'slr_dnds.2', 'slr_dnds.3', 'slr_dnds.6',
+      'meta_05_mean'),
     labels = c(
       'Hochberg',
       'Fisher',
@@ -1893,7 +2084,8 @@ pval.to.alias <- function(pvals, factors=T) {
       'M0 dN/dS (Primates)',
       'M0 dN/dS (Glires)',
       'M0 dN/dS (Laurasiatheria)',
-      'M0 dN/dS (Mammals)'
+      'M0 dN/dS (Mammals)',
+      'Meta 0.05'
     ))
   if (factors) {
     fct
@@ -2664,7 +2856,7 @@ top.genes <- function() {
       keep.once=c('gene_name', 'aln_length', 'dup_species_count',
         'chr_name', 'chr_start', 'chr_end', 
         'gc_100k', 'aln_length', 'slr_dnds'),
-      keep.fields=c('hoch_bh', 'emp_10_bh', 'emp_01_bh', 'emp_05_bh', 'emp_05', 'slr_dnds')
+      keep.fields=c('hoch_bh', 'emp_10_bh', 'emp_01_bh', 'emp_05_bh', 'emp_05', 'slr_dnds', 'meta_05_mean')
     )
     pubs <- get.published.genes(include.na=F)
     genes <- merge(genes, pubs, all.x=T)

@@ -490,6 +490,7 @@ collect.bootstrap.reps <- function(base.dir, subdir, pset, n.codons) {
   data.scatterplot.f <- paste(entire.dir, '/', 'data.bl.dnds.pdf', sep='')
   data.scatterplot2.f <- paste(entire.dir, '/', 'data.bl.dnds_se.pdf', sep='')
   data.treeplot.f <- paste(entire.dir, '/', 'data.tree.pdf', sep='')
+  data.treeplot2.f <- paste(entire.dir, '/', 'data.tree2.pdf', sep='')
   tree.nh.f <- paste(entire.dir, '/', 'data.tree.nh', sep='')
   tree.nhx.f <- paste(entire.dir, '/', 'data.tree.nhx', sep='')
 
@@ -499,7 +500,7 @@ collect.bootstrap.reps <- function(base.dir, subdir, pset, n.codons) {
 
     comb.df <- data.frame()
     for (i in 1:length(csv.files)) {
-      print(i)
+      #print(i)
       x <- read.csv(csv.files[i], stringsAsFactors=F)
       x$rep <- i
       comb.df <- rbind.fill(comb.df, x)
@@ -515,10 +516,10 @@ collect.bootstrap.reps <- function(base.dir, subdir, pset, n.codons) {
   tree.files <- Sys.glob(sprintf("%s/*_free_*.nh", entire.dir))
   print(paste("Tree #1:",tree.files[1]))
   tree <- tree.read.nhx(tree.files[1])
-  print(labels(tree))
+  #print(labels(tree))
 
   tree <- tree.read.nhx(tree.files[10])
-  print(labels(tree))
+  #print(labels(tree))
 
  summary.df <- ddply(data, .(label), function(x) {
     data.frame(
@@ -585,6 +586,16 @@ collect.bootstrap.reps <- function(base.dir, subdir, pset, n.codons) {
     line.color.by='dnds',
     line.color.scale = scale_colour_gradientn(colours=c('blue', 'red')),
     internal.label.angle=15
+  )
+  dev.off()
+
+  pdf(file=data.treeplot2.f, width=8, height=12)
+  ggphylo(tree,
+    line.size=2,
+    line.color.by='dnds',
+    line.color.scale = scale_colour_gradientn(colours=c('blue', 'red')),
+    plot.internal.labels=F,
+    label.size=4
   )
   dev.off()
 

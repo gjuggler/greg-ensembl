@@ -328,15 +328,15 @@ bsub.recomb.calc <- function(...) {
 }
 
 bsub.collect.genes <- function(...) {
-  n.parallel.jobs <- 10
+  n.parallel.jobs <- 40
 
   df <- pset.df()
   psets <- df$pset_id
-#  for (pset in c(7)) {
-  for (pset in c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10)) {
-    for (filter in c('default', 'stringent', 'pfam')) {
+  for (pset in c(6)) {
+#  for (pset in c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10)) {
+    for (filter in c('default', 'pfam', 'stringent')) {
       jobarray_id <- paste('genes', pset, filter, sep='_')
-      bsub.function('collect_genes', mem=10,
+      bsub.function('collect_genes', mem=8,
         extra.args=paste(pset, filter, n.parallel.jobs, 'FALSE', sep=' '),
         jobarray=n.parallel.jobs,
         jobarray_id=jobarray_id
@@ -1348,6 +1348,88 @@ process.domains <- function(pset, fltr='default', subset.index=NULL, n.indices=0
 
 }
 
+test.meta.f <- function() {
+  if (!exists('genes', envir=.GlobalEnv)) {
+    print("Loading files...")
+    load("~/scratch/gj1_2x_63_alt/current/data/sites_6_default.Rdata")  
+    load('/homes/greg/scratch/gj1_2x_63_alt/current/data/genes.sites.default.Rdata')
+    print(ls())
+    assign('sites', sites, envir=.GlobalEnv)
+    assign('genes', genes, envir=.GlobalEnv)
+  }
+#  print(str(sites))  
+#  print(colnames(genes))
+
+#  genes <- subset(genes, pset==6)
+#  my.gene <- subset(genes, gene_name == 'CENPT')
+#  my.data.id <- my.gene$data_id
+  x <- subset(sites, data_id==297256)
+
+  print(nrow(x))
+
+  # CORRECTIONS
+  # Do a meta-analysis including effect sizes.  
+  meta.05 <- 1
+  get.meta <- T
+  if (get.meta) {
+    print("Meta pvals...")
+    #xyz <- meta.analysis(x, 1)
+    xyz <- meta.analysis(x, 0.1)
+    print(as.data.frame(xyz))
+    xyz <- meta.analysis(x, 0.05)
+    print(as.data.frame(xyz))
+    xyz <- meta.analysis(x, 0.01)
+    print(as.data.frame(xyz))
+  }
+}
+
+meta.analysis <- function(x, pval.thresh) {
+  library(metafor)
+  pos.subset <- subset(x, pos.pval < pval.thresh)
+
+  if (nrow(pos.subset) < 1) {
+    return(list(
+      es=0,
+      lower=0,
+      upper=100,
+      metafor_es=0,
+      metafor_p=1,
+      metafor_lower=0
+    ))
+  }
+
+  log.omega <- log(pos.subset$omega)
+  effect.size <- log.omega
+  ci.width <- pos.subset$omega_upper - pos.subset$omega_lower
+  se <- ci.width / 2 / 1.96
+  weight <- 1 / (se^2)
+  #print(weight)
+
+  res <- rma(yi=log.omega, sei=se)
+  print(res)
+  #print(str(res))
+  #print(res$b)
+
+  # Mean weighted effect size
+  mean.es <- weighted.mean(effect.size, weight)
+  se.mean.es <- 1/sqrt(sum(weight))
+
+  lower.ci <- exp(mean.es) - 1.96*se.mean.es
+  upper.ci <- exp(mean.es) + 1.96*se.mean.es
+
+  print(sprintf("N: %d Mean: %.3f Lower: %.3f Upper: %.3f",
+    nrow(pos.subset), exp(mean.es), lower.ci, upper.ci))
+
+  return(list(
+    es=exp(mean.es),
+    lower=lower.ci,
+    upper=upper.ci,
+    metafor_es= as.numeric(exp(res$b)),
+    metafor_p = res$pval,
+    metafor_lower = exp(res$ci.lb)
+  ))
+}
+
 process.genes <- function(genes, pset, filter='default', subset.index=NULL, n.indices=0, test=F) {
   # Get the sites corresponding to this pset.
   print("Getting sites...")
@@ -1617,6 +1699,36 @@ process.gene.sites <- function(gene, sites, all.pvals) {
   tpm.20 <- Tpmw(pvals, weights, 0.2, loops=loops)
   tpm.50 <- Tpmw(pvals, weights, 0.5, loops=loops)
 
+  # CORRECTIONS
+  # Do a meta-analysis including effect sizes.  
+  meta.10.mean <- 0
+  meta.10.p <- 1
+  meta.10.lo <- 0
+  meta.05.mean <- 0
+  meta.05.p <- 1
+  meta.05.lo <- 0
+  meta.01.mean <- 0
+  meta.01.p <- 1
+  meta.01.lo <- 0
+  get.meta <- T
+  if (get.meta) {
+    print("Meta pvals...")
+    p.10 <- meta.analysis(sites, 0.10)
+    p.05 <- meta.analysis(sites, 0.05)
+    p.01 <- meta.analysis(sites, 0.01)
+    
+    meta.10.mean <- p.10$metafor_es
+    meta.10.p <- p.10$metafor_p
+    meta.10.lo <- p.10$metafor_lower
+    meta.05.mean <- p.05$metafor_es
+    meta.05.p <- p.05$metafor_p
+    meta.05.lo <- p.05$metafor_lower
+    meta.01.mean <- p.01$metafor_es
+    meta.01.p <- p.01$metafor_p
+    meta.01.lo <- p.01$metafor_lower
+  }    
+
+
   # Get an empirical p-value.
   emp.005 <- 1
   emp.01 <- 1
@@ -1658,6 +1770,7 @@ process.gene.sites <- function(gene, sites, all.pvals) {
 
   print("Summarizing sites...")
   summary.df <- summarize.sites(sites)
+  print(summary.df)
 
   print("Cbinding...")
   n <- nrow(sites)
@@ -1697,6 +1810,16 @@ process.gene.sites <- function(gene, sites, all.pvals) {
     emp_01 = emp.01,
     emp_05 = emp.05,
     emp_10 = emp.10,
+
+    meta_10_mean = meta.10.mean,
+    meta_10_p = meta.10.p,
+    meta_10_lo = meta.10.lo,
+    meta_05_mean = meta.05.mean,
+    meta_05_p = meta.05.p,
+    meta_05_lo = meta.05.lo,
+    meta_01_mean = meta.01.mean,
+    meta_01_p = meta.01.p,
+    meta_01_lo = meta.01.lo,
 
     mantel_cor = mantel.cor,
     mantel_p = mantel.p,

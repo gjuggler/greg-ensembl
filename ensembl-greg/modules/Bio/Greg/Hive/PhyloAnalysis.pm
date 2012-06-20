@@ -607,8 +607,17 @@ sub run_sitewise_dNdS {
   if ($tree->isa("Bio::Tree::TreeI")) {
     $tree = Bio::EnsEMBL::Compara::TreeUtils->from_treeI($tree);
   }
+
+  # Remove blank sequences from aln & tree.
+  $cdna_aln = Bio::EnsEMBL::Compara::AlignUtils->remove_empty_seqs($cdna_aln);
+  $tree = Bio::EnsEMBL::Compara::ComparaUtils->restrict_tree_to_aln($tree, $cdna_aln);
+
   $tree = Bio::EnsEMBL::Compara::TreeUtils->unroot($tree);
   my $treeI = Bio::EnsEMBL::Compara::TreeUtils->to_treeI($tree);
+
+  print $treeI->ascii;
+
+  $self->pretty_print($cdna_aln);
 
   # LOAD VARIABLES FROM PARAMS.
   my $slrexe       = $params->{slr_executable};
@@ -657,7 +666,7 @@ sub run_sitewise_dNdS {
   map {$_->name('') if (!$_->is_leaf) } $tree_copy->nodes;
 
   my $tree_newick = Bio::EnsEMBL::Compara::TreeUtils->to_newick($tree_copy);
-  #print "Newick: [$tree_newick]\n";
+  print "Newick: [$tree_newick]\n";
   open( OUT, ">$tmpdir/tree" );
   print OUT sprintf( "%d 1\n", $num_leaves );
   print OUT $tree_newick . "\n";
@@ -670,6 +679,7 @@ sub run_sitewise_dNdS {
   print SLR "treefile\: tree\n";
   my $outfile = "slr.res";
   print SLR "outfile\: $outfile\n";
+  #print SLR "reoptimise\: 2\n";
   print SLR "gencode\: $gencode\n";
   print SLR "aminof\: $aminof\n";
   print SLR "codonf\: $codonf\n";
@@ -1033,7 +1043,7 @@ sub parse_paml_output {
   my $pep_aln = shift;
   my $output_lines_arrayref = shift;
 
-  print "    parsing paml output\n";
+  #print "    parsing paml output\n";
 
   my $codeml = Bio::Greg::Codeml->new();
   my $codeml_results = $codeml->parse_results($aln, $pep_aln, $output_lines_arrayref);

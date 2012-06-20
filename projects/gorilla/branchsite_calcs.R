@@ -1,9 +1,9 @@
 library(plyr)
 library(ggplot2)
 library(boot)
-library(Hmisc)
-library(goseq)
-source("~/src/greg-ensembl/scripts/go_enrichments.R")
+#library(Hmisc)
+#library(goseq)
+#source("~/src/greg-ensembl/scripts/go_enrichments.R")
 
 dbname <- 'gj1_gorilla'
 
@@ -2936,7 +2936,7 @@ combined.dnds.fig <- function(prefix='') {
 }
 
 paml.xy.fig <- function() {
-  source("~/src/greg-ensembl/scripts/mysql_functions.R")
+  source("~/lib/greg-ensembl/scripts/mysql_functions.R")
   dbname <- 'gj1_dnds'
   con <- connect(dbname)
 

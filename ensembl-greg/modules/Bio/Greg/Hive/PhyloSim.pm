@@ -17,8 +17,7 @@ use Bio::EnsEMBL::Hive::Process;
 use Bio::Greg::EslrUtils;
 
 use Bio::AlignIO;
-
-use String::CRC32;
+use Digest::CRC qw(crc32);
 
 use base ('Bio::Greg::Hive::Process');
 
@@ -200,8 +199,8 @@ sub simulate_alignment_indelible {
     $models_trees_partitions = $self->domains_to_indelible_setup( $domains_object, $tree, $params );
   } else {
     my $length    = $params->{phylosim_seq_length};
-    my $ins_rate  = $params->{phylosim_ins_rate};
-    my $del_rate  = $params->{phylosim_del_rate};
+    my $ins_rate  = $params->{phylosim_insertrate};
+    my $del_rate  = $params->{phylosim_deleterate};
     my $ins_model = $params->{phylosim_insertmodel};
     my $del_model = $params->{phylosim_deletemodel};
 

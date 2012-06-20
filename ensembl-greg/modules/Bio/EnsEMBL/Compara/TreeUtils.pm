@@ -284,7 +284,7 @@ sub to_treeI {
         if ($tags) {
           foreach my $key (keys %$tags) {
             $i_node->set_tag_value($key, $tags->{$key});
-#            print "Setting tag $key to ".$tags->{$key}."\n";
+            #print "Setting tag $key to ".$tags->{$key}."\n";
           }
         }
       }
@@ -379,8 +379,16 @@ sub from_file {
 sub from_treeI {
   my $class = shift;
   my $treeI = shift;
+
+  my $rootI;
+  if ((ref $treeI) =~ /Bio::Tree::Node/i) {
+    #print "NODE!\n";
+    $rootI = $treeI;
+  } else {
+    #print "NOT NODE!\n";
+    $rootI = $treeI->get_root_node;
+  }
   
-  my $rootI = $treeI->get_root_node;
   my $node = new Bio::EnsEMBL::Compara::NestedSet;
 
   # Kick off the recursive, parallel node adding.
@@ -418,12 +426,19 @@ sub _add_nodeI_to_node {
     $node->add_child($child,$c->branch_length);
 
     # Add the tags.
-    my $tags = $c->{'_tags'};
-    foreach my $tag (keys %{$tags}) {
-      $tags->{$tag} = $tags->{$tag}[0]
+    my $tags = $c->get_tagvalue_hash;
+    #my $tags = $c->{'_tags'};
+    if ($tags) {
+      foreach my $tag (keys %{$tags}) {
+        if (ref $tags->{$tag} eq 'ARRAY' ) {
+          $tags->{$tag} = $tags->{$tag}[0];
+        } else {
+          $tags->{$tag} = $tags->{$tag};
+        }
+      }
+      $child->{'_tags'} = $tags;
     }
-    $child->{'_tags'} = $tags;
-
+    
     # Recurse.
     _add_nodeI_to_node($child, $c, $node_id_counter);
   }
