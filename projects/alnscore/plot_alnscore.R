@@ -1,11 +1,10 @@
 library(ggplot2)
 library(phylosim)
 library(plyr)
+
 if (Sys.getenv('USER') == 'gj1') {
-  source("~/src/greg-ensembl/projects/phylosim/PhyloSimPlots.R")
   source("~/src/greg-ensembl/scripts/mysql_functions.R")
 } else {
-  source("~/lib/greg-ensembl/projects/phylosim/PhyloSimPlots.R")
   source("~/lib/greg-ensembl/scripts/mysql_functions.R")
 }
 
@@ -15,11 +14,14 @@ get.data <- function() {
 
   ff <- scratch.f('alnscore.Rdata')
   if (!file.exists(ff)) {
+    print("Getting data...")
     aln <- mysqlReadTable(con, 'aln')
     save(aln, file=ff)
+    print("Done!")
   } else {
     load(ff)
   }
+
   aln
 }
 
@@ -65,28 +67,34 @@ plot.bars <- function() {
 
   print(unique(aln$tree))
   print(unique(aln$aligner))
+  print(unique(aln$n_domains))
+
+  aln <- subset(aln, n_seqs == 2)
+  aln$mpl <- round(aln$mpl * 10) / 10
+  aln$mpl <- ifelse(aln$mpl > 4, 6, aln$mpl)
+  aln$mpl <- factor(aln$mpl)
+
+  print(nrow(aln))
 
   cur.df <- aln
+  cur.df$tree <- factor(cur.df$tree)
+  cur.df$n_domains <- factor(cur.df$n_domains)
   cur.df$n_seqs <- factor(cur.df$n_seqs)
   cur.df$aligner <- factor(cur.df$aligner)
 
-  #print(unique(cur.df$mpl))  
-  cur.df$mpl <- round(cur.df$mpl * 10) / 10
-  print(unique(cur.df$mpl))  
-  cur.df$mpl <- factor(cur.df$mpl)
+  cur.df$lbl <- factor(paste(cur.df$tree, cur.df$n_domains, sep=' / '))
 
-  relative.df <- ddply(cur.df, c('tree', 'aligner', 'mpl', 'n_seqs'), function(x) {
+  relative.df <- ddply(cur.df, c('lbl', 'tree', 'aligner', 'mpl', 'n_seqs', 'n_domains'), function(x) {
     avg.diff <- mean(x$sub_sps - x$aln_sps)
     data.frame(
       y.val=avg.diff
     )
   })
+  print(str(relative.df))
 
-  #relative.df <- subset(relative.df, tree == 'balanced.nh')
-  #relative.df <- subset(relative.df, n_seqs %in% c(2, 6, 16))
   relative.df$n_seqs <- factor(relative.df$n_seqs)
 
-  pdf(file="aln_relative_bars.pdf", width=10, height=5)
+  pdf(file=scratch.f("aln_relative_bars.pdf"), width=10, height=5)
   p <- ggplot(relative.df, aes(x=aligner, y=y.val, fill=mpl))
   p <- p + theme_bw()
   p <- p + geom_bar(position="dodge", stat='identity')
@@ -97,12 +105,16 @@ plot.bars <- function() {
   n.colors <- length(unique(relative.df$mpl))
   clrs <- clr.f(n.colors)
   p <- p + scale_fill_manual(values=clrs)
-  p <- p + facet_grid(n_seqs ~ tree)
-  print.ggplot(p)
+  p <- p + facet_grid(lbl ~ .)
+  p <- p + opts(
+    strip.text.y = theme_text(angle=0, hjust=0)
+  )
+  print(p)
 
   dev.off()
+}
 
-  return()
+plot.abs <- function() {
 
   abs.df <- ddply(cur.df, c('tree', 'aligner', 'mpl', 'n_seqs'), function(x) {
     avg.value <- mean(x$aln_sps)

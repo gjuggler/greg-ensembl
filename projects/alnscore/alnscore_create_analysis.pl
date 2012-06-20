@@ -42,37 +42,55 @@ sub aln_score {
   my $logic_name  = "AlnScore";
   my $module      = "Bio::Greg::AlnScore::AlnScore";
   my $params      = {};
-  $h->create_analysis( $logic_name, $module, $params, 400, 1 );
+  $h->create_analysis( $logic_name, $module, $params, 500, 1 );
 
-  my @aligners = ('clustalw', 'mafft', 'muscle', 'probcons', 'fsa', 'prank', 'prank_codon', 'pagan');
+#  my @aligners = ('clustalw', 'mafft', 'muscle', 'probcons', 'fsa', 'prank', 'prank_codon', 'pagan');
+  my @aligners = ('mafft', 'clustalw', 'probcons', 'fsa', 'prank_codon', 'pagan');
   #my @aligners = ('mafft');
-  my @mpls = (0.1, 0.2, 0.5, 1.0, 1.5, 2.0, 3.0, 6.0, 12.0);
+  my @mpls = (1.0, 2.0, 0.2, 0.5, 3.0, 6.0);
   #my @mpls = (0.5);
   #my @trees = ('balanced.nh', 'ladder.nh');
-  my @trees = ('balanced.nh');
-  my $n_reps = 40;
+  my @trees = ('balanced.nh', 'ladder.nh');
+
+  my @n_domains = (1, 2, 4, 8);
+  my @linker_ratios = (0.2);
+  my @domain_ins_rate_mults = (0.1);
+
   #my $n_reps = 1;
+  my $n_reps = 100;
 
   my $indel_rate = 0.1;
 
   my $i=0;
   foreach my $tree (@trees) {
-    foreach my $mpl (@mpls) {
-      foreach my $aligner (@aligners) {
-        $i++;
-        foreach my $rep (1 .. $n_reps) {
-          my $cur_indel = $indel_rate;
-          $cur_indel = $indel_rate / $mpl / 2 if ($mpl >= 3);
-          my $p = {
-            data_id => $i,
-            aligner => $aligner,
-            mpl => $mpl,
-            tree => $tree,
-            indel => $cur_indel,
-            replicate => $rep,
-            label => "${tree}_${mpl}_${aligner}_${rep}"
-          };
-          $h->add_job_to_analysis("AlnScore", $p);
+    foreach my $n_domain (@n_domains) {
+      foreach my $linker_ratio (@linker_ratios) {
+        foreach my $domain_ins_rate_mult (@domain_ins_rate_mults) {
+          foreach my $mpl (@mpls) {
+            foreach my $aligner (@aligners) {
+              foreach my $rep (1 .. $n_reps) {
+                $i++;
+                my $cur_indel = $indel_rate;
+                $cur_indel = $indel_rate / $mpl / 2 if ($mpl >= 3);
+                $cur_indel = sprintf("%.4f", $cur_indel);
+                my $p = {
+                  data_id => $i,
+                  replicate => $rep,
+                  random_seed => int(rand(999999)),
+
+                  aligner => $aligner,
+                  mpl => $mpl,
+                  tree => $tree,
+                  indel => $cur_indel,
+
+                  n_domains => $n_domain,
+                  linker_ratio => $linker_ratio,
+                  domain_ins_rate_mult => $domain_ins_rate_mult,
+                };
+                $h->add_job_to_analysis("AlnScore", $p);
+              }
+            }
+          }
         }
       }
     }
