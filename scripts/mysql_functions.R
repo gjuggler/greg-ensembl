@@ -16,15 +16,15 @@ connect <- function(dbname=NULL) {
   if (Sys.getenv('USER') == 'gj1') {
     host = 'ens-research'
     port=3306
-    user='ensadmin'
-    password='ensembl'
-    userpass='ensadmin:ensembl'
+    user='REDACTED'
+    password='REDACTED'
+    userpass='REDACTED:REDACTED'
   } else {
     host = 'mysql-greg.ebi.ac.uk'
     port=4134
-    user='slrsim'
-    password='slrsim'
-    userpass='slrsim:slrsim'
+    user='REDACTED'
+    password='REDACTED'
+    userpass='REDACTED:REDACTED'
   }
 
   con <- dbConnect(MySQL(), host=host, port=port, user=user, password=password, dbname=dbname)
@@ -54,15 +54,15 @@ connect.livemirror <- function(dbname=NULL) {
   if (Sys.getenv('USER') == 'gj1') {
     host = 'ens-livemirror'
     port=3306
-    user='ensadmin'
-    password='ensembl'
-    userpass='ensadmin:ensembl'
+    user='REDACTED'
+    password='REDACTED'
+    userpass='REDACTED:REDACTED'
   } else {
     host = 'mysql-ensembl-mirror.ebi.ac.uk'
     port = 4240
-    user = 'anonymous'
+    user = 'REDACTED'
     password = NULL
-    userpass='anonymous'
+    userpass='REDACTED'
   }
 
   con <- dbConnect(MySQL(), host=host, port=port, user=user, password=password, dbname=dbname)
